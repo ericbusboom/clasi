@@ -1,166 +1,141 @@
-# Claude Agent Skills
+# CLASI — Claude Agent Skills Instructions
 
-Personal collection of Claude Code agents and skills for enhancing development workflows.
-
-## Overview
-
-This repository contains custom agents and skills designed to work with Claude Code (formerly GitHub Copilot Workspace). Agents are specialized AI assistants with specific expertise, while skills are task-oriented workflows that leverage these agents.
-
-## Repository Structure
-
-```
-.github/
-├── agents/          # Agent definitions
-│   ├── python-expert.md
-│   ├── documentation-expert.md
-│   └── ...
-└── skills/          # Skill definitions
-    ├── python-code-review.md
-    ├── generate-documentation.md
-    └── ...
-```
-
-## Agents
-
-Agents are specialized AI assistants with focused expertise in specific domains. Each agent is defined in a Markdown file that describes:
-
-- Capabilities and strengths
-- Guidelines and best practices
-- Available tools
-- Example tasks
-
-### Available Agents
-
-- **[python-expert](/.github/agents/python-expert.md)** - Python programming expert with deep knowledge of best practices, design patterns, and the Python ecosystem
-- **[documentation-expert](/.github/agents/documentation-expert.md)** - Technical documentation specialist for creating clear, comprehensive documentation
-
-## Skills
-
-Skills are task-oriented workflows that leverage agents to accomplish specific goals. Each skill defines:
-
-- Description and purpose
-- Which agent(s) it uses
-- Usage instructions
-- Expected process and output
-
-### Available Skills
-
-- **[python-code-review](/.github/skills/python-code-review.md)** - Performs comprehensive code reviews of Python code using the Python Expert agent
-- **[generate-documentation](/.github/skills/generate-documentation.md)** - Creates professional project documentation using the Documentation Expert agent
+An MCP server that gives Claude Code (and GitHub Copilot) a structured
+software engineering process. It provides agents, skills, and instructions
+that guide an AI assistant through the full lifecycle of a project: from
+requirements through architecture, sprint planning, implementation, and
+release.
 
 ## Installation
 
-To install this package and make the agents and skills available to your projects:
+Install with [pipx](https://pipx.pypa.io/) directly from GitHub:
 
 ```bash
-# Clone this repository
+pipx install git+https://github.com/ericbusboom/claude-agent-skills.git
+```
+
+This puts the `clasi` command on your PATH. To update later:
+
+```bash
+pipx upgrade claude-agent-skills
+```
+
+For development, clone and install in editable mode:
+
+```bash
 git clone https://github.com/ericbusboom/claude-agent-skills.git
 cd claude-agent-skills
-
-# Install with pipx in editable mode
 pipx install -e .
 ```
 
-The editable installation allows you to modify agents and skills in the cloned repository, and the changes will be immediately available when you link them to other projects.
+## Initializing a Project
 
-## Linking to Your Projects
-
-Once installed, you can link the agents and skills to any project:
+In any git repository, run:
 
 ```bash
-# Navigate to your project directory
-cd /path/to/your/project
-
-# Link the agents and skills
-link-claude-agents
+clasi init
 ```
 
-This will:
-- Create symlinks from your project's `.github/agents` and `.github/skills` directories to this repository
-- If those directories already exist in your project, it will link individual files instead
-- Preserve any existing custom agents or skills in your project
+This creates:
 
-## Usage
+| Path | Purpose |
+|------|---------|
+| `.claude/rules/*.md` | Always-on instructions loaded by Claude Code |
+| `.claude/skills/*/SKILL.md` | Slash-command stubs (`/next`, `/todo`, `/status`, `/project-initiation`) |
+| `.claude/settings.local.json` | MCP permission allowlist |
+| `.mcp.json` | MCP server configuration pointing to `clasi mcp` |
+| `.github/copilot/instructions/` | Mirror of the SE process rule for GitHub Copilot |
 
-To use an agent or skill in Claude Code:
+After init, open the project in Claude Code or VS Code with Copilot.
+The MCP server starts automatically when the AI connects.
 
-1. Reference the agent in your prompt: "Use the python-expert agent to help me refactor this code"
-2. Invoke a skill directly: "Use the python-code-review skill on src/utils.py"
-3. Let Claude choose automatically based on context
+## Typical Workflow
 
-## Creating New Agents
+A project moves through four stages. You can drive the whole process with
+the `/next` slash command, which inspects the current state and runs
+whatever comes next.
 
-To create a new agent:
+### 1. Project Initiation
 
-1. Create a new Markdown file in `.github/agents/`
-2. Define the agent's expertise and capabilities
-3. List guidelines and best practices
-4. Provide examples of tasks the agent can handle
+Start a new project by telling the agent what you want to build.
+Use `/project-initiation` or just `/next` on an empty repo.
 
-**Template:**
-```markdown
-# [Agent Name]
+The agent interviews you, asks clarifying questions, and produces
+`docs/plans/overview.md` — a one-page summary of the problem, scope,
+constraints, and high-level use cases.
 
-[Brief description of the agent's expertise]
+### 2. Sprint Planning
 
-## Capabilities
-- [List key capabilities]
+When the overview is ready, `/next` creates a sprint. Each sprint gets:
 
-## Guidelines
-- [List important guidelines]
+- **Sprint document** — goals, scope, branch name
+- **Use cases** — detailed scenarios for this sprint
+- **Technical plan** — architecture, components, design decisions
 
-## Tools Available
-- [List available tools]
+The plan goes through an architecture review gate and a stakeholder
+approval gate before any code is written.
 
-## Example Tasks
-- [List example use cases]
+### 3. Ticket Execution
+
+After approval, the sprint's technical plan is broken into numbered
+tickets with dependency ordering. The agent executes them one by one:
+plan, implement, test, commit.
+
+You can watch it work or step away. Use `/status` at any time to see
+where things stand.
+
+### 4. Sprint Close
+
+When all tickets are done, the agent merges the sprint branch to main,
+tags a version, and archives the sprint to `docs/plans/sprints/done/`.
+Then `/next` picks up the next sprint or reports that the project is
+complete.
+
+## Slash Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/next` | Determine the next process step and execute it |
+| `/status` | Report current project state, progress, and next actions |
+| `/todo <description>` | Capture an idea as a TODO file in `docs/plans/todo/` |
+| `/project-initiation` | Start a new project with a guided interview |
+
+## How It Works
+
+CLASI is an MCP (Model Context Protocol) server. When Claude Code or
+Copilot connects, the server exposes tools that the AI calls to read
+process definitions and manage artifacts:
+
+- **Agents** — role definitions (architect, technical lead, code reviewer, etc.)
+  that shape the AI's behavior for specific tasks
+- **Skills** — step-by-step workflows (plan a sprint, execute a ticket, close
+  a sprint) that the AI follows
+- **Instructions** — coding standards, git workflow rules, and testing
+  guidelines loaded on demand
+- **Artifact tools** — create sprints, create tickets, track status, manage
+  the `docs/plans/` directory structure
+
+The AI reads these definitions at runtime via MCP tool calls. The slash
+command stubs installed by `clasi init` are thin wrappers that tell the
+AI to fetch the real instructions from the server.
+
+## Project Structure (for contributors)
+
 ```
-
-## Creating New Skills
-
-To create a new skill:
-
-1. Create a new Markdown file in `.github/skills/`
-2. Describe what the skill does
-3. Specify which agent(s) it uses
-4. Define the process and expected output
-
-**Template:**
-```markdown
-# [Skill Name]
-
-[Brief description]
-
-## Description
-[Detailed description of what the skill does]
-
-## Agent Used
-**[agent-name]** - [Why this agent is used]
-
-## Usage
-[How to invoke this skill]
-
-## Process
-1. [Step 1]
-2. [Step 2]
-...
-
-## Output
-[What the skill produces]
-
-## Benefits
-- [Key benefits]
+claude_agent_skills/
+├── agents/           # Agent role definitions (.md)
+├── skills/           # Skill workflow definitions (.md)
+├── instructions/     # Coding standards and guidelines (.md)
+│   └── languages/    # Language-specific instructions
+├── rules/            # Always-on rules installed to .claude/rules/
+├── artifact_tools.py # Sprint, ticket, and planning MCP tools
+├── process_tools.py  # Agent, skill, and instruction MCP tools
+├── mcp_server.py     # MCP server entry point
+├── init_command.py   # `clasi init` implementation
+├── versioning.py     # Version tagging utilities
+└── cli.py            # CLI dispatcher
 ```
-
-## Contributing
-
-Feel free to contribute new agents and skills! Please ensure they:
-
-- Have clear, descriptive names
-- Include comprehensive documentation
-- Follow the established templates
-- Provide practical value
 
 ## License
 
-This is a personal collection. Feel free to use and adapt for your own purposes.
+MIT
