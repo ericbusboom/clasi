@@ -17,103 +17,41 @@ MCP_CONFIG = {
     }
 }
 
-SE_SKILL_STUB = """\
----
-description: CLASI Software Engineering process dispatcher
----
-
-# /se
-
-Dispatch to the CLASI SE process. Call the appropriate CLASI MCP tool
-based on the argument provided.
-
-## Usage
-
-- `/se` or `/se status` — Run project status report
-- `/se next` — Determine and execute the next process step
-- `/se todo <description>` — Create a TODO file
-- `/se init` — Start a new project with guided interview
-- `/se report` — Report a bug with CLASI tools
-- `/se ghtodo <description>` — Create a GitHub issue
-
-## How to execute
-
-Parse the argument after `/se` and call the matching MCP tool:
-
-| Argument | MCP call |
-|----------|----------|
-| *(none)* or `status` | `get_skill_definition("project-status")` |
-| `next` | `get_skill_definition("next")` |
-| `todo` | `get_skill_definition("todo")` |
-| `init` | `get_skill_definition("project-initiation")` |
-| `report` | `get_skill_definition("report")` |
-| `ghtodo` | `get_skill_definition("ghtodo")` |
-
-Pass any remaining text after the subcommand as the argument to the
-skill (e.g., `/se todo fix the login bug` passes "fix the login bug"
-to the todo skill).
-
-For general SE process guidance, call `get_se_overview()`.
-"""
+_PACKAGE_DIR = Path(__file__).parent
+_SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
+_AGENTS_SECTION_PATH = _PACKAGE_DIR / "init" / "agents-section.md"
 
 # Marker used to find/replace the CLASI section in AGENTS.md.
 _AGENTS_SECTION_START = "<!-- CLASI:START -->"
 _AGENTS_SECTION_END = "<!-- CLASI:END -->"
 
-AGENTS_MD_SECTION = f"""\
-{_AGENTS_SECTION_START}
-## CLASI Software Engineering Process
-
-This project uses the **CLASI** (Claude Agent Skills Instructions)
-software engineering process, managed via an MCP server.
-
-**The SE process is the default.** When asked to build a feature, fix a
-bug, or make any code change, follow this process unless the stakeholder
-explicitly says "out of process" or "direct change".
-
-### Process
-
-Work flows through four stages organized into sprints:
-
-1. **Requirements** — Elicit requirements, produce overview and use cases
-2. **Architecture** — Produce technical plan
-3. **Ticketing** — Break plan into actionable tickets
-4. **Implementation** — Execute tickets
-
-Use `/se` or call `get_se_overview()` for full process details and MCP
-tool reference.
-
-### Stakeholder Corrections
-
-When the stakeholder corrects your behavior or expresses frustration
-("that's wrong", "why did you do X?", "I told you to..."):
-
-1. Acknowledge the correction immediately.
-2. Run `get_skill_definition("self-reflect")` to produce a structured
-   reflection in `docs/plans/reflections/`.
-3. Continue with the corrected approach.
-
-Do NOT trigger on simple clarifications, new instructions, or questions
-about your reasoning.
-{_AGENTS_SECTION_END}"""
-
 
 def _write_se_skill(target: Path) -> bool:
     """Write the /se skill stub to .claude/skills/se/SKILL.md.
 
+    Copies from the package's skills/se.md source file.
     Returns True if the file was written/updated, False if unchanged.
     """
+    source = _SE_SKILL_PATH.read_text(encoding="utf-8")
     path = target / ".claude" / "skills" / "se" / "SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     rel = ".claude/skills/se/SKILL.md"
 
-    if path.exists() and path.read_text(encoding="utf-8") == SE_SKILL_STUB:
+    if path.exists() and path.read_text(encoding="utf-8") == source:
         click.echo(f"  Unchanged: {rel}")
         return False
 
-    path.write_text(SE_SKILL_STUB, encoding="utf-8")
+    path.write_text(source, encoding="utf-8")
     click.echo(f"  Wrote: {rel}")
     return True
+
+
+def _read_agents_section() -> str:
+    """Read the AGENTS.md section content from the package file.
+
+    Returns the section text with trailing whitespace stripped.
+    """
+    return _AGENTS_SECTION_PATH.read_text(encoding="utf-8").rstrip()
 
 
 def _update_agents_md(target: Path) -> bool:
@@ -126,6 +64,7 @@ def _update_agents_md(target: Path) -> bool:
     Returns True if the file was written/updated, False if unchanged.
     """
     agents_md = target / "AGENTS.md"
+    section = _read_agents_section()
 
     if agents_md.exists():
         content = agents_md.read_text(encoding="utf-8")
@@ -134,12 +73,12 @@ def _update_agents_md(target: Path) -> bool:
             # Replace existing CLASI section in place
             start_idx = content.index(_AGENTS_SECTION_START)
             end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            new_content = content[:start_idx] + AGENTS_MD_SECTION + content[end_idx:]
+            new_content = content[:start_idx] + section + content[end_idx:]
         else:
             # Append to existing content
             if not content.endswith("\n"):
                 content += "\n"
-            new_content = content + "\n" + AGENTS_MD_SECTION + "\n"
+            new_content = content + "\n" + section + "\n"
 
         if new_content == content:
             click.echo("  Unchanged: AGENTS.md")
@@ -149,7 +88,7 @@ def _update_agents_md(target: Path) -> bool:
         click.echo("  Updated: AGENTS.md")
         return True
     else:
-        agents_md.write_text(AGENTS_MD_SECTION + "\n", encoding="utf-8")
+        agents_md.write_text(section + "\n", encoding="utf-8")
         click.echo("  Created: AGENTS.md")
         return True
 

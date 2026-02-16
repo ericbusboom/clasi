@@ -50,6 +50,7 @@ exclude_lines = [
 [tool.setuptools.package-data]
 claude_agent_skills = [
     "agents/*.md",
+    "init/*.md",
     "skills/*.md",
     "instructions/*.md",
     "instructions/languages/*.md",

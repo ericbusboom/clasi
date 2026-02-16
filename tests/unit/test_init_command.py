@@ -8,8 +8,8 @@ from claude_agent_skills.init_command import (
     run_init,
     MCP_CONFIG,
     VSCODE_MCP_CONFIG,
-    SE_SKILL_STUB,
-    AGENTS_MD_SECTION,
+    _SE_SKILL_PATH,
+    _AGENTS_SECTION_PATH,
     _AGENTS_SECTION_START,
     _AGENTS_SECTION_END,
 )
@@ -28,11 +28,13 @@ class TestRunInit:
 
         skill = target_dir / ".claude" / "skills" / "se" / "SKILL.md"
         assert skill.exists()
-        assert skill.read_text(encoding="utf-8") == SE_SKILL_STUB
+        source = _SE_SKILL_PATH.read_text(encoding="utf-8")
+        assert skill.read_text(encoding="utf-8") == source
 
     def test_se_skill_references_mcp(self):
-        assert "get_skill_definition" in SE_SKILL_STUB
-        assert "get_se_overview" in SE_SKILL_STUB
+        source = _SE_SKILL_PATH.read_text(encoding="utf-8")
+        assert "get_skill_definition" in source
+        assert "get_se_overview" in source
 
     def test_se_skill_idempotent(self, target_dir):
         target_dir.mkdir()
@@ -40,7 +42,8 @@ class TestRunInit:
         run_init(str(target_dir))
 
         skill = target_dir / ".claude" / "skills" / "se" / "SKILL.md"
-        assert skill.read_text(encoding="utf-8") == SE_SKILL_STUB
+        source = _SE_SKILL_PATH.read_text(encoding="utf-8")
+        assert skill.read_text(encoding="utf-8") == source
 
     def test_does_not_create_old_skill_stubs(self, target_dir):
         target_dir.mkdir()
@@ -240,11 +243,13 @@ class TestAgentsMd:
         assert content_after_first == content_after_second
 
     def test_agents_section_has_process_stages(self):
-        assert "Requirements" in AGENTS_MD_SECTION
-        assert "Architecture" in AGENTS_MD_SECTION
-        assert "Ticketing" in AGENTS_MD_SECTION
-        assert "Implementation" in AGENTS_MD_SECTION
+        section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
+        assert "Requirements" in section
+        assert "Architecture" in section
+        assert "Ticketing" in section
+        assert "Implementation" in section
 
     def test_agents_section_has_scold_detection(self):
-        assert "Stakeholder Corrections" in AGENTS_MD_SECTION
-        assert "self-reflect" in AGENTS_MD_SECTION
+        section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
+        assert "Stakeholder Corrections" in section
+        assert "self-reflect" in section

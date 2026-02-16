@@ -28,7 +28,7 @@ def slugify(title: str) -> str:
 SPRINT_TEMPLATE = """\
 ---
 id: "{id}"
-title: {title}
+title: "{title}"
 status: planning
 branch: sprint/{id}-{slug}
 use-cases: []
@@ -157,7 +157,7 @@ to-architecture-version: null
 TICKET_TEMPLATE = """\
 ---
 id: "{id}"
-title: {title}
+title: "{title}"
 status: todo
 use-cases: []
 depends-on: []
