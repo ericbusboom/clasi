@@ -1,7 +1,7 @@
 ---
-id: "006"
+id: '006'
 title: Produce initial architecture-001.md baseline
-status: todo
+status: in-progress
 use-cases: []
 depends-on: []
 ---

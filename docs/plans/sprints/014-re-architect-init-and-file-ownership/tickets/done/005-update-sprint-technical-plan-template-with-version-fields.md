@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: Update sprint technical plan template with version fields
-status: in-progress
+status: done
 use-cases: []
 depends-on: []
 ---
