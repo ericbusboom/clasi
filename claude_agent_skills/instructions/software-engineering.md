@@ -20,12 +20,15 @@ project-manager:
   stakeholder narration and produces the project overview document.
 - **requirements-analyst** — Elicits detailed requirements from stakeholder
   narratives. Produces the brief and use cases for complex projects.
-- **architect** — Designs system architecture. Takes the brief and use cases
-  and produces the technical plan.
+- **architect** — Maintains the versioned system architecture. Produces
+  `docs/plans/architecture/architecture-NNN.md` documents and sprint
+  technical plans. Two modes: initial architecture and sprint update.
+  See `instructions/architectural-quality.md` for quality criteria.
 - **technical-lead** — Breaks the technical plan into sequenced, numbered
   tickets. Creates ticket plans before implementation begins.
-- **architecture-reviewer** — Reviews sprint plans against the existing
-  codebase and technical plan. Produces architectural review verdicts.
+- **architecture-reviewer** — Reviews sprint plans and architecture updates
+  for consistency, quality, and risk. Evaluates against the architectural
+  quality guide. Produces verdicts with Design Quality Assessment.
 - **code-reviewer** — Reviews code changes during ticket execution for
   quality, standards compliance, and security. Produces pass/fail verdicts.
 
@@ -68,6 +71,26 @@ Contents:
 - Technology stack
 - Sprint roadmap (rough plan of sprints)
 - Out of scope
+
+### 2. Architecture (`docs/plans/architecture/`)
+
+Versioned architecture documents describing the system's structure. Each
+version represents the target state after a sprint completes:
+
+```
+docs/plans/architecture/
+  architecture-001.md   # Initial architecture (baseline)
+  architecture-002.md   # Target state after a later sprint
+  ...
+```
+
+The architect produces these documents; the architecture-reviewer evaluates
+them. See `instructions/architectural-quality.md` for versioning rules,
+document structure, and quality criteria.
+
+Not every sprint requires a new architecture version — pure bug fixes and
+refactors within existing boundaries skip it. The sprint technical plan
+references which architecture version it targets.
 
 ### Legacy: Brief, Use Cases, Technical Plan
 
@@ -398,6 +421,10 @@ docs/plans/
 ├── brief.md                     # Top-level brief (legacy)
 ├── usecases.md                  # Top-level use cases (legacy)
 ├── technical-plan.md            # Top-level technical plan (legacy)
+├── architecture/                # Versioned architecture documents
+│   ├── architecture-001.md      # Initial baseline
+│   ├── architecture-002.md      # After sprint N
+│   └── ...
 ├── todo/                        # Ideas and future work
 │   ├── some-idea.md             # One idea per file
 │   └── done/                    # Consumed TODOs (archived)
@@ -440,6 +467,7 @@ docs/plans/
 - Follow `instructions/coding-standards.md` when writing code.
 - Follow `instructions/git-workflow.md` when committing changes.
 - Follow `instructions/testing.md` when writing tests.
+- Follow `instructions/architectural-quality.md` for architecture decisions.
 - When a ticket is completed, follow the **Completing a Ticket** steps
   immediately — do not batch completions.
 - Do not create new artifacts without updating the existing ones to stay

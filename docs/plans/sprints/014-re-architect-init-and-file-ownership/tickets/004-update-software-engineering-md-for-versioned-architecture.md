@@ -1,7 +1,7 @@
 ---
-id: "004"
+id: '004'
 title: Update software-engineering.md for versioned architecture
-status: todo
+status: in-progress
 use-cases: []
 depends-on: []
 ---
