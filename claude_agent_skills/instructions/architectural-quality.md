@@ -17,11 +17,14 @@ system after a given sprint completes:
 
 ```
 docs/plans/architecture/
-  architecture-001.md   # Initial architecture (before any sprint)
-  architecture-002.md   # Target state after sprint 001
-  architecture-003.md   # Target state after sprint 002
+  architecture-014.md   # Architecture at the end of sprint 014
+  architecture-015.md   # Architecture at the end of sprint 015
+  architecture-016.md   # Architecture at the end of sprint 016
   ...
 ```
+
+The architecture version number **is** the sprint number. Each document
+describes the architecture as it exists at the end of that sprint.
 
 The architecture document describes **what the system is** — its components,
 boundaries, interfaces, dependencies, data model, and design rationale. It
@@ -152,63 +155,41 @@ Every architecture version should contain these sections:
 9. **Open Questions** — Anything ambiguous, assumed, or requiring
    stakeholder input.
 
-## Dependency Mapping
+## Dependency Analysis
 
-Every architecture version must include an explicit dependency map. This is a
-directed graph where:
+Every architecture version must include an explicit dependency graph as a
+Mermaid diagram. This is a directed graph where:
 
-- **Nodes** are components (as defined in the component design section).
+- **Nodes** are modules or subsystems (as defined in the module design).
 - **Edges** are dependencies (A → B means A depends on B).
 - **Edge labels** describe the nature of the dependency (calls, imports,
   reads data from, publishes events to).
 
-### What to Check in a Dependency Map
+### What to Check in a Dependency Graph
 
-- **No cycles.** If the graph has cycles, the involved components cannot
+- **No cycles.** If the graph has cycles, the involved modules cannot
   be understood, tested, or deployed independently.
-- **Reasonable fan-out.** No component should depend on more than 4-5 others
+- **Reasonable fan-out.** No module should depend on more than 4–5 others
   without justification.
-- **Stable core.** The most-depended-upon components should be the most
-  stable (least likely to change). If a frequently-changing component is
+- **Stable core.** The most-depended-upon modules should be the most
+  stable (least likely to change). If a frequently-changing module is
   depended on by many others, the architecture is fragile.
 - **Clear layers.** Dependencies should generally flow in one direction. A
   lower layer depending on a higher layer is a red flag.
 
-Represent the dependency map as a simple text list:
+## Module Interfaces
 
-```
-Component A → Component B (calls API)
-Component A → Component C (reads from database via)
-Component B → Component D (imports shared types)
-```
+Interfaces are described at the **contract level**, not the implementation
+level:
 
-Or as a Mermaid diagram if the team prefers visual representations.
+- **What the module does** (its responsibility).
+- **What it depends on** (other modules, external systems).
+- **What it guarantees** (key invariants, error handling approach).
+- **What it does NOT do** (explicit boundary).
 
-## Interface Design
-
-Interfaces are the most important architectural artifact. A good interface:
-
-- **Defines a contract.** Inputs, outputs, preconditions, postconditions,
-  and error cases are specified.
-- **Hides decisions.** The interface does not reveal whether data comes from
-  a cache, a database, or a remote service.
-- **Is stable.** Interfaces change less frequently than implementations.
-  Design them around *what* consumers need, not *how* the component works
-  internally.
-- **Is minimal.** Expose the smallest surface area that satisfies the use
-  cases. Every additional method or field in an interface is a commitment.
-
-### Interface Specification Format
-
-When documenting interfaces in the architecture document, include:
-
-1. **Name and purpose** — one sentence.
-2. **Operations** — what you can do through this interface.
-3. **Data shapes** — what goes in and comes out (field names, types,
-   constraints).
-4. **Error cases** — what can go wrong and how it is signaled.
-5. **Invariants** — what is always true about this interface (e.g., "IDs are
-   unique and immutable once assigned").
+Do not list function signatures, method inventories, or parameter types in
+the architecture document. Those details change frequently and belong in
+code documentation or sprint-level technical plans.
 
 ## Design Rationale
 

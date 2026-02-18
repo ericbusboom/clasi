@@ -134,7 +134,7 @@ to-architecture-version: null
 
 ## Architecture Version
 
-- **From version**: (current architecture version, e.g., architecture-001)
+- **From version**: (current architecture version, e.g., architecture-014)
 - **To version**: (target architecture version, or "no change" for bug-fix sprints)
 
 ## Architecture Overview

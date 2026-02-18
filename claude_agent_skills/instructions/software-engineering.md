@@ -79,8 +79,8 @@ version represents the target state after a sprint completes:
 
 ```
 docs/plans/architecture/
-  architecture-001.md   # Initial architecture (baseline)
-  architecture-002.md   # Target state after a later sprint
+  architecture-014.md   # Architecture at end of sprint 014
+  architecture-015.md   # Architecture at end of sprint 015
   ...
 ```
 
@@ -422,8 +422,8 @@ docs/plans/
 ├── usecases.md                  # Top-level use cases (legacy)
 ├── technical-plan.md            # Top-level technical plan (legacy)
 ├── architecture/                # Versioned architecture documents
-│   ├── architecture-001.md      # Initial baseline
-│   ├── architecture-002.md      # After sprint N
+│   ├── architecture-014.md      # Architecture at end of sprint 014
+│   ├── architecture-015.md      # Architecture at end of sprint 015
 │   └── ...
 ├── todo/                        # Ideas and future work
 │   ├── some-idea.md             # One idea per file

@@ -19,11 +19,16 @@ You produce two kinds of artifacts:
 
 Location: `docs/plans/architecture/architecture-NNN.md`
 
-This describes the system's structure: components, boundaries, interfaces,
-dependencies, data model, and design rationale. Each version represents the
-target state of the system after a sprint completes. See
-`instructions/architectural-quality.md` for the required document structure
-and versioning rules.
+This describes the system’s structure at a high level: subsystems,
+modules, responsibilities, dependencies, entity relationships, and design
+rationale. Each version represents the target state of the system after a
+sprint completes. See `instructions/architectural-quality.md` for the
+required document structure and versioning rules.
+
+**Level of abstraction**: The architecture document operates at the module
+and subsystem level. It describes *what* components exist, *why* they exist,
+and *how they relate to each other* — not implementation details like
+function signatures, database column types, or internal algorithms.
 
 ### Sprint Technical Plan
 
@@ -38,9 +43,10 @@ which version it targets. Tickets are derived from the sprint technical plan.
 ### Mode 1: Initial Architecture (Stage 1b)
 
 Given `docs/plans/brief.md` and `docs/plans/usecases.md`, produce the first
-architecture document (`docs/plans/architecture/architecture-001.md`).
+architecture document (e.g., `docs/plans/architecture/architecture-NNN.md`
+where NNN matches the current sprint number).
 
-Follow steps 1-7 below.
+Follow steps 1–7 below.
 
 ### Mode 2: Sprint Architecture Update
 
@@ -49,13 +55,13 @@ Given a sprint plan and the current architecture version, produce:
 1. A new architecture version reflecting the target state after the sprint.
 2. A sprint technical plan describing the changes.
 
-Follow steps 1-7 below, but start from the current architecture version
+Follow steps 1–7 below, but start from the current architecture version
 rather than from scratch. The sprint technical plan should clearly state:
 
 - **From version**: The current architecture version number.
 - **To version**: The new architecture version number.
-- **Changes**: What components, interfaces, dependencies, or data model
-  elements are being added, modified, or removed.
+- **Changes**: What subsystems, modules, dependencies, or entities are
+  being added, modified, or removed.
 - **Rationale**: Why these changes are needed (referencing the sprint goals).
 - **Migration concerns**: Any data migration, backward compatibility, or
   deployment sequencing issues.
@@ -83,52 +89,65 @@ changes for the same reasons.
 When updating, evaluate whether new sprint goals introduce new
 responsibilities or shift existing ones.
 
-### Step 3: Define Components and Boundaries
+### Step 3: Define Subsystems and Modules
 
-Map responsibility groups to components. For each component:
+Map responsibility groups to subsystems or modules. For each:
 
 - **Purpose**: What responsibility it owns (one sentence, no "and").
-- **Boundary**: What is inside this component and what is explicitly outside.
-- **Interface**: The operations it exposes to other components. Define inputs,
-  outputs, error cases, and invariants. See the Interface Specification Format
-  in `instructions/architectural-quality.md`.
-- **Use cases served**: Which use case(s) this component addresses.
+- **Boundary**: What is inside this module and what is explicitly outside.
+- **Use cases served**: Which use case(s) this module addresses.
 
-Evaluate each component for cohesion: does everything in it change for the
+Evaluate each module for cohesion: does everything in it change for the
 same reasons? If not, split it. See the cohesion criteria in
 `instructions/architectural-quality.md`.
 
-### Step 4: Map Dependencies
+### Step 4: Produce Diagrams
 
-Produce an explicit dependency map showing which components depend on which
-others and why. Represent this as a directed list or Mermaid diagram.
+Architecture documents must include Mermaid diagrams. Diagrams are the
+primary communication tool — prose supports them, not the other way around.
 
-Evaluate the dependency map for:
+**Required diagrams:**
 
-- **No circular dependencies.**
-- **Reasonable fan-out** (no component depends on more than 4-5 others
-  without justification).
-- **Stable core** (the most-depended-upon components are the least likely
-  to change).
-- **Consistent dependency direction** (dependencies flow from presentation
-  toward domain toward infrastructure, not the reverse).
+1. **Component / Module Diagram** — Shows subsystems and modules as boxes,
+   with labeled edges showing dependencies and interactions. Use a Mermaid
+   `flowchart` or `graph`.
 
-See the Dependency Mapping section of `instructions/architectural-quality.md`.
+2. **Entity-Relationship Diagram** — Shows the data model at the entity
+   level: entities, their key attributes, and relationships between them.
+   Use a Mermaid `erDiagram`. Do NOT list every column — show the entities,
+   their identifying attributes, and cardinality.
+
+3. **Dependency Graph** — Shows which modules depend on which others and
+   why. Use a Mermaid `graph` with labeled edges. Evaluate for cycles,
+   fan-out, and stable-core properties.
+
+**Diagram guidelines:**
+- Keep diagrams small: 5–12 nodes maximum.
+- Label edges with the relationship (calls, depends-on, produces, owns).
+- One diagram per concern; do not overload a single diagram.
+- Diagrams should be readable without the surrounding prose.
+
+**Optional diagrams** (when they clarify structure):
+- State machine diagrams for lifecycle flows.
+- Sequence diagrams only for multi-system interactions.
 
 ### Step 5: Complete the Architecture Document
 
-With components and dependencies established, fill in the remaining sections
-of the architecture document as specified in
-`instructions/architectural-quality.md`:
+With modules, diagrams, and dependencies established, fill in the remaining
+sections as specified in `instructions/architectural-quality.md`:
 
-- Architecture overview (including dependency map from Step 4)
+- Architecture overview (with component diagram from Step 4)
 - Technology stack (justified against brief constraints)
-- Component design (from Step 3)
-- Data model (with entity ownership by component)
-- API design (reflecting component boundaries)
+- Module design (from Step 3, supported by diagrams)
+- Data model (ERD from Step 4, with brief entity descriptions)
 - Security considerations
 - Design rationale (Step 6)
 - Open questions (Step 7)
+
+**Level of detail**: Describe modules at the responsibility and boundary
+level. Do not include function signatures, parameter types, method lists,
+or database column schemas. If a reader needs those details, they should
+look at the code or sprint-level technical plans.
 
 ### Step 6: Document Design Rationale
 
@@ -166,17 +185,21 @@ you do not create tickets (that is the technical-lead's job).
 
 ## Quality Checks
 
-- Every component must address at least one use case.
-- Every use case must be addressed by at least one component.
-- Every component must pass the cohesion test: its purpose is describable
+- Every module must address at least one use case.
+- Every use case must be addressed by at least one module.
+- Every module must pass the cohesion test: its purpose is describable
   in one sentence without "and", and everything inside it changes for the
   same reasons.
-- The dependency map must have no cycles.
-- No component should have a fan-out greater than 4-5 without explicit
+- The dependency graph must have no cycles.
+- No module should have a fan-out greater than 4–5 without explicit
   justification.
 - Technology choices must be justified by constraints in the brief.
 - Significant design decisions must include rationale with alternatives.
 - Open questions must be explicitly listed, not silently assumed.
+- The architecture document must include Mermaid diagrams: component/module
+  diagram, entity-relationship diagram, and dependency graph.
+- The document must stay at the module/subsystem level — no function
+  signatures, column schemas, or method inventories.
 - Check for anti-patterns listed in `instructions/architectural-quality.md`.
 - When updating: the sprint technical plan must clearly describe all changes
   from the previous architecture version, and the new architecture version
