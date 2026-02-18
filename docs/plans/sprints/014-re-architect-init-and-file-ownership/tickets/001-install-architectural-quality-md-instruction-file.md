@@ -1,7 +1,7 @@
 ---
-id: "001"
+id: '001'
 title: Install architectural-quality.md instruction file
-status: todo
+status: in-progress
 use-cases: []
 depends-on: []
 ---
