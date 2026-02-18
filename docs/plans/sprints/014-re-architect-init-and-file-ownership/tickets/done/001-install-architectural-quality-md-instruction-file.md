@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Install architectural-quality.md instruction file
-status: in-progress
+status: done
 use-cases: []
 depends-on: []
 ---

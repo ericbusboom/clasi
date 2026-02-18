@@ -1,7 +1,7 @@
 ---
-id: "002"
+id: '002'
 title: Replace architect agent with versioned-aware definition
-status: todo
+status: in-progress
 use-cases: []
 depends-on: []
 ---
