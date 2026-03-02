@@ -243,10 +243,12 @@ class TestAgentsMd:
 
         assert content_after_first == content_after_second
 
-    def test_agents_section_has_process_stages(self):
+    def test_agents_section_has_process_structure(self):
         section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
-        assert "Requirements" in section
-        assert "Architecture" in section
+        assert "Project initiation" in section
+        assert "Sprint lifecycle" in section
+        assert "Sprint definition" in section
+        assert "Requirements & architecture" in section
         assert "Ticketing" in section
         assert "Implementation" in section
 

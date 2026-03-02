@@ -4,18 +4,53 @@
 This project uses the **CLASI** (Claude Agent Skills Instructions)
 software engineering process, managed via an MCP server.
 
-**The SE process is the default.** When asked to build a feature, fix a
-bug, or make any code change, follow this process unless the stakeholder
-explicitly says "out of process" or "direct change".
+**The SE process is the default.** Any activity that results in changes
+to the codebase — or plans to change the codebase — falls under this
+process. Follow it unless the stakeholder explicitly says "out of
+process" or "direct change".
+
+Activities that trigger the SE process include:
+
+- Building a new feature or adding functionality
+- Fixing a bug or resolving an issue
+- Refactoring, restructuring, or reorganizing code
+- Writing, updating, or removing tests
+- Updating documentation that describes code behavior
+- Planning, scoping, or designing an implementation
+- Reviewing code or architecture
+- Creating, modifying, or closing sprints and tickets
+- Merging, branching, or tagging releases
+
+**If it touches code, tests, docs about code, or plans for code — use
+the process.**
 
 ### Process
 
-Work flows through four stages organized into sprints:
+Work happens at two levels: **project initiation** and **sprints**.
 
-1. **Requirements** — Elicit requirements, produce overview and use cases
-2. **Architecture** — Produce technical plan
-3. **Ticketing** — Break plan into actionable tickets
-4. **Implementation** — Execute tickets
+**Project initiation** (once per project):
+
+1. Interview the stakeholder to understand the project goals and scope.
+   → `get_skill_definition("project-initiation")`
+2. Generate project initiation documents (overview, spec, use cases).
+   → `get_skill_definition("elicit-requirements")`
+3. Break the project into sprints — either all at once if the spec is
+   complete, or incrementally (one or two sprints at a time) so the
+   stakeholder can adjust later sprints as the project evolves.
+   → `get_skill_definition("plan-sprint")`
+
+**Sprint lifecycle** (repeated per sprint):
+
+1. **Sprint definition** — Write a sprint document describing what the
+   sprint will accomplish. Get stakeholder approval.
+   → `get_skill_definition("plan-sprint")`, `create_sprint(title)`
+2. **Requirements & architecture** — Identify the use cases and
+   architecture changes for this sprint. Get stakeholder approval.
+   → `get_skill_definition("create-technical-plan")`
+3. **Ticketing** — Break the approved plan into actionable tickets.
+   → `get_skill_definition("create-tickets")`, `create_ticket(sprint_id, title)`
+4. **Implementation** — Execute tickets one at a time.
+   → `get_skill_definition("execute-ticket")`
 
 Use `/se` or call `get_se_overview()` for full process details and MCP
 tool reference.
@@ -29,11 +64,12 @@ branches. This creates inconsistent state. These rules are non-negotiable.
 
 **After finishing a ticket's code changes, you MUST:**
 
-1. Set ticket `status` to `done` in YAML frontmatter.
-2. Check off all acceptance criteria (`- [x]`).
-3. Move the ticket file to `tickets/done/` — use `move_ticket_to_done`.
-4. Move the ticket plan file to `tickets/done/` if it exists.
-5. Commit the moves: `chore: move ticket #NNN to done`.
+1. Run the full test suite and confirm all tests pass.
+2. Set ticket `status` to `done` in YAML frontmatter.
+3. Check off all acceptance criteria (`- [x]`).
+4. Move the ticket file to `tickets/done/` — use `move_ticket_to_done`.
+5. Move the ticket plan file to `tickets/done/` if it exists.
+6. Commit the moves: `chore: move ticket #NNN to done`.
 
 **Finishing the code is NOT finishing the ticket.** The ticket is not done
 until the file is in `tickets/done/` and committed.
