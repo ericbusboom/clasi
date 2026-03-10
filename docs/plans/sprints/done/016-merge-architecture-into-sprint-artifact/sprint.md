@@ -1,12 +1,12 @@
 ---
-id: "016"
-title: "Merge Architecture into Sprint Artifact"
-status: active
+id: '016'
+title: Merge Architecture into Sprint Artifact
+status: done
 branch: sprint/016-merge-architecture-into-sprint-artifact
 use-cases:
-  - SUC-016-001
-  - SUC-016-002
-  - SUC-016-003
+- SUC-016-001
+- SUC-016-002
+- SUC-016-003
 ---
 
 # Sprint 016: Merge Architecture into Sprint Artifact
