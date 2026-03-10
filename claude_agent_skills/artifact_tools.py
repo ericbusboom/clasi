@@ -1368,7 +1368,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     planning_docs = {
         "sprint.md": SPRINT_TEMPLATE,
         "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "technical-plan.md": SPRINT_TECHNICAL_PLAN_TEMPLATE,
+        "architecture.md": SPRINT_ARCHITECTURE_TEMPLATE,
     }
 
     for filename, template in planning_docs.items():
@@ -1376,7 +1376,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
         if not filepath.exists():
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_exists",
+                "check": f"{filename.replace('.', '_')}_exists",
                 "message": f"{filename} does not exist",
                 "fix": f"Create {filename} in the sprint directory",
                 "path": str(filepath),
@@ -1389,7 +1389,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
         if status == "draft":
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_status",
+                "check": f"{filename.replace('.', '_')}_status",
                 "message": f"{filename} has status 'draft'",
                 "fix": f"Update {filename} frontmatter status from 'draft' to an appropriate value",
                 "path": str(filepath),
@@ -1399,7 +1399,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
         if _is_template_placeholder(filepath, template):
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_content",
+                "check": f"{filename.replace('.', '_')}_content",
                 "message": f"{filename} still contains template placeholder content",
                 "fix": f"Replace template placeholders in {filename} with real content",
                 "path": str(filepath),
@@ -1520,7 +1520,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
     planning_docs = {
         "sprint.md": SPRINT_TEMPLATE,
         "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "technical-plan.md": SPRINT_TECHNICAL_PLAN_TEMPLATE,
+        "architecture.md": SPRINT_ARCHITECTURE_TEMPLATE,
     }
 
     for filename, template in planning_docs.items():
@@ -1528,7 +1528,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
         if not filepath.exists():
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_exists",
+                "check": f"{filename.replace('.', '_')}_exists",
                 "message": f"{filename} does not exist",
                 "fix": f"Create {filename} — this should have been done"
                        " during planning",
@@ -1542,7 +1542,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
         if status == "draft":
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_status",
+                "check": f"{filename.replace('.', '_')}_status",
                 "message": f"{filename} still has status 'draft'",
                 "fix": f"Update {filename} frontmatter status from 'draft'",
                 "path": str(filepath),
@@ -1551,7 +1551,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
         if _is_template_placeholder(filepath, template):
             issues.append({
                 "severity": "error",
-                "check": f"{filename.replace('.', '_').replace('-', '_')}_content",
+                "check": f"{filename.replace('.', '_')}_content",
                 "message": f"{filename} still contains template placeholder"
                            " content",
                 "fix": f"Replace template placeholders in {filename}"
@@ -1659,7 +1659,7 @@ def review_sprint_post_close(sprint_id: str) -> str:
                 })
 
         # Check planning docs
-        for filename in ["sprint.md", "usecases.md", "technical-plan.md"]:
+        for filename in ["sprint.md", "usecases.md", "architecture.md"]:
             filepath = sprint_dir / filename
             if filepath.exists():
                 fm = read_frontmatter(filepath)
