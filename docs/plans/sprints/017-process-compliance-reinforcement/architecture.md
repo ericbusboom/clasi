@@ -1,11 +1,11 @@
 ---
-version: "014"
+version: "017"
 status: current
 sprint: "017"
 description: Architecture update for sprint 017 — inline CLASI into CLAUDE.md, add template reminders
 ---
 
-# Architecture 014: CLASI System Baseline
+# Architecture 017: Process Compliance Reinforcement
 
 This document describes the CLASI (Claude Agent Skills Instructions) system
 as it exists today, updated with sprint 017 changes.
@@ -295,8 +295,11 @@ replacement, so the same update mechanism works in either file.
 
 **Consequences**: CLAUDE.md becomes larger. Projects that have custom
 AGENTS.md content unrelated to CLASI are unaffected (init stops touching
-AGENTS.md). The agents-section.md template is repurposed as the content
-source for the CLAUDE.md section.
+AGENTS.md). The `agents-section.md` init template is kept as the single
+source of truth for the CLASI block content — it is used by
+`_update_claude_md` to write into CLAUDE.md, just as it was previously
+used by `_update_agents_md` to write into AGENTS.md. The `claude-md.md`
+template (which contained only `@AGENTS.md`) is deleted.
 
 ## Open Questions
 
@@ -321,5 +324,14 @@ single HTML comment line reminding agents to consult the SE process.
 
 ### Migration Concerns
 
-None — this is a non-breaking change. Existing projects with `@AGENTS.md`
-in CLAUDE.md will work fine; re-running `clasi init` will update them.
+Non-breaking. For existing projects that were initialized with the old
+version:
+
+- **CLAUDE.md has `@AGENTS.md` but no CLASI markers**: `_update_claude_md`
+  appends the CLASI block with markers. The `@AGENTS.md` line remains
+  (harmless — it still works). Users can manually remove it.
+- **CLAUDE.md has CLASI markers**: Section is replaced in place (same
+  behavior as AGENTS.md updates today).
+- **No CLAUDE.md**: Created fresh with the CLASI block.
+- **Existing AGENTS.md**: Not modified. The old CLASI section in AGENTS.md
+  remains but is redundant. No cleanup is performed by init.
