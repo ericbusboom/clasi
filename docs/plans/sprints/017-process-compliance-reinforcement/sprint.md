@@ -89,4 +89,5 @@ Before tickets can be created, all of the following must be true:
 
 ## Tickets
 
-(To be created after sprint approval.)
+- **#001**: Inline CLASI block into CLAUDE.md in init command
+- **#002**: Add process reminder to document templates
