@@ -27,7 +27,8 @@ overview from a stakeholder narrative.
    `create_overview` MCP tool. The overview is a single lightweight document
    covering project name, problem statement, target users, key constraints,
    high-level requirements, technology stack, sprint roadmap, and out of
-   scope.
+   scope. When illustrating system structure, data flow, or component
+   relationships, prefer Mermaid diagrams over ASCII art.
 4. **Verify completeness**: Every section of the overview should be filled
    in. High-level requirements should be testable. Sprint roadmap should
    sketch out the first few sprints.
