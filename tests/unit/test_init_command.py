@@ -247,10 +247,19 @@ class TestAgentsMd:
         section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
         assert "Project initiation" in section
         assert "Sprint lifecycle" in section
-        assert "Sprint definition" in section
-        assert "Requirements & architecture" in section
-        assert "Ticketing" in section
-        assert "Implementation" in section
+        assert "Create sprint" in section
+        assert "Architecture review" in section
+        assert "Create tickets" in section
+        assert "Execute tickets" in section
+        assert "Close sprint" in section
+
+    def test_agents_section_has_behavioral_rules(self):
+        section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
+        assert "Pre-Flight Check" in section
+        assert "CLASI Skills First" in section
+        assert "Stop and Report" in section
+        assert "list_skills()" in section
+        assert "list_sprints()" in section
 
     def test_agents_section_has_scold_detection(self):
         section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
