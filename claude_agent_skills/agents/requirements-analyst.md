@@ -19,7 +19,7 @@ instructions:
 1. **Brief** (`docs/plans/brief.md`)
 2. **Use Cases** (`docs/plans/usecases.md`)
 
-The architect agent handles the technical plan after you finish.
+The architect agent handles the architecture document after you finish.
 
 ## How You Work
 
@@ -53,7 +53,7 @@ You operate within the software engineering process defined in
 
 - `docs/plans/brief.md` — Project description (your output)
 - `docs/plans/usecases.md` — Use cases (your output)
-- `docs/plans/technical-plan.md` — Architecture (produced by architect after you)
+- `docs/plans/architecture/` — Architecture (produced by architect after you)
 - `docs/plans/sprints/<sprint>/tickets/` — Tickets (produced by technical-lead)
 
 ### Quality Checks

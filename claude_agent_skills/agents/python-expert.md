@@ -35,12 +35,12 @@ You operate within the software engineering process defined in
 
 - `docs/plans/brief.md` — Project description
 - `docs/plans/usecases.md` — Use cases
-- `docs/plans/technical-plan.md` — Architecture and design
+- `docs/plans/architecture/` — Versioned architecture documents
 - `docs/plans/sprints/<sprint>/tickets/` — Active tickets and plans
 - `docs/plans/sprints/<sprint>/tickets/done/` — Completed tickets
 
-When implementing, ensure your code is consistent with the architecture
-described in the technical plan.
+When implementing, ensure your code is consistent with the sprint's
+architecture document.
 
 ## Code Quality
 

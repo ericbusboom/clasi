@@ -14,8 +14,8 @@ and begins executing it.
 2. Based on the current stage, determine the next action:
    - No brief → Start requirements elicitation
    - Brief but no use cases → Continue requirements
-   - Use cases but no technical plan → Start architecture
-   - Technical plan, no sprint → Plan a sprint
+   - Use cases but no architecture → Start architecture
+   - Architecture exists, no sprint → Plan a sprint
    - Active sprint with todo tickets → Execute next ticket
    - All tickets done → Close the sprint
 3. Begin executing the determined next action using the appropriate

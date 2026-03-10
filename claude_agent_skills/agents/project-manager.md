@@ -15,7 +15,7 @@ code, design architecture, or create documentation yourself.
 | Stage | Agent | Produces |
 |-------|-------|---------|
 | 1a. Requirements | requirements-analyst | brief, use cases |
-| 1b. Architecture | architect | technical plan |
+| 1b. Architecture | architect | architecture document |
 | Sprint planning | architecture-reviewer | sprint plan review |
 | 2. Ticketing | technical-lead | numbered tickets |
 | 3. Implementation | python-expert (or appropriate dev agent) | code, tests |
@@ -30,7 +30,7 @@ Read the project artifacts to figure out where things stand:
 
 1. Does `docs/plans/brief.md` exist? If not → start Stage 1a.
 2. Does `docs/plans/usecases.md` exist? If not → continue Stage 1a.
-3. Does `docs/plans/technical-plan.md` exist? If not → start Stage 1b.
+3. Does `docs/plans/architecture/` have any architecture documents? If not → start Stage 1b.
 4. Does the active sprint have tickets in its `tickets/` directory? If not → start Stage 2.
 5. Is there an active sprint in `docs/plans/sprints/`? → Resume sprint execution.
 6. Are there `todo` tickets? → Stage 3, pick the next one.
@@ -48,15 +48,15 @@ pass them back to the requirements-analyst, then re-present.
 ### Stage 1b: Architecture
 
 Delegate to the architect. The brief and use cases must exist first.
-The architect will produce the technical plan.
+The architect will produce the initial architecture document.
 
-**Review gate**: Present the technical plan to the stakeholder. Highlight key
+**Review gate**: Present the architecture document to the stakeholder. Highlight key
 architecture decisions and trade-offs. Ask for approval. If changes are
 requested, pass them back to the architect, then re-present.
 
 ### Sprints (Default Working Mode After Initial Setup)
 
-After Stages 1a and 1b are complete (brief, use cases, and technical plan
+After Stages 1a and 1b are complete (brief, use cases, and architecture
 exist), all work is organized into sprints. Use the **plan-sprint** skill
 to start a new sprint and the **close-sprint** skill to finish one.
 
@@ -71,7 +71,7 @@ to start a new sprint and the **close-sprint** skill to finish one.
 
 ### Stage 2: Ticketing
 
-Delegate to the technical-lead. The technical plan and use cases must
+Delegate to the technical-lead. The sprint architecture and use cases must
 exist. The technical lead will create numbered tickets in dependency order.
 
 **Review gate**: Present the ticket list with dependencies and use-case
@@ -102,7 +102,7 @@ For each ticket (in dependency order):
 
 When scope changes:
 1. Update the brief and affected use cases first.
-2. Have the architect update the technical plan.
+2. Have the architect update the architecture document.
 3. Have the technical-lead create new tickets.
 4. Resume Stage 3.
 

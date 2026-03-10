@@ -8,8 +8,8 @@ engineering process, served via MCP tools.
 The SE process has four stages:
 
 1. **Stage 1a — Requirements**: Elicit requirements, produce brief and use cases
-2. **Stage 1b — Architecture**: Produce technical plan from brief and use cases
-3. **Stage 2 — Ticketing**: Break technical plan into actionable tickets
+2. **Stage 1b — Architecture**: Produce architecture document from brief and use cases
+3. **Stage 2 — Ticketing**: Break architecture into actionable tickets
 4. **Stage 3 — Implementation**: Execute tickets in sprints
 
 Work is organized into **sprints** — each sprint is a directory containing

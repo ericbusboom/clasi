@@ -1,6 +1,6 @@
 ---
 name: software-engineering
-description: Instructions for the software engineering process using brief, use cases, technical plan, tickets, and ticket plans
+description: Instructions for the software engineering process using brief, use cases, architecture, tickets, and ticket plans
 ---
 
 # Software Engineering Process
@@ -20,11 +20,10 @@ project-manager:
   stakeholder narration and produces the project overview document.
 - **requirements-analyst** — Elicits detailed requirements from stakeholder
   narratives. Produces the brief and use cases for complex projects.
-- **architect** — Maintains the versioned system architecture. Produces
-  `docs/plans/architecture/architecture-NNN.md` documents and sprint
-  technical plans. Two modes: initial architecture and sprint update.
-  See `instructions/architectural-quality.md` for quality criteria.
-- **technical-lead** — Breaks the technical plan into sequenced, numbered
+- **architect** — Maintains the versioned system architecture. Updates the
+  sprint's `architecture.md` each sprint. Two modes: initial architecture
+  and sprint update. See `instructions/architectural-quality.md` for quality criteria.
+- **technical-lead** — Breaks the sprint architecture into sequenced, numbered
   tickets. Creates ticket plans before implementation begins.
 - **architecture-reviewer** — Reviews sprint plans and architecture updates
   for consistency, quality, and risk. Evaluates against the architectural
@@ -42,8 +41,7 @@ Reusable workflows that correspond to each stage:
 
 - **project-initiation** — New project: narration → project overview
 - **elicit-requirements** — Stage 1a: narrative → brief → use cases (detailed)
-- **create-technical-plan** — Stage 1b: brief + use cases → technical plan
-- **create-tickets** — Stage 2: technical plan → numbered tickets
+- **create-tickets** — Stage 2: architecture → numbered tickets
 - **execute-ticket** — Stage 3: ticket → plan → implement → test → done
 - **project-status** — Anytime: scan artifacts and report progress
 - **plan-sprint** — Plan and set up a new sprint
@@ -89,8 +87,8 @@ them. See `instructions/architectural-quality.md` for versioning rules,
 document structure, and quality criteria.
 
 Not every sprint requires a new architecture version — pure bug fixes and
-refactors within existing boundaries skip it. The sprint technical plan
-references which architecture version it targets.
+refactors within existing boundaries skip it. The sprint's `architecture.md`
+includes a `## Sprint Changes` section describing the delta.
 
 ### Legacy: Brief, Use Cases, Technical Plan
 
@@ -105,11 +103,11 @@ top-level files remain valid:
 
 New projects should use `create_overview` instead of the three separate tools.
 
-### Diagrams in Technical Plans
+### Diagrams in Architecture Documents
 
-Use Mermaid diagrams in technical plans when they clarify structure that is
-hard to convey in text alone. Diagrams should show the target state at the
-end of the sprint.
+Use Mermaid diagrams in architecture documents when they clarify structure
+that is hard to convey in text alone. Diagrams should show the target state
+at the end of the sprint.
 
 **When to use diagrams:**
 - Subsystem/component interaction diagrams (flowchart or C4-style)
@@ -137,7 +135,7 @@ Directory structure:
 docs/plans/sprints/NNN-slug/
 ├── sprint.md              # Sprint goals, scope, problem, solution, test strategy
 ├── usecases.md            # Sprint-level use cases (SUC-NNN)
-├── technical-plan.md      # Sprint-level technical plan
+├── architecture.md        # Sprint architecture (copied from previous, updated)
 └── tickets/
     ├── 001-first-task.md  # Active ticket
     ├── 002-next-task.md   # Active ticket
@@ -161,7 +159,7 @@ Active sprints live in `docs/plans/sprints/`. Completed sprints live in
 
 ### 5. Tickets (within sprint: `tickets/NNN-slug.md`)
 
-Numbered implementation tickets broken out from the technical plan.
+Numbered implementation tickets broken out from the architecture document.
 Tickets are numbered per-sprint starting at 001.
 
 File naming: `001-setup-project-skeleton.md`, `002-add-auth-endpoints.md`, etc.
@@ -243,16 +241,16 @@ A sprint is a focused batch of work with its own lifecycle, branch, and
 ticket set.
 
 **Sprint directories** live in `docs/plans/sprints/NNN-slug/`. Each sprint
-directory contains `sprint.md`, `brief.md`, `usecases.md`,
-`technical-plan.md`, and a `tickets/` subdirectory (see Artifacts §4 above).
+directory contains `sprint.md`, `usecases.md`, `architecture.md`,
+and a `tickets/` subdirectory (see Artifacts §4 above).
 
 **Sprint lifecycle** (skills: **plan-sprint**, **close-sprint**):
 1. Stakeholder describes the next batch of work.
-2. Create sprint directory with planning documents (brief, use cases,
-   technical plan) and a `tickets/` subdirectory.
+2. Create sprint directory with planning documents (sprint.md, use cases,
+   architecture) and a `tickets/` subdirectory.
 3. Create sprint branch (`sprint/NNN-slug`).
 4. **Architecture review**: Delegate to the **architecture-reviewer** to
-   validate the plan against the existing codebase and technical plan.
+   validate the plan against the existing codebase and architecture.
 5. **Review gate**: Present the sprint plan and architecture review to the
    stakeholder. Wait for approval.
 6. Create tickets for the sprint in `tickets/` (Stage 2 below).
@@ -321,7 +319,7 @@ review, pass stakeholder review, then and only then create tickets.
 
 Skill: **create-tickets**
 
-1. Break the technical plan into numbered tickets in dependency order.
+1. Break the architecture's Sprint Changes into numbered tickets in dependency order.
 2. Ensure every use case is covered by at least one ticket.
 3. Ensure every ticket traces to at least one use case.
 4. **Review gate**: Present the ticket list to the stakeholder. Walk
@@ -390,8 +388,8 @@ Things go wrong during implementation. Here is what to do.
 1. If the gap is small and local (e.g., a missing helper function), update
    the ticket plan and continue.
 2. If the gap is architectural (e.g., a missing component, wrong API design),
-   stop implementation. Flag the gap to the architect. Update the technical
-   plan first, then update the ticket plan, then resume.
+   stop implementation. Flag the gap to the architect. Update the architecture
+   document first, then update the ticket plan, then resume.
 
 **Ticket too large** (the ticket is taking much longer than expected):
 1. Stop and assess what is done vs. what remains.
@@ -420,7 +418,7 @@ docs/plans/
 ├── overview.md                  # Project overview (recommended)
 ├── brief.md                     # Top-level brief (legacy)
 ├── usecases.md                  # Top-level use cases (legacy)
-├── technical-plan.md            # Top-level technical plan (legacy)
+├── technical-plan.md            # Top-level technical plan (legacy, pre-sprint 016)
 ├── architecture/                # Versioned architecture documents
 │   ├── architecture-014.md      # Architecture at end of sprint 014
 │   ├── architecture-015.md      # Architecture at end of sprint 015
@@ -432,9 +430,8 @@ docs/plans/
 └── sprints/
     ├── 001-mcp-server/          # Active sprint directory
     │   ├── sprint.md            # Sprint goals, scope, notes
-    │   ├── brief.md             # Sprint-level brief
     │   ├── usecases.md          # Sprint-level use cases
-    │   ├── technical-plan.md    # Sprint-level technical plan
+    │   ├── architecture.md      # Sprint architecture (copy + update)
     │   └── tickets/
     │       ├── 003-add-auth.md      # Active ticket
     │       ├── 003-add-auth-plan.md # Its plan
@@ -452,7 +449,7 @@ docs/plans/
 
 - The **project-manager** is the entry point for new projects. It determines
   current state and delegates to the right agent/skill.
-- After initial setup (brief, use cases, technical plan), always work within
+- After initial setup (brief, use cases, architecture), always work within
   a sprint. Use **plan-sprint** to start and **close-sprint** to finish.
 - When asked to plan work, produce or update these artifacts rather than
   jumping straight to code.

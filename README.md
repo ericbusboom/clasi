@@ -70,14 +70,14 @@ When the overview is ready, `/next` creates a sprint. Each sprint gets:
 
 - **Sprint document** — goals, scope, branch name
 - **Use cases** — detailed scenarios for this sprint
-- **Technical plan** — architecture, components, design decisions
+- **Architecture document** — components, design decisions, sprint changes
 
 The plan goes through an architecture review gate and a stakeholder
 approval gate before any code is written.
 
 ### 3. Ticket Execution
 
-After approval, the sprint's technical plan is broken into numbered
+After approval, the sprint's architecture document is broken into numbered
 tickets with dependency ordering. The agent executes them one by one:
 plan, implement, test, commit.
 

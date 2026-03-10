@@ -40,5 +40,5 @@ overview from a stakeholder narrative.
 ## Notes
 
 For existing projects that already have separate `brief.md`, `usecases.md`,
-and `technical-plan.md` files, those files remain valid. The overview
+and architecture files, those files remain valid. The overview
 document is the recommended approach for new projects.

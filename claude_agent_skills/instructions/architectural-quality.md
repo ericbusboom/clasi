@@ -170,7 +170,7 @@ Every architecture version should contain these sections:
    stakeholder input.
 9. **Sprint Changes** — Summary of changes planned or made in this sprint.
    Component-level detail for changed components. Migration concerns.
-   This section replaces the old separate technical plan document.
+   This section describes the delta from the previous architecture version.
 
 ### Level of Detail
 
@@ -182,7 +182,7 @@ relationships, dependency direction, design trade-offs.
 
 **Exclude**: Function signatures, method lists, parameter types, database
 column schemas, internal algorithms. These belong in code, docstrings, or
-sprint-level technical plans.
+the Sprint Changes section or ticket plans.
 
 ### Required Mermaid Diagrams
 
@@ -239,7 +239,7 @@ level:
 
 Do not list function signatures, method inventories, or parameter types in
 the architecture document. Those details change frequently and belong in
-code documentation or sprint-level technical plans.
+code documentation or the Sprint Changes section or ticket plans.
 
 ## Design Rationale
 

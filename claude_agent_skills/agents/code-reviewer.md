@@ -25,8 +25,8 @@ When delegated a code review during ticket execution:
      the acceptance criteria?
    - **Acceptance criteria**: Does the implementation satisfy every criterion
      in the ticket?
-   - **Consistency**: Is the code consistent with the technical plan and
-     existing codebase patterns?
+   - **Consistency**: Is the code consistent with the architecture document
+     and existing codebase patterns?
 5. **Produce a review** with your findings.
 
 ## Review Output Format
@@ -50,7 +50,7 @@ You operate within the software engineering process defined in
 
 - `docs/plans/brief.md` — Project description
 - `docs/plans/usecases.md` — Use cases
-- `docs/plans/technical-plan.md` — Architecture and design
+- `docs/plans/architecture/` — Versioned architecture documents
 - `docs/plans/sprints/<sprint>/tickets/` — Active tickets and plans
 - `docs/plans/sprints/<sprint>/tickets/done/` — Completed tickets
 - `instructions/coding-standards.md` — Coding conventions

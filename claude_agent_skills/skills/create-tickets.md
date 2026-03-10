@@ -1,12 +1,13 @@
 ---
 name: create-tickets
-description: Breaks a technical plan into sequenced, numbered implementation tickets with dependency ordering
+description: Breaks a sprint architecture into sequenced, numbered implementation tickets with dependency ordering
 ---
 
 # Create Tickets Skill
 
-This skill breaks a technical plan into actionable implementation tickets
-using the technical-lead agent.
+This skill breaks a sprint's architecture document (especially the Sprint
+Changes section) into actionable implementation tickets using the
+technical-lead agent.
 
 ## Agent Used
 
@@ -14,13 +15,13 @@ using the technical-lead agent.
 
 ## Inputs
 
-- `docs/plans/technical-plan.md` (must exist)
-- `docs/plans/usecases.md` (must exist)
+- Sprint's `architecture.md` (must exist in the sprint directory)
+- Sprint's `usecases.md` (must exist in the sprint directory)
 
 ## Process
 
-1. **Read artifacts**: Read the technical plan and use cases.
-2. **Identify work units**: Break the technical plan into coherent
+1. **Read artifacts**: Read the sprint's architecture document and use cases.
+2. **Identify work units**: Break the Sprint Changes into coherent
    implementation units. Each unit should be completable in one focused
    session.
 3. **Order by dependency**: Number tickets so that foundation work comes

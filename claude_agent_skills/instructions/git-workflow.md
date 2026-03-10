@@ -48,7 +48,7 @@ If not working within a sprint, omit the sprint reference:
 ```
 feat: add user authentication endpoint (#003, sprint 001)
 fix: handle empty input in parser (#007, sprint 002)
-docs: update technical plan for new scope (#010)
+docs: update architecture for new scope (#010)
 test: add golden file tests for report generator (#005, sprint 001)
 chore: update dependencies to latest versions (#012)
 ```

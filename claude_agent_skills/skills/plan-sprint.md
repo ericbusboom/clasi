@@ -57,8 +57,8 @@ before that phase. Follow the phases in order.
    from `planning-docs` to `architecture-review`.
 
 6. **Architecture review**: Delegate to the architecture-reviewer agent.
-   The reviewer reads the sprint plan, technical plan, and relevant existing
-   code, then produces a review (APPROVE / APPROVE WITH CHANGES / REVISE).
+   The reviewer reads the sprint plan, architecture document, and relevant
+   existing code, then produces a review (APPROVE / APPROVE WITH CHANGES / REVISE).
    - If REVISE: update the sprint document and re-review.
    - If APPROVE WITH CHANGES: note the changes for ticket creation.
    - Call `record_gate_result` with gate `architecture_review` and result
@@ -84,12 +84,12 @@ before that phase. Follow the phases in order.
    open questions exist:
    - Parse each numbered question into a separate `AskUserQuestion` call.
    - For each question, provide 2–4 concrete options where possible (infer
-     reasonable choices from the technical plan context). Include a brief
+     reasonable choices from the architecture context). Include a brief
      description for each option explaining its trade-offs.
    - After all questions are answered, replace the `## Open Questions`
-     section in the technical plan with a `## Decisions` section listing
-     each question and the stakeholder's chosen answer.
-   - Update any affected parts of the sprint plan or technical plan to
+     section in the architecture document with a `## Decisions` section
+     listing each question and the stakeholder's chosen answer.
+   - Update any affected parts of the sprint plan or architecture to
      reflect the decisions (e.g. adjust scope, add/remove components).
 
 10. **Stakeholder review gate**: Present the sprint plan and architecture

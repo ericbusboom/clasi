@@ -17,7 +17,7 @@ stands and what should happen next.
 1. **Check artifacts**: Verify which SE documents exist:
    - `docs/plans/brief.md`
    - `docs/plans/usecases.md`
-   - `docs/plans/technical-plan.md`
+   - `docs/plans/architecture/` (versioned architecture documents)
 2. **Check sprints**: Scan `docs/plans/sprints/` for active sprints and
    `docs/plans/sprints/done/` for completed sprints.
 3. **Scan tickets**: For each active sprint, read ticket files in the
@@ -26,8 +26,8 @@ stands and what should happen next.
 4. **Determine stage**:
    - No brief → Stage 1 (Requirements) not started
    - Brief but no use cases → Stage 1 in progress
-   - Use cases but no technical plan → Stage 1b (Architecture) needed
-   - Technical plan exists, no active sprint → Ready for sprint planning
+   - Use cases but no architecture → Stage 1b (Architecture) needed
+   - Architecture exists, no active sprint → Ready for sprint planning
    - Active sprint with `todo` tickets → Stage 3 (Implementation)
    - Active sprint, all tickets `done` → Sprint ready to close
    - No active sprint, all tickets `done` → Stage 4 (Maintenance)
