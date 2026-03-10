@@ -1,9 +1,11 @@
 ---
-id: "006"
-title: "Sync project AGENTS.md with updated agents-section.md"
-status: todo
-use-cases: [SUC-015-001]
-depends-on: ["001"]
+id: '006'
+title: Sync project AGENTS.md with updated agents-section.md
+status: done
+use-cases:
+- SUC-015-001
+depends-on:
+- '001'
 ---
 
 # Sync project AGENTS.md with updated agents-section.md
@@ -18,8 +20,8 @@ CLASI block into this project's own `AGENTS.md`. The content between
 
 ## Acceptance Criteria
 
-- [ ] AGENTS.md CLASI block matches agents-section.md template exactly
-- [ ] No content outside the CLASI block is modified
+- [x] AGENTS.md CLASI block matches agents-section.md template exactly
+- [x] No content outside the CLASI block is modified
 
 ## Testing
 
