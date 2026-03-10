@@ -5,6 +5,7 @@ status: todo
 use-cases: []
 depends-on: []
 ---
+<!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
 # {title}
 
