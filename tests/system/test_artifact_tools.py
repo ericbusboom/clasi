@@ -53,7 +53,7 @@ class TestCreateSprint:
         assert (sprint_dir / "sprint.md").exists()
         assert not (sprint_dir / "brief.md").exists()
         assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "technical-plan.md").exists()
+        assert (sprint_dir / "architecture.md").exists()
         assert (sprint_dir / "tickets").is_dir()
         assert (sprint_dir / "tickets" / "done").is_dir()
         assert result["id"] == "001"
@@ -78,6 +78,51 @@ class TestCreateSprint:
         assert "## Solution" in content
         assert "## Success Criteria" in content
         assert "## Test Strategy" in content
+
+
+class TestCreateSprintArchitectureCopy:
+    def test_copies_previous_architecture(self, work_dir):
+        """create_sprint copies architecture from docs/plans/architecture/."""
+        arch_dir = work_dir / "docs" / "plans" / "architecture"
+        arch_dir.mkdir(parents=True)
+        (arch_dir / "architecture-015.md").write_text(
+            "---\nstatus: approved\n---\n\n# Architecture\n\nExisting arch.\n",
+            encoding="utf-8",
+        )
+
+        create_sprint("Test Sprint")
+        sprint_dir = work_dir / "docs" / "plans" / "sprints" / "001-test-sprint"
+        arch = sprint_dir / "architecture.md"
+        assert arch.exists()
+        content = arch.read_text(encoding="utf-8")
+        assert "Existing arch." in content
+
+    def test_uses_template_when_no_previous(self, work_dir):
+        """create_sprint uses template when no architecture exists."""
+        create_sprint("Test Sprint")
+        sprint_dir = work_dir / "docs" / "plans" / "sprints" / "001-test-sprint"
+        arch = sprint_dir / "architecture.md"
+        assert arch.exists()
+        content = arch.read_text(encoding="utf-8")
+        assert "## Sprint Changes" in content
+        assert "## Architecture Overview" in content
+
+    def test_picks_highest_numbered_architecture(self, work_dir):
+        """create_sprint picks the highest-numbered architecture version."""
+        arch_dir = work_dir / "docs" / "plans" / "architecture"
+        arch_dir.mkdir(parents=True)
+        (arch_dir / "architecture-010.md").write_text(
+            "---\nstatus: approved\n---\n\n# Old\n", encoding="utf-8",
+        )
+        (arch_dir / "architecture-015.md").write_text(
+            "---\nstatus: approved\n---\n\n# Latest\n", encoding="utf-8",
+        )
+
+        create_sprint("Test Sprint")
+        sprint_dir = work_dir / "docs" / "plans" / "sprints" / "001-test-sprint"
+        content = (sprint_dir / "architecture.md").read_text(encoding="utf-8")
+        assert "# Latest" in content
+        assert "# Old" not in content
 
 
 class TestCreateTicket:
@@ -338,7 +383,7 @@ class TestInsertSprint:
         sprint_dir = Path(result["path"])
         assert (sprint_dir / "sprint.md").exists()
         assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "technical-plan.md").exists()
+        assert (sprint_dir / "architecture.md").exists()
         assert (sprint_dir / "tickets").is_dir()
         assert (sprint_dir / "tickets" / "done").is_dir()
 

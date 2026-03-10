@@ -81,17 +81,17 @@ def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
         "- **Main Flow**: Create a widget\n",
     )
 
-    # Fill in technical-plan.md with real content
-    fm_tp = read_frontmatter(sprint_dir / "technical-plan.md")
-    fm_tp["status"] = "approved"
-    write_frontmatter(sprint_dir / "technical-plan.md", fm_tp)
-    (sprint_dir / "technical-plan.md").write_text(
-        "---\nstatus: approved\nfrom-architecture-version: '001'\n"
-        "to-architecture-version: '002'\n---\n\n"
-        "# Sprint 001 Technical Plan\n\n"
+    # Fill in architecture.md with real content
+    fm_arch = read_frontmatter(sprint_dir / "architecture.md")
+    fm_arch["status"] = "approved"
+    write_frontmatter(sprint_dir / "architecture.md", fm_arch)
+    (sprint_dir / "architecture.md").write_text(
+        "---\nstatus: approved\n---\n\n"
+        "# Architecture\n\n"
         "## Architecture Overview\n\nThe widget module adds a new component.\n\n"
         "## Component Design\n\n### Component: Widget Engine\n\n"
-        "Handles widget lifecycle.\n",
+        "Handles widget lifecycle.\n\n"
+        "## Sprint Changes\n\nAdded widget engine component.\n",
     )
 
     # Create tickets
@@ -127,7 +127,7 @@ class TestReviewSprintPreExecution:
         result = json.loads(review_sprint_pre_execution("001"))
         assert result["passed"] is False
         # sprint.md has status "planning" (not draft), but usecases and
-        # technical-plan have status "draft"
+        # architecture have status "draft"
         status_issues = [i for i in result["issues"]
                          if i["check"].endswith("_status")]
         assert len(status_issues) >= 2
@@ -138,7 +138,7 @@ class TestReviewSprintPreExecution:
         sprint_dir = work_dir / "docs" / "plans" / "sprints" / "001-test-sprint"
 
         # Update statuses but leave content as template
-        for f in ["usecases.md", "technical-plan.md"]:
+        for f in ["usecases.md", "architecture.md"]:
             fm = read_frontmatter(sprint_dir / f)
             fm["status"] = "approved"
             write_frontmatter(sprint_dir / f, fm)

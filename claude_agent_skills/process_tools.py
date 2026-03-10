@@ -65,8 +65,8 @@ def get_se_overview() -> str:
 
 1. **Stage 1a — Requirements**: Elicit requirements, produce brief and use cases
    - Skill: `elicit-requirements` | Agent: `requirements-analyst`
-2. **Stage 1b — Architecture**: Design architecture, produce technical plan
-   - Skill: `create-technical-plan` | Agent: `architect`
+2. **Stage 1b — Architecture**: Design architecture, produce architecture document
+   - Skill: `plan-sprint` (architecture step) | Agent: `architect`
 3. **Sprints**: Organize work into sprint directories with planning docs and tickets
    - Skills: `plan-sprint`, `close-sprint` | Agent: `project-manager`
 4. **Stage 2 — Ticketing**: Break plan into numbered tickets
@@ -100,7 +100,7 @@ def get_se_overview() -> str:
 - `create_ticket(sprint_id, title)` / `list_tickets()` — Ticket management
 - `update_ticket_status(path, status)` / `move_ticket_to_done(path)` — Ticket lifecycle
 - `close_sprint(sprint_id)` — Sprint closure
-- `create_brief()` / `create_technical_plan()` / `create_use_cases()` — Top-level artifacts
+- `create_brief()` / `create_use_cases()` — Top-level artifacts
 """
 
 
@@ -190,7 +190,7 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
     },
     "architecture": {
         "agents": ["architect"],
-        "skills": ["create-technical-plan"],
+        "skills": ["plan-sprint"],
         "instructions": ["software-engineering"],
     },
     "ticketing": {
