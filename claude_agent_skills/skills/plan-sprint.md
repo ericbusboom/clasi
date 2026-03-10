@@ -1,6 +1,6 @@
 ---
 name: plan-sprint
-description: Creates a new sprint from a stakeholder conversation — sprint document, branch, architecture review, and ticket creation
+description: Creates a new sprint from a stakeholder conversation — sprint document, branch, architecture update, review, and ticket creation
 ---
 
 # Plan Sprint Skill
@@ -17,9 +17,8 @@ create tickets.
 ## Inputs
 
 - Stakeholder conversation describing the work to be done
-- `docs/plans/brief.md` (must exist)
-- `docs/plans/usecases.md` (must exist)
-- `docs/plans/technical-plan.md` (must exist)
+- `docs/plans/brief.md` or `docs/plans/overview.md` (must exist)
+- `docs/plans/usecases.md` (must exist, or overview covers use cases)
 
 ## Critical Rule
 
@@ -45,9 +44,11 @@ before that phase. Follow the phases in order.
    database at phase `planning-docs`:
    - `sprint.md` — Sprint goals, scope, architecture notes, ticket list.
      Frontmatter: id, title, status: planning, branch, use-cases.
-   - `brief.md` — Sprint-level brief (problem, solution, success criteria).
    - `usecases.md` — Sprint-level use cases (SUC-NNN).
-   - `technical-plan.md` — Sprint-level architecture and component design.
+   - `architecture.md` — Architecture document (copied from previous sprint's
+     version, or created from template if none exists). The architect updates
+     this to reflect the target end-of-sprint state and fills in the
+     `## Sprint Changes` section.
    - `tickets/` — Empty directory for tickets (with `done/` subdirectory).
 
 4. **Create sprint branch**: Run `git checkout -b sprint/NNN-slug` from main.
@@ -66,7 +67,7 @@ before that phase. Follow the phases in order.
 7. **Advance to stakeholder-review**: If architecture review passed, call
    `advance_sprint_phase` to move to `stakeholder-review`.
 
-8. **Breakpoint (conditional)**: Check the sprint's `technical-plan.md`
+8. **Breakpoint (conditional)**: Check the sprint's `architecture.md`
    for a `## Open Questions` section.
    - If open questions **exist**: skip this breakpoint and proceed directly
      to step 9 (which resolves them interactively via `AskUserQuestion`).
@@ -79,7 +80,7 @@ before that phase. Follow the phases in order.
      findings and stop. Otherwise proceed.
 
 9. **Resolve open questions**: Before presenting to the stakeholder, check
-   the sprint's `technical-plan.md` for a `## Open Questions` section. If
+   the sprint's `architecture.md` for a `## Open Questions` section. If
    open questions exist:
    - Parse each numbered question into a separate `AskUserQuestion` call.
    - For each question, provide 2–4 concrete options where possible (infer
@@ -129,7 +130,7 @@ before that phase. Follow the phases in order.
 
 ## Output
 
-- Sprint directory `docs/plans/sprints/NNN-slug/` with planning documents
+- Sprint directory `docs/plans/sprints/NNN-slug/` with planning documents (sprint.md, usecases.md, architecture.md)
 - Sprint `sprint.md` status set to `active`
 - Sprint branch `sprint/NNN-slug` created
 - Sprint phase advanced to `executing` in the state database

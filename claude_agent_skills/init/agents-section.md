@@ -88,7 +88,9 @@ Work happens at two levels: **project initiation** and **sprints**.
 2. **Create sprint** — `create_sprint(title)` sets up the directory and
    registers the sprint. Create the branch: `git checkout -b sprint/NNN-slug`.
 3. **Write planning docs** — Fill in `sprint.md`, `usecases.md`, and
-   `technical-plan.md` in the sprint directory with real content.
+   update `architecture.md` in the sprint directory with real content.
+   The architecture doc is copied from the previous sprint — update it
+   to reflect the target end-of-sprint state and fill in Sprint Changes.
 4. **Architecture review** — `advance_sprint_phase(sprint_id)` to move
    to architecture-review. Delegate to the architecture-reviewer agent.
    Record the result: `record_gate_result(sprint_id, "architecture_review", "passed")`.

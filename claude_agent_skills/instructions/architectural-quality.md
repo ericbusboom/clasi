@@ -11,43 +11,55 @@ the architecture) and the **architecture-reviewer** (when reviewing).
 
 ## Architecture as a Living Document
 
-The system architecture is maintained as a versioned document in
-`docs/plans/architecture/`. Each version represents the target state of the
-system after a given sprint completes:
+The architecture document is a **sprint-level artifact**. During each sprint,
+it lives inside the sprint directory as `architecture.md`. This ensures the
+architecture is visible to agents working on the sprint, not hidden in a
+project-level directory.
+
+### Lifecycle
+
+1. **On sprint creation** — `create_sprint` copies the latest architecture
+   version into the new sprint directory as `architecture.md`. If no previous
+   version exists, a template is used.
+
+2. **During sprint planning** — The architect updates the sprint's
+   `architecture.md` to reflect the target end-of-sprint state and fills in
+   the `## Sprint Changes` section describing what is being added, modified,
+   or removed. For sprints with no architectural changes, the Sprint Changes
+   section says "No architectural changes in this sprint."
+
+3. **On sprint close** — The sprint's `architecture.md` is copied to
+   `docs/plans/architecture/architecture-NNN.md` where NNN is the sprint
+   number. Previous versions are moved to `docs/plans/architecture/done/`.
+
+### Architecture Directory Layout
 
 ```
 docs/plans/architecture/
-  architecture-014.md   # Architecture at the end of sprint 014
-  architecture-015.md   # Architecture at the end of sprint 015
-  architecture-016.md   # Architecture at the end of sprint 016
-  ...
+  architecture-027.md          # Most recent (from sprint 027)
+  done/
+    architecture-001.md        # Historical versions
+    architecture-015.md
+    architecture-026.md
 ```
 
-The architecture version number **is** the sprint number. Each document
-describes the architecture as it exists at the end of that sprint.
+Only the most recent version lives at the top level. The architecture version
+number **is** the sprint number.
+
+### What the Document Describes
 
 The architecture document describes **what the system is** — its components,
 boundaries, interfaces, dependencies, data model, and design rationale. It
-is not a plan of work; it is a specification of the system's structure.
+is a specification of the system's structure, not a plan of work.
 
-The sprint's technical plan (`docs/plans/sprints/<sprint>/technical-plan.md`)
-describes **what changes are being made** to move from the current
-architecture version to the next one. Tickets are derived from the sprint
-technical plan, not from the architecture document directly.
+The `## Sprint Changes` section at the bottom describes **what changes are
+being made** in the current sprint. Tickets are derived from this section.
 
-### Versioning Rules
+### Source of Truth
 
-- The initial architecture (produced during Stage 1b) is numbered `001`.
-- Each sprint that changes the architecture produces a new version,
-  numbered sequentially.
-- Sprints that do not change the architecture (pure bug fixes, refactors
-  within existing boundaries) do not produce a new version.
-- The latest version is always the current target. Previous versions are
-  retained as history.
-- The architecture version number is independent of the sprint number.
-  A sprint's technical plan references which architecture version it
-  targets (e.g., "This sprint moves the system from architecture-002 to
-  architecture-003").
+- **During a sprint**: The sprint-local `architecture.md` is authoritative.
+- **Between sprints**: The top-level file in `docs/plans/architecture/` is
+  authoritative (always the most recent version).
 
 ## Core Principles
 
@@ -156,6 +168,9 @@ Every architecture version should contain these sections:
    reasoning (see below).
 8. **Open Questions** — Anything ambiguous, assumed, or requiring
    stakeholder input.
+9. **Sprint Changes** — Summary of changes planned or made in this sprint.
+   Component-level detail for changed components. Migration concerns.
+   This section replaces the old separate technical plan document.
 
 ### Level of Detail
 

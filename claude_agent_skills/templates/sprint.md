@@ -47,7 +47,7 @@ what areas need coverage, any integration or system-level testing needed.)
 
 Before tickets can be created, all of the following must be true:
 
-- [ ] Sprint planning documents are complete (sprint.md, use cases, technical plan)
+- [ ] Sprint planning documents are complete (sprint.md, use cases, architecture)
 - [ ] Architecture review passed
 - [ ] Stakeholder has approved the sprint plan
 
