@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Inline CLASI block into CLAUDE.md in init command"
-status: todo
+status: done
 use-cases:
   - SUC-017-001
 depends-on: []
@@ -28,12 +28,12 @@ Changes:
 
 ## Acceptance Criteria
 
-- [ ] Fresh `clasi init` creates CLAUDE.md with full CLASI block inline
-- [ ] Re-init on CLAUDE.md with existing CLASI markers replaces section
-- [ ] Re-init on CLAUDE.md without markers appends CLASI block
-- [ ] AGENTS.md is not created or modified
-- [ ] `claude-md.md` template file is deleted
-- [ ] All existing init tests pass (updated as needed)
+- [x] Fresh `clasi init` creates CLAUDE.md with full CLASI block inline
+- [x] Re-init on CLAUDE.md with existing CLASI markers replaces section
+- [x] Re-init on CLAUDE.md without markers appends CLASI block
+- [x] AGENTS.md is not created or modified
+- [x] `claude-md.md` template file is deleted
+- [x] All existing init tests pass (updated as needed)
 
 ## Testing
 
