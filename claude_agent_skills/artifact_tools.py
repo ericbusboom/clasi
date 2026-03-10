@@ -135,7 +135,6 @@ def _next_ticket_id(sprint_dir: Path) -> str:
 # --- Create tools (ticket 008) ---
 
 
-@server.tool()
 def _find_latest_architecture() -> Path | None:
     """Find the most recent architecture document.
 
@@ -151,6 +150,7 @@ def _find_latest_architecture() -> Path | None:
     return candidates[0] if candidates else None
 
 
+@server.tool()
 def create_sprint(title: str) -> str:
     """Create a new sprint directory with template planning documents.
 
