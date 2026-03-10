@@ -1,9 +1,9 @@
 ---
-id: "001"
-title: "Replace technical-plan template with architecture template"
-status: todo
+id: '001'
+title: Replace technical-plan template with architecture template
+status: done
 use-cases:
-  - SUC-016-001
+- SUC-016-001
 depends-on: []
 ---
 
