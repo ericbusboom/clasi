@@ -1,8 +1,11 @@
 ---
-id: "001"
-title: "Rewrite agents-section.md with behavioral rules and sprint overview"
-status: todo
-use-cases: [SUC-015-001, SUC-015-002, SUC-015-003]
+id: '001'
+title: Rewrite agents-section.md with behavioral rules and sprint overview
+status: done
+use-cases:
+- SUC-015-001
+- SUC-015-002
+- SUC-015-003
 depends-on: []
 ---
 
@@ -38,12 +41,12 @@ adds the remaining sections.
 
 ## Acceptance Criteria
 
-- [ ] Pre-flight check rule present in agents-section.md
-- [ ] CLASI-first routing rule present in agents-section.md
-- [ ] Stop-and-report rule present in agents-section.md
-- [ ] Sprint process overview with MCP tool references present
-- [ ] All rules are phrased as hard gates, not suggestions
-- [ ] OOP escape hatch is referenced where appropriate
+- [x] Pre-flight check rule present in agents-section.md
+- [x] CLASI-first routing rule present in agents-section.md
+- [x] Stop-and-report rule present in agents-section.md
+- [x] Sprint process overview with MCP tool references present
+- [x] All rules are phrased as hard gates, not suggestions
+- [x] OOP escape hatch is referenced where appropriate
 
 ## Testing
 
