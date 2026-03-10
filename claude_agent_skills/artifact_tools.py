@@ -1,7 +1,7 @@
 """Artifact Management tools for the CLASI MCP server.
 
 Read-write tools for creating, querying, and updating SE artifacts
-(sprints, tickets, briefs, technical plans, use cases).
+(sprints, tickets, briefs, architecture, use cases).
 """
 
 import json
@@ -30,7 +30,7 @@ from claude_agent_skills.templates import (
     slugify,
     SPRINT_TEMPLATE,
     SPRINT_USECASES_TEMPLATE,
-    SPRINT_TECHNICAL_PLAN_TEMPLATE,
+    SPRINT_ARCHITECTURE_TEMPLATE,
     TICKET_TEMPLATE,
     OVERVIEW_TEMPLATE,
 )
@@ -136,12 +136,30 @@ def _next_ticket_id(sprint_dir: Path) -> str:
 
 
 @server.tool()
+def _find_latest_architecture() -> Path | None:
+    """Find the most recent architecture document.
+
+    Looks for the top-level file in docs/plans/architecture/ (most recent
+    version). Returns None if no architecture documents exist.
+    """
+    arch_dir = _plans_dir() / "architecture"
+    if not arch_dir.exists():
+        return None
+
+    # Find architecture-NNN.md files at the top level (not in done/)
+    candidates = sorted(arch_dir.glob("architecture-*.md"), reverse=True)
+    return candidates[0] if candidates else None
+
+
 def create_sprint(title: str) -> str:
     """Create a new sprint directory with template planning documents.
 
     Auto-assigns the next sprint number and creates the full directory
-    structure: sprint.md, usecases.md, technical-plan.md,
+    structure: sprint.md, usecases.md, architecture.md,
     and tickets/ + tickets/done/ directories.
+
+    The architecture document is copied from the most recent version in
+    docs/plans/architecture/. If none exists, a template is used.
 
     Args:
         title: The sprint title (e.g., 'MCP Server Implementation')
@@ -163,11 +181,21 @@ def create_sprint(title: str) -> str:
     for name, template in [
         ("sprint.md", SPRINT_TEMPLATE),
         ("usecases.md", SPRINT_USECASES_TEMPLATE),
-        ("technical-plan.md", SPRINT_TECHNICAL_PLAN_TEMPLATE),
     ]:
         path = sprint_dir / name
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
+
+    # Architecture: copy from previous version or use template
+    arch_path = sprint_dir / "architecture.md"
+    prev_arch = _find_latest_architecture()
+    if prev_arch:
+        shutil.copy2(str(prev_arch), str(arch_path))
+    else:
+        arch_path.write_text(
+            SPRINT_ARCHITECTURE_TEMPLATE.format(**fmt), encoding="utf-8"
+        )
+    files["architecture.md"] = str(arch_path)
 
     # Register sprint in state database (lazy init)
     try:
@@ -241,7 +269,7 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
     - sprint.md body references to "Sprint NNN"
     - Ticket frontmatter (no sprint_id field, but just in case)
     - usecases.md body references to "Sprint NNN"
-    - technical-plan.md body references to "Sprint NNN"
+    - architecture.md body references to "Sprint NNN"
 
     Returns the new directory path.
     """
@@ -265,8 +293,8 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
         content = content.replace(f"Sprint {old_id}", f"Sprint {new_id}")
         sprint_file.write_text(content, encoding="utf-8")
 
-    # Update body references in usecases.md and technical-plan.md
-    for doc_name in ("usecases.md", "technical-plan.md"):
+    # Update body references in usecases.md and architecture.md
+    for doc_name in ("usecases.md", "architecture.md"):
         doc = new_dir / doc_name
         if doc.exists():
             content = doc.read_text(encoding="utf-8")
@@ -367,11 +395,21 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     for name, template in [
         ("sprint.md", SPRINT_TEMPLATE),
         ("usecases.md", SPRINT_USECASES_TEMPLATE),
-        ("technical-plan.md", SPRINT_TECHNICAL_PLAN_TEMPLATE),
     ]:
         path = sprint_dir / name
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
+
+    # Architecture: copy from previous version or use template
+    arch_path = sprint_dir / "architecture.md"
+    prev_arch = _find_latest_architecture()
+    if prev_arch:
+        shutil.copy2(str(prev_arch), str(arch_path))
+    else:
+        arch_path.write_text(
+            SPRINT_ARCHITECTURE_TEMPLATE.format(**fmt), encoding="utf-8"
+        )
+    files["architecture.md"] = str(arch_path)
 
     # Register in state database
     try:
@@ -453,7 +491,7 @@ def create_overview() -> str:
     """Create the top-level project overview (docs/plans/overview.md).
 
     This is the recommended way to start a new project. The overview
-    replaces the separate brief, use cases, and technical plan files
+    replaces the separate brief, use cases, and architecture files
     with a single lightweight document. Detailed planning lives in sprints.
 
     Returns an error if the file already exists.
