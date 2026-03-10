@@ -12,7 +12,6 @@ from claude_agent_skills.init_command import (
     _AGENTS_SECTION_PATH,
     _AGENTS_SECTION_START,
     _AGENTS_SECTION_END,
-    _CLAUDE_MD_PATH,
 )
 
 
@@ -187,27 +186,45 @@ class TestRunInit:
         assert data["servers"]["other"] == {"type": "stdio", "command": "other"}
         assert data["servers"]["clasi"] == VSCODE_MCP_CONFIG["clasi"]
 
-
-class TestAgentsMd:
-    def test_creates_agents_md_when_missing(self, target_dir):
+    def test_does_not_create_agents_md(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
 
         agents_md = target_dir / "AGENTS.md"
-        assert agents_md.exists()
-        content = agents_md.read_text(encoding="utf-8")
-        assert _AGENTS_SECTION_START in content
-        assert _AGENTS_SECTION_END in content
-        assert "CLASI Software Engineering Process" in content
+        assert not agents_md.exists()
 
-    def test_appends_to_existing_agents_md(self, target_dir):
+    def test_does_not_modify_existing_agents_md(self, target_dir):
         target_dir.mkdir()
-        existing = "# My Project\n\nThis is my project.\n"
+        existing = "# My Agents\n\nCustom content.\n"
         (target_dir / "AGENTS.md").write_text(existing, encoding="utf-8")
 
         run_init(str(target_dir))
 
         content = (target_dir / "AGENTS.md").read_text(encoding="utf-8")
+        assert content == existing
+
+
+class TestClaudeMd:
+    def test_creates_claude_md_with_clasi_block(self, target_dir):
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        claude_md = target_dir / "CLAUDE.md"
+        assert claude_md.exists()
+        content = claude_md.read_text(encoding="utf-8")
+        assert _AGENTS_SECTION_START in content
+        assert _AGENTS_SECTION_END in content
+        assert "CLASI Software Engineering Process" in content
+        assert "@AGENTS.md" not in content
+
+    def test_appends_to_existing_claude_md(self, target_dir):
+        target_dir.mkdir()
+        existing = "# My Project\n\nThis is my project.\n"
+        (target_dir / "CLAUDE.md").write_text(existing, encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        content = (target_dir / "CLAUDE.md").read_text(encoding="utf-8")
         assert content.startswith("# My Project")
         assert "This is my project." in content
         assert _AGENTS_SECTION_START in content
@@ -221,24 +238,24 @@ class TestAgentsMd:
             f"{_AGENTS_SECTION_END}"
         )
         existing = f"# My Project\n\n{old_section}\n\n## Other Section\n"
-        (target_dir / "AGENTS.md").write_text(existing, encoding="utf-8")
+        (target_dir / "CLAUDE.md").write_text(existing, encoding="utf-8")
 
         run_init(str(target_dir))
 
-        content = (target_dir / "AGENTS.md").read_text(encoding="utf-8")
+        content = (target_dir / "CLAUDE.md").read_text(encoding="utf-8")
         assert "Old content." not in content
         assert "CLASI Software Engineering Process" in content
         assert "## Other Section" in content
         assert content.count(_AGENTS_SECTION_START) == 1
 
-    def test_agents_md_idempotent(self, target_dir):
+    def test_claude_md_idempotent(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
-        content_after_first = (target_dir / "AGENTS.md").read_text(
+        content_after_first = (target_dir / "CLAUDE.md").read_text(
             encoding="utf-8")
 
         run_init(str(target_dir))
-        content_after_second = (target_dir / "AGENTS.md").read_text(
+        content_after_second = (target_dir / "CLAUDE.md").read_text(
             encoding="utf-8")
 
         assert content_after_first == content_after_second
@@ -276,40 +293,3 @@ class TestAgentsMd:
         section = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
         assert "Never merge a sprint branch without archiving" in section
         assert "Never leave a sprint branch dangling" in section
-
-
-class TestClaudeMd:
-    def test_creates_claude_md_when_missing(self, target_dir):
-        target_dir.mkdir()
-        run_init(str(target_dir))
-
-        claude_md = target_dir / "CLAUDE.md"
-        assert claude_md.exists()
-        content = claude_md.read_text(encoding="utf-8")
-        assert "@AGENTS.md" in content
-
-    def test_does_not_overwrite_existing_claude_md(self, target_dir):
-        target_dir.mkdir()
-        existing = "# My Project\n\nCustom CLAUDE.md content.\n"
-        (target_dir / "CLAUDE.md").write_text(existing, encoding="utf-8")
-
-        run_init(str(target_dir))
-
-        content = (target_dir / "CLAUDE.md").read_text(encoding="utf-8")
-        assert content == existing
-
-    def test_claude_md_idempotent(self, target_dir):
-        target_dir.mkdir()
-        run_init(str(target_dir))
-        content_after_first = (target_dir / "CLAUDE.md").read_text(
-            encoding="utf-8")
-
-        run_init(str(target_dir))
-        content_after_second = (target_dir / "CLAUDE.md").read_text(
-            encoding="utf-8")
-
-        assert content_after_first == content_after_second
-
-    def test_claude_md_template_references_agents(self):
-        source = _CLAUDE_MD_PATH.read_text(encoding="utf-8")
-        assert "@AGENTS.md" in source

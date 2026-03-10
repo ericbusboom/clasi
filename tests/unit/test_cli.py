@@ -29,15 +29,15 @@ class TestInitCommand:
         assert result.exit_code == 0
         # Should create /se skill stub
         assert (tmp_path / ".claude" / "skills" / "se" / "SKILL.md").is_file()
-        # Should create AGENTS.md
-        assert (tmp_path / "AGENTS.md").is_file()
+        # Should create CLAUDE.md with inline CLASI block
+        assert (tmp_path / "CLAUDE.md").is_file()
 
     def test_init_default_target_uses_cwd(self, tmp_path):
         runner = CliRunner()
         with runner.isolated_filesystem(temp_dir=tmp_path):
             result = runner.invoke(cli, ["init"])
             assert result.exit_code == 0
-            assert Path("AGENTS.md").is_file()
+            assert Path("CLAUDE.md").is_file()
 
     def test_init_nonexistent_target_fails(self):
         runner = CliRunner()

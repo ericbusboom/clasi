@@ -1,9 +1,8 @@
 """Implementation of the `clasi init` command.
 
 Installs the CLASI SE process into a target repository with minimal
-footprint: CLAUDE.md (with @AGENTS.md reference), one skill stub, one
-AGENTS.md section, MCP config, and permissions. Does not take over
-existing files.
+footprint: CLAUDE.md (with inline CLASI section), one skill stub,
+MCP config, and permissions. Does not take over existing files.
 """
 
 import json
@@ -21,9 +20,8 @@ MCP_CONFIG = {
 _PACKAGE_DIR = Path(__file__).parent
 _SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
 _AGENTS_SECTION_PATH = _PACKAGE_DIR / "init" / "agents-section.md"
-_CLAUDE_MD_PATH = _PACKAGE_DIR / "init" / "claude-md.md"
 
-# Marker used to find/replace the CLASI section in AGENTS.md.
+# Marker used to find/replace the CLASI section in CLAUDE.md.
 _AGENTS_SECTION_START = "<!-- CLASI:START -->"
 _AGENTS_SECTION_END = "<!-- CLASI:END -->"
 
@@ -56,20 +54,20 @@ def _read_agents_section() -> str:
     return _AGENTS_SECTION_PATH.read_text(encoding="utf-8").rstrip()
 
 
-def _update_agents_md(target: Path) -> bool:
-    """Append or update the CLASI section in AGENTS.md.
+def _update_claude_md(target: Path) -> bool:
+    """Append or update the CLASI section in CLAUDE.md.
 
-    If AGENTS.md doesn't exist, creates it with just the CLASI section.
+    If CLAUDE.md doesn't exist, creates it with just the CLASI section.
     If it exists but has no CLASI section, appends the section.
     If it exists with a CLASI section, replaces it in place.
 
     Returns True if the file was written/updated, False if unchanged.
     """
-    agents_md = target / "AGENTS.md"
+    claude_md = target / "CLAUDE.md"
     section = _read_agents_section()
 
-    if agents_md.exists():
-        content = agents_md.read_text(encoding="utf-8")
+    if claude_md.exists():
+        content = claude_md.read_text(encoding="utf-8")
 
         if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
             # Replace existing CLASI section in place
@@ -83,34 +81,16 @@ def _update_agents_md(target: Path) -> bool:
             new_content = content + "\n" + section + "\n"
 
         if new_content == content:
-            click.echo("  Unchanged: AGENTS.md")
+            click.echo("  Unchanged: CLAUDE.md")
             return False
 
-        agents_md.write_text(new_content, encoding="utf-8")
-        click.echo("  Updated: AGENTS.md")
+        claude_md.write_text(new_content, encoding="utf-8")
+        click.echo("  Updated: CLAUDE.md")
         return True
     else:
-        agents_md.write_text(section + "\n", encoding="utf-8")
-        click.echo("  Created: AGENTS.md")
+        claude_md.write_text(section + "\n", encoding="utf-8")
+        click.echo("  Created: CLAUDE.md")
         return True
-
-
-def _create_claude_md(target: Path) -> bool:
-    """Create CLAUDE.md with an @AGENTS.md reference if it doesn't exist.
-
-    Only creates the file — never overwrites an existing CLAUDE.md.
-    Returns True if the file was created, False if it already exists.
-    """
-    claude_md = target / "CLAUDE.md"
-
-    if claude_md.exists():
-        click.echo("  Unchanged: CLAUDE.md (already exists)")
-        return False
-
-    source = _CLAUDE_MD_PATH.read_text(encoding="utf-8")
-    claude_md.write_text(source, encoding="utf-8")
-    click.echo("  Created: CLAUDE.md")
-    return True
 
 
 VSCODE_MCP_CONFIG = {
@@ -220,9 +200,8 @@ def _update_settings_json(settings_path: Path) -> bool:
 def run_init(target: str) -> None:
     """Initialize a repository for the CLASI SE process.
 
-    Creates CLAUDE.md (with @AGENTS.md reference), writes the /se skill
-    stub, appends CLASI section to AGENTS.md, and configures the MCP
-    server.
+    Creates CLAUDE.md (with inline CLASI section), writes the /se skill
+    stub, and configures the MCP server.
     """
     target_path = Path(target).resolve()
     click.echo(f"Initializing CLASI in {target_path}")
@@ -233,14 +212,9 @@ def run_init(target: str) -> None:
     _write_se_skill(target_path)
     click.echo()
 
-    # Create CLAUDE.md with @AGENTS.md reference (if missing)
+    # Create or update CLAUDE.md with inline CLASI section
     click.echo("CLAUDE.md:")
-    _create_claude_md(target_path)
-    click.echo()
-
-    # Append CLASI section to AGENTS.md
-    click.echo("AGENTS.md:")
-    _update_agents_md(target_path)
+    _update_claude_md(target_path)
     click.echo()
 
     # Configure MCP server in .mcp.json at project root
