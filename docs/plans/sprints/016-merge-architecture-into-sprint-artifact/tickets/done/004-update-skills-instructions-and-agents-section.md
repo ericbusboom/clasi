@@ -1,11 +1,11 @@
 ---
-id: "004"
-title: "Update skills, instructions, and agents-section"
-status: todo
+id: '004'
+title: Update skills, instructions, and agents-section
+status: done
 use-cases:
-  - SUC-016-001
-  - SUC-016-002
-  - SUC-016-003
+- SUC-016-001
+- SUC-016-002
+- SUC-016-003
 depends-on: []
 ---
 
