@@ -16,6 +16,7 @@ from claude_agent_skills.artifact_tools import (
     list_sprints,
     list_tickets,
     move_ticket_to_done,
+    reopen_ticket,
     update_ticket_status,
 )
 from claude_agent_skills.frontmatter import read_frontmatter
@@ -488,3 +489,69 @@ class TestMoveTicketToDoneEdgeCases:
         # in its new done/ location and attempt to move it
         result2 = json.loads(move_ticket_to_done(ticket["path"]))
         assert Path(result2["new_path"]).exists()
+
+
+class TestReopenTicket:
+    def test_reopens_from_done(self, work_dir):
+        """Ticket in done/ is moved back to tickets/ with status reset."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        result = json.loads(reopen_ticket(ticket["path"]))
+        assert result["old_status"] == "done"
+        assert result["new_status"] == "todo"
+        assert Path(result["old_path"]).parent.name == "done"
+        assert Path(result["new_path"]).parent.name == "tickets"
+        assert Path(result["new_path"]).exists()
+        fm = read_frontmatter(result["new_path"])
+        assert fm["status"] == "todo"
+
+    def test_reopens_with_plan_file(self, work_dir):
+        """Plan file in done/ is moved back alongside the ticket."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        plan_path = Path(ticket["path"]).parent / "001-task-plan.md"
+        plan_path.write_text("---\ntitle: Plan\n---\n\n# Plan\n", encoding="utf-8")
+        move_ticket_to_done(ticket["path"])
+
+        result = json.loads(reopen_ticket(ticket["path"]))
+        assert "plan_new_path" in result
+        assert Path(result["plan_new_path"]).exists()
+        assert "done" not in result["plan_new_path"]
+
+    def test_reopens_already_active_ticket(self, work_dir):
+        """Ticket not in done/ just gets status reset to todo."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "in-progress")
+
+        result = json.loads(reopen_ticket(ticket["path"]))
+        assert result["old_status"] == "in-progress"
+        assert result["new_status"] == "todo"
+        assert result["old_path"] == result["new_path"]
+        fm = read_frontmatter(result["new_path"])
+        assert fm["status"] == "todo"
+
+    def test_ticket_not_found_raises_error(self, work_dir):
+        """Nonexistent ticket raises ValueError."""
+        with pytest.raises(ValueError, match="Ticket not found"):
+            reopen_ticket("/nonexistent/ticket.md")
+
+    def test_reopen_preserves_other_frontmatter(self, work_dir):
+        """Reopening preserves fields like title, id, use-cases."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Important Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        result = json.loads(reopen_ticket(ticket["path"]))
+        fm = read_frontmatter(result["new_path"])
+        assert fm["status"] == "todo"
+        assert fm["title"] == "Important Task"
+        assert fm["id"] == "001"

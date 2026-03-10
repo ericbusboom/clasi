@@ -666,6 +666,64 @@ def move_ticket_to_done(path: str) -> str:
 
 
 @server.tool()
+def reopen_ticket(path: str) -> str:
+    """Reopen a completed ticket by moving it from done/ back to the sprint's tickets/ directory.
+
+    Behaviour:
+    - If the ticket is in tickets/done/, move it back to tickets/ and reset status to "todo".
+    - If the ticket exists but is NOT in done/, just reset status to "todo".
+    - If the ticket file doesn't exist anywhere, raise an error.
+
+    Also moves the plan file back if one exists in done/.
+
+    Args:
+        path: Path to the ticket file
+
+    Returns JSON with {old_path, new_path, old_status, new_status}.
+    """
+    try:
+        ticket_path = resolve_artifact_path(path)
+    except FileNotFoundError:
+        raise ValueError(f"Ticket not found: {path}")
+
+    fm = read_frontmatter(ticket_path)
+    old_status = fm.get("status", "unknown")
+
+    # Determine if ticket is in a done/ directory
+    in_done = ticket_path.parent.name == "done"
+
+    if in_done:
+        # Move from tickets/done/ back to tickets/
+        tickets_dir = ticket_path.parent.parent
+        new_path = tickets_dir / ticket_path.name
+        ticket_path.rename(new_path)
+
+        # Also move plan file if it exists in done/
+        plan_name = ticket_path.stem + "-plan.md"
+        plan_path = ticket_path.parent / plan_name
+        result = {"old_path": str(ticket_path), "new_path": str(new_path)}
+        if plan_path.exists():
+            new_plan_path = tickets_dir / plan_name
+            plan_path.rename(new_plan_path)
+            result["plan_old_path"] = str(plan_path)
+            result["plan_new_path"] = str(new_plan_path)
+
+        # Update frontmatter on the moved file
+        fm["status"] = "todo"
+        write_frontmatter(new_path, fm)
+    else:
+        # Ticket exists but not in done/ — just reset status
+        new_path = ticket_path
+        fm["status"] = "todo"
+        write_frontmatter(ticket_path, fm)
+        result = {"old_path": str(ticket_path), "new_path": str(new_path)}
+
+    result["old_status"] = old_status
+    result["new_status"] = "todo"
+    return json.dumps(result, indent=2)
+
+
+@server.tool()
 def close_sprint(sprint_id: str) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
 
