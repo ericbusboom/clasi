@@ -5,6 +5,7 @@ status: planning
 branch: sprint/{id}-{slug}
 use-cases: []
 ---
+<!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
 # Sprint {id}: {title}
 
