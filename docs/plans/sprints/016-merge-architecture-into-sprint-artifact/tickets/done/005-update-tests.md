@@ -1,14 +1,14 @@
 ---
-id: "005"
-title: "Update tests"
-status: todo
+id: '005'
+title: Update tests
+status: done
 use-cases:
-  - SUC-016-001
-  - SUC-016-002
+- SUC-016-001
+- SUC-016-002
 depends-on:
-  - "001"
-  - "002"
-  - "003"
+- '001'
+- '002'
+- '003'
 ---
 
 # Update tests
