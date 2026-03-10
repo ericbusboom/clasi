@@ -1,7 +1,7 @@
 ---
-id: "005"
-title: "Add Mermaid diagram preference to instructions and skills"
-status: todo
+id: '005'
+title: Add Mermaid diagram preference to instructions and skills
+status: done
 use-cases: []
 depends-on: []
 ---
@@ -24,9 +24,9 @@ renders natively in GitHub and most markdown viewers."
 
 ## Acceptance Criteria
 
-- [ ] Mermaid preference stated in software-engineering.md
-- [ ] Mermaid preference stated in create-technical-plan.md
-- [ ] Mermaid preference stated in elicit-requirements.md
+- [x] Mermaid preference stated in software-engineering.md (already present)
+- [x] Mermaid preference stated in create-technical-plan.md (already present)
+- [x] Mermaid preference stated in elicit-requirements.md
 
 ## Testing
 
