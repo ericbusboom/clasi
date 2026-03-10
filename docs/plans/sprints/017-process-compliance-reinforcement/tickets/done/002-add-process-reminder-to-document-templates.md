@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Add process reminder to document templates"
-status: todo
+status: done
 use-cases:
   - SUC-017-002
 depends-on: []
@@ -28,11 +28,11 @@ Templates to update:
 
 ## Acceptance Criteria
 
-- [ ] sprint.md template contains the reminder after frontmatter
-- [ ] sprint-architecture.md template contains the reminder after frontmatter
-- [ ] ticket.md template contains the reminder after frontmatter
-- [ ] sprint-usecases.md template contains the reminder after frontmatter
-- [ ] All existing tests pass
+- [x] sprint.md template contains the reminder after frontmatter
+- [x] sprint-architecture.md template contains the reminder after frontmatter
+- [x] ticket.md template contains the reminder after frontmatter
+- [x] sprint-usecases.md template contains the reminder after frontmatter
+- [x] All existing tests pass
 
 ## Testing
 
