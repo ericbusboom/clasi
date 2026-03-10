@@ -1,8 +1,10 @@
 ---
-id: "002"
-title: "Add sprint review MCP tools with tests"
-status: todo
-use-cases: [SUC-015-004, SUC-015-005]
+id: '002'
+title: Add sprint review MCP tools with tests
+status: done
+use-cases:
+- SUC-015-004
+- SUC-015-005
 depends-on: []
 ---
 
@@ -52,14 +54,14 @@ Compare file content (after frontmatter) against templates from
 
 ## Acceptance Criteria
 
-- [ ] `review_sprint_pre_execution` MCP tool exists and returns structured JSON
-- [ ] `review_sprint_pre_close` MCP tool exists and returns structured JSON
-- [ ] `review_sprint_post_close` MCP tool exists and returns structured JSON
-- [ ] Each issue includes severity, check, message, fix, and path fields
-- [ ] Template placeholder detection works for sprint.md, technical-plan.md, usecases.md
-- [ ] Unit tests cover happy path (correct sprint passes)
-- [ ] Unit tests cover missing files, wrong frontmatter, template placeholders
-- [ ] Unit tests cover ticket state issues (not done, not in done/)
+- [x] `review_sprint_pre_execution` MCP tool exists and returns structured JSON
+- [x] `review_sprint_pre_close` MCP tool exists and returns structured JSON
+- [x] `review_sprint_post_close` MCP tool exists and returns structured JSON
+- [x] Each issue includes severity, check, message, fix, and path fields
+- [x] Template placeholder detection works for sprint.md, technical-plan.md, usecases.md
+- [x] Unit tests cover happy path (correct sprint passes)
+- [x] Unit tests cover missing files, wrong frontmatter, template placeholders
+- [x] Unit tests cover ticket state issues (not done, not in done/)
 - [ ] Regression tests against historical sprints in sprints/done/
 
 ## Testing
