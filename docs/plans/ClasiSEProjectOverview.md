@@ -6,6 +6,8 @@ audience: "LLM researcher performing comparative software-process analysis"
 
 # CLASI Software Engineering Process — Complete Reference
 
+*Current as of: 2026-03-10*
+
 ## 1. Executive Summary
 
 CLASI (Claude Agent Skills Instructions) is a software engineering process
@@ -15,6 +17,8 @@ Python package that stores canonical agent definitions, skill workflows,
 coding instructions, and an MCP (Model Context Protocol) server that
 exposes 30 tools for managing sprints, tickets, architecture documents,
 and lifecycle enforcement.
+
+The CLASI code is [available at https://github.com/ericbusboom/claude-agent-skills](https://github.com/ericbusboom/claude-agent-skills)
 
 The fundamental insight behind CLASI is that **LLM agents do not reliably
 follow behavioral instructions alone**. Over 15 sprints and 8 formal
@@ -321,9 +325,9 @@ explicitly designated "out of process" by the stakeholder).
 stateDiagram-v2
     [*] --> PlanningDocs: create_sprint()
     PlanningDocs --> ArchReview: advance_sprint_phase()
-    ArchReview --> StakeholderReview: advance_sprint_phase()<br/>requires: architecture_review = passed
-    StakeholderReview --> Ticketing: advance_sprint_phase()<br/>requires: stakeholder_approval = passed
-    Ticketing --> Executing: advance_sprint_phase()<br/>requires: execution_lock held
+    ArchReview --> StakeholderReview: advance_sprint_phase()
+    StakeholderReview --> Ticketing: advance_sprint_phase()
+    Ticketing --> Executing: advance_sprint_phase()
     Executing --> Closing: advance_sprint_phase()
     Closing --> Done: close_sprint()
 
