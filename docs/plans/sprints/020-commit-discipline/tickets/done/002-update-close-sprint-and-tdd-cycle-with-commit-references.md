@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Update close-sprint and tdd-cycle with commit references"
-status: todo
+status: done
 use-cases: [SUC-002]
 depends-on: ["001"]
 ---
@@ -31,9 +31,9 @@ every relevant process document.
 
 ## Acceptance Criteria
 
-- [ ] `skills/close-sprint.md` includes a test verification step before the merge (e.g., "Run `uv run pytest` and confirm all tests pass before merging")
-- [ ] `skills/tdd-cycle.md` specifies when to commit during the TDD cycle (after green, after refactor)
-- [ ] Both documents reference `instructions/git-workflow.md` commit timing rules
+- [x] `skills/close-sprint.md` includes a test verification step before the merge (e.g., "Run `uv run pytest` and confirm all tests pass before merging")
+- [x] `skills/tdd-cycle.md` specifies when to commit during the TDD cycle (after green, after refactor)
+- [x] Both documents reference `instructions/git-workflow.md` commit timing rules
 
 ## Testing
 
