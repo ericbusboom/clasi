@@ -48,8 +48,11 @@ the sprint branch, and archive the sprint document.
 5. **Advance to closing phase**: Call `advance_sprint_phase` to move
    from `executing` to `closing`.
 
-6. **Run final validation**: Ensure tests pass, no uncommitted changes
-   exist on the sprint branch.
+6. **Run final validation**: Run `uv run pytest` (or the project's test
+   command) and confirm **ALL tests pass** before proceeding. Also verify
+   no uncommitted changes exist on the sprint branch. If tests fail,
+   report the failures and stop. Do not merge a branch with failing tests.
+   See `instructions/git-workflow.md` § Commit Timing for the rationale.
 
 7. **Close linked GitHub issues**: Read the sprint doc's `## GitHub
    Issues` section. For each `owner/repo#N` reference listed:
