@@ -1,11 +1,11 @@
 ---
-id: "020"
-title: "Commit Discipline"
-status: active
+id: '020'
+title: Commit Discipline
+status: done
 branch: sprint/020-commit-discipline
 use-cases:
-  - SUC-001
-  - SUC-002
+- SUC-001
+- SUC-002
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
