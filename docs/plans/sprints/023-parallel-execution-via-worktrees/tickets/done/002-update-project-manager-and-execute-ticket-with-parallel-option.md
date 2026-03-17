@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Update project-manager and execute-ticket with parallel option"
-status: todo
+status: done
 use-cases: [SUC-001]
 depends-on: ["001"]
 ---
@@ -35,11 +35,11 @@ stakeholder must explicitly choose parallel execution.
 
 ## Acceptance Criteria
 
-- [ ] `agents/project-manager.md` includes parallel dispatch guidance
-- [ ] `skills/execute-ticket.md` includes a note about parallel execution option
-- [ ] Parallel is clearly documented as opt-in (not automatic)
-- [ ] Sequential execution is clearly documented as the default
-- [ ] Both files reference the parallel-execution skill
+- [x] `agents/project-manager.md` includes parallel dispatch guidance
+- [x] `skills/execute-ticket.md` includes a note about parallel execution option
+- [x] Parallel is clearly documented as opt-in (not automatic)
+- [x] Sequential execution is clearly documented as the default
+- [x] Both files reference the parallel-execution skill
 
 ## Testing
 

@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Create parallel-execution skill and worktree-protocol instruction"
-status: todo
+status: done
 use-cases: [SUC-001, SUC-002]
 depends-on: []
 ---
@@ -44,12 +44,12 @@ patterns and conflict handling.
 
 ## Acceptance Criteria
 
-- [ ] `skills/parallel-execution.md` exists and defines the full parallel workflow
-- [ ] Independence analysis criteria are specific (file overlap check, dependency graph check)
-- [ ] `instructions/worktree-protocol.md` exists and defines naming, cleanup, and conflict rules
-- [ ] Naming convention is `worktree-ticket-NNN`
-- [ ] Conflict resolution falls back to sequential execution
-- [ ] Skill references dispatch-subagent and worktree-protocol
+- [x] `skills/parallel-execution.md` exists and defines the full parallel workflow
+- [x] Independence analysis criteria are specific (file overlap check, dependency graph check)
+- [x] `instructions/worktree-protocol.md` exists and defines naming, cleanup, and conflict rules
+- [x] Naming convention is `worktree-ticket-NNN`
+- [x] Conflict resolution falls back to sequential execution
+- [x] Skill references dispatch-subagent and worktree-protocol
 
 ## Testing
 

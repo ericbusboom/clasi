@@ -1,7 +1,7 @@
 ---
 id: "023"
 title: "Parallel Execution via Worktrees"
-status: planning
+status: active
 branch: sprint/023-parallel-execution-via-worktrees
 use-cases:
   - SUC-001

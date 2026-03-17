@@ -119,6 +119,40 @@ implementation is now done via **subagent dispatch**:
 9. Set ticket status to `done`.
 10. Move ticket and plan to the sprint's `tickets/done/` directory.
 
+### Parallel Ticket Execution (Opt-In)
+
+When a sprint has multiple independent tickets, you may execute them in
+parallel using the **parallel-execution** skill instead of running them
+one at a time. This is an explicit opt-in decision — **sequential
+execution remains the safe default**.
+
+**When to consider parallel execution**:
+- The sprint has two or more `todo` tickets with no `depends-on` edges
+  between them.
+- The tickets' plans show no overlapping file modifications.
+- The stakeholder has explicitly approved parallel mode, or you have
+  determined that parallelism is safe and beneficial.
+
+**How to use it**:
+1. Analyze ticket independence: check `depends-on` fields and file
+   modification lists in ticket plans. Both must be clear.
+2. Invoke the **parallel-execution** skill, which handles worktree
+   creation, subagent dispatch, review, merge, and cleanup.
+3. After the parallel group completes, continue with any remaining
+   sequential tickets using the normal Stage 3 flow.
+
+**When NOT to parallelize**:
+- Any tickets share `depends-on` relationships.
+- Any tickets modify the same files (even different parts of the same
+  file).
+- The stakeholder has not opted in and you are uncertain about
+  independence.
+- The sprint has only one ticket or all tickets form a dependency chain.
+
+Parallel execution uses git worktrees for isolation. See the
+**worktree-protocol** instruction for naming conventions, cleanup rules,
+and conflict resolution procedures.
+
 ### Stage 4: Maintenance
 
 When scope changes:
