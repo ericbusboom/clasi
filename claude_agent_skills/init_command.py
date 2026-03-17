@@ -17,6 +17,18 @@ MCP_CONFIG = {
     }
 }
 
+HOOKS_CONFIG = {
+    "UserPromptSubmit": [
+        {
+            "type": "command",
+            "command": (
+                "echo 'CLASI: Call get_se_overview() to load the"
+                " SE process before doing any work.'"
+            ),
+        }
+    ]
+}
+
 _PACKAGE_DIR = Path(__file__).parent
 _SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
 _AGENTS_SECTION_PATH = _PACKAGE_DIR / "init" / "agents-section.md"
@@ -197,6 +209,49 @@ def _update_settings_json(settings_path: Path) -> bool:
     return True
 
 
+def _update_hooks_config(settings_path: Path) -> bool:
+    """Add session-start hook to settings.local.json.
+
+    Installs a UserPromptSubmit hook that reminds the agent to load the
+    SE process.  Idempotent: if the hook already exists with the correct
+    command, no changes are made.
+
+    Returns True if the file was written/updated, False if unchanged.
+    """
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if settings_path.exists():
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            data = {}
+    else:
+        data = {}
+
+    hooks = data.setdefault("hooks", {})
+    target_hooks = HOOKS_CONFIG["UserPromptSubmit"]
+
+    existing = hooks.get("UserPromptSubmit", [])
+
+    # Check if the CLASI hook entry already exists (by command match)
+    clasi_command = target_hooks[0]["command"]
+    already_present = any(
+        entry.get("command") == clasi_command for entry in existing
+    )
+
+    if already_present:
+        click.echo("  Unchanged: .claude/settings.local.json (hooks)")
+        return False
+
+    existing.extend(target_hooks)
+    hooks["UserPromptSubmit"] = existing
+    settings_path.write_text(
+        json.dumps(data, indent=2) + "\n", encoding="utf-8"
+    )
+    click.echo("  Updated: .claude/settings.local.json (hooks)")
+    return True
+
+
 def run_init(target: str) -> None:
     """Initialize a repository for the CLASI SE process.
 
@@ -227,6 +282,11 @@ def run_init(target: str) -> None:
     click.echo("MCP permissions:")
     settings_json = target_path / ".claude" / "settings.local.json"
     _update_settings_json(settings_json)
+    click.echo()
+
+    # Install session-start hook in .claude/settings.local.json
+    click.echo("Session-start hook:")
+    _update_hooks_config(settings_json)
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")
