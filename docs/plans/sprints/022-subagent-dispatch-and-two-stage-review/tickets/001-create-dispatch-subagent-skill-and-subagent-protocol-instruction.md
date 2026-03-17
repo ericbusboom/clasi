@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Create dispatch-subagent skill and subagent-protocol instruction"
-status: todo
+status: done
 use-cases: [SUC-001, SUC-003]
 depends-on: []
 ---
@@ -35,12 +35,12 @@ context curation best practices, and subagent lifecycle management.
 
 ## Acceptance Criteria
 
-- [ ] `skills/dispatch-subagent.md` exists and defines the controller/worker dispatch pattern
-- [ ] `instructions/subagent-protocol.md` exists and defines context include/exclude rules
-- [ ] Context curation rules are specific and actionable (not vague guidance)
-- [ ] Controller is explicitly prohibited from writing code directly
-- [ ] Dispatch skill references the subagent-protocol instruction
-- [ ] Iteration loop (dispatch, review, feedback, re-dispatch) is defined
+- [x] `skills/dispatch-subagent.md` exists and defines the controller/worker dispatch pattern
+- [x] `instructions/subagent-protocol.md` exists and defines context include/exclude rules
+- [x] Context curation rules are specific and actionable (not vague guidance)
+- [x] Controller is explicitly prohibited from writing code directly
+- [x] Dispatch skill references the subagent-protocol instruction
+- [x] Iteration loop (dispatch, review, feedback, re-dispatch) is defined
 
 ## Testing
 
