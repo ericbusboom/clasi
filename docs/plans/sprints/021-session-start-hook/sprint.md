@@ -1,7 +1,7 @@
 ---
 id: "021"
 title: "Session-Start Hook"
-status: planning
+status: active
 branch: sprint/021-session-start-hook
 use-cases:
   - SUC-001
