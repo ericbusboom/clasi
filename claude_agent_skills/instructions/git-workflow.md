@@ -110,6 +110,40 @@ is one step in a multi-step atomic operation. When a sprint is complete:
 A merged branch with an active sprint directory is an inconsistent state.
 Use the **close-sprint** skill to perform all steps together.
 
+## Commit Timing
+
+These rules ensure every commit in the git history represents a known-good
+test state. This makes `git bisect` reliable and rollbacks safe.
+
+1. **Always run tests before committing.** Run `uv run pytest` (or the
+   project's equivalent) and confirm all tests pass before creating a
+   commit. No exceptions for "I'm pretty sure it's fine."
+
+2. **Do not commit with failing tests** unless you are on a feature branch
+   and prefix the commit message with `WIP:`. WIP commits are never
+   allowed on `main` or `master`. They exist only to checkpoint work on a
+   branch that will be squashed or rebased before merge. Example:
+   ```
+   WIP: partial implementation of auth middleware (#003, sprint 001)
+   ```
+
+3. **During TDD: commit immediately after the green phase** (before
+   refactoring). Once all tests pass, commit that state. This captures
+   the minimal working implementation and makes it easy to revert a
+   refactor that goes wrong.
+
+4. **After refactoring: run tests again and commit the refactor
+   separately.** The refactor commit is distinct from the green-phase
+   commit. If a refactor breaks something, you can revert it without
+   losing the working implementation.
+
+5. **Each commit should represent a known-good test state.** Combined
+   with rules 1-4, this means the git log is a sequence of verified
+   snapshots. Any commit can be checked out and tested with confidence.
+
+See the **tdd-cycle** skill for details on how commit points integrate
+with the red-green-refactor cycle.
+
 ## Safety Rules
 
 - **Never force-push** unless explicitly instructed by the human.

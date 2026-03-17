@@ -67,8 +67,8 @@ Run the test suite and confirm the new test fails.
 - **Record the failure message.** Copy the exact error output. This
   proves the test is actually testing something and establishes the
   baseline.
-- The failure should be for the expected reason (e.g., NameError
-  because the function does not exist, or AssertionError because the
+- The failure should be for the expected reason (e.g., `NameError`
+  because the function does not exist, or `AssertionError` because the
   return value is wrong). If the failure is for an unexpected reason,
   fix the test first.
 - **This step is mandatory within the cycle.** If you did not watch it
@@ -122,6 +122,10 @@ This commit is your safety net: if a subsequent refactor goes wrong,
 you can revert to this known-good state without losing the working
 implementation.
 
+See `instructions/git-workflow.md` § Commit Timing, rule 3 for the
+rationale: committing at green before refactoring provides a safe
+rollback point if the refactor goes wrong.
+
 ### Step 6: Refactor — Clean Up at Green
 
 With all tests passing and the green state committed, improve the code:
@@ -148,6 +152,8 @@ Separating the refactor commit from the green-phase commit means you can
 revert the refactor independently without losing the working
 implementation.
 
+See `instructions/git-workflow.md` § Commit Timing, rule 4.
+
 ### Commit Points Summary
 
 | Phase               | Step | Commit? |
@@ -156,7 +162,8 @@ implementation.
 | Green (make pass)   | 3-4  | **Yes** — commit before refactoring (step 5) |
 | Refactor (clean up) | 6    | **Yes** — commit after refactoring (step 7) |
 
-Each commit represents a known-good test state.
+Each commit represents a known-good test state per
+`instructions/git-workflow.md` § Commit Timing, rule 5.
 
 ## Integration with Ticket Workflow
 
@@ -169,9 +176,10 @@ When using TDD within a ticket:
 
 1. Read the ticket's acceptance criteria and testing section.
 2. For each piece of functionality, run one red-green-refactor cycle.
-3. After all cycles are complete, run the full test suite to verify
+3. Commit after each green phase (step 5) and after each refactor (step 7).
+4. After all cycles are complete, run the full test suite to verify
    no regressions.
-4. Continue with the remaining execute-ticket steps (code review,
+5. Continue with the remaining execute-ticket steps (code review,
    documentation, completion).
 
 ## Summary

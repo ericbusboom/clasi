@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Update git-workflow instruction with commit timing rules"
-status: todo
+status: done
 use-cases: [SUC-001]
 depends-on: []
 ---
@@ -35,10 +35,10 @@ integrate with the red-green-refactor cycle.
 
 ## Acceptance Criteria
 
-- [ ] `instructions/git-workflow.md` contains a "Commit Timing" section (or equivalent heading)
-- [ ] The section documents the four rules: run tests first, no failing-test commits, commit at green phase, separate refactor commits
-- [ ] WIP exception for feature branches is documented with clear guardrails
-- [ ] Superpowers TDD skill is referenced for commit point details
+- [x] `instructions/git-workflow.md` contains a "Commit Timing" section (or equivalent heading)
+- [x] The section documents the four rules: run tests first, no failing-test commits, commit at green phase, separate refactor commits
+- [x] WIP exception for feature branches is documented with clear guardrails
+- [x] Superpowers TDD skill is referenced for commit point details
 
 ## Testing
 

@@ -1,7 +1,7 @@
 ---
 id: "020"
 title: "Commit Discipline"
-status: planning
+status: active
 branch: sprint/020-commit-discipline
 use-cases:
   - SUC-001
