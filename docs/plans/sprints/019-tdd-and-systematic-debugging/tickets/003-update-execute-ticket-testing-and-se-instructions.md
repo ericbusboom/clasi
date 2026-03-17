@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Update execute-ticket, testing, and SE instructions"
-status: todo
+status: in-progress
 use-cases: [SUC-003]
 depends-on: ["001", "002"]
 ---
