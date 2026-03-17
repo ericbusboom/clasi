@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Create review-checklist template"
-status: todo
+status: done
 use-cases: [SUC-002]
 depends-on: ["002"]
 ---
@@ -31,11 +31,11 @@ review results machine-parseable and auditable alongside ticket files.
 
 ## Acceptance Criteria
 
-- [ ] `templates/review-checklist.md` exists with correctness and quality sections
-- [ ] Correctness section has pass/fail fields for each acceptance criterion
-- [ ] Quality section has severity-ranked issue fields (critical, major, minor, suggestion)
-- [ ] `REVIEW_CHECKLIST_TEMPLATE` constant added to `templates.py`
-- [ ] Template is loadable via the templates module (follows existing pattern)
+- [x] `templates/review-checklist.md` exists with correctness and quality sections
+- [x] Correctness section has pass/fail fields for each acceptance criterion
+- [x] Quality section has severity-ranked issue fields (critical, major, minor, suggestion)
+- [x] `REVIEW_CHECKLIST_TEMPLATE` constant added to `templates.py`
+- [x] Template is loadable via the templates module (follows existing pattern)
 
 ## Testing
 
