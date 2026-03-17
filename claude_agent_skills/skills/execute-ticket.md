@@ -67,6 +67,26 @@ completion, coordinating multiple agents.
    - **Commit the moves**: `git add` the moved files and commit with a
      message like `chore: move ticket #NNN to done`.
 
+## Parallel Execution Note
+
+This skill may be invoked inside a git worktree when the project-manager
+has opted into parallel execution via the **parallel-execution** skill.
+In that case:
+
+- The working directory is an isolated worktree (`../worktree-ticket-NNN`),
+  not the main project directory.
+- The ticket branch is a per-ticket branch (`ticket-NNN-slug`), not the
+  sprint branch directly.
+- The core execute-ticket flow does not change — plan, implement, test,
+  review, commit, and complete all work the same way.
+- Merging the per-ticket branch back to the sprint branch is handled by
+  the **parallel-execution** skill after this skill completes, not by
+  execute-ticket itself.
+
+Parallel execution is **opt-in only**. Sequential execution on the sprint
+branch remains the default. See the **parallel-execution** skill and the
+**worktree-protocol** instruction for details.
+
 ## Output
 
 - Implemented code with passing tests
