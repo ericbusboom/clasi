@@ -1,9 +1,9 @@
 ---
-id: "001"
-title: "gh CLI helpers and list_github_issues MCP tool"
-status: todo
+id: '001'
+title: gh CLI helpers and list_github_issues MCP tool
+status: in-progress
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on: []
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->

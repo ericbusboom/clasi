@@ -1,9 +1,9 @@
 ---
-id: "003"
-title: "Template updates for github-issue field"
-status: todo
+id: '003'
+title: Template updates for github-issue field
+status: done
 use-cases:
-  - SUC-002
+- SUC-002
 depends-on: []
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -36,9 +36,9 @@ unaffected.
 
 ## Acceptance Criteria
 
-- [ ] Ticket template has `github-issue: ""` in frontmatter
-- [ ] Sprint template has `## GitHub Issues` section
-- [ ] Existing tests still pass (templates are tested indirectly)
+- [x] Ticket template has `github-issue: ""` in frontmatter
+- [x] Sprint template has `## GitHub Issues` section
+- [x] Existing tests still pass (templates are tested indirectly)
 
 ## Testing
 
