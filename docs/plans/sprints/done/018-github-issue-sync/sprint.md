@@ -1,12 +1,12 @@
 ---
-id: "018"
-title: "GitHub Issue Sync"
-status: planning
+id: 018
+title: GitHub Issue Sync
+status: done
 branch: sprint/018-github-issue-sync
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
