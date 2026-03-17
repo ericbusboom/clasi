@@ -1,12 +1,12 @@
 ---
-id: "019"
-title: "TDD and Systematic Debugging"
-status: active
+id: 019
+title: TDD and Systematic Debugging
+status: done
 branch: sprint/019-tdd-and-systematic-debugging
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
