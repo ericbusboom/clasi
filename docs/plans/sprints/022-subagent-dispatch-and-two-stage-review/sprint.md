@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: "Subagent Dispatch and Two-Stage Review"
-status: planning
+status: active
 branch: sprint/022-subagent-dispatch-and-two-stage-review
 use-cases:
   - SUC-001
