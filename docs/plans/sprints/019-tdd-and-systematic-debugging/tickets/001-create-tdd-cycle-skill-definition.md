@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Create tdd-cycle skill definition"
-status: in-progress
+status: done
 use-cases: [SUC-001]
 depends-on: []
 ---
@@ -48,15 +48,15 @@ details, edge cases, and phrasing conventions before writing this skill.
 
 ## Acceptance Criteria
 
-- [ ] Skill file exists at `claude_agent_skills/skills/tdd-cycle.md`
-- [ ] Frontmatter includes `name: tdd-cycle` and a description
-- [ ] Complete red-green-refactor cycle is defined with all six steps
-- [ ] Each step is a discrete action the agent must perform and report on
-- [ ] Includes when-to-use guidance (TDD vs implement-then-test)
-- [ ] TDD is presented as optional, not mandatory or default
-- [ ] Includes unexpected-pass handling (test passes when it should fail)
-- [ ] Includes guidance on recording failure messages before writing code
-- [ ] All existing tests still pass
+- [x] Skill file exists at `claude_agent_skills/skills/tdd-cycle.md`
+- [x] Frontmatter includes `name: tdd-cycle` and a description
+- [x] Complete red-green-refactor cycle is defined with all six steps
+- [x] Each step is a discrete action the agent must perform and report on
+- [x] Includes when-to-use guidance (TDD vs implement-then-test)
+- [x] TDD is presented as optional, not mandatory or default
+- [x] Includes unexpected-pass handling (test passes when it should fail)
+- [x] Includes guidance on recording failure messages before writing code
+- [x] All existing tests still pass
 
 ## Testing
 

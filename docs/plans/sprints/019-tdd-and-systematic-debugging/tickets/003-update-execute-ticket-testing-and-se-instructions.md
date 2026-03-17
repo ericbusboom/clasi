@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Update execute-ticket, testing, and SE instructions"
-status: in-progress
+status: done
 use-cases: [SUC-003]
 depends-on: ["001", "002"]
 ---
@@ -55,21 +55,21 @@ to understand the intent and conventions before making these updates.
 
 ## Acceptance Criteria
 
-- [ ] `execute-ticket.md` step 4 references tdd-cycle as an optional
+- [x] `execute-ticket.md` step 4 references tdd-cycle as an optional
       approach for implementation
-- [ ] `execute-ticket.md` Error Recovery references systematic-debugging
+- [x] `execute-ticket.md` Error Recovery references systematic-debugging
       with trigger conditions
-- [ ] `testing.md` includes a section referencing TDD as an available
+- [x] `testing.md` includes a section referencing TDD as an available
       development method (not default, not mandatory)
-- [ ] `testing.md` includes guidance on when TDD vs implement-then-test
+- [x] `testing.md` includes guidance on when TDD vs implement-then-test
       is most appropriate
-- [ ] `software-engineering.md` Skills section lists tdd-cycle and
+- [x] `software-engineering.md` Skills section lists tdd-cycle and
       systematic-debugging as supporting skills
-- [ ] `software-engineering.md` Error Recovery references
+- [x] `software-engineering.md` Error Recovery references
       systematic-debugging skill
-- [ ] All three files remain internally consistent (no contradictions)
-- [ ] TDD is consistently presented as optional across all files
-- [ ] All existing tests still pass
+- [x] All three files remain internally consistent (no contradictions)
+- [x] TDD is consistently presented as optional across all files
+- [x] All existing tests still pass
 
 ## Testing
 

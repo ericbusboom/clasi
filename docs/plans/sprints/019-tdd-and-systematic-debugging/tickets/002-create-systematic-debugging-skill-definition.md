@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Create systematic-debugging skill definition"
-status: in-progress
+status: done
 use-cases: [SUC-002]
 depends-on: []
 ---
@@ -60,14 +60,14 @@ phrasing conventions before writing this skill.
 
 ## Acceptance Criteria
 
-- [ ] Skill file exists at `claude_agent_skills/skills/systematic-debugging.md`
-- [ ] Frontmatter includes `name: systematic-debugging` and a description
-- [ ] All four phases are defined with clear instructions for each
-- [ ] Three-attempt cap is specified with explicit enforcement language
-- [ ] Escalation procedure is defined (what to document, how to present)
-- [ ] Audit trail requirement is defined (what to record and where)
-- [ ] Trigger conditions are listed (when the skill should be invoked)
-- [ ] All existing tests still pass
+- [x] Skill file exists at `claude_agent_skills/skills/systematic-debugging.md`
+- [x] Frontmatter includes `name: systematic-debugging` and a description
+- [x] All four phases are defined with clear instructions for each
+- [x] Three-attempt cap is specified with explicit enforcement language
+- [x] Escalation procedure is defined (what to document, how to present)
+- [x] Audit trail requirement is defined (what to record and where)
+- [x] Trigger conditions are listed (when the skill should be invoked)
+- [x] All existing tests still pass
 
 ## Testing
 
