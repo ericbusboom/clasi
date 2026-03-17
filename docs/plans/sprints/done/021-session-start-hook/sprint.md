@@ -1,11 +1,11 @@
 ---
-id: "021"
-title: "Session-Start Hook"
-status: active
+id: '021'
+title: Session-Start Hook
+status: done
 branch: sprint/021-session-start-hook
 use-cases:
-  - SUC-001
-  - SUC-002
+- SUC-001
+- SUC-002
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
