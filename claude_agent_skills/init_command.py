@@ -278,15 +278,16 @@ def run_init(target: str) -> None:
     _update_vscode_mcp_json(target_path)
     click.echo()
 
-    # Add MCP permission to .claude/settings.local.json
+    # Add MCP permission to .claude/settings.local.json (user-specific, gitignored)
     click.echo("MCP permissions:")
-    settings_json = target_path / ".claude" / "settings.local.json"
-    _update_settings_json(settings_json)
+    settings_local = target_path / ".claude" / "settings.local.json"
+    _update_settings_json(settings_local)
     click.echo()
 
-    # Install session-start hook in .claude/settings.local.json
+    # Install session-start hook in .claude/settings.json (shared, checked in)
     click.echo("Session-start hook:")
-    _update_hooks_config(settings_json)
+    settings_shared = target_path / ".claude" / "settings.json"
+    _update_hooks_config(settings_shared)
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")

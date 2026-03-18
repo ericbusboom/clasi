@@ -298,11 +298,11 @@ class TestClaudeMd:
 
 class TestHooksConfig:
     def test_init_creates_hooks_in_settings(self, target_dir):
-        """Init creates UserPromptSubmit hook in settings.local.json."""
+        """Init creates UserPromptSubmit hook in settings.json (shared)."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        settings_path = target_dir / ".claude" / "settings.local.json"
+        settings_path = target_dir / ".claude" / "settings.json"
         assert settings_path.exists()
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         assert "hooks" in data
@@ -318,18 +318,17 @@ class TestHooksConfig:
         run_init(str(target_dir))
         run_init(str(target_dir))
 
-        settings_path = target_dir / ".claude" / "settings.local.json"
+        settings_path = target_dir / ".claude" / "settings.json"
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         hooks = data["hooks"]["UserPromptSubmit"]
         assert len(hooks) == 1
 
     def test_hooks_preserve_existing_settings(self, target_dir):
-        """Hook installation preserves existing permissions and other keys."""
+        """Hook installation preserves existing keys in settings.json."""
         target_dir.mkdir()
-        settings_path = target_dir / ".claude" / "settings.local.json"
+        settings_path = target_dir / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         existing = {
-            "permissions": {"allow": ["Bash(*)"]},
             "other": "kept",
         }
         settings_path.write_text(json.dumps(existing), encoding="utf-8")
@@ -337,9 +336,6 @@ class TestHooksConfig:
         run_init(str(target_dir))
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
-        # Permissions are preserved and extended
-        assert "Bash(*)" in data["permissions"]["allow"]
-        assert "mcp__clasi__*" in data["permissions"]["allow"]
         # Other top-level keys are preserved
         assert data["other"] == "kept"
         # Hooks are added
@@ -353,7 +349,7 @@ class TestHooksConfig:
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        settings_path = target_dir / ".claude" / "settings.local.json"
+        settings_path = target_dir / ".claude" / "settings.json"
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         hooks = data["hooks"]["UserPromptSubmit"]
         assert hooks == HOOKS_CONFIG["UserPromptSubmit"]
@@ -361,7 +357,7 @@ class TestHooksConfig:
     def test_hooks_preserve_existing_hooks(self, target_dir):
         """Hook installation preserves other existing hook entries."""
         target_dir.mkdir()
-        settings_path = target_dir / ".claude" / "settings.local.json"
+        settings_path = target_dir / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         existing_hook = {
             "type": "command",
