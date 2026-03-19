@@ -365,12 +365,11 @@ creates an audit trail for debugging why a subagent made a specific
 decision.
 
 **What is logged per dispatch:**
-- Timestamp
-- Dispatching agent (parent) and receiving agent (child)
-- Scope directory
-- List of files included in context (paths only, not content)
-- Prompt summary (first 200 chars)
-- Result summary (success/failure, files modified)
+
+Each dispatch is logged as a markdown file with YAML frontmatter for
+the structured metadata and the full prompt text as the body. This
+means you can search the logs, read them as documents, and parse the
+frontmatter programmatically.
 
 **Log directory structure:**
 
@@ -378,10 +377,12 @@ decision.
 docs/clasi/log/
 ├── sprints/
 │   ├── 001-my-sprint/
-│   │   ├── sprint-planner.md      # planning dispatches
-│   │   ├── ticket-001.md          # ticket-level dispatches
-│   │   ├── ticket-002.md
-│   │   └── ticket-003.md
+│   │   ├── sprint-planner-001.md  # first planning dispatch
+│   │   ├── sprint-planner-002.md  # second planning dispatch
+│   │   ├── ticket-001-001.md      # first dispatch for ticket 001
+│   │   ├── ticket-001-002.md      # code review for ticket 001
+│   │   ├── ticket-002-001.md
+│   │   └── ticket-003-001.md
 │   └── 002-next-sprint/
 │       └── ...
 └── adhoc/
@@ -391,24 +392,37 @@ docs/clasi/log/
 ```
 
 **Routing rules:**
-- **Sprint dispatches** (sprint-planner, architect, technical-lead):
-  `docs/clasi/log/sprints/<sprint-name>/sprint-planner.md`
-- **Ticket dispatches** (code-monkey, code-reviewer):
-  `docs/clasi/log/sprints/<sprint-name>/ticket-NNN.md`
-- **Ad-hoc dispatches** (ad-hoc-executor and its children):
-  `docs/clasi/log/adhoc/<N>.md` where N is a monotonically
-  incrementing counter (next unused integer in the directory)
+- **Sprint planning dispatches**: `docs/clasi/log/sprints/<sprint-name>/sprint-planner-NNN.md`
+- **Ticket dispatches**: `docs/clasi/log/sprints/<sprint-name>/ticket-NNN-NNN.md`
+  (ticket number + dispatch sequence)
+- **Ad-hoc dispatches**: `docs/clasi/log/adhoc/<N>.md`
 
-**Log format** (appended per dispatch):
+**Log format:**
 
 ```markdown
-## Dispatch: <parent> → <child>
-- **Time**: 2026-03-19T14:30:00
-- **Scope**: docs/clasi/todo/
-- **Context files**: overview.md, todo/existing-idea.md, ...
-- **Prompt**: "Import GitHub issues as TODOs. Only modify files..."
-- **Result**: success — created 3 files
+---
+timestamp: "2026-03-19T14:30:00"
+parent: sprint-executor
+child: code-monkey
+scope: claude_agent_skills/
+ticket: "001"
+sprint: "001-my-sprint"
+result: success
+files_modified:
+  - claude_agent_skills/artifact_tools.py
+  - tests/unit/test_artifact_tools.py
+---
+
+# Dispatch: sprint-executor → code-monkey
+
+<full prompt text sent to the subagent, including all context
+curation, scope constraints, ticket description, acceptance
+criteria, file contents — everything the subagent received>
 ```
+
+The frontmatter gives you structured data for filtering and reporting.
+The body is the complete prompt — the exact text the subagent saw.
+Nothing is summarized or truncated.
 
 ### Mapping to Existing Agents
 
