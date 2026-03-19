@@ -453,6 +453,22 @@ docs/clasi/
                 └── ...
 ```
 
+## External Tooling
+
+CLASI manages the SE process. Other operational concerns are handled by
+dedicated tools — use them instead of ad hoc commands:
+
+| Concern | Tool | How to learn more |
+|---------|------|-------------------|
+| Environment config, .env files, secrets, encryption keys | **dotconfig** | `dotconfig agent` or `instructions/dotconfig` |
+| Deployments, Docker, databases, remote servers | **rundbat** | `rundbat mcp --help` or `instructions/rundbat` |
+| GitHub issues (create, import, close) | **gh CLI** via CLASI MCP tools | `list_github_issues`, `close_github_issue`, `create_github_issue` |
+
+When a project has these tools configured, prefer them over raw commands.
+For example: use `dotconfig save` instead of editing files under `config/`
+directly; use rundbat MCP tools instead of writing raw `docker run`
+commands.
+
 ## Rules for AI Assistants
 
 - The **project-manager** is the entry point for new projects. It determines
