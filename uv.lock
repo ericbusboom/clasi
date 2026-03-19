@@ -126,7 +126,7 @@ wheels = [
 ]
 
 [[package]]
-name = "claude-agent-skills"
+name = "clasi"
 version = "0.20260317.6"
 source = { editable = "." }
 dependencies = [
