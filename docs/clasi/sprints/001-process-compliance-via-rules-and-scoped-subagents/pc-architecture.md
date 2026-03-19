@@ -431,6 +431,139 @@ docs/clasi/log/
 - `python-expert.md` — replaced by code-monkey (no Python-specific behavior)
 - `documentation-expert.md` — absorbed into code-monkey (docs are part of ticket implementation)
 
+## Agent Directory Structure
+
+The code directory structure mirrors the agent hierarchy. Each agent
+gets its own directory containing `agent.md` plus any skills,
+instructions, or rules specific to that agent.
+
+### New layout
+
+```
+agents/
+├── main-controller/
+│   └── main-controller/
+│       ├── agent.md              # was project-manager.md
+│       ├── next.md               # skill: determine next step
+│       └── project-status.md     # skill: report project state
+│
+├── domain-controllers/
+│   ├── requirements-narrator/
+│   │   ├── agent.md              # was requirements-analyst.md + product-manager.md
+│   │   ├── elicit-requirements.md    # skill
+│   │   └── project-initiation.md     # skill
+│   │
+│   ├── todo-worker/
+│   │   ├── agent.md              # new
+│   │   ├── todo.md               # skill: create TODO
+│   │   └── gh-import.md          # skill: import GitHub issues
+│   │
+│   ├── sprint-planner/
+│   │   ├── agent.md              # new (extracted from project-manager)
+│   │   ├── plan-sprint.md        # skill
+│   │   └── create-tickets.md     # skill
+│   │
+│   ├── sprint-executor/
+│   │   ├── agent.md              # new (extracted from project-manager)
+│   │   ├── execute-ticket.md     # skill
+│   │   └── close-sprint.md       # skill
+│   │
+│   ├── ad-hoc-executor/
+│   │   ├── agent.md              # new (formalized OOP)
+│   │   └── oop.md                # skill
+│   │
+│   └── sprint-reviewer/
+│       └── agent.md              # new
+│
+└── task-workers/
+    ├── architect/
+    │   ├── agent.md              # was architect.md
+    │   └── architectural-quality.md  # instruction (specific to architect)
+    │
+    ├── architecture-reviewer/
+    │   └── agent.md              # was architecture-reviewer.md
+    │
+    ├── technical-lead/
+    │   └── agent.md              # was technical-lead.md
+    │
+    ├── code-monkey/
+    │   ├── agent.md              # was python-expert.md (renamed, expanded)
+    │   ├── tdd-cycle.md          # skill (optional)
+    │   ├── systematic-debugging.md   # skill
+    │   └── python-code-review.md     # skill (language-specific)
+    │
+    └── code-reviewer/
+        └── agent.md              # was code-reviewer.md
+```
+
+### What stays global
+
+Some content is not agent-specific and remains at the top level:
+
+```
+skills/
+├── se.md                 # /se dispatcher (entry point)
+├── auto-approve.md       # cross-cutting mode
+├── self-reflect.md       # cross-cutting behavior
+├── dispatch-subagent.md  # dispatch protocol (used by all controllers)
+├── parallel-execution.md # cross-cutting optimization
+├── report.md             # bug reporting
+├── ghtodo.md             # create GitHub issues
+└── generate-documentation.md  # standalone doc generation
+
+instructions/
+├── software-engineering.md    # overall process
+├── coding-standards.md        # all code
+├── git-workflow.md            # all commits
+├── testing.md                 # all tests
+├── subagent-protocol.md       # all dispatchers
+├── worktree-protocol.md       # parallel execution
+├── dotconfig.md               # external tool
+├── rundbat.md                 # external tool
+└── languages/                 # per-language coding standards
+    └── ...
+```
+
+### Migration from current layout
+
+| Current file | New location |
+|---|---|
+| `agents/project-manager.md` | `agents/main-controller/main-controller/agent.md` |
+| `agents/requirements-analyst.md` | `agents/domain-controllers/requirements-narrator/agent.md` (merge with product-manager) |
+| `agents/product-manager.md` | merged into requirements-narrator |
+| `agents/architect.md` | `agents/task-workers/architect/agent.md` |
+| `agents/architecture-reviewer.md` | `agents/task-workers/architecture-reviewer/agent.md` |
+| `agents/technical-lead.md` | `agents/task-workers/technical-lead/agent.md` |
+| `agents/python-expert.md` | `agents/task-workers/code-monkey/agent.md` (renamed) |
+| `agents/code-reviewer.md` | `agents/task-workers/code-reviewer/agent.md` |
+| `agents/documentation-expert.md` | absorbed into code-monkey |
+| `skills/plan-sprint.md` | `agents/domain-controllers/sprint-planner/plan-sprint.md` |
+| `skills/create-tickets.md` | `agents/domain-controllers/sprint-planner/create-tickets.md` |
+| `skills/execute-ticket.md` | `agents/domain-controllers/sprint-executor/execute-ticket.md` |
+| `skills/close-sprint.md` | `agents/domain-controllers/sprint-executor/close-sprint.md` |
+| `skills/oop.md` | `agents/domain-controllers/ad-hoc-executor/oop.md` |
+| `skills/todo.md` | `agents/domain-controllers/todo-worker/todo.md` |
+| `skills/gh-import.md` | `agents/domain-controllers/todo-worker/gh-import.md` |
+| `skills/elicit-requirements.md` | `agents/domain-controllers/requirements-narrator/elicit-requirements.md` |
+| `skills/project-initiation.md` | `agents/domain-controllers/requirements-narrator/project-initiation.md` |
+| `skills/next.md` | `agents/main-controller/main-controller/next.md` |
+| `skills/project-status.md` | `agents/main-controller/main-controller/project-status.md` |
+| `skills/tdd-cycle.md` | `agents/task-workers/code-monkey/tdd-cycle.md` |
+| `skills/systematic-debugging.md` | `agents/task-workers/code-monkey/systematic-debugging.md` |
+| `skills/python-code-review.md` | `agents/task-workers/code-monkey/python-code-review.md` |
+| `instructions/architectural-quality.md` | `agents/task-workers/architect/architectural-quality.md` |
+
+### Process tools impact
+
+The MCP `process_tools.py` currently serves agents, skills, and
+instructions from flat directories. This needs updating:
+- `list_agents()` should walk the new directory tree
+- `get_agent_definition(name)` should find `agent.md` in the matching
+  subdirectory
+- Agent-specific skills/instructions could be returned alongside the
+  agent definition, or via a new `get_agent_context(name)` tool that
+  returns the agent definition plus all files in its directory
+
 ## Init Command Changes
 
 `init_command.py` gains a `_create_rules()` function that:
