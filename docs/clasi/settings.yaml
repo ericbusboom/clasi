@@ -37,7 +37,7 @@ version_trigger: "every_change"
 # Primary version source file. This is where the version is read from
 # and written to. Auto-detected if not set (checks pyproject.toml then
 # package.json).
-# version_source: "pyproject.toml"
+version_source: "pyproject.toml"
 
 # Additional files to sync the version into after a bump. The version
 # from the source file is copied into each of these. Useful for monorepos
