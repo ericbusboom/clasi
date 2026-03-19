@@ -97,4 +97,26 @@ Before tickets can be created, all of the following must be true:
 
 ## Tickets
 
-(To be created after sprint approval.)
+1. **#001 — Restructure agent directories into tier hierarchy**
+   Move flat agents/ into three-tier hierarchy. Move agent-specific
+   skills/instructions into agent directories. 34 file moves.
+
+2. **#002 — Update process_tools.py for directory tree** (depends: #001)
+   Update MCP tools to walk nested agent directories. New
+   `get_agent_context()` tool. Update list/get for agents and skills.
+
+3. **#003 — Write new agent definitions** (depends: #001)
+   Create 5 new agent.md files (sprint-planner, sprint-executor,
+   ad-hoc-executor, todo-worker, sprint-reviewer). Refactor
+   main-controller and code-monkey.
+
+4. **#004 — Create path-scoped rules and init integration**
+   Four `.claude/rules/` files + `_create_rules()` in init_command.py.
+
+5. **#005 — Update dispatch-subagent with scope and logging** (depends: #003, #006)
+   Add scope_directory to dispatch prompt. Log full prompts to
+   docs/clasi/log/.
+
+6. **#006 — Create log directory structure and format**
+   Establish docs/clasi/log/ structure. Logging utility for
+   sprint/ticket/adhoc dispatch logs with full prompt text.
