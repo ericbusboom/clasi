@@ -26,16 +26,106 @@ def _list_definitions(directory: Path) -> list[dict[str, str]]:
     return results
 
 
+def _list_agents_recursive(agents_dir: Path) -> list[dict[str, str]]:
+    """Walk the three-tier agent directory tree and list all agents.
+
+    Finds all agent.md files under agents/{tier}/{agent-name}/agent.md.
+    """
+    results = []
+    if not agents_dir.exists():
+        return results
+    for agent_md in sorted(agents_dir.rglob("agent.md")):
+        fm, _ = read_document(agent_md)
+        # Agent name comes from the parent directory name
+        agent_name = agent_md.parent.name
+        results.append({
+            "name": fm.get("name", agent_name),
+            "description": fm.get("description", ""),
+        })
+    return results
+
+
+def _find_agent_dir(agents_dir: Path, name: str) -> Path | None:
+    """Find the directory for a named agent in the tree."""
+    if not agents_dir.exists():
+        return None
+    for agent_md in agents_dir.rglob("agent.md"):
+        agent_name = agent_md.parent.name
+        fm, _ = read_document(agent_md)
+        if agent_name == name or fm.get("name") == name:
+            return agent_md.parent
+    return None
+
+
+def _list_all_skills(skills_dir: Path, agents_dir: Path) -> list[dict[str, str]]:
+    """List skills from both global skills/ and agent subdirectories."""
+    results = _list_definitions(skills_dir)
+    if agents_dir.exists():
+        for md_path in sorted(agents_dir.rglob("*.md")):
+            if md_path.name == "agent.md":
+                continue
+            if md_path.name.endswith("-legacy.md"):
+                continue
+            fm, _ = read_document(md_path)
+            # Only include files that look like skills (have a name in frontmatter
+            # or are .md files that aren't agent definitions)
+            if fm.get("name") or fm.get("description"):
+                results.append({
+                    "name": fm.get("name", md_path.stem),
+                    "description": fm.get("description", ""),
+                })
+    return sorted(results, key=lambda x: x["name"])
+
+
+def _find_definition_in_tree(agents_dir: Path, skills_dir: Path,
+                              instructions_dir: Path, name: str) -> str | None:
+    """Search for a named definition across agents, skills, and instructions."""
+    # Check global skills
+    path = skills_dir / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    # Check global instructions
+    path = instructions_dir / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    # Search agent directories
+    if agents_dir.exists():
+        for md_path in agents_dir.rglob(f"{name}.md"):
+            return md_path.read_text(encoding="utf-8")
+    return None
+
+
 def _get_definition(directory: Path, name: str) -> str:
-    """Read the full content of a named .md file from a directory."""
+    """Read the full content of a named .md file.
+
+    Searches the given directory first, then falls back to searching
+    the agent tree if the directory is agents/.
+    """
+    # Direct lookup
     path = directory / f"{name}.md"
-    if not path.exists():
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+
+    # For agents, search the tree for agent.md in a matching directory
+    if directory.name == "agents":
+        agent_dir = _find_agent_dir(directory, name)
+        if agent_dir:
+            return (agent_dir / "agent.md").read_text(encoding="utf-8")
+
+    # Search recursively in the directory
+    matches = list(directory.rglob(f"{name}.md"))
+    if matches:
+        return matches[0].read_text(encoding="utf-8")
+
+    # Build available list for error message
+    if directory.name == "agents":
+        available = [d["name"] for d in _list_agents_recursive(directory)]
+    else:
         available = [p.stem for p in sorted(directory.glob("*.md"))]
-        raise ValueError(
-            f"'{name}' not found in {directory.name}/. "
-            f"Available: {', '.join(available)}"
-        )
-    return path.read_text(encoding="utf-8")
+    raise ValueError(
+        f"'{name}' not found in {directory.name}/. "
+        f"Available: {', '.join(available)}"
+    )
 
 
 @server.tool()
@@ -63,16 +153,16 @@ def get_se_overview() -> str:
 
 ## Process Stages
 
-1. **Stage 1a — Requirements**: Elicit requirements, produce brief and use cases
-   - Skill: `elicit-requirements` | Agent: `requirements-analyst`
-2. **Stage 1b — Architecture**: Design architecture, produce architecture document
+1. **Stage 1a — Requirements**: Elicit requirements, produce overview
+   - Skill: `elicit-requirements` | Agent: `requirements-narrator`
+2. **Stage 1b — Architecture**: Design architecture per sprint
    - Skill: `plan-sprint` (architecture step) | Agent: `architect`
-3. **Sprints**: Organize work into sprint directories with planning docs and tickets
-   - Skills: `plan-sprint`, `close-sprint` | Agent: `project-manager`
+3. **Sprints**: Plan and execute sprints
+   - Skills: `plan-sprint`, `close-sprint` | Agents: `sprint-planner`, `sprint-executor`
 4. **Stage 2 — Ticketing**: Break plan into numbered tickets
    - Skill: `create-tickets` | Agent: `technical-lead`
 5. **Stage 3 — Implementation**: Execute tickets (plan → implement → test → review → done)
-   - Skill: `execute-ticket` | Agents: `python-expert`, `code-reviewer`, `documentation-expert`
+   - Skill: `execute-ticket` | Agents: `code-monkey`, `code-reviewer`
 
 ## Available Agents
 
@@ -108,18 +198,24 @@ def get_se_overview() -> str:
 def list_agents() -> str:
     """List all available agent definitions.
 
+    Walks the three-tier agent directory hierarchy to find all agent.md files.
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
-    return json.dumps(_list_definitions(content_path("agents")), indent=2)
+    return json.dumps(_list_agents_recursive(content_path("agents")), indent=2)
 
 
 @server.tool()
 def list_skills() -> str:
     """List all available skill definitions.
 
+    Includes both global skills and agent-specific skills from the
+    agent directory hierarchy.
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
-    return json.dumps(_list_definitions(content_path("skills")), indent=2)
+    return json.dumps(
+        _list_all_skills(content_path("skills"), content_path("agents")),
+        indent=2,
+    )
 
 
 @server.tool()
@@ -145,10 +241,58 @@ def get_agent_definition(name: str) -> str:
 def get_skill_definition(name: str) -> str:
     """Get the full markdown content of a named skill definition.
 
+    Searches global skills first, then agent directories.
+
     Args:
         name: The skill name (e.g., 'execute-ticket', 'plan-sprint')
     """
-    return _get_definition(content_path("skills"), name)
+    # Try global skills first
+    path = content_path("skills") / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    # Search agent directories
+    agents_dir = content_path("agents")
+    if agents_dir.exists():
+        matches = list(agents_dir.rglob(f"{name}.md"))
+        if matches:
+            return matches[0].read_text(encoding="utf-8")
+    raise ValueError(
+        f"'{name}' not found in skills/ or agent directories."
+    )
+
+
+@server.tool()
+def get_agent_context(name: str) -> str:
+    """Get an agent definition plus all files in its directory.
+
+    Returns the agent.md content followed by all sibling files
+    (skills, instructions specific to this agent).
+
+    Args:
+        name: The agent name (e.g., 'code-monkey', 'sprint-planner')
+    """
+    agents_dir = content_path("agents")
+    agent_dir = _find_agent_dir(agents_dir, name)
+    if not agent_dir:
+        available = [d["name"] for d in _list_agents_recursive(agents_dir)]
+        raise ValueError(
+            f"Agent '{name}' not found. Available: {', '.join(available)}"
+        )
+
+    sections = []
+    agent_md = agent_dir / "agent.md"
+    sections.append(f"# Agent: {name}\n\n{agent_md.read_text(encoding='utf-8')}")
+
+    for sibling in sorted(agent_dir.glob("*.md")):
+        if sibling.name == "agent.md":
+            continue
+        if sibling.name.endswith("-legacy.md"):
+            continue
+        sections.append(
+            f"## {sibling.stem}\n\n{sibling.read_text(encoding='utf-8')}"
+        )
+
+    return "\n\n---\n\n".join(sections)
 
 
 @server.tool()
@@ -184,7 +328,7 @@ def get_language_instruction(language: str) -> str:
 # agent, skill, and instruction files.
 ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
     "requirements": {
-        "agents": ["requirements-analyst"],
+        "agents": ["requirements-narrator"],
         "skills": ["elicit-requirements"],
         "instructions": ["software-engineering"],
     },
@@ -199,27 +343,27 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
         "instructions": ["software-engineering"],
     },
     "implementation": {
-        "agents": ["python-expert", "technical-lead"],
+        "agents": ["code-monkey", "technical-lead"],
         "skills": ["execute-ticket"],
-        "instructions": ["software-engineering", "coding-standards", "languages/python", "testing", "git-workflow"],
+        "instructions": ["software-engineering", "coding-standards", "testing", "git-workflow"],
     },
     "testing": {
-        "agents": ["python-expert"],
+        "agents": ["code-monkey"],
         "skills": ["execute-ticket"],
-        "instructions": ["testing", "coding-standards", "languages/python"],
+        "instructions": ["testing", "coding-standards"],
     },
     "code-review": {
         "agents": ["code-reviewer"],
         "skills": ["execute-ticket"],
-        "instructions": ["coding-standards", "languages/python", "testing"],
+        "instructions": ["coding-standards", "testing"],
     },
     "sprint-planning": {
-        "agents": ["project-manager", "architecture-reviewer"],
+        "agents": ["sprint-planner", "architecture-reviewer"],
         "skills": ["plan-sprint"],
         "instructions": ["software-engineering", "git-workflow"],
     },
     "sprint-closing": {
-        "agents": ["project-manager"],
+        "agents": ["sprint-executor"],
         "skills": ["close-sprint"],
         "instructions": ["software-engineering", "git-workflow"],
     },
@@ -252,13 +396,19 @@ def get_activity_guide(activity: str) -> str:
 
     # Agent definitions
     for agent_name in guide["agents"]:
-        content = _get_definition(content_path("agents"), agent_name)
-        sections.append(f"## Agent: {agent_name}\n\n{content}")
+        try:
+            content = _get_definition(content_path("agents"), agent_name)
+            sections.append(f"## Agent: {agent_name}\n\n{content}")
+        except ValueError:
+            sections.append(f"## Agent: {agent_name}\n\n(Agent definition not found)")
 
     # Skill workflows
     for skill_name in guide["skills"]:
-        content = _get_definition(content_path("skills"), skill_name)
-        sections.append(f"## Skill: {skill_name}\n\n{content}")
+        try:
+            content = get_skill_definition(skill_name)
+            sections.append(f"## Skill: {skill_name}\n\n{content}")
+        except ValueError:
+            sections.append(f"## Skill: {skill_name}\n\n(Skill definition not found)")
 
     # Instructions
     for instr_name in guide["instructions"]:

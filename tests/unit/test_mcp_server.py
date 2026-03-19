@@ -23,7 +23,8 @@ class TestContentPath:
         assert content_path("instructions", "languages").is_dir()
 
     def test_resolves_specific_file(self):
-        assert content_path("agents", "project-manager.md").is_file()
+        # Agent files are now in the hierarchy: agents/main-controller/main-controller/agent.md
+        assert content_path("agents", "main-controller", "main-controller", "agent.md").is_file()
 
     def test_resolves_rules_directory(self):
         assert content_path("rules").is_dir()
@@ -49,6 +50,7 @@ class TestToolRegistration:
         "list_skills",
         "list_instructions",
         "get_agent_definition",
+        "get_agent_context",
         "get_skill_definition",
         "get_instruction",
         "list_language_instructions",
@@ -108,7 +110,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 39
+        assert len(registered) == 40
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

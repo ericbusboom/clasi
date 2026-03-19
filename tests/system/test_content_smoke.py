@@ -20,8 +20,8 @@ from claude_agent_skills.process_tools import (
 class TestContentSmoke:
     def test_agents_directory_has_md_files(self):
         agents_dir = content_path("agents")
-        md_files = list(agents_dir.glob("*.md"))
-        assert len(md_files) > 0, "No .md files in agents directory"
+        md_files = list(agents_dir.rglob("agent.md"))
+        assert len(md_files) > 0, "No agent.md files in agents directory tree"
 
     def test_list_agents_returns_content(self):
         result = json.loads(list_agents())
