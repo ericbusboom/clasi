@@ -2,15 +2,23 @@
 
 Supports configurable version formats via docs/clasi/settings.yaml.
 
-Default format: X.YYYYMMDD.R
+Default format: X+.YYYYMMDD.R+
 
 Format tokens:
-    X, XX, XXX    — manual segment (unpadded, min-width)
-    0XX, 0XXX     — manual segment (zero-padded to width)
-    YYYY, MM, DD  — date components
-    R, RR, RRR    — auto-incrementing revision (unpadded, min-width)
-    0RR, 0RRR     — revision (zero-padded to width)
-    .             — literal dot separator
+    X      — manual segment, exactly 1 digit
+    XX     — manual segment, exactly 2 digits
+    X+     — manual segment, one or more digits (variable width)
+    0XX    — manual segment, exactly 2 digits, zero-padded
+    0XXX   — manual segment, exactly 3 digits, zero-padded
+    YYYY   — four-digit year
+    MM     — two-digit month
+    DD     — two-digit day
+    R      — auto-incrementing revision, exactly 1 digit
+    RR     — revision, exactly 2 digits
+    R+     — revision, one or more digits (variable width)
+    0RR    — revision, exactly 2 digits, zero-padded
+    0RRR   — revision, exactly 3 digits, zero-padded
+    .      — literal dot separator
 
 Fully manual formats (no R or date tokens) produce X.X.X style versions
 that are not auto-computed.
@@ -24,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_FORMAT = "X.YYYYMMDD.R"
+DEFAULT_FORMAT = "X+.YYYYMMDD.R+"
 
 # Priority-ordered list of version file names and their types.
 _VERSION_FILES: list[tuple[str, str]] = [
@@ -34,9 +42,11 @@ _VERSION_FILES: list[tuple[str, str]] = [
 
 # --- Format parsing ---
 
-# Token pattern: longest match first
+# Token pattern: longest match first.
+# Order matters: try 0-prefixed multi-char first, then multi-char, then
+# single+plus, then single, then date tokens, then dot.
 _TOKEN_RE = re.compile(
-    r"(0X{2,}|X{2,}|X|YYYY|MM|DD|0R{2,}|R{2,}|R|\.)"
+    r"(0X{2,}|0R{2,}|X{2,}|R{2,}|X\+|R\+|X|R|YYYY|MM|DD|\.)"
 )
 
 
@@ -45,6 +55,8 @@ def _classify_token(tok: str) -> tuple[str, int, bool]:
 
     Returns (kind, width, zero_pad).
     kind: 'manual', 'year', 'month', 'day', 'rev', 'dot'
+    width: exact digit count, or 0 for variable-width (+ suffix)
+    zero_pad: True if the output should be zero-padded to width
     """
     if tok == ".":
         return ("dot", 0, False)
@@ -54,14 +66,23 @@ def _classify_token(tok: str) -> tuple[str, int, bool]:
         return ("month", 2, True)
     if tok == "DD":
         return ("day", 2, True)
-    if tok.startswith("0") and tok[1:] == "X" * (len(tok) - 1):
+    # X+ or R+ — variable width
+    if tok == "X+":
+        return ("manual", 0, False)
+    if tok == "R+":
+        return ("rev", 0, False)
+    # 0XX, 0XXX — zero-padded manual
+    if tok.startswith("0") and all(c == "X" for c in tok[1:]):
         return ("manual", len(tok) - 1, True)
-    if tok == "X" * len(tok):
-        return ("manual", max(1, len(tok)), False)
-    if tok.startswith("0") and tok[1:] == "R" * (len(tok) - 1):
+    # XX, XXX — exact width manual
+    if all(c == "X" for c in tok):
+        return ("manual", len(tok), False)
+    # 0RR, 0RRR — zero-padded rev
+    if tok.startswith("0") and all(c == "R" for c in tok[1:]):
         return ("rev", len(tok) - 1, True)
-    if tok == "R" * len(tok):
-        return ("rev", max(1, len(tok)), False)
+    # RR, RRR — exact width rev
+    if all(c == "R" for c in tok):
+        return ("rev", len(tok), False)
     raise ValueError(f"Unknown version format token: {tok}")
 
 
@@ -84,7 +105,14 @@ def format_has_auto(parsed: list[tuple[str, int, bool]]) -> bool:
 
 
 def _format_segment(value: int, width: int, zero_pad: bool) -> str:
-    """Format a numeric segment with optional zero-padding."""
+    """Format a numeric segment with optional zero-padding.
+
+    width=0 means variable width (no padding, no truncation).
+    width>0 means exactly that many digits — zero-pad if zero_pad is True,
+    otherwise just str(value) (may exceed width if the value is large).
+    """
+    if width == 0:
+        return str(value)
     if zero_pad:
         return str(value).zfill(width)
     return str(value)
@@ -133,7 +161,10 @@ def build_tag_regex(parsed: list[tuple[str, int, bool]]) -> re.Pattern:
         if kind == "dot":
             parts.append(r"\.")
         elif kind == "manual":
-            parts.append(f"(?P<manual_{manual_idx}>\\d{{{width},}})")
+            if width == 0:
+                parts.append(f"(?P<manual_{manual_idx}>\\d+)")
+            else:
+                parts.append(f"(?P<manual_{manual_idx}>\\d{{{width}}})")
             manual_idx += 1
         elif kind == "year":
             parts.append(r"(?P<year>\d{4})")
@@ -142,7 +173,10 @@ def build_tag_regex(parsed: list[tuple[str, int, bool]]) -> re.Pattern:
         elif kind == "day":
             parts.append(r"(?P<day>\d{2})")
         elif kind == "rev":
-            parts.append(f"(?P<rev>\\d{{{width},}})")
+            if width == 0:
+                parts.append(r"(?P<rev>\d+)")
+            else:
+                parts.append(f"(?P<rev>\\d{{{width}}})")
     parts.append("$")
     return re.compile("".join(parts))
 
