@@ -50,8 +50,8 @@ flowchart TB
     end
 
     subgraph L2["Layer 2: Contextual (new)"]
-        rules["Path-scoped rules\n(.claude/rules/)"]
-        scope["Directory scope\nin subagent prompt"]
+        rules["Path-scoped rules<br/>(.claude/rules/)"]
+        scope["Directory scope<br/>in subagent prompt"]
     end
 
     subgraph L3["Layer 3: Mechanical (strongest)"]
@@ -61,16 +61,16 @@ flowchart TB
     end
 
     subgraph L4["Layer 4: Validation (post-hoc)"]
-        review["Controller reviews\nsubagent output"]
-        scopecheck["Directory scope\nvalidation"]
-        sprintreview["Sprint review\nMCP tools"]
+        review["Controller reviews<br/>subagent output"]
+        scopecheck["Directory scope<br/>validation"]
+        sprintreview["Sprint review<br/>MCP tools"]
     end
 
-    L1 -->|"loads at session start\nfades from context"| agent["Agent"]
-    L2 -->|"loads on file access\nre-injects at decision point"| agent
-    L3 -->|"rejects invalid operations\ncannot be bypassed"| agent
+    L1 -->|"loads at session start<br/>fades from context"| agent["Agent"]
+    L2 -->|"loads on file access<br/>re-injects at decision point"| agent
+    L3 -->|"rejects invalid operations<br/>cannot be bypassed"| agent
     agent -->|"produces output"| L4
-    L4 -->|"reject + re-dispatch\nif out of scope"| agent
+    L4 -->|"reject + re-dispatch<br/>if out of scope"| agent
 
     style L1 fill:#ffe0e0,stroke:#c00
     style L2 fill:#fff3e0,stroke:#f90
@@ -185,26 +185,26 @@ operates at three levels:
 ```mermaid
 flowchart LR
     subgraph Dispatch["Controller dispatches"]
-        prompt["Subagent prompt includes:\n'Only modify files under\ndocs/clasi/todo/'"]
-        scope["scope_directory:\ndocs/clasi/todo/"]
+        prompt["Subagent prompt includes:<br/>'Only modify files under<br/>docs/clasi/todo/'"]
+        scope["scope_directory:<br/>docs/clasi/todo/"]
     end
 
     subgraph Execute["Subagent executes"]
-        work["Reads context files\n(any location)"]
-        write["Writes only to\nscoped directory"]
-        rules2["Rules for that directory\nreinforce the constraint"]
+        work["Reads context files<br/>(any location)"]
+        write["Writes only to<br/>scoped directory"]
+        rules2["Rules for that directory<br/>reinforce the constraint"]
     end
 
     subgraph Validate["Controller validates"]
-        check["Check: did subagent\nonly modify files in\nscope_directory?"]
+        check["Check: did subagent<br/>only modify files in<br/>scope_directory?"]
         accept["Accept output"]
-        reject["Reject + re-dispatch\nwith feedback"]
+        reject["Reject + re-dispatch<br/>with feedback"]
     end
 
     Dispatch --> Execute --> Validate
     check -->|yes| accept
     check -->|no| reject
-    reject -->|"feedback: you modified\nfiles outside scope"| Execute
+    reject -->|"feedback: you modified<br/>files outside scope"| Execute
 
     style Dispatch fill:#e8f4fd
     style Execute fill:#f0f8e8

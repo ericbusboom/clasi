@@ -44,16 +44,16 @@ flowchart TB
     end
 
     subgraph Runtime["MCP Runtime"]
-        server["MCP Server\n(mcp_server.py)"]
-        process["Process Tools\n(process_tools.py)\n— read-only —"]
-        artifact["Artifact Tools\n(artifact_tools.py)\n— read-write —"]
+        server["MCP Server<br/>(mcp_server.py)"]
+        process["Process Tools<br/>(process_tools.py)<br/>— read-only —"]
+        artifact["Artifact Tools<br/>(artifact_tools.py)<br/>— read-write —"]
     end
 
     subgraph Shared["Shared Modules"]
-        fm["Frontmatter\n(frontmatter.py)"]
-        tmpl["Templates\n(templates.py)"]
-        db["State DB\n(state_db.py)"]
-        vmod["Versioning\n(versioning.py)"]
+        fm["Frontmatter<br/>(frontmatter.py)"]
+        tmpl["Templates<br/>(templates.py)"]
+        db["State DB<br/>(state_db.py)"]
+        vmod["Versioning<br/>(versioning.py)"]
     end
 
     subgraph Content["Bundled Content"]
@@ -64,8 +64,8 @@ flowchart TB
         rules_tmpl["init/rules/"]
     end
 
-    init_cmd["Init Command\n(init_command.py)"]
-    todo_split["TODO Split\n(todo_split.py)"]
+    init_cmd["Init Command<br/>(init_command.py)"]
+    todo_split["TODO Split<br/>(todo_split.py)"]
 
     init --> init_cmd
     mcp --> server
@@ -103,24 +103,24 @@ subagents for each task, reviews their output, and advances the process.
 ```mermaid
 flowchart TB
     user["Stakeholder"]
-    pm["Controller\n(project-manager)"]
+    pm["Controller<br/>(project-manager)"]
 
     subgraph Planning["Planning Subagents"]
-        ra["requirements-analyst\nScope: docs/clasi/overview.md"]
-        arch["architect\nScope: docs/clasi/sprints/NNN/architecture.md"]
-        ar["architecture-reviewer\nScope: read-only review"]
-        tl["technical-lead\nScope: docs/clasi/sprints/NNN/tickets/"]
+        ra["requirements-analyst<br/>Scope: docs/clasi/overview.md"]
+        arch["architect<br/>Scope: docs/clasi/sprints/NNN/architecture.md"]
+        ar["architecture-reviewer<br/>Scope: read-only review"]
+        tl["technical-lead<br/>Scope: docs/clasi/sprints/NNN/tickets/"]
     end
 
     subgraph Execution["Execution Subagents"]
-        py["python-expert\nScope: source code + tests"]
-        cr["code-reviewer\nScope: read-only review"]
-        doc["documentation-expert\nScope: docs/, README"]
+        py["python-expert<br/>Scope: source code + tests"]
+        cr["code-reviewer<br/>Scope: read-only review"]
+        doc["documentation-expert<br/>Scope: docs/, README"]
     end
 
     subgraph Support["Support Subagents"]
-        todo_agent["todo-worker\nScope: docs/clasi/todo/"]
-        gh_agent["gh-import\nScope: docs/clasi/todo/"]
+        todo_agent["todo-worker<br/>Scope: docs/clasi/todo/"]
+        gh_agent["gh-import<br/>Scope: docs/clasi/todo/"]
     end
 
     user -->|narrates| pm
