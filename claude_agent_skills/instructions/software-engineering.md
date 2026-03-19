@@ -51,6 +51,8 @@ Supporting skills used during ticket execution:
 
 - **python-code-review** — Code review against coding standards and security
 - **generate-documentation** — Create or update project documentation
+- **tdd-cycle** — Optional red-green-refactor TDD workflow for implementation
+- **systematic-debugging** — Structured four-phase debugging protocol with attempt cap
 
 ## Artifacts
 
@@ -383,6 +385,12 @@ Things go wrong during implementation. Here is what to do.
 2. Fix the code (not the test, unless the test is wrong).
 3. Re-run the tests. Repeat until all pass.
 4. If the failure reveals a flaw in the ticket plan, update the plan.
+5. If simple diagnosis does not resolve the failure — especially after
+   two consecutive failed fix attempts, or when a previously passing
+   test breaks — invoke the `systematic-debugging` skill. This provides
+   a structured four-phase protocol (evidence gathering, pattern analysis,
+   hypothesis testing, root cause fix) and caps attempts at three before
+   requiring stakeholder escalation.
 
 **Plan gaps** (the plan missed something needed for implementation):
 1. If the gap is small and local (e.g., a missing helper function), update

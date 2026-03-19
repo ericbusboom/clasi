@@ -58,6 +58,11 @@ completion, coordinating subagent dispatch and two-stage review.
    check against acceptance criteria, verify tests pass. If issues are
    found, dispatch a new subagent with feedback (max 3 iterations).
 
+**Test Driven Development**
+   If TDD is appropriate for this ticket (well-defined interfaces, complex
+   logic, bug fixes), consider using the `tdd-cycle` skill for the
+   implementation phase. TDD is optional — the agent or stakeholder may
+   choose it when it fits, but it is not the default.
 5. **Write tests**: Read the ticket's `## Testing` section for guidance
    on which new tests to write and where to place them. Create tests as
    specified, following the testing instructions (unit tests in
@@ -93,6 +98,22 @@ completion, coordinating subagent dispatch and two-stage review.
    - Move the ticket plan file to the sprint's `tickets/done/` directory.
    - **Commit the moves**: `git add` the moved files and commit with a
      message like `chore: move ticket #NNN to done`.
+
+## Error Recovery
+
+**Test failures:**
+When tests fail during step 6, diagnose and fix:
+
+1. Read the error output carefully. Diagnose the root cause.
+2. Fix the code (not the test, unless the test is wrong).
+3. Re-run the tests. Repeat until all pass.
+4. If the failure reveals a flaw in the ticket plan, update the plan.
+5. If simple diagnosis does not resolve the failure — especially after
+   two consecutive failed fix attempts, or when a previously passing
+   test breaks — invoke the `systematic-debugging` skill instead of
+   making further speculative changes. The debugging skill provides a
+   structured four-phase protocol and caps attempts at three before
+   requiring escalation.
 
 ## Output
 

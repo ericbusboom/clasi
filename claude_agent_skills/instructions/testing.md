@@ -10,6 +10,40 @@ description: Instructions for testing conventions, test types, design for testab
 No ticket is considered finished until tests have been written to exercise the
 changes in that ticket. This is non-negotiable.
 
+## Development Methods
+
+Two approaches to writing tests are available. Both are valid — choose
+based on what fits the work.
+
+### Implement-Then-Test (Default)
+
+Write the implementation first, then write tests to verify it. This is
+the default approach and is appropriate for most work: configuration
+changes, documentation updates, exploratory spikes, UI layout, and
+simple glue code.
+
+### Test-Driven Development (Optional)
+
+TDD (red-green-refactor) is available via the `tdd-cycle` skill. With
+TDD, you write a failing test first, then write the minimum code to make
+it pass, then refactor.
+
+**When TDD is most useful:**
+- Well-defined interfaces where you know the inputs and outputs
+- Bug fixes (write a test that reproduces the bug, then fix it)
+- Complex logic with many edge cases
+- Refactoring with confidence (lock in behavior with tests first)
+
+**When implement-then-test is usually better:**
+- Exploratory spikes where the design is unclear
+- Configuration and deployment changes
+- UI layout and styling
+- Documentation updates
+
+TDD is not mandatory and is not the default. The agent or stakeholder
+may choose to use it when it fits. See the `tdd-cycle` skill for the
+full workflow.
+
 ## Test Placement (Mandatory)
 
 Every test file MUST go in the correct subdirectory. Never place test files

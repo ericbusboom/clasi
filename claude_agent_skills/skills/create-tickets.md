@@ -32,9 +32,10 @@ technical-lead agent.
    use-cases, depends-on, github-issue) and body (description, acceptance
    criteria, implementation notes). Ticket numbering is per-sprint
    (starts at 001).
-5. **Propagate GitHub issue references**: When creating tickets from
-   TODOs that have a `github-issue` field in their frontmatter, copy the
-   `github-issue` value to the new ticket's frontmatter. After all
+5. **Propagate TODO and GitHub issue references**: When creating tickets
+   from TODOs, set the ticket's `todo` frontmatter field to the TODO
+   filename (e.g., `todo: "my-idea.md"`). This creates the back-link
+   from ticket to TODO. Also copy `github-issue` if present. After all
    tickets are created, collect all `github-issue` references from the
    sprint's tickets and list them in the sprint doc's `## GitHub Issues`
    section using the format `owner/repo#N`.

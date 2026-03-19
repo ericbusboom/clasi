@@ -35,9 +35,15 @@ before that phase. Follow the phases in order.
 
 2. **Mine the TODO directory**: Scan `docs/plans/todo/` for ideas relevant
    to the upcoming sprint. Discuss relevant TODOs with the stakeholder and
-   incorporate selected items into the sprint scope. After the sprint
-   branch is created (step 4), move consumed TODO files to
-   `docs/plans/todo/done/` and commit the moves on the sprint branch.
+   incorporate selected items into the sprint scope.
+
+   For each TODO claimed by this sprint, set `sprint: "NNN"` in the
+   TODO's YAML frontmatter (using `write_artifact_frontmatter`). This
+   creates the forward link from TODO to sprint.
+
+   After the sprint branch is created (step 4), move consumed TODO files
+   to `docs/plans/todo/done/` using `move_todo_to_done(filename,
+   sprint_id)` and commit the moves on the sprint branch.
 
 3. **Create sprint directory**: Use the `create_sprint` MCP tool. This
    creates the directory structure and registers the sprint in the state

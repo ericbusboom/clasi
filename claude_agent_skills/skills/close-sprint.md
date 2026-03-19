@@ -31,7 +31,13 @@ the sprint branch, and archive the sprint document.
 
    If any ticket is not done, report which tickets remain and stop.
 
-3. **Confirm with stakeholder**: Present a summary of the sprint —
+3. **Verify TODO completion**: Scan the sprint's done tickets for any
+   with a `todo` frontmatter field. For each referenced TODO, verify
+   it has been moved to `docs/clasi/todo/done/` (or `docs/plans/todo/done/`).
+   If any claimed TODOs are still in the active TODO directory, report
+   them — they should either be moved to done or explicitly deferred.
+
+4. **Confirm with stakeholder**: Present a summary of the sprint —
    list the completed tickets and key changes. Use `AskUserQuestion`:
    - "Close sprint and merge to main" (recommended)
    - "Review completed work first"
@@ -39,20 +45,20 @@ the sprint branch, and archive the sprint document.
    If the stakeholder chooses to review, present the full sprint details
    and stop. Otherwise proceed with closing.
 
-4. **Advance to closing phase**: Call `advance_sprint_phase` to move
+5. **Advance to closing phase**: Call `advance_sprint_phase` to move
    from `executing` to `closing`.
 
-5. **Run final validation**: Ensure tests pass, no uncommitted changes
+6. **Run final validation**: Ensure tests pass, no uncommitted changes
    exist on the sprint branch.
 
-6. **Close linked GitHub issues**: Read the sprint doc's `## GitHub
+7. **Close linked GitHub issues**: Read the sprint doc's `## GitHub
    Issues` section. For each `owner/repo#N` reference listed:
    - Call the `close_github_issue` MCP tool with the repo and issue number.
    - If closing fails for any issue, log the failure but continue with
      the remaining issues and the sprint closure.
    - If no `## GitHub Issues` section exists or it is empty, skip this step.
 
-7. **Merge sprint branch**: Merge `sprint/NNN-slug` into main:
+8. **Merge sprint branch**: Merge `sprint/NNN-slug` into main:
    ```
    git checkout main
    git merge sprint/NNN-slug
@@ -60,43 +66,44 @@ the sprint branch, and archive the sprint document.
    If there are merge conflicts, resolve them or escalate to the
    stakeholder.
 
-8. **Version the architecture document**: Copy the sprint's
-   `architecture.md` to the project architecture directory:
-   ```
-   cp docs/plans/sprints/NNN-slug/architecture.md \
-      docs/plans/architecture/architecture-NNN.md
-   ```
-   Move any previous architecture versions to `docs/plans/architecture/done/`:
-   ```
-   mkdir -p docs/plans/architecture/done
-   mv docs/plans/architecture/architecture-*.md docs/plans/architecture/done/
-   cp docs/plans/sprints/NNN-slug/architecture.md \
-      docs/plans/architecture/architecture-NNN.md
-   ```
-   (Move first, then copy the new one, so only the latest is at the top level.)
+9. **Version the architecture document**: Copy the sprint's
+    `architecture.md` to the project architecture directory:
+    ```
+    cp docs/plans/sprints/NNN-slug/architecture.md \
+       docs/plans/architecture/architecture-NNN.md
+    ```
+    Move any previous architecture versions to `docs/plans/architecture/done/`:
+    ```
+    mkdir -p docs/plans/architecture/done
+    mv docs/plans/architecture/architecture-*.md docs/plans/architecture/done/
+    cp docs/plans/sprints/NNN-slug/architecture.md \
+       docs/plans/architecture/architecture-NNN.md
+    ```
+    (Move first, then copy the new one, so only the latest is at the top level.)
 
-9. **Close the sprint**: Call the `close_sprint` MCP tool. This
-   atomically:
-   - Updates the sprint document status to `done`
-   - Moves the sprint directory to `docs/plans/sprints/done/NNN-slug/`
-   - Advances the state database phase to `done`
-   - Releases the execution lock
+10. **Close the sprint**: Call the `close_sprint` MCP tool. This
+    atomically:
+    - Updates the sprint document status to `done`
+    - Moves the sprint directory to `docs/plans/sprints/done/NNN-slug/`
+    - Advances the state database phase to `done`
+    - Releases the execution lock
 
-10. **Commit the archive**: The `close_sprint` tool moves files and bumps
-    the version in the project's version file (e.g., `pyproject.toml` or
-    `package.json`) but does not commit. Run `git add` for the moved sprint
-    directory and the version file, then commit with a message like
+11. **Version update** (conditional): Check `docs/clasi/settings.yaml`
+    for `version_trigger`. If set to `every_sprint` or `every_change`,
+    run `clasi version bump` (or call `tag_version`). If `manual`, skip.
+
+12. **Commit the archive**: Run `git add` for the moved sprint directory
+    and the version file (if changed), then commit with a message like
     `chore: close sprint NNN — archive to done, tag vX.Y.Z`.
 
-11. **Push tags**: `git push` does not push tags by default. Run
-    `git push --tags` to ensure the version tag created by `tag_version`
-    is pushed to the remote.
+13. **Push tags**: If a version tag was created, run `git push --tags`.
 
-12. **Delete sprint branch**: Run `git branch -d sprint/NNN-slug`.
+14. **Delete sprint branch**: Run `git branch -d sprint/NNN-slug`.
 
-13. **Report completion**: Summarize what was accomplished in the sprint —
+15. **Report completion**: Summarize what was accomplished in the sprint —
     list of completed tickets, key changes, any notes for follow-up.
-    Include a summary of which GitHub issues were closed (if any).
+    Include a summary of which GitHub issues were closed (if any) and
+    which TODOs were completed.
 
 ## Output
 
