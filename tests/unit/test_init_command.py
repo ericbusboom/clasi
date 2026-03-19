@@ -8,6 +8,7 @@ from claude_agent_skills.init_command import (
     run_init,
     MCP_CONFIG,
     HOOKS_CONFIG,
+    RULES,
     VSCODE_MCP_CONFIG,
     _SE_SKILL_PATH,
     _AGENTS_SECTION_PATH,
@@ -55,12 +56,14 @@ class TestRunInit:
                          "report", "ghtodo"]:
             assert not (skills_dir / old_name).exists()
 
-    def test_does_not_create_rule_files(self, target_dir):
+    def test_creates_rule_files(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
 
         rules_dir = target_dir / ".claude" / "rules"
-        assert not rules_dir.exists()
+        assert rules_dir.exists()
+        for filename in RULES:
+            assert (rules_dir / filename).exists()
 
     def test_does_not_create_copilot_mirror(self, target_dir):
         target_dir.mkdir()
@@ -388,3 +391,88 @@ class TestHooksConfig:
         assert len(ups_entries) == 2
         assert existing_entry in ups_entries
         assert HOOKS_CONFIG["UserPromptSubmit"][0] in ups_entries
+
+
+class TestRules:
+    def test_init_creates_all_four_rule_files(self, target_dir):
+        """Init creates all four CLASI rule files."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        expected = {"clasi-artifacts.md", "source-code.md",
+                    "todo-dir.md", "git-commits.md"}
+        created = {f.name for f in rules_dir.iterdir() if f.is_file()}
+        assert expected == created
+
+    def test_rule_content_matches_constants(self, target_dir):
+        """Each rule file contains the exact content from the RULES dict."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        for filename, expected_content in RULES.items():
+            actual = (rules_dir / filename).read_text(encoding="utf-8")
+            assert actual == expected_content
+
+    def test_rules_have_paths_frontmatter(self, target_dir):
+        """Each rule file has YAML frontmatter with a paths field."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        for filename in RULES:
+            content = (rules_dir / filename).read_text(encoding="utf-8")
+            assert content.startswith("---\n")
+            assert "paths:" in content
+
+    def test_rules_idempotent(self, target_dir):
+        """Running init twice produces the same rule files with no duplication."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        contents_first = {
+            f.name: f.read_text(encoding="utf-8")
+            for f in rules_dir.iterdir() if f.is_file()
+        }
+
+        run_init(str(target_dir))
+
+        contents_second = {
+            f.name: f.read_text(encoding="utf-8")
+            for f in rules_dir.iterdir() if f.is_file()
+        }
+        assert contents_first == contents_second
+
+    def test_rules_preserve_custom_files(self, target_dir):
+        """Init does not delete custom rule files added by the developer."""
+        target_dir.mkdir()
+        rules_dir = target_dir / ".claude" / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        custom = rules_dir / "my-custom-rule.md"
+        custom.write_text("---\npaths:\n  - lib/**\n---\nMy rule.\n",
+                          encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        assert custom.exists()
+        assert custom.read_text(encoding="utf-8") == (
+            "---\npaths:\n  - lib/**\n---\nMy rule.\n"
+        )
+        # All CLASI rules also present
+        for filename in RULES:
+            assert (rules_dir / filename).exists()
+
+    def test_rules_update_changed_content(self, target_dir):
+        """Init overwrites a CLASI rule if its content has changed."""
+        target_dir.mkdir()
+        rules_dir = target_dir / ".claude" / "rules"
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        stale = rules_dir / "clasi-artifacts.md"
+        stale.write_text("old content", encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        actual = stale.read_text(encoding="utf-8")
+        assert actual == RULES["clasi-artifacts.md"]

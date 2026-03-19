@@ -7,6 +7,7 @@ MCP config, and permissions. Does not take over existing files.
 
 import json
 from pathlib import Path
+from typing import Dict
 
 import click
 
@@ -32,6 +33,64 @@ HOOKS_CONFIG = {
             ],
         }
     ]
+}
+
+# Path-scoped rules installed by `clasi init`.
+# Each key is the filename under `.claude/rules/`, each value is the
+# complete file content (YAML frontmatter + markdown body).
+RULES: Dict[str, str] = {
+    "clasi-artifacts.md": """\
+---
+paths:
+  - docs/clasi/**
+---
+
+You are modifying CLASI planning artifacts. Before making changes:
+
+1. Confirm you have an active sprint (`list_sprints(status="active")`),
+   or the stakeholder said "out of process" / "direct change".
+2. If creating or modifying tickets, the sprint must be in `ticketing`
+   or `executing` phase (`get_sprint_phase(sprint_id)`).
+3. Use CLASI MCP tools for all artifact operations — do not create
+   sprint/ticket/TODO files manually.
+""",
+    "source-code.md": """\
+---
+paths:
+  - claude_agent_skills/**
+  - tests/**
+---
+
+You are modifying source code or tests. Before writing code:
+
+1. You must have a ticket in `in-progress` status, or the stakeholder
+   said "out of process".
+2. If you have a ticket, follow the execute-ticket skill — call
+   `get_skill_definition("execute-ticket")` if unsure of the steps.
+3. Run tests after changes: `uv run pytest`.
+""",
+    "todo-dir.md": """\
+---
+paths:
+  - docs/clasi/todo/**
+---
+
+Use the CLASI `todo` skill or `move_todo_to_done` MCP tool for TODO
+operations. Do not use the generic TodoWrite tool for CLASI TODOs.
+""",
+    "git-commits.md": """\
+---
+paths:
+  - "**/*.py"
+  - "**/*.md"
+---
+
+Before committing, verify:
+1. All tests pass (`uv run pytest`).
+2. If on a sprint branch, the sprint has an execution lock.
+3. Commit message references the ticket ID if working on a ticket.
+See `instructions/git-workflow` for full rules.
+""",
 }
 
 _PACKAGE_DIR = Path(__file__).parent
@@ -262,6 +321,35 @@ def _update_hooks_config(settings_path: Path) -> bool:
     return True
 
 
+def _create_rules(target: Path) -> bool:
+    """Create path-scoped rule files in .claude/rules/.
+
+    Writes each CLASI-managed rule file.  Idempotent: compares content
+    before writing and skips unchanged files.  Only writes files whose
+    names are keys in :data:`RULES`; any other files in the directory
+    (custom rules added by the developer) are left untouched.
+
+    Returns True if any file was written/updated, False if all unchanged.
+    """
+    rules_dir = target / ".claude" / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    changed = False
+
+    for filename, content in RULES.items():
+        path = rules_dir / filename
+        rel = f".claude/rules/{filename}"
+
+        if path.exists() and path.read_text(encoding="utf-8") == content:
+            click.echo(f"  Unchanged: {rel}")
+            continue
+
+        path.write_text(content, encoding="utf-8")
+        click.echo(f"  Wrote: {rel}")
+        changed = True
+
+    return changed
+
+
 def run_init(target: str) -> None:
     """Initialize a repository for the CLASI SE process.
 
@@ -298,6 +386,11 @@ def run_init(target: str) -> None:
     click.echo("Session-start hook:")
     settings_shared = target_path / ".claude" / "settings.json"
     _update_hooks_config(settings_shared)
+    click.echo()
+
+    # Install path-scoped rules in .claude/rules/
+    click.echo("Path-scoped rules:")
+    _create_rules(target_path)
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")
