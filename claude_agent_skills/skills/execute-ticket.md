@@ -58,11 +58,14 @@ completion, coordinating subagent dispatch and two-stage review.
    check against acceptance criteria, verify tests pass. If issues are
    found, dispatch a new subagent with feedback (max 3 iterations).
 
+<<<<<<< HEAD
 **Test Driven Development**
    If TDD is appropriate for this ticket (well-defined interfaces, complex
    logic, bug fixes), consider using the `tdd-cycle` skill for the
    implementation phase. TDD is optional — the agent or stakeholder may
    choose it when it fits, but it is not the default.
+=======
+>>>>>>> 9e11fed (feat: update project-manager and execute-ticket for dispatch model (#004, sprint 022))
 5. **Write tests**: Read the ticket's `## Testing` section for guidance
    on which new tests to write and where to place them. Create tests as
    specified, following the testing instructions (unit tests in
