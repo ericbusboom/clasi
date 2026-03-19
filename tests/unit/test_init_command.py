@@ -307,10 +307,13 @@ class TestHooksConfig:
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         assert "hooks" in data
         assert "UserPromptSubmit" in data["hooks"]
-        hooks = data["hooks"]["UserPromptSubmit"]
-        assert len(hooks) == 1
-        assert hooks[0]["type"] == "command"
-        assert "get_se_overview()" in hooks[0]["command"]
+        entries = data["hooks"]["UserPromptSubmit"]
+        assert len(entries) == 1
+        # Correct matcher+hooks format
+        assert entries[0]["matcher"] == ""
+        assert len(entries[0]["hooks"]) == 1
+        assert entries[0]["hooks"][0]["type"] == "command"
+        assert "get_se_overview()" in entries[0]["hooks"][0]["command"]
 
     def test_hooks_idempotent(self, target_dir):
         """Running init twice does not duplicate the hook entry."""
@@ -320,8 +323,8 @@ class TestHooksConfig:
 
         settings_path = target_dir / ".claude" / "settings.json"
         data = json.loads(settings_path.read_text(encoding="utf-8"))
-        hooks = data["hooks"]["UserPromptSubmit"]
-        assert len(hooks) == 1
+        entries = data["hooks"]["UserPromptSubmit"]
+        assert len(entries) == 1
 
     def test_hooks_preserve_existing_settings(self, target_dir):
         """Hook installation preserves existing keys in settings.json."""
@@ -336,37 +339,41 @@ class TestHooksConfig:
         run_init(str(target_dir))
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
-        # Other top-level keys are preserved
         assert data["other"] == "kept"
-        # Hooks are added
         assert "hooks" in data
-        hooks = data["hooks"]["UserPromptSubmit"]
-        assert len(hooks) == 1
-        assert hooks[0] == HOOKS_CONFIG["UserPromptSubmit"][0]
+        entries = data["hooks"]["UserPromptSubmit"]
+        assert len(entries) == 1
+        assert entries[0] == HOOKS_CONFIG["UserPromptSubmit"][0]
 
     def test_hooks_correct_format(self, target_dir):
-        """Hook entry matches the HOOKS_CONFIG constant exactly."""
+        """Hook entry uses matcher+hooks format per Claude Code spec."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
         settings_path = target_dir / ".claude" / "settings.json"
         data = json.loads(settings_path.read_text(encoding="utf-8"))
-        hooks = data["hooks"]["UserPromptSubmit"]
-        assert hooks == HOOKS_CONFIG["UserPromptSubmit"]
+        entries = data["hooks"]["UserPromptSubmit"]
+        assert entries == HOOKS_CONFIG["UserPromptSubmit"]
+        # Verify structure
+        assert "matcher" in entries[0]
+        assert "hooks" in entries[0]
+        assert isinstance(entries[0]["hooks"], list)
 
     def test_hooks_preserve_existing_hooks(self, target_dir):
         """Hook installation preserves other existing hook entries."""
         target_dir.mkdir()
         settings_path = target_dir / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        existing_hook = {
-            "type": "command",
-            "command": "echo 'other hook'",
+        existing_entry = {
+            "matcher": "Bash",
+            "hooks": [{"type": "command", "command": "echo 'other hook'"}],
         }
         existing = {
             "hooks": {
-                "UserPromptSubmit": [existing_hook],
-                "PreToolUse": [{"type": "command", "command": "echo pre"}],
+                "UserPromptSubmit": [existing_entry],
+                "PreToolUse": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "echo pre"}]}
+                ],
             }
         }
         settings_path.write_text(json.dumps(existing), encoding="utf-8")
@@ -375,11 +382,9 @@ class TestHooksConfig:
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         # Other hook event types are preserved
-        assert data["hooks"]["PreToolUse"] == [
-            {"type": "command", "command": "echo pre"}
-        ]
-        # Existing UserPromptSubmit hook is preserved alongside CLASI hook
-        ups_hooks = data["hooks"]["UserPromptSubmit"]
-        assert len(ups_hooks) == 2
-        assert existing_hook in ups_hooks
-        assert HOOKS_CONFIG["UserPromptSubmit"][0] in ups_hooks
+        assert len(data["hooks"]["PreToolUse"]) == 1
+        # Existing UserPromptSubmit entry is preserved alongside CLASI entry
+        ups_entries = data["hooks"]["UserPromptSubmit"]
+        assert len(ups_entries) == 2
+        assert existing_entry in ups_entries
+        assert HOOKS_CONFIG["UserPromptSubmit"][0] in ups_entries

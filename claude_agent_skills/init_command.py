@@ -20,11 +20,16 @@ MCP_CONFIG = {
 HOOKS_CONFIG = {
     "UserPromptSubmit": [
         {
-            "type": "command",
-            "command": (
-                "echo 'CLASI: Call get_se_overview() to load the"
-                " SE process before doing any work.'"
-            ),
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": (
+                        "echo 'CLASI: Call get_se_overview() to load the"
+                        " SE process before doing any work.'"
+                    ),
+                }
+            ],
         }
     ]
 }
@@ -210,11 +215,14 @@ def _update_settings_json(settings_path: Path) -> bool:
 
 
 def _update_hooks_config(settings_path: Path) -> bool:
-    """Add session-start hook to settings.local.json.
+    """Add session-start hook to settings.json (shared, checked in).
 
     Installs a UserPromptSubmit hook that reminds the agent to load the
     SE process.  Idempotent: if the hook already exists with the correct
     command, no changes are made.
+
+    Hook format (per Claude Code spec):
+    {"matcher": "", "hooks": [{"type": "command", "command": "..."}]}
 
     Returns True if the file was written/updated, False if unchanged.
     """
@@ -229,26 +237,28 @@ def _update_hooks_config(settings_path: Path) -> bool:
         data = {}
 
     hooks = data.setdefault("hooks", {})
-    target_hooks = HOOKS_CONFIG["UserPromptSubmit"]
+    target_entry = HOOKS_CONFIG["UserPromptSubmit"][0]
 
     existing = hooks.get("UserPromptSubmit", [])
 
-    # Check if the CLASI hook entry already exists (by command match)
-    clasi_command = target_hooks[0]["command"]
+    # Check if the CLASI hook entry already exists (by matching the
+    # command inside the hooks array)
+    clasi_command = target_entry["hooks"][0]["command"]
     already_present = any(
-        entry.get("command") == clasi_command for entry in existing
+        clasi_command in (h.get("command", "") for h in entry.get("hooks", []))
+        for entry in existing
     )
 
     if already_present:
-        click.echo("  Unchanged: .claude/settings.local.json (hooks)")
+        click.echo("  Unchanged: .claude/settings.json (hooks)")
         return False
 
-    existing.extend(target_hooks)
+    existing.append(target_entry)
     hooks["UserPromptSubmit"] = existing
     settings_path.write_text(
         json.dumps(data, indent=2) + "\n", encoding="utf-8"
     )
-    click.echo("  Updated: .claude/settings.local.json (hooks)")
+    click.echo("  Updated: .claude/settings.json (hooks)")
     return True
 
 
