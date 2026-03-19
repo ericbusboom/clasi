@@ -13,7 +13,7 @@ import click
 
 
 @click.group()
-@click.version_option(package_name="claude-agent-skills", prog_name="clasi")
+@click.version_option(package_name="clasi")
 def cli():
     """CLASI — Claude Agent Skills Instructions.
 
