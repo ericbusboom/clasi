@@ -287,7 +287,6 @@ flowchart TB
     sp --> tl
 
     se --> cm
-    se -->|validates frontmatter| se
 
     ah --> cm
     ah --> cr
