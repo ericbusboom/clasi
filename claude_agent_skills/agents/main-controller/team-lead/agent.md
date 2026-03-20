@@ -143,17 +143,18 @@ When a doteam lead returns, validate before proceeding:
 ## Dispatch Templates
 
 Before dispatching to any agent that has a dispatch template, load the
-template from `docs/clasi/templates/`, fill in all UPPERCASE fields
-with the actual values, and use the filled-in template as the dispatch
-prompt.
+template from the agent's directory in the CLASI package, fill in all
+UPPERCASE fields with the actual values, and use the filled-in template
+as the dispatch prompt. Use `get_agent_context(name)` to retrieve the
+agent definition and its dispatch template together.
 
-| Target agent | Template |
+| Target agent | Template location |
 |-------------|----------|
-| sprint-planner | `docs/clasi/templates/dispatch-sprint-planner.md` |
-| sprint-executor | `docs/clasi/templates/dispatch-sprint-executor.md` |
+| sprint-planner | `agents/domain-controllers/sprint-planner/dispatch-template.md` |
+| sprint-executor | `agents/domain-controllers/sprint-executor/dispatch-template.md` |
 
 When calling `log_subagent_dispatch`, pass `template_used` with the
-template filename (e.g., `"dispatch-sprint-planner.md"`).
+template filename (e.g., `"dispatch-template.md"`).
 
 ## Delegation Philosophy
 

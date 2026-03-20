@@ -33,6 +33,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["tests/e2e/project"]
 addopts = "--cov=claude_agent_skills --cov-report=term-missing --cov-report=lcov:lcov.info"
 
 [tool.coverage.run]

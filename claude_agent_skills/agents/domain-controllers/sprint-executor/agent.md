@@ -48,12 +48,14 @@ To team-lead:
 ## Dispatch Templates
 
 Before dispatching code-monkey, load the dispatch template from
-`docs/clasi/templates/dispatch-code-monkey.md`, fill in all UPPERCASE
-fields (TICKET_PATH, TICKET_PLAN_PATH, SCOPE_DIRECTORY, SPRINT_NAME,
-TICKET_ID), and use the filled-in template as the dispatch prompt.
+`agents/task-workers/code-monkey/dispatch-template.md` (use
+`get_agent_context("code-monkey")` to retrieve it), fill in all
+UPPERCASE fields (TICKET_PATH, TICKET_PLAN_PATH, SCOPE_DIRECTORY,
+SPRINT_NAME, TICKET_ID), and use the filled-in template as the
+dispatch prompt.
 
-When calling `log_subagent_dispatch`, pass `template_used` with the
-template filename (e.g., `"dispatch-code-monkey.md"`).
+When calling `log_subagent_dispatch`, pass `template_used` with
+`"dispatch-template.md"`.
 
 ## Workflow
 
