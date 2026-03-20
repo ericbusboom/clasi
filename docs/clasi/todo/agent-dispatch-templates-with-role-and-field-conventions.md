@@ -173,10 +173,14 @@ claude_agent_skills/dispatch_log.py       (optional: add template_used field)
 - `log_subagent_dispatch` should enforce template usage for dispatches
   to the agents we have identified templates for.
 
-## Open Questions
+## Decisions (continued)
 
-- How much behavioral instruction belongs in the template vs. in the
-  agent definition? The template is per-dispatch; the agent definition
-  is per-role. Some instructions (like "run tests before marking
-  done") might belong in the agent definition rather than repeated
-  in every template.
+- Templates provide context for what the subagent is doing and reinforce
+  process compliance. The agent definition says what the role IS; the
+  template reminds it what to do THIS TIME. Templates are the place to
+  add behavioral reinforcement for things agents keep forgetting (like
+  logging dispatches to code-monkey).
+- The sprint-executor → code-monkey dispatch template must include an
+  explicit instruction to call `log_subagent_dispatch` before dispatching
+  and `update_dispatch_log` after. This is the dispatch that keeps not
+  getting logged despite being in the agent definition.
