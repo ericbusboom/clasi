@@ -83,8 +83,8 @@ The full sprint lifecycle from team-lead's perspective:
    Dispatch sprint-reviewer for post-sprint validation.
 5. **Close**: If sprint-reviewer passes, close the sprint:
    - Merge sprint branch to main
-   - Version architecture document
-   - Call `close_sprint` MCP tool (archives directory, releases lock)
+   - Call `close_sprint` MCP tool (archives directory, copies
+     architecture update, releases lock)
    - Commit the archive
    - Run `clasi version bump` (it checks the trigger setting internally
      and skips if set to `manual`)
@@ -96,7 +96,7 @@ The full sprint lifecycle from team-lead's perspective:
 When a doteam lead returns, validate before proceeding:
 
 **After sprint-planner returns**:
-- Sprint directory exists with `sprint.md`, `architecture.md`
+- Sprint directory exists with `sprint.md`, `architecture-update.md`
 - Architecture review gate is recorded as passed
 - Tickets exist in `tickets/`
 

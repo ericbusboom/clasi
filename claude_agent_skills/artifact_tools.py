@@ -31,6 +31,7 @@ from claude_agent_skills.templates import (
     SPRINT_TEMPLATE,
     SPRINT_USECASES_TEMPLATE,
     SPRINT_ARCHITECTURE_TEMPLATE,
+    SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
     OVERVIEW_TEMPLATE,
 )
@@ -167,11 +168,12 @@ def create_sprint(title: str) -> str:
     """Create a new sprint directory with template planning documents.
 
     Auto-assigns the next sprint number and creates the full directory
-    structure: sprint.md, usecases.md, architecture.md,
+    structure: sprint.md, usecases.md, architecture-update.md,
     and tickets/ + tickets/done/ directories.
 
-    The architecture document is copied from the most recent version in
-    docs/clasi/architecture/. If none exists, a template is used.
+    The sprint receives a lightweight architecture-update template instead
+    of a full copy of the previous architecture.  The full architecture
+    lives in ``docs/clasi/architecture/`` and is consolidated on demand.
 
     Args:
         title: The sprint title (e.g., 'MCP Server Implementation')
@@ -198,16 +200,12 @@ def create_sprint(title: str) -> str:
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
 
-    # Architecture: copy from previous version or use template
-    arch_path = sprint_dir / "architecture.md"
-    prev_arch = _find_latest_architecture()
-    if prev_arch:
-        shutil.copy2(str(prev_arch), str(arch_path))
-    else:
-        arch_path.write_text(
-            SPRINT_ARCHITECTURE_TEMPLATE.format(**fmt), encoding="utf-8"
-        )
-    files["architecture.md"] = str(arch_path)
+    # Architecture: lightweight update template (not a full copy)
+    arch_update_path = sprint_dir / "architecture-update.md"
+    arch_update_path.write_text(
+        SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
+    )
+    files["architecture-update.md"] = str(arch_update_path)
 
     # Register sprint in state database (lazy init)
     try:
@@ -305,8 +303,8 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
         content = content.replace(f"Sprint {old_id}", f"Sprint {new_id}")
         sprint_file.write_text(content, encoding="utf-8")
 
-    # Update body references in usecases.md and architecture.md
-    for doc_name in ("usecases.md", "architecture.md"):
+    # Update body references in usecases.md and architecture-update.md
+    for doc_name in ("usecases.md", "architecture-update.md", "architecture.md"):
         doc = new_dir / doc_name
         if doc.exists():
             content = doc.read_text(encoding="utf-8")
@@ -412,16 +410,12 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
 
-    # Architecture: copy from previous version or use template
-    arch_path = sprint_dir / "architecture.md"
-    prev_arch = _find_latest_architecture()
-    if prev_arch:
-        shutil.copy2(str(prev_arch), str(arch_path))
-    else:
-        arch_path.write_text(
-            SPRINT_ARCHITECTURE_TEMPLATE.format(**fmt), encoding="utf-8"
-        )
-    files["architecture.md"] = str(arch_path)
+    # Architecture: lightweight update template (not a full copy)
+    arch_update_path = sprint_dir / "architecture-update.md"
+    arch_update_path.write_text(
+        SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
+    )
+    files["architecture-update.md"] = str(arch_update_path)
 
     # Register in state database
     try:
@@ -789,6 +783,14 @@ def close_sprint(sprint_id: str) -> str:
     fm = read_frontmatter(sprint_file)
     fm["status"] = "done"
     write_frontmatter(sprint_file, fm)
+
+    # Copy architecture-update to the architecture directory
+    arch_update = sprint_dir / "architecture-update.md"
+    if arch_update.exists():
+        arch_dir = _plans_dir() / "architecture"
+        arch_dir.mkdir(parents=True, exist_ok=True)
+        dest = arch_dir / f"architecture-update-{sprint_id}.md"
+        shutil.copy2(str(arch_update), str(dest))
 
     # Move to done directory
     done_dir = _sprints_dir() / "done"
@@ -1535,7 +1537,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     planning_docs = {
         "sprint.md": SPRINT_TEMPLATE,
         "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "architecture.md": SPRINT_ARCHITECTURE_TEMPLATE,
+        "architecture-update.md": SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     }
 
     for filename, template in planning_docs.items():
@@ -1687,7 +1689,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
     planning_docs = {
         "sprint.md": SPRINT_TEMPLATE,
         "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "architecture.md": SPRINT_ARCHITECTURE_TEMPLATE,
+        "architecture-update.md": SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     }
 
     for filename, template in planning_docs.items():
@@ -1826,7 +1828,7 @@ def review_sprint_post_close(sprint_id: str) -> str:
                 })
 
         # Check planning docs
-        for filename in ["sprint.md", "usecases.md", "architecture.md"]:
+        for filename in ["sprint.md", "usecases.md", "architecture-update.md"]:
             filepath = sprint_dir / filename
             if filepath.exists():
                 fm = read_frontmatter(filepath)

@@ -51,10 +51,9 @@ before that phase. Follow the phases in order.
    - `sprint.md` — Sprint goals, scope, architecture notes, ticket list.
      Frontmatter: id, title, status: planning, branch, use-cases.
    - `usecases.md` — Sprint-level use cases (SUC-NNN).
-   - `architecture.md` — Architecture document (copied from previous sprint's
-     version, or created from template if none exists). The architect updates
-     this to reflect the target end-of-sprint state and fills in the
-     `## Sprint Changes` section.
+   - `architecture-update.md` — Lightweight architecture update template.
+     The architect fills this in to describe what changed in this sprint,
+     why, and the impact on existing components.
    - `tickets/` — Empty directory for tickets (with `done/` subdirectory).
 
 4. **Create sprint branch**: Run `git checkout -b sprint/NNN-slug` from main.
@@ -73,7 +72,7 @@ before that phase. Follow the phases in order.
 7. **Advance to stakeholder-review**: If architecture review passed, call
    `advance_sprint_phase` to move to `stakeholder-review`.
 
-8. **Breakpoint (conditional)**: Check the sprint's `architecture.md`
+8. **Breakpoint (conditional)**: Check the sprint's `architecture-update.md`
    for a `## Open Questions` section.
    - If open questions **exist**: skip this breakpoint and proceed directly
      to step 9 (which resolves them interactively via `AskUserQuestion`).
@@ -86,7 +85,7 @@ before that phase. Follow the phases in order.
      findings and stop. Otherwise proceed.
 
 9. **Resolve open questions**: Before presenting to the stakeholder, check
-   the sprint's `architecture.md` for a `## Open Questions` section. If
+   the sprint's `architecture-update.md` for a `## Open Questions` section. If
    open questions exist:
    - Parse each numbered question into a separate `AskUserQuestion` call.
    - For each question, provide 2–4 concrete options where possible (infer
@@ -136,7 +135,7 @@ before that phase. Follow the phases in order.
 
 ## Output
 
-- Sprint directory `docs/clasi/sprints/NNN-slug/` with planning documents (sprint.md, usecases.md, architecture.md)
+- Sprint directory `docs/clasi/sprints/NNN-slug/` with planning documents (sprint.md, usecases.md, architecture-update.md)
 - Sprint `sprint.md` status set to `active`
 - Sprint branch `sprint/NNN-slug` created
 - Sprint phase advanced to `executing` in the state database

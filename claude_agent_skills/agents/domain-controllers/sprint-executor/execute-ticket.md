@@ -42,7 +42,7 @@ completion, coordinating subagent dispatch and two-stage review.
    - Ticket description and acceptance criteria
    - Ticket plan (approach, files to modify, testing plan)
    - Content of source files the subagent will read or modify
-   - Relevant architecture decisions from the sprint's `architecture.md`
+   - Relevant architecture decisions from the sprint's `architecture-update.md`
    - Coding standards from `instructions/coding-standards`
    - Testing instructions from `instructions/testing`
    - Git workflow from `instructions/git-workflow`

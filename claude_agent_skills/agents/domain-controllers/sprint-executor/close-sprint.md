@@ -69,20 +69,11 @@ the sprint branch, and archive the sprint document.
    If there are merge conflicts, resolve them or escalate to the
    stakeholder.
 
-9. **Version the architecture document**: Copy the sprint's
-    `architecture.md` to the project architecture directory:
-    ```
-    cp docs/clasi/sprints/NNN-slug/architecture.md \
-       docs/clasi/architecture/architecture-NNN.md
-    ```
-    Move any previous architecture versions to `docs/clasi/architecture/done/`:
-    ```
-    mkdir -p docs/clasi/architecture/done
-    mv docs/clasi/architecture/architecture-*.md docs/clasi/architecture/done/
-    cp docs/clasi/sprints/NNN-slug/architecture.md \
-       docs/clasi/architecture/architecture-NNN.md
-    ```
-    (Move first, then copy the new one, so only the latest is at the top level.)
+9. **Architecture update is handled automatically**: The `close_sprint`
+    MCP tool copies the sprint's `architecture-update.md` to
+    `docs/clasi/architecture/architecture-update-NNN.md`. No manual
+    copy is needed. The full architecture is consolidated on demand
+    using the `consolidate-architecture` skill.
 
 10. **Close the sprint**: Call the `close_sprint` MCP tool. This
     atomically:

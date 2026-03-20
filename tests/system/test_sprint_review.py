@@ -81,17 +81,17 @@ def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
         "- **Main Flow**: Create a widget\n",
     )
 
-    # Fill in architecture.md with real content
-    fm_arch = read_frontmatter(sprint_dir / "architecture.md")
+    # Fill in architecture-update.md with real content
+    fm_arch = read_frontmatter(sprint_dir / "architecture-update.md")
     fm_arch["status"] = "approved"
-    write_frontmatter(sprint_dir / "architecture.md", fm_arch)
-    (sprint_dir / "architecture.md").write_text(
+    write_frontmatter(sprint_dir / "architecture-update.md", fm_arch)
+    (sprint_dir / "architecture-update.md").write_text(
         "---\nstatus: approved\n---\n\n"
-        "# Architecture\n\n"
-        "## Architecture Overview\n\nThe widget module adds a new component.\n\n"
-        "## Component Design\n\n### Component: Widget Engine\n\n"
-        "Handles widget lifecycle.\n\n"
-        "## Sprint Changes\n\nAdded widget engine component.\n",
+        "# Architecture Update\n\n"
+        "## What Changed\n\nAdded widget engine component.\n\n"
+        "## Why\n\nNew widget feature required.\n\n"
+        "## Impact on Existing Components\n\nNone.\n\n"
+        "## Migration Concerns\n\nNone.\n",
     )
 
     # Create tickets
@@ -138,7 +138,7 @@ class TestReviewSprintPreExecution:
         sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
 
         # Update statuses but leave content as template
-        for f in ["usecases.md", "architecture.md"]:
+        for f in ["usecases.md", "architecture-update.md"]:
             fm = read_frontmatter(sprint_dir / f)
             fm["status"] = "approved"
             write_frontmatter(sprint_dir / f, fm)

@@ -14,7 +14,7 @@ Rules for dispatching subagents via the `dispatch-subagent` skill.
 - **Ticket**: description, acceptance criteria, testing section
 - **Ticket plan**: approach, files to modify, testing plan
 - **Source files**: content of files the subagent will read or modify
-- **Architecture**: relevant decisions from the sprint's architecture.md
+- **Architecture**: relevant decisions from the sprint's architecture-update.md
 - **Standards**: coding-standards, testing, git-workflow instructions
 - **Language instructions**: per-project language-specific standards
 

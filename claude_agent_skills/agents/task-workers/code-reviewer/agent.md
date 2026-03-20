@@ -105,7 +105,7 @@ You operate within the software engineering process defined in
 
 - `docs/clasi/brief.md` — Project description
 - `docs/clasi/usecases.md` — Use cases
-- `docs/clasi/sprints/<sprint>/architecture.md` — Sprint architecture
+- `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint architecture update
 - `docs/clasi/sprints/<sprint>/tickets/` — Active tickets and plans
 - `docs/clasi/sprints/<sprint>/tickets/done/` — Completed tickets
 - `instructions/coding-standards.md` — Coding conventions

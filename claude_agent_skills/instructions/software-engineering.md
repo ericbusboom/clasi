@@ -20,8 +20,8 @@ project-manager:
   stakeholder narration and produces the project overview document.
 - **requirements-analyst** — Elicits detailed requirements from stakeholder
   narratives. Produces the brief and use cases for complex projects.
-- **architect** — Maintains the versioned system architecture. Updates the
-  sprint's `architecture.md` each sprint. Two modes: initial architecture
+- **architect** — Maintains the system architecture. Writes the sprint's
+  `architecture-update.md` each sprint. Two modes: initial architecture
   and sprint update. See `instructions/architectural-quality.md` for quality criteria.
 - **technical-lead** — Breaks the sprint architecture into sequenced, numbered
   tickets. Creates ticket plans before implementation begins.
@@ -88,9 +88,9 @@ The architect produces these documents; the architecture-reviewer evaluates
 them. See `instructions/architectural-quality.md` for versioning rules,
 document structure, and quality criteria.
 
-Not every sprint requires a new architecture version — pure bug fixes and
-refactors within existing boundaries skip it. The sprint's `architecture.md`
-includes a `## Sprint Changes` section describing the delta.
+Not every sprint requires architectural changes -- pure bug fixes and
+refactors within existing boundaries can note "No architectural changes"
+in the sprint's `architecture-update.md`.
 
 ### Legacy: Brief, Use Cases, Technical Plan
 
@@ -137,7 +137,7 @@ Directory structure:
 docs/clasi/sprints/NNN-slug/
 ├── sprint.md              # Sprint goals, scope, problem, solution, test strategy
 ├── usecases.md            # Sprint-level use cases (SUC-NNN)
-├── architecture.md        # Sprint architecture (copied from previous, updated)
+├── architecture-update.md # Sprint architecture update (focused diff)
 └── tickets/
     ├── 001-first-task.md  # Active ticket
     ├── 002-next-task.md   # Active ticket
@@ -243,7 +243,7 @@ A sprint is a focused batch of work with its own lifecycle, branch, and
 ticket set.
 
 **Sprint directories** live in `docs/clasi/sprints/NNN-slug/`. Each sprint
-directory contains `sprint.md`, `usecases.md`, `architecture.md`,
+directory contains `sprint.md`, `usecases.md`, `architecture-update.md`,
 and a `tickets/` subdirectory (see Artifacts §4 above).
 
 **Sprint lifecycle** (skills: **plan-sprint**, **close-sprint**):
@@ -439,7 +439,7 @@ docs/clasi/
     ├── 001-mcp-server/          # Active sprint directory
     │   ├── sprint.md            # Sprint goals, scope, notes
     │   ├── usecases.md          # Sprint-level use cases
-    │   ├── architecture.md      # Sprint architecture (copy + update)
+    │   ├── architecture-update.md # Architecture update (focused diff)
     │   └── tickets/
     │       ├── 003-add-auth.md      # Active ticket
     │       ├── 003-add-auth-plan.md # Its plan

@@ -35,7 +35,7 @@ To team-lead:
 - A fully populated sprint directory containing:
   - `sprint.md` — sprint description, goals, scope
   - `usecases.md` — use cases covered by this sprint
-  - `architecture.md` — updated architecture reflecting end-of-sprint state
+  - `architecture-update.md` — focused architecture changes for this sprint
   - `tickets/` — numbered ticket files with acceptance criteria
 - Sprint frontmatter with `status: planned`
 - Confirmation that architecture review passed
@@ -44,7 +44,7 @@ To team-lead:
 
 | Task | Agent | What they produce |
 |------|-------|-------------------|
-| Design architecture | **architect** | Updated `architecture.md` |
+| Design architecture | **architect** | Updated `architecture-update.md` |
 | Review architecture | **architecture-reviewer** | Review verdict (pass/fail) |
 | Create tickets | **technical-lead** | Numbered ticket files in `tickets/` |
 
@@ -53,10 +53,10 @@ To team-lead:
 1. Create the sprint directory and branch using CLASI MCP tools
    (`create_sprint`).
 2. Write `sprint.md` with goals, scope, and relevant TODO references.
-3. Copy the previous architecture version into the sprint directory.
-4. Dispatch **architect** to update the architecture for this sprint's
-   goals. Provide: sprint goals, previous architecture, relevant TODOs,
-   overview.
+3. Dispatch **architect** to write the architecture update for this
+   sprint's goals. Provide: sprint goals, reference to the current
+   consolidated architecture in `docs/clasi/architecture/`, relevant
+   TODOs, overview.
 5. Advance to architecture-review phase
    (`advance_sprint_phase`).
 6. Dispatch **architecture-reviewer** to review the architecture.

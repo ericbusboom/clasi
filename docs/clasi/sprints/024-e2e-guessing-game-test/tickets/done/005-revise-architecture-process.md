@@ -1,7 +1,7 @@
 ---
 id: "005"
 title: "Revise architecture process"
-status: todo
+status: done
 use-cases: [SUC-005]
 depends-on: []
 todo: "revise-architecture-process.md"
@@ -49,12 +49,12 @@ docs/clasi/architecture/
 
 ## Acceptance Criteria
 
-- [ ] `create_sprint` produces a lightweight architecture-update template instead of copying full architecture
-- [ ] Sprint directories contain `architecture-update.md` instead of `architecture.md`
-- [ ] `close_sprint` copies the update to `docs/clasi/architecture/architecture-update-NNN.md`
-- [ ] Architect agent definition instructs writing updates, not full rewrites
-- [ ] Consolidation skill exists and can merge base architecture + updates into a new consolidated doc
-- [ ] `uv run pytest` passes with no regressions
+- [x] `create_sprint` produces a lightweight architecture-update template instead of copying full architecture
+- [x] Sprint directories contain `architecture-update.md` instead of `architecture.md`
+- [x] `close_sprint` copies the update to `docs/clasi/architecture/architecture-update-NNN.md`
+- [x] Architect agent definition instructs writing updates, not full rewrites
+- [x] Consolidation skill exists and can merge base architecture + updates into a new consolidated doc
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

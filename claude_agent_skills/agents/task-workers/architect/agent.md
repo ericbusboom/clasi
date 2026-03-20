@@ -12,18 +12,22 @@ description of what the system is and how it evolves sprint by sprint.
 
 ## Your Artifact
 
-### Architecture Document
+### Architecture Update Document
 
-During a sprint, the architecture document lives at
-`docs/clasi/sprints/<sprint>/architecture.md`. When `create_sprint` sets up
-a new sprint, it copies the most recent versioned architecture from
-`docs/clasi/architecture/` into the sprint directory. You update this copy
-to reflect the target end-of-sprint state and fill in the `## Sprint Changes`
-section describing what is being added, modified, or removed.
+During a sprint, you write a lightweight **architecture update** at
+`docs/clasi/sprints/<sprint>/architecture-update.md`. When `create_sprint`
+sets up a new sprint, it generates this template with sections for "What
+Changed", "Why", "Impact on Existing Components", and "Migration
+Concerns". You fill in these sections to describe the architectural
+changes made in this sprint.
 
-When the sprint closes, the architecture document is versioned to
-`docs/clasi/architecture/architecture-NNN.md` (where NNN is the sprint
-number). Previous versions are moved to `docs/clasi/architecture/done/`.
+The full architecture lives in `docs/clasi/architecture/` and is
+consolidated on demand (see the `consolidate-architecture` skill). Each
+sprint's update is a focused diff, not a full rewrite.
+
+When the sprint closes, the architecture update is copied to
+`docs/clasi/architecture/architecture-update-NNN.md` (where NNN is the
+sprint number).
 
 See `instructions/architectural-quality.md` for the required document
 structure and versioning rules.
@@ -42,17 +46,21 @@ architecture document. Follow steps 1–7 below.
 
 ### Mode 2: Sprint Architecture Update
 
-Given a sprint plan and the current architecture, update the sprint's
-`architecture.md` to reflect the target state after the sprint. The
-`## Sprint Changes` section should clearly describe:
+Given a sprint plan and the current architecture (read from
+`docs/clasi/architecture/`), write the sprint's `architecture-update.md`
+describing what changed and why. This is a focused diff document, not a
+full architecture rewrite. Fill in:
 
-- **Changed Components**: What subsystems, modules, dependencies, or entities
-  are being added, modified, or removed, with rationale.
-- **Migration Concerns**: Any data migration, backward compatibility, or
+- **What Changed**: Components, modules, dependencies, or data model
+  elements that were added, modified, or removed.
+- **Why**: Motivation from sprint goals, use cases, or TODOs.
+- **Impact on Existing Components**: New dependencies, changed interfaces,
+  deprecated modules.
+- **Migration Concerns**: Data migration, backward compatibility, or
   deployment sequencing issues.
 
-Follow steps 1–7 below, but start from the current architecture rather
-than from scratch.
+Read the current consolidated architecture for context, but write only
+the update document.
 
 ## How You Work
 
@@ -165,9 +173,10 @@ in `instructions/architectural-quality.md`. Key artifacts:
 
 - `docs/clasi/brief.md` — Project description (input)
 - `docs/clasi/usecases.md` — Use cases (input)
-- `docs/clasi/architecture/architecture-NNN.md` — Versioned architecture (your output)
-- `docs/clasi/sprints/<sprint>/architecture.md` — Sprint-local architecture (your working copy)
-- `docs/clasi/sprints/<sprint>/tickets/` — Tickets derived from the architecture's Sprint Changes
+- `docs/clasi/architecture/architecture-NNN.md` — Consolidated architecture
+- `docs/clasi/architecture/architecture-update-NNN.md` — Per-sprint updates (your output)
+- `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint-local update (your working copy)
+- `docs/clasi/sprints/<sprint>/tickets/` — Tickets derived from the architecture update
 
 You do not elicit requirements (that is the requirements-analyst's job) and
 you do not create tickets (that is the technical-lead's job).

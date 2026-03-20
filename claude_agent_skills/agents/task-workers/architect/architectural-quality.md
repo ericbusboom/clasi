@@ -11,40 +11,44 @@ the architecture) and the **architecture-reviewer** (when reviewing).
 
 ## Architecture as a Living Document
 
-The architecture document is a **sprint-level artifact**. During each sprint,
-it lives inside the sprint directory as `architecture.md`. This ensures the
-architecture is visible to agents working on the sprint, not hidden in a
-project-level directory.
+The full architecture lives in `docs/clasi/architecture/` and is consolidated
+on demand. Each sprint produces only a lightweight **architecture update**
+describing what changed.
 
 ### Lifecycle
 
-1. **On sprint creation** — `create_sprint` copies the latest architecture
-   version into the new sprint directory as `architecture.md`. If no previous
-   version exists, a template is used.
+1. **On sprint creation** -- `create_sprint` generates a lightweight
+   `architecture-update.md` template in the sprint directory with sections
+   for "What Changed", "Why", "Impact on Existing Components", and
+   "Migration Concerns".
 
-2. **During sprint planning** — The architect updates the sprint's
-   `architecture.md` to reflect the target end-of-sprint state and fills in
-   the `## Sprint Changes` section describing what is being added, modified,
-   or removed. For sprints with no architectural changes, the Sprint Changes
-   section says "No architectural changes in this sprint."
+2. **During sprint planning** -- The architect fills in the sprint's
+   `architecture-update.md` describing the architectural changes for this
+   sprint. For sprints with no architectural changes, write "No
+   architectural changes in this sprint" in the What Changed section.
 
-3. **On sprint close** — The sprint's `architecture.md` is copied to
-   `docs/clasi/architecture/architecture-NNN.md` where NNN is the sprint
-   number. Previous versions are moved to `docs/clasi/architecture/done/`.
+3. **On sprint close** -- The sprint's `architecture-update.md` is copied
+   to `docs/clasi/architecture/architecture-update-NNN.md` where NNN is
+   the sprint number. This happens automatically in the `close_sprint`
+   MCP tool.
+
+4. **On demand** -- The `consolidate-architecture` skill merges the last
+   consolidated architecture with all subsequent update documents to
+   produce a new consolidated `architecture-NNN.md`.
 
 ### Architecture Directory Layout
 
 ```
 docs/clasi/architecture/
-  architecture-027.md          # Most recent (from sprint 027)
+  architecture-024.md              # Last consolidated
+  architecture-update-025.md       # Changes from sprint 025
+  architecture-update-026.md       # Changes from sprint 026
   done/
-    architecture-001.md        # Historical versions
-    architecture-015.md
-    architecture-026.md
+    architecture-015.md            # Historical consolidated versions
 ```
 
-Only the most recent version lives at the top level. The architecture version
-number **is** the sprint number.
+The consolidated architecture and update documents coexist at the top level.
+Update documents accumulate until a consolidation is performed.
 
 ### What the Document Describes
 

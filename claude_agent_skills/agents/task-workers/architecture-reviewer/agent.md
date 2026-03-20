@@ -17,8 +17,8 @@ When delegated an architecture review during sprint planning:
 
 1. **Read the current architecture version** in `docs/clasi/architecture/`
    to understand the existing system structure.
-2. **Read the sprint's architecture document** (`docs/clasi/sprints/<sprint>/architecture.md`)
-   to understand the target state and the `## Sprint Changes` section.
+2. **Read the sprint's architecture update** (`docs/clasi/sprints/<sprint>/architecture-update.md`)
+   to understand what changed and why.
 3. **Read the architectural quality guide** (`instructions/architectural-quality.md`)
    to ground your evaluation criteria.
 4. **Explore the existing codebase** using Grep, Glob, and Read to understand
@@ -162,7 +162,7 @@ in `instructions/architectural-quality.md`. Key artifacts:
 - `docs/clasi/brief.md` — Project description
 - `docs/clasi/usecases.md` — Use cases
 - `docs/clasi/architecture/architecture-NNN.md` — Versioned architecture
-- `docs/clasi/sprints/<sprint>/architecture.md` — Sprint architecture (what you review)
+- `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint architecture update (what you review)
 - `docs/clasi/sprints/<sprint>/tickets/` — Tickets derived from the sprint plan
 
 ## What You Do Not Do

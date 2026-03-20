@@ -15,7 +15,7 @@ technical-lead agent.
 
 ## Inputs
 
-- Sprint's `architecture.md` (must exist in the sprint directory)
+- Sprint's `architecture-update.md` (must exist in the sprint directory)
 - Sprint's `usecases.md` (must exist in the sprint directory)
 
 ## Process
