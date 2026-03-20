@@ -45,17 +45,17 @@ To team-lead:
 |------|-------|-------------------|
 | Implement ticket | **code-monkey** | Code changes, tests, updated ticket frontmatter |
 
-## Dispatch Templates
+## Typed Dispatch Tool
 
-Before dispatching code-monkey, load the dispatch template from
-`agents/task-workers/code-monkey/dispatch-template.md` (use
-`get_agent_context("code-monkey")` to retrieve it), fill in all
-UPPERCASE fields (TICKET_PATH, TICKET_PLAN_PATH, SCOPE_DIRECTORY,
-SPRINT_NAME, TICKET_ID), and use the filled-in template as the
-dispatch prompt.
+To dispatch code-monkey, use the typed MCP tool:
 
-When calling `log_subagent_dispatch`, pass `template_used` with
-`"dispatch-template.md"`.
+```
+dispatch_to_code_monkey(ticket_path, ticket_plan_path, scope_directory, sprint_name, ticket_id)
+```
+
+This renders the Jinja2 template with the provided parameters, logs the
+dispatch automatically, and returns the rendered prompt ready to pass to
+the Agent tool.
 
 ## Workflow
 

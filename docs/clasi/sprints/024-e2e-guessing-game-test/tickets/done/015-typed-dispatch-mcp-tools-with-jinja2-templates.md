@@ -1,7 +1,7 @@
 ---
 id: "015"
 title: "Typed dispatch MCP tools with Jinja2 templates"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: ["014"]
 github-issue: ""
@@ -84,16 +84,16 @@ Update agent definitions that reference `get_dispatch_template`
 
 ## Acceptance Criteria
 
-- [ ] `jinja2` added to `pyproject.toml` dependencies
-- [ ] Three dispatch templates converted to Jinja2 format (`.md.j2`)
-- [ ] `dispatch_to_sprint_planner` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
-- [ ] `dispatch_to_sprint_executor` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
-- [ ] `dispatch_to_code_monkey` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
-- [ ] `get_dispatch_template` MCP tool removed
-- [ ] `template_used` parameter removed from `log_subagent_dispatch`
-- [ ] `TEMPLATED_AGENTS` enforcement removed from `dispatch_log.py`
-- [ ] Agent definitions updated to use new typed dispatch tools
-- [ ] `uv run pytest` passes with no regressions
+- [x] `jinja2` added to `pyproject.toml` dependencies
+- [x] Three dispatch templates converted to Jinja2 format (`.md.j2`)
+- [x] `dispatch_to_sprint_planner` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
+- [x] `dispatch_to_sprint_executor` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
+- [x] `dispatch_to_code_monkey` MCP tool exists, accepts typed params, renders template, logs dispatch, returns rendered prompt
+- [x] `get_dispatch_template` MCP tool removed
+- [x] `template_used` parameter removed from `log_subagent_dispatch`
+- [x] `TEMPLATED_AGENTS` enforcement removed from `dispatch_log.py`
+- [x] Agent definitions updated to use new typed dispatch tools
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

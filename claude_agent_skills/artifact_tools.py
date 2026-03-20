@@ -1920,39 +1920,171 @@ def review_sprint_post_close(sprint_id: str) -> str:
     }, indent=2)
 
 
-# --- Dispatch template tool ---
+# --- Typed dispatch tools ---
 
 
-@server.tool()
-def get_dispatch_template(target_agent: str) -> str:
-    """Return the dispatch template for a given agent.
+def _load_jinja2_template(agent_name: str) -> "jinja2.Template":
+    """Load the Jinja2 dispatch template for the named agent.
 
-    Searches the agent's directory for a ``dispatch-template.md`` file
-    and returns its content. The dispatching agent should fill in the
-    UPPERCASE placeholders before using the result as a dispatch prompt.
-
-    Args:
-        target_agent: Name of the agent to get the template for
-            (e.g., 'sprint-planner', 'sprint-executor', 'code-monkey')
-
-    Returns:
-        The template content as a string.
+    Searches for ``dispatch-template.md.j2`` in the agent's directory
+    under the content tree.
 
     Raises:
-        ValueError: If the agent has no dispatch template.
+        ValueError: If no template is found for the agent.
     """
+    from jinja2 import Template
     from claude_agent_skills.mcp_server import content_path
 
     agents_dir = content_path("agents")
-    # Search for dispatch-template.md in any agent directory matching target_agent
-    for template_path in agents_dir.rglob("dispatch-template.md"):
-        if template_path.parent.name == target_agent:
-            return template_path.read_text(encoding="utf-8")
+    for template_path in agents_dir.rglob("dispatch-template.md.j2"):
+        if template_path.parent.name == agent_name:
+            return Template(template_path.read_text(encoding="utf-8"))
 
     raise ValueError(
-        f"No dispatch template found for agent '{target_agent}'. "
-        f"Only agents with a dispatch-template.md file in their directory have templates."
+        f"No dispatch template found for agent '{agent_name}'. "
+        f"Only agents with a dispatch-template.md.j2 file in their directory have templates."
     )
+
+
+@server.tool()
+def dispatch_to_sprint_planner(
+    sprint_id: str,
+    sprint_directory: str,
+    todo_ids: list[str],
+    goals: str,
+) -> str:
+    """Render the sprint-planner dispatch template, log the dispatch, and return the prompt.
+
+    Loads the Jinja2 template from the sprint-planner agent directory,
+    renders it with the provided parameters, logs the dispatch
+    automatically, and returns the rendered prompt with the log path.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '024')
+        sprint_directory: Path to the sprint directory
+        todo_ids: List of TODO IDs to address
+        goals: High-level goals for the sprint
+    """
+    from claude_agent_skills.dispatch_log import log_dispatch
+
+    template = _load_jinja2_template("sprint-planner")
+    rendered = template.render(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+        todo_ids=todo_ids,
+        goals=goals,
+    )
+
+    # Extract sprint name from directory path (last component)
+    sprint_name = Path(sprint_directory).name
+
+    log_path = log_dispatch(
+        parent="team-lead",
+        child="sprint-planner",
+        scope=sprint_directory,
+        prompt=rendered,
+        sprint_name=sprint_name,
+        template_used="dispatch-template.md.j2",
+    )
+
+    return json.dumps({
+        "rendered_prompt": rendered,
+        "log_path": str(log_path),
+    }, indent=2)
+
+
+@server.tool()
+def dispatch_to_sprint_executor(
+    sprint_id: str,
+    sprint_directory: str,
+    branch_name: str,
+    tickets: list[str],
+) -> str:
+    """Render the sprint-executor dispatch template, log the dispatch, and return the prompt.
+
+    Loads the Jinja2 template from the sprint-executor agent directory,
+    renders it with the provided parameters, logs the dispatch
+    automatically, and returns the rendered prompt with the log path.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '024')
+        sprint_directory: Path to the sprint directory
+        branch_name: Git branch name for the sprint
+        tickets: List of ticket references to execute
+    """
+    from claude_agent_skills.dispatch_log import log_dispatch
+
+    template = _load_jinja2_template("sprint-executor")
+    rendered = template.render(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+        branch_name=branch_name,
+        tickets=tickets,
+    )
+
+    sprint_name = Path(sprint_directory).name
+
+    log_path = log_dispatch(
+        parent="team-lead",
+        child="sprint-executor",
+        scope=sprint_directory,
+        prompt=rendered,
+        sprint_name=sprint_name,
+        template_used="dispatch-template.md.j2",
+    )
+
+    return json.dumps({
+        "rendered_prompt": rendered,
+        "log_path": str(log_path),
+    }, indent=2)
+
+
+@server.tool()
+def dispatch_to_code_monkey(
+    ticket_path: str,
+    ticket_plan_path: str,
+    scope_directory: str,
+    sprint_name: str,
+    ticket_id: str,
+) -> str:
+    """Render the code-monkey dispatch template, log the dispatch, and return the prompt.
+
+    Loads the Jinja2 template from the code-monkey agent directory,
+    renders it with the provided parameters, logs the dispatch
+    automatically, and returns the rendered prompt with the log path.
+
+    Args:
+        ticket_path: Path to the ticket file
+        ticket_plan_path: Path to the ticket plan file
+        scope_directory: Directory scope for the implementation
+        sprint_name: Sprint name (e.g., '024-e2e-guessing-game-test')
+        ticket_id: Ticket ID (e.g., '015')
+    """
+    from claude_agent_skills.dispatch_log import log_dispatch
+
+    template = _load_jinja2_template("code-monkey")
+    rendered = template.render(
+        ticket_path=ticket_path,
+        ticket_plan_path=ticket_plan_path,
+        scope_directory=scope_directory,
+        sprint_name=sprint_name,
+        ticket_id=ticket_id,
+    )
+
+    log_path = log_dispatch(
+        parent="sprint-executor",
+        child="code-monkey",
+        scope=scope_directory,
+        prompt=rendered,
+        sprint_name=sprint_name,
+        ticket_id=ticket_id,
+        template_used="dispatch-template.md.j2",
+    )
+
+    return json.dumps({
+        "rendered_prompt": rendered,
+        "log_path": str(log_path),
+    }, indent=2)
 
 
 # --- Dispatch logging tools ---
@@ -1966,7 +2098,6 @@ def log_subagent_dispatch(
     prompt: str,
     sprint_name: str | None = None,
     ticket_id: str | None = None,
-    template_used: str | None = None,
     context_documents: list[str] | None = None,
 ) -> str:
     """Log a subagent dispatch with full prompt text.
@@ -1974,6 +2105,12 @@ def log_subagent_dispatch(
     Call this BEFORE dispatching a subagent. It records the complete
     prompt that will be sent, with YAML frontmatter for structured
     metadata.
+
+    For agents with dispatch templates (sprint-planner, sprint-executor,
+    code-monkey), use the typed dispatch tools instead:
+    ``dispatch_to_sprint_planner``, ``dispatch_to_sprint_executor``,
+    ``dispatch_to_code_monkey``. Those tools render the template and
+    log the dispatch automatically.
 
     Routing:
     - sprint_name + ticket_id -> log/sprints/<sprint>/ticket-<ticket>-NNN.md
@@ -1987,7 +2124,6 @@ def log_subagent_dispatch(
         prompt: The FULL prompt text being sent to the subagent
         sprint_name: Optional sprint name for routing
         ticket_id: Optional ticket ID for routing
-        template_used: Optional name of the dispatch template used
         context_documents: Optional list of planning document paths
             relevant to this dispatch. When not provided and
             sprint_name is given, auto-populated from the sprint
@@ -2004,7 +2140,6 @@ def log_subagent_dispatch(
         prompt=prompt,
         sprint_name=sprint_name,
         ticket_id=ticket_id,
-        template_used=template_used,
         context_documents=context_documents,
     )
     return json.dumps({"log_path": str(log_path)}, indent=2)

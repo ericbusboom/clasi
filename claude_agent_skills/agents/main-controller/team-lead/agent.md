@@ -140,21 +140,20 @@ When a doteam lead returns, validate before proceeding:
 - **"Close the sprint" / "Are we done?"** → Dispatch sprint-reviewer,
   then close if passed.
 
-## Dispatch Templates
+## Typed Dispatch Tools
 
-Before dispatching to any agent that has a dispatch template, load the
-template from the agent's directory in the CLASI package, fill in all
-UPPERCASE fields with the actual values, and use the filled-in template
-as the dispatch prompt. Use `get_agent_context(name)` to retrieve the
-agent definition and its dispatch template together.
+For agents with dispatch templates, use the typed MCP dispatch tools.
+These tools render the Jinja2 template with the provided parameters,
+log the dispatch automatically, and return the rendered prompt ready
+to pass to the Agent tool.
 
-| Target agent | Template location |
+| Target agent | MCP tool |
 |-------------|----------|
-| sprint-planner | `agents/domain-controllers/sprint-planner/dispatch-template.md` |
-| sprint-executor | `agents/domain-controllers/sprint-executor/dispatch-template.md` |
+| sprint-planner | `dispatch_to_sprint_planner(sprint_id, sprint_directory, todo_ids, goals)` |
+| sprint-executor | `dispatch_to_sprint_executor(sprint_id, sprint_directory, branch_name, tickets)` |
 
-When calling `log_subagent_dispatch`, pass `template_used` with the
-template filename (e.g., `"dispatch-template.md"`).
+For agents without dispatch templates (todo-worker, requirements-narrator,
+etc.), use `log_subagent_dispatch` to log the dispatch manually.
 
 ## Delegation Philosophy
 
