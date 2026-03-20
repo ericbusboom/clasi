@@ -255,3 +255,7 @@ Before tickets can be created, all of the following must be true:
     - use-cases: SUC-003 | depends-on: none | todo: append-subagent-response-to-dispatch-log.md
 11. **011** -- Missing sub-dispatch logs in e2e output
     - use-cases: SUC-003 | depends-on: 009 | todo: missing-sub-dispatch-logs-in-e2e-output.md
+12. **012** -- Agent dispatch templates with role and field conventions
+    - use-cases: SUC-003 | depends-on: 009 | todo: agent-dispatch-templates-with-role-and-field-conventions.md
+13. **013** -- Dispatch logs should reference sprint documents
+    - use-cases: SUC-003 | depends-on: 009 | todo: dispatch-logs-should-reference-sprint-documents.md
