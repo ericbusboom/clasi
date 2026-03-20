@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- '006'
 ---
 
 # Fix TODO Delegation: Team Lead Should Pass Raw Stakeholder Input

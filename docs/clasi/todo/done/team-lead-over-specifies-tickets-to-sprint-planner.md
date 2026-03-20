@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- '007'
 ---
 
 # Team Lead Over-Specifies Tickets When Dispatching to Sprint Planner

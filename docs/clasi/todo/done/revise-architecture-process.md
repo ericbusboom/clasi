@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- '005'
 ---
 
 # Revise Architecture Process: Updates Instead of Full Copies

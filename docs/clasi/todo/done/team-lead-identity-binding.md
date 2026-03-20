@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- '004'
 ---
 
 # Ensure CLAUDE.md Identifies Agent as Team Lead

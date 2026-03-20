@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- 008
 ---
 
 # TODOs Should Cross-Reference Sprints and Tickets Throughout Their Lifecycle
