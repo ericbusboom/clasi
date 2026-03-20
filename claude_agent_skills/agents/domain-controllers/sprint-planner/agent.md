@@ -58,8 +58,14 @@ To team-lead:
 1. Create the sprint directory and branch using CLASI MCP tools
    (`create_sprint`).
 2. Write `sprint.md` with goals, scope, and relevant TODO references.
-3. **Log the dispatch**: Call `log_subagent_dispatch` (parent:
-   "sprint-planner", child: "architect", sprint ID, prompt).
+3. **Log the dispatch**: Call `log_subagent_dispatch` with:
+   - `parent`: "sprint-planner"
+   - `child`: "architect"
+   - `scope`: the sprint directory
+   - `prompt`: the full prompt text
+   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
+     (this is a planner dispatch, not a ticket execution)
+
    Dispatch **architect** to write the architecture update for this
    sprint's goals. Provide: sprint goals, reference to the current
    consolidated architecture in `docs/clasi/architecture/`, relevant
@@ -68,8 +74,13 @@ To team-lead:
    summary, and the subagent's **response text** (`response` parameter).
 5. Advance to architecture-review phase
    (`advance_sprint_phase`).
-6. **Log the dispatch**: Call `log_subagent_dispatch` (parent:
-   "sprint-planner", child: "architecture-reviewer", sprint ID, prompt).
+6. **Log the dispatch**: Call `log_subagent_dispatch` with:
+   - `parent`: "sprint-planner"
+   - `child`: "architecture-reviewer"
+   - `scope`: the sprint directory
+   - `prompt`: the full prompt text
+   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
+
    Dispatch **architecture-reviewer** to review the architecture.
    Record the gate result (`record_gate_result`).
    **Log the result**: Call `update_dispatch_log` with outcome,
@@ -79,8 +90,13 @@ To team-lead:
 8. Present the plan to the stakeholder for approval (via team-lead
    return). Record stakeholder approval gate.
 9. Advance to ticketing phase.
-   **Log the dispatch**: Call `log_subagent_dispatch` (parent:
-   "sprint-planner", child: "technical-lead", sprint ID, prompt).
+   **Log the dispatch**: Call `log_subagent_dispatch` with:
+   - `parent`: "sprint-planner"
+   - `child`: "technical-lead"
+   - `scope`: the sprint directory
+   - `prompt`: the full prompt text
+   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
+
    Dispatch **technical-lead** to create tickets from the architecture
    and use cases.
    **Log the result**: Call `update_dispatch_log` with outcome,

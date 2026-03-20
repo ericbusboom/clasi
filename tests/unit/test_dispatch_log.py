@@ -89,6 +89,7 @@ class TestLogDispatch:
         assert path.name == "ticket-003-001.md"
 
     def test_sprint_without_ticket_routing(self, tmp_path):
+        """Sprint-level dispatch uses child agent name as prefix."""
         path = log_dispatch(
             parent="mc",
             child="sp",
@@ -98,7 +99,34 @@ class TestLogDispatch:
         )
         expected_dir = tmp_path / "docs" / "clasi" / "log" / "sprints" / "002-next-sprint"
         assert path.parent == expected_dir
-        assert path.name == "sprint-planner-001.md"
+        assert path.name == "sp-001.md"
+
+    def test_sprint_without_ticket_uses_child_name(self, tmp_path):
+        """Different child agents produce distinctly named log files."""
+        p1 = log_dispatch(
+            parent="sprint-planner",
+            child="architect",
+            scope="docs/",
+            prompt="Design architecture.",
+            sprint_name="003-sprint",
+        )
+        p2 = log_dispatch(
+            parent="sprint-planner",
+            child="architecture-reviewer",
+            scope="docs/",
+            prompt="Review architecture.",
+            sprint_name="003-sprint",
+        )
+        p3 = log_dispatch(
+            parent="sprint-planner",
+            child="technical-lead",
+            scope="docs/",
+            prompt="Create tickets.",
+            sprint_name="003-sprint",
+        )
+        assert p1.name == "architect-001.md"
+        assert p2.name == "architecture-reviewer-001.md"
+        assert p3.name == "technical-lead-001.md"
 
     def test_adhoc_routing(self, tmp_path):
         path = log_dispatch(

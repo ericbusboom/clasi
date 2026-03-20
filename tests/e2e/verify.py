@@ -161,7 +161,16 @@ def _check_tickets_done(project_dir: Path) -> CheckResult:
 
 
 def _check_dispatch_logs(project_dir: Path) -> CheckResult:
-    """Verify dispatch logs exist and contain content."""
+    """Verify dispatch logs exist, contain content, and include sub-dispatch logs.
+
+    Checks:
+    - Log files exist and are non-empty.
+    - Each sprint directory has at least one ``ticket-*`` log file
+      (proving sprint-executor logged code-monkey dispatches).
+    - Each sprint directory has planner sub-dispatch log files beyond
+      any ``sprint-planner-*`` entries (e.g. ``architect-*``,
+      ``architecture-reviewer-*``, ``technical-lead-*``).
+    """
     log_dir = project_dir / "docs" / "clasi" / "log"
     if not log_dir.exists():
         return _fail("Dispatch logs exist", "log/ directory does not exist")
@@ -173,6 +182,36 @@ def _check_dispatch_logs(project_dir: Path) -> CheckResult:
     empty = [f.name for f in log_files if f.stat().st_size < 10]
     if empty:
         return _fail("Dispatch logs exist", f"empty logs: {', '.join(empty[:3])}")
+
+    # Check per-sprint sub-dispatch logs
+    sprints_log_dir = log_dir / "sprints"
+    if sprints_log_dir.is_dir():
+        issues: list[str] = []
+        for sprint_dir in sorted(sprints_log_dir.iterdir()):
+            if not sprint_dir.is_dir():
+                continue
+            sprint_files = list(sprint_dir.glob("*.md"))
+
+            # Check for ticket-level logs (sprint-executor -> code-monkey)
+            ticket_logs = [f for f in sprint_files if f.name.startswith("ticket-")]
+            if not ticket_logs:
+                issues.append(f"{sprint_dir.name}: no ticket-* log files")
+
+            # Check for planner sub-dispatch logs (architect, reviewer, etc.)
+            # These are files NOT matching ticket-* or sprint-planner-* patterns
+            planner_sub_logs = [
+                f for f in sprint_files
+                if not f.name.startswith("ticket-")
+                and not f.name.startswith("sprint-planner-")
+            ]
+            if not planner_sub_logs:
+                issues.append(
+                    f"{sprint_dir.name}: no planner sub-dispatch logs"
+                    " (e.g. architect-*, architecture-reviewer-*)"
+                )
+
+        if issues:
+            return _fail("Dispatch logs exist", "; ".join(issues[:5]))
 
     return _pass("Dispatch logs exist", f"{len(log_files)} log file(s)")
 

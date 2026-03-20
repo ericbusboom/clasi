@@ -1,7 +1,7 @@
 ---
 id: "011"
 title: "Missing sub-dispatch logs in e2e output"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: ["009"]
 github-issue: ""
@@ -61,12 +61,12 @@ logs before and after any subagent invocation.
 
 ## Acceptance Criteria
 
-- [ ] `_check_dispatch_logs` in `verify.py` asserts ticket-level log files exist per sprint
-- [ ] `_check_dispatch_logs` asserts planner sub-dispatch log files exist per sprint
-- [ ] `dispatch_log.py` uses child agent name as filename prefix for sprint-level (non-ticket) dispatches
-- [ ] Planner sub-dispatches produce distinctly-named log files (e.g., `architect-001.md`)
-- [ ] Existing team-lead -> sprint-planner logs continue to work correctly
-- [ ] `uv run pytest` passes with no regressions
+- [x] `_check_dispatch_logs` in `verify.py` asserts ticket-level log files exist per sprint
+- [x] `_check_dispatch_logs` asserts planner sub-dispatch log files exist per sprint
+- [x] `dispatch_log.py` uses child agent name as filename prefix for sprint-level (non-ticket) dispatches
+- [x] Planner sub-dispatches produce distinctly-named log files (e.g., `architect-001.md`)
+- [x] Existing team-lead -> sprint-planner logs continue to work correctly
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

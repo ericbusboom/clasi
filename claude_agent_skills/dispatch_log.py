@@ -52,7 +52,7 @@ def log_dispatch(
 
     Routing rules:
     - sprint_name + ticket_id  -> ``log/sprints/<sprint>/ticket-<ticket>-NNN.md``
-    - sprint_name, no ticket   -> ``log/sprints/<sprint>/sprint-planner-NNN.md``
+    - sprint_name, no ticket   -> ``log/sprints/<sprint>/<child>-NNN.md``
     - no sprint_name           -> ``log/adhoc/NNN.md``
 
     Directories are created on demand.
@@ -64,7 +64,7 @@ def log_dispatch(
         prefix = f"ticket-{ticket_id}"
     elif sprint_name:
         directory = base / "sprints" / sprint_name
-        prefix = "sprint-planner"
+        prefix = child
     else:
         directory = base / "adhoc"
         prefix = ""

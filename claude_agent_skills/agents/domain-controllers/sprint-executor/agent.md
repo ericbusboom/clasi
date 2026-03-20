@@ -54,9 +54,14 @@ To team-lead:
 3. For each ticket (in dependency order):
    a. Verify all dependencies have `status: done`.
    b. Set ticket status to `in-progress` (`update_ticket_status`).
-   c. **Log the dispatch**: Call `log_subagent_dispatch` with the parent
-      agent ("sprint-executor"), child agent ("code-monkey"), sprint ID,
-      ticket ID, and the prompt you are about to send.
+   c. **Log the dispatch**: Call `log_subagent_dispatch` with:
+      - `parent`: "sprint-executor"
+      - `child`: "code-monkey"
+      - `scope`: the ticket's scope directory
+      - `prompt`: the full prompt text
+      - `sprint_name`: the sprint name (e.g., "001-my-sprint")
+      - `ticket_id`: the ticket ID (e.g., "001") — **always pass this**
+        so the log file is named `ticket-NNN-001.md`
    d. Dispatch **code-monkey** with:
       - The ticket and its plan (if one exists)
       - Relevant architecture sections

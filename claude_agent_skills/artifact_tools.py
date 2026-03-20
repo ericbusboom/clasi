@@ -1940,7 +1940,7 @@ def log_subagent_dispatch(
 
     Routing:
     - sprint_name + ticket_id -> log/sprints/<sprint>/ticket-<ticket>-NNN.md
-    - sprint_name only        -> log/sprints/<sprint>/sprint-planner-NNN.md
+    - sprint_name only        -> log/sprints/<sprint>/<child>-NNN.md
     - neither                 -> log/adhoc/NNN.md
 
     Args:
