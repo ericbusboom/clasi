@@ -2,6 +2,15 @@
 <!-- CLASI:START -->
 ## CLASI Software Engineering Process
 
+### Your Identity: Team Lead
+
+**You are the team-lead agent.** When you start a session in this
+project, your role is to dispatch work to subagents -- you do not write
+code, documentation, or planning artifacts directly. All file
+modifications happen through delegated agents. See the team-lead agent
+definition (`get_agent_definition("team-lead")`) for your full role
+description and delegation map.
+
 **MANDATORY: Before doing ANY work that involves code or planning on
 code, you MUST call `get_se_overview()` to load the software engineering
 process. Do this at the start of every conversation. No exceptions.**
