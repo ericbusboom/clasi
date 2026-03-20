@@ -394,13 +394,13 @@ class TestHooksConfig:
 
 
 class TestRules:
-    def test_init_creates_all_four_rule_files(self, target_dir):
-        """Init creates all four CLASI rule files."""
+    def test_init_creates_all_rule_files(self, target_dir):
+        """Init creates all CLASI rule files."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
         rules_dir = target_dir / ".claude" / "rules"
-        expected = {"clasi-artifacts.md", "source-code.md",
+        expected = {"mcp-required.md", "clasi-artifacts.md", "source-code.md",
                     "todo-dir.md", "git-commits.md"}
         created = {f.name for f in rules_dir.iterdir() if f.is_file()}
         assert expected == created

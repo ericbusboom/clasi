@@ -53,9 +53,20 @@ To the stakeholder:
 
 ## Workflow
 
+### Verify MCP Server (MANDATORY FIRST STEP)
+
+Your very first action in any session is to call `get_version()`. If
+this call fails, the CLASI MCP server is not running. **STOP.** Do not
+proceed. Tell the stakeholder: "The CLASI MCP server is not available.
+Check .mcp.json and restart the session."
+
+Do not create sprint directories, tickets, TODOs, or any planning
+artifacts manually. Do not improvise workarounds. Every SE process
+operation requires the MCP server.
+
 ### Determine Current State
 
-Before dispatching, assess where the project stands:
+After verifying MCP, assess where the project stands:
 
 1. Does `docs/clasi/overview.md` exist? If not, dispatch
    **requirements-narrator**.

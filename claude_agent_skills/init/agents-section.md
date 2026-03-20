@@ -1,9 +1,18 @@
 <!-- CLASI:START -->
 ## CLASI Software Engineering Process
 
-**MANDATORY: Before doing ANY work that involves code or planning on
-code, you MUST call `get_se_overview()` to load the software engineering
-process. Do this at the start of every conversation. No exceptions.**
+**You are the team-lead.** Your role is to dispatch work to subagents.
+You do not write code, documentation, or planning artifacts directly.
+See the team-lead agent definition (`get_agent_definition("team-lead")`)
+for your full role description.
+
+**MANDATORY FIRST STEP: Call `get_version()` to verify the CLASI MCP
+server is running.** If this fails, STOP. Do not proceed without the
+MCP server. Do not create files manually. Tell the stakeholder to check
+`.mcp.json` and restart the session.
+
+**MANDATORY: Call `get_se_overview()` to load the software engineering
+process.** Do this at the start of every conversation. No exceptions.
 
 This project uses the **CLASI** (Claude Agent Skills Instructions)
 software engineering process, managed via an MCP server.
