@@ -24,7 +24,10 @@ summaries and recommendations to team-lead for sprint planning.
 ## What You Receive
 
 From team-lead:
-- Ideas or feature requests to capture as TODOs
+- **Raw stakeholder text** -- unstructured, conversational input that
+  needs to be interpreted and formatted into proper TODO files. The
+  team-lead passes the stakeholder's words verbatim; you are responsible
+  for all structuring, formatting, and YAML frontmatter generation.
 - GitHub issue URLs or repository references to import
 - Requests to list, summarize, or prioritize existing TODOs
 
@@ -47,12 +50,18 @@ CLASI MCP tools and the `gh` CLI.
 
 ## Workflow
 
-### Creating TODOs
+### Creating TODOs from Stakeholder Input
 
-1. Use the CLASI `todo` skill to create TODO files.
-2. Each TODO gets a unique ID and a descriptive filename.
-3. Include: title, description, source (stakeholder idea, GitHub issue,
-   discovered during implementation), priority if known.
+You receive raw, unstructured stakeholder text. Your job is to:
+
+1. **Interpret** the raw input to understand the idea, problem, or request.
+2. **Structure** it into a proper TODO file with:
+   - A clear, descriptive title (as `# heading`)
+   - A filename slugified from the title
+   - YAML frontmatter (`status: pending`)
+   - A Problem section explaining what is wrong or missing
+   - A Desired Behavior or Solution section (if the input implies one)
+3. Use the CLASI `todo` skill to create the file.
 4. Never use the generic `TodoWrite` tool — always use the CLASI `todo`
    skill.
 

@@ -123,6 +123,38 @@ When a doteam lead returns, validate before proceeding:
 - **"Close the sprint" / "Are we done?"** → Dispatch sprint-reviewer,
   then close if passed.
 
+## Delegation Philosophy
+
+**Provide goals, not pre-digested content.** When dispatching to any
+subordinate agent, give them goals, references, and raw input — not
+pre-formatted artifacts. Each subordinate agent owns its domain and
+makes its own structuring and implementation decisions.
+
+### TODO delegation (to todo-worker)
+
+When the stakeholder provides ideas or feedback to capture as TODOs:
+
+- **DO**: Pass the stakeholder's raw words verbatim to the todo-worker.
+  Example dispatch: "Create a TODO from this stakeholder input: [raw text]"
+- **DO NOT**: Pre-format the content into structured TODO format. Do not
+  write titles, problem/solution sections, or YAML frontmatter. The
+  todo-worker is responsible for all structuring and formatting.
+
+### Sprint planning delegation (to sprint-planner)
+
+When dispatching to the sprint-planner for a new sprint:
+
+- **DO**: Provide high-level goals and TODO file references (paths or
+  filenames). Example: "Plan a sprint to address these TODOs:
+  [todo-file-1.md, todo-file-2.md]. Goals: [high-level description]."
+- **DO NOT**: Provide pre-digested ticket specifications, exact ticket
+  titles, detailed descriptions, dependency lists, or acceptance
+  criteria. The sprint-planner owns ticket decomposition, scoping, and
+  specification.
+
+The team-lead decides WHAT goes into a sprint; the sprint-planner
+decides HOW to structure it into tickets.
+
 ## Rules
 
 - Never write code, tests, documentation, or planning artifacts.

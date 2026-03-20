@@ -30,6 +30,12 @@ Select only the files and instructions relevant to the task. Follow
 - Relevant architecture decisions
 - Applicable coding standards and testing instructions
 
+**For raw-text delegation** (e.g., TODO creation, sprint planning):
+- Pass the stakeholder's raw words verbatim
+- Provide file references (TODO paths, overview path) instead of
+  pre-digested content
+- Let the subordinate agent make structuring decisions
+
 **Exclude:**
 - Controller's conversation history
 - Other tickets in the sprint
