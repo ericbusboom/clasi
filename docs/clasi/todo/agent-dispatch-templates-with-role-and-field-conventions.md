@@ -4,7 +4,6 @@ status: pending
 
 # Agent Dispatch Templates with Role and Field Conventions
 
-**Do not implement yet.**
 
 ## Problem
 
@@ -70,7 +69,7 @@ At minimum, one template per standard dispatch relationship:
 
 - **team-lead -> sprint-planner** — dispatch to plan a sprint
 - **team-lead -> sprint-executor** — dispatch to execute a sprint
-- **sprint-executor -> ticket-worker** — dispatch to execute a
+- **sprint-executor -> code-monkey** — dispatch to execute a
   single ticket (if ticket-level dispatch is used)
 
 Additional templates may be needed for review dispatches
@@ -93,7 +92,7 @@ Templates live in a dedicated directory, e.g.:
 docs/clasi/templates/
   dispatch-to-sprint-planner.md
   dispatch-to-sprint-executor.md
-  dispatch-to-ticket-worker.md
+  dispatch-to-code-monkey.md
 ```
 
 Or alongside agent definitions if that's more natural:
