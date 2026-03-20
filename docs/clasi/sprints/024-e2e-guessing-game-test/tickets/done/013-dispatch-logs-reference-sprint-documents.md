@@ -1,7 +1,7 @@
 ---
 id: "013"
 title: "Dispatch logs should reference sprint documents"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: ["009"]
 github-issue: ""
@@ -64,13 +64,13 @@ is human-readable as well as machine-parseable via frontmatter.
 
 ## Acceptance Criteria
 
-- [ ] `log_subagent_dispatch` auto-populates `context_documents` from the sprint directory when `sprint_name` is provided
-- [ ] Dispatch log frontmatter includes `context_documents` list
-- [ ] Dispatch log body includes a `## Context Documents` section
-- [ ] `log_subagent_dispatch` accepts optional `context_documents` parameter for manual override
-- [ ] Sprint-executor dispatch logs reference sprint.md, architecture-update.md, usecases.md, and ticket files
-- [ ] Sprint-planner dispatch logs reference upstream artifacts (project overview, spec)
-- [ ] `uv run pytest` passes with no regressions
+- [x] `log_subagent_dispatch` auto-populates `context_documents` from the sprint directory when `sprint_name` is provided
+- [x] Dispatch log frontmatter includes `context_documents` list
+- [x] Dispatch log body includes a `## Context Documents` section
+- [x] `log_subagent_dispatch` accepts optional `context_documents` parameter for manual override
+- [x] Sprint-executor dispatch logs reference sprint.md, architecture-update.md, usecases.md, and ticket files
+- [x] Sprint-planner dispatch logs reference upstream artifacts (project overview, spec)
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 
