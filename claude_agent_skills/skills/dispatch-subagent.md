@@ -52,27 +52,38 @@ Include in the subagent prompt:
 - The specific task and acceptance criteria
 - Instructions for how to report results
 
-### 4. Log the dispatch
+### 4. Log the dispatch (MANDATORY)
 
-Before sending the prompt, write the full prompt to a log file using
-`dispatch_log.log_dispatch()`. This creates an audit trail with:
-- YAML frontmatter: timestamp, parent agent, child agent, scope,
-  sprint, ticket
-- Body: the complete prompt text
+**Before sending the prompt, you MUST call `log_subagent_dispatch`.**
+This is not optional. Every dispatch at every tier must be logged. Pass:
+- `parent_agent`: your agent name (e.g., "sprint-executor")
+- `child_agent`: the subagent being dispatched (e.g., "code-monkey")
+- `sprint_id`: the sprint ID (if applicable)
+- `ticket_id`: the ticket ID (if applicable)
+- `prompt`: the full prompt text being sent
+
+This creates an audit trail with a dispatch ID you will use in step 6.
+
+**If `log_subagent_dispatch` is unavailable or fails, STOP and report
+the failure. Do not dispatch without logging.**
 
 ### 5. Dispatch
 
 Send the subagent via the Agent tool with the composed prompt.
 
-### 6. Review results
+### 6. Log the result and review (MANDATORY)
 
 When the subagent returns:
+- **First, call `update_dispatch_log`** with the dispatch ID from step 4,
+  the outcome (success/failure), and a summary of what the subagent
+  produced (files modified, key results). This is mandatory — do not
+  skip it.
 - Read the output
-- Update the dispatch log with the result using
-  `dispatch_log.update_dispatch_result()`
 - Check that the work meets the task requirements
 - If issues found, compose a new prompt with feedback and re-dispatch
-  (max 2 retries, then escalate to the controller's parent)
+  (max 2 retries, then escalate to the controller's parent). **Log
+  every re-dispatch** with `log_subagent_dispatch` and
+  `update_dispatch_log` as well.
 
 ## Notes
 

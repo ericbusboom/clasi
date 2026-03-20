@@ -58,20 +58,33 @@ To team-lead:
 1. Create the sprint directory and branch using CLASI MCP tools
    (`create_sprint`).
 2. Write `sprint.md` with goals, scope, and relevant TODO references.
-3. Dispatch **architect** to write the architecture update for this
+3. **Log the dispatch**: Call `log_subagent_dispatch` (parent:
+   "sprint-planner", child: "architect", sprint ID, prompt).
+   Dispatch **architect** to write the architecture update for this
    sprint's goals. Provide: sprint goals, reference to the current
    consolidated architecture in `docs/clasi/architecture/`, relevant
    TODOs, overview.
+   **Log the result**: Call `update_dispatch_log` with outcome and
+   summary.
 5. Advance to architecture-review phase
    (`advance_sprint_phase`).
-6. Dispatch **architecture-reviewer** to review the architecture.
+6. **Log the dispatch**: Call `log_subagent_dispatch` (parent:
+   "sprint-planner", child: "architecture-reviewer", sprint ID, prompt).
+   Dispatch **architecture-reviewer** to review the architecture.
    Record the gate result (`record_gate_result`).
+   **Log the result**: Call `update_dispatch_log` with outcome and
+   summary.
 7. If the review fails, send feedback to architect, re-review. Maximum
-   2 iterations before escalating to team-lead.
+   2 iterations before escalating to team-lead. Log each re-dispatch.
 8. Present the plan to the stakeholder for approval (via team-lead
    return). Record stakeholder approval gate.
-9. Advance to ticketing phase. Dispatch **technical-lead** to create
-   tickets from the architecture and use cases.
+9. Advance to ticketing phase.
+   **Log the dispatch**: Call `log_subagent_dispatch` (parent:
+   "sprint-planner", child: "technical-lead", sprint ID, prompt).
+   Dispatch **technical-lead** to create tickets from the architecture
+   and use cases.
+   **Log the result**: Call `update_dispatch_log` with outcome and
+   summary.
 10. Return the completed sprint plan to team-lead.
 
 ## Planning Decisions You Own
@@ -99,3 +112,7 @@ the following decisions:
   sprint doc and return the information to team-lead.
 - Keep sprint scope manageable. Prefer smaller, focused sprints over
   large multi-concern sprints.
+- **Always log every subagent dispatch.** Call `log_subagent_dispatch`
+  before dispatching and `update_dispatch_log` after the subagent
+  returns. This applies to architect, architecture-reviewer, and
+  technical-lead dispatches, including re-dispatches. No exceptions.

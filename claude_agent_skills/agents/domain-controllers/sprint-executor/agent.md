@@ -54,21 +54,28 @@ To team-lead:
 3. For each ticket (in dependency order):
    a. Verify all dependencies have `status: done`.
    b. Set ticket status to `in-progress` (`update_ticket_status`).
-   c. Dispatch **code-monkey** with:
+   c. **Log the dispatch**: Call `log_subagent_dispatch` with the parent
+      agent ("sprint-executor"), child agent ("code-monkey"), sprint ID,
+      ticket ID, and the prompt you are about to send.
+   d. Dispatch **code-monkey** with:
       - The ticket and its plan (if one exists)
       - Relevant architecture sections
       - Coding standards and testing instructions
       - Source files the ticket will modify
       - Scope directory for the ticket's changes
-   d. On code-monkey return, **validate the ticket**:
+   e. **Log the result**: Call `update_dispatch_log` with the dispatch ID
+      from step (c), the outcome (success/failure), and a summary of
+      files modified.
+   f. On code-monkey return, **validate the ticket**:
       - All acceptance criteria are checked (`- [x]`)
       - Ticket frontmatter `status` is `done`
       - Tests pass (`uv run pytest`)
-   e. If validation fails, send the ticket back to code-monkey with
+   g. If validation fails, send the ticket back to code-monkey with
       specific feedback on what is missing. Maximum 2 re-dispatches
-      before escalating.
-   f. Move completed ticket to `tickets/done/` (`move_ticket_to_done`).
-   g. Commit the ticket move.
+      before escalating. Log each re-dispatch with `log_subagent_dispatch`
+      and `update_dispatch_log`.
+   h. Move completed ticket to `tickets/done/` (`move_ticket_to_done`).
+   i. Commit the ticket move.
 4. After all tickets are done, update sprint frontmatter to
    `status: done`.
 5. Return completed sprint to team-lead.
@@ -95,3 +102,7 @@ After each code-monkey return, verify:
 - Always use CLASI MCP tools for ticket status updates and moves.
 - Run the full test suite after each ticket, not just the ticket's
   tests.
+- **Always log every code-monkey dispatch.** Call `log_subagent_dispatch`
+  before dispatching and `update_dispatch_log` after the subagent
+  returns. This applies to initial dispatches and re-dispatches. No
+  exceptions.

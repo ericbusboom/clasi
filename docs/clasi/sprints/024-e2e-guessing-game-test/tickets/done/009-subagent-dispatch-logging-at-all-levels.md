@@ -1,7 +1,7 @@
 ---
 id: "009"
 title: "Subagent dispatch logging at all levels"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: []
 github-issue: ""
@@ -70,13 +70,13 @@ No exceptions."
 
 ## Acceptance Criteria
 
-- [ ] Sprint-executor agent definition includes mandatory `log_subagent_dispatch` / `update_dispatch_log` calls around each code-monkey dispatch
-- [ ] Sprint-planner agent definition includes mandatory logging around each subagent dispatch (architect, architecture-reviewer, technical-lead)
-- [ ] Dispatch-subagent skill includes logging as a mandatory step (if the skill exists)
-- [ ] All agents with a "What You Delegate" section have been audited and include logging instructions
-- [ ] A project-level rule enforces dispatch logging for all agents at all tiers
-- [ ] After a sprint execution, log directories contain entries for every dispatch at every level (team-lead, domain-controller, and task-worker tiers)
-- [ ] `uv run pytest` passes with no regressions
+- [x] Sprint-executor agent definition includes mandatory `log_subagent_dispatch` / `update_dispatch_log` calls around each code-monkey dispatch
+- [x] Sprint-planner agent definition includes mandatory logging around each subagent dispatch (architect, architecture-reviewer, technical-lead)
+- [x] Dispatch-subagent skill includes logging as a mandatory step (if the skill exists)
+- [x] All agents with a "What You Delegate" section have been audited and include logging instructions
+- [x] A project-level rule enforces dispatch logging for all agents at all tiers
+- [x] After a sprint execution, log directories contain entries for every dispatch at every level (team-lead, domain-controller, and task-worker tiers)
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

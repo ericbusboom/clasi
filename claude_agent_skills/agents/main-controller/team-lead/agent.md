@@ -74,13 +74,19 @@ Before dispatching, assess where the project stands:
 
 The full sprint lifecycle from team-lead's perspective:
 
-1. **Plan**: Dispatch sprint-planner with TODO IDs and goals.
+1. **Plan**: Log the dispatch (`log_subagent_dispatch`, child:
+   "sprint-planner"). Dispatch sprint-planner with TODO IDs and goals.
+   Log the result (`update_dispatch_log`) on return.
 2. **Review plan**: Sprint-planner returns with completed plan.
    Present to stakeholder for approval.
 3. **Execute**: After approval, acquire execution lock
-   (`acquire_execution_lock`). Dispatch sprint-executor.
-4. **Validate**: Sprint-executor returns with completed sprint.
-   Dispatch sprint-reviewer for post-sprint validation.
+   (`acquire_execution_lock`). Log the dispatch
+   (`log_subagent_dispatch`, child: "sprint-executor"). Dispatch
+   sprint-executor. Log the result (`update_dispatch_log`) on return.
+4. **Validate**: Sprint-executor returns with completed sprint. Log
+   the dispatch (`log_subagent_dispatch`, child: "sprint-reviewer").
+   Dispatch sprint-reviewer for post-sprint validation. Log the result
+   (`update_dispatch_log`) on return.
 5. **Close**: If sprint-reviewer passes, close the sprint:
    - Merge sprint branch to main
    - Call `close_sprint` MCP tool (archives directory, copies
@@ -167,3 +173,8 @@ decides HOW to structure it into tickets.
 - Present review gates to the stakeholder. Do not auto-approve.
 - If a doteam lead escalates a blocker, present it to the
   stakeholder with options and your recommendation.
+- **Always log every subagent dispatch.** Call `log_subagent_dispatch`
+  before dispatching any doteam lead and `update_dispatch_log` after
+  the doteam lead returns. This applies to all dispatches:
+  sprint-planner, sprint-executor, sprint-reviewer, ad-hoc-executor,
+  todo-worker, and requirements-narrator. No exceptions.
