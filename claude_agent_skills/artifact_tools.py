@@ -1920,6 +1920,41 @@ def review_sprint_post_close(sprint_id: str) -> str:
     }, indent=2)
 
 
+# --- Dispatch template tool ---
+
+
+@server.tool()
+def get_dispatch_template(target_agent: str) -> str:
+    """Return the dispatch template for a given agent.
+
+    Searches the agent's directory for a ``dispatch-template.md`` file
+    and returns its content. The dispatching agent should fill in the
+    UPPERCASE placeholders before using the result as a dispatch prompt.
+
+    Args:
+        target_agent: Name of the agent to get the template for
+            (e.g., 'sprint-planner', 'sprint-executor', 'code-monkey')
+
+    Returns:
+        The template content as a string.
+
+    Raises:
+        ValueError: If the agent has no dispatch template.
+    """
+    from claude_agent_skills.mcp_server import content_path
+
+    agents_dir = content_path("agents")
+    # Search for dispatch-template.md in any agent directory matching target_agent
+    for template_path in agents_dir.rglob("dispatch-template.md"):
+        if template_path.parent.name == target_agent:
+            return template_path.read_text(encoding="utf-8")
+
+    raise ValueError(
+        f"No dispatch template found for agent '{target_agent}'. "
+        f"Only agents with a dispatch-template.md file in their directory have templates."
+    )
+
+
 # --- Dispatch logging tools ---
 
 

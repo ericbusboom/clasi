@@ -90,6 +90,7 @@ class TestToolRegistration:
         "review_sprint_post_close",
         "log_subagent_dispatch",
         "update_dispatch_log",
+        "get_dispatch_template",
     }
 
     EXPECTED_ALL = EXPECTED_PROCESS_TOOLS | EXPECTED_ARTIFACT_TOOLS
@@ -112,7 +113,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 42
+        assert len(registered) == 43
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

@@ -65,6 +65,7 @@ class TestLogDispatch:
             prompt="Implement the widget.",
             sprint_name="001-my-sprint",
             ticket_id="001",
+            template_used="dispatch-template.md",
         )
         assert path.exists()
         fm, body = read_document(path)
@@ -333,10 +334,10 @@ class TestTemplateUsed:
 
     def test_template_used_none_omitted_from_frontmatter(self, tmp_path):
         path = log_dispatch(
-            parent="team-lead",
-            child="sprint-planner",
+            parent="sprint-planner",
+            child="architect",
             scope="docs/",
-            prompt="Plan the sprint.",
+            prompt="Design architecture.",
             sprint_name="001-sprint",
         )
         fm, _ = read_document(path)
@@ -390,6 +391,7 @@ class TestContextDocuments:
             scope="src/",
             prompt="Execute the sprint.",
             sprint_name="010-my-sprint",
+            template_used="dispatch-template.md",
         )
         fm, body = read_document(path)
         assert "context_documents" in fm
@@ -408,6 +410,7 @@ class TestContextDocuments:
             prompt="Implement ticket.",
             sprint_name="010-my-sprint",
             ticket_id="003",
+            template_used="dispatch-template.md",
         )
         fm, _ = read_document(path)
         assert "docs/clasi/sprints/010-my-sprint/tickets/003.md" in fm["context_documents"]
@@ -421,6 +424,7 @@ class TestContextDocuments:
             scope="docs/",
             prompt="Plan it.",
             sprint_name="010-my-sprint",
+            template_used="dispatch-template.md",
             context_documents=custom_docs,
         )
         fm, _ = read_document(path)
@@ -434,6 +438,7 @@ class TestContextDocuments:
             scope="docs/",
             prompt="Plan it.",
             sprint_name="010-my-sprint",
+            template_used="dispatch-template.md",
             context_documents=[],
         )
         fm, _ = read_document(path)
@@ -458,6 +463,7 @@ class TestContextDocuments:
             scope="src/",
             prompt="Execute.",
             sprint_name="010-my-sprint",
+            template_used="dispatch-template.md",
         )
         _, body = read_document(path)
         assert "## Context Documents" in body
@@ -474,6 +480,7 @@ class TestContextDocuments:
             scope="docs/",
             prompt="Plan.",
             sprint_name="010-my-sprint",
+            template_used="dispatch-template.md",
             context_documents=custom_docs,
         )
         _, body = read_document(path)
@@ -501,7 +508,119 @@ class TestContextDocuments:
             prompt="Implement.",
             sprint_name="010-sprint",
             ticket_id="002",
+            template_used="dispatch-template.md",
         )
         fm, body = read_document(path)
         for doc in fm["context_documents"]:
             assert f"`{doc}`" in body
+
+
+class TestTemplateEnforcement:
+    """Tests for the TEMPLATED_AGENTS enforcement in log_dispatch."""
+
+    def test_dispatch_to_templated_agent_without_template_raises(self, tmp_path):
+        """Dispatching to sprint-planner without template_used raises ValueError."""
+        with pytest.raises(ValueError, match="requires a template"):
+            log_dispatch(
+                parent="team-lead",
+                child="sprint-planner",
+                scope="docs/",
+                prompt="Plan the sprint.",
+                sprint_name="001-sprint",
+            )
+
+    def test_dispatch_to_sprint_executor_without_template_raises(self, tmp_path):
+        """Dispatching to sprint-executor without template_used raises ValueError."""
+        with pytest.raises(ValueError, match="requires a template"):
+            log_dispatch(
+                parent="team-lead",
+                child="sprint-executor",
+                scope="src/",
+                prompt="Execute the sprint.",
+                sprint_name="001-sprint",
+            )
+
+    def test_dispatch_to_code_monkey_without_template_raises(self, tmp_path):
+        """Dispatching to code-monkey without template_used raises ValueError."""
+        with pytest.raises(ValueError, match="requires a template"):
+            log_dispatch(
+                parent="sprint-executor",
+                child="code-monkey",
+                scope="src/",
+                prompt="Implement ticket.",
+                sprint_name="001-sprint",
+                ticket_id="001",
+            )
+
+    def test_dispatch_to_templated_agent_with_template_succeeds(self, tmp_path):
+        """Dispatching to sprint-planner with template_used works."""
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan the sprint.",
+            sprint_name="001-sprint",
+            template_used="dispatch-template.md",
+        )
+        assert path.exists()
+        fm, _ = read_document(path)
+        assert fm["template_used"] == "dispatch-template.md"
+
+    def test_dispatch_to_non_templated_agent_without_template_succeeds(self, tmp_path):
+        """Dispatching to todo-worker (non-templated) without template_used works."""
+        path = log_dispatch(
+            parent="sprint-planner",
+            child="todo-worker",
+            scope="docs/",
+            prompt="Process the TODO.",
+            sprint_name="001-sprint",
+        )
+        assert path.exists()
+        fm, _ = read_document(path)
+        assert "template_used" not in fm
+
+    def test_dispatch_to_architect_without_template_succeeds(self, tmp_path):
+        """Dispatching to architect (non-templated) without template_used works."""
+        path = log_dispatch(
+            parent="sprint-planner",
+            child="architect",
+            scope="docs/",
+            prompt="Design architecture.",
+            sprint_name="001-sprint",
+        )
+        assert path.exists()
+
+
+class TestGetDispatchTemplate:
+    """Tests for the get_dispatch_template MCP tool."""
+
+    def test_returns_content_for_sprint_planner(self):
+        from claude_agent_skills.artifact_tools import get_dispatch_template
+
+        content = get_dispatch_template("sprint-planner")
+        assert "sprint-planner" in content
+        assert len(content) > 0
+
+    def test_returns_content_for_code_monkey(self):
+        from claude_agent_skills.artifact_tools import get_dispatch_template
+
+        content = get_dispatch_template("code-monkey")
+        assert len(content) > 0
+
+    def test_returns_content_for_sprint_executor(self):
+        from claude_agent_skills.artifact_tools import get_dispatch_template
+
+        content = get_dispatch_template("sprint-executor")
+        assert len(content) > 0
+
+    def test_raises_for_agent_without_template(self):
+        from claude_agent_skills.artifact_tools import get_dispatch_template
+
+        with pytest.raises(ValueError, match="No dispatch template found"):
+            get_dispatch_template("architect")
+
+    def test_raises_for_nonexistent_agent(self):
+        from claude_agent_skills.artifact_tools import get_dispatch_template
+
+        with pytest.raises(ValueError, match="No dispatch template found"):
+            get_dispatch_template("nonexistent-agent")

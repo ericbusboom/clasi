@@ -170,7 +170,14 @@ def _check_dispatch_logs(project_dir: Path) -> CheckResult:
     - Each sprint directory has planner sub-dispatch log files beyond
       any ``sprint-planner-*`` entries (e.g. ``architect-*``,
       ``architecture-reviewer-*``, ``technical-lead-*``).
+    - Dispatches to templated agents include ``template_used`` in
+      frontmatter.
     """
+    import yaml
+
+    # Agents that require template_used in their dispatch logs
+    templated_agents = {"sprint-planner", "sprint-executor", "code-monkey"}
+
     log_dir = project_dir / "docs" / "clasi" / "log"
     if not log_dir.exists():
         return _fail("Dispatch logs exist", "log/ directory does not exist")
@@ -209,6 +216,26 @@ def _check_dispatch_logs(project_dir: Path) -> CheckResult:
                     f"{sprint_dir.name}: no planner sub-dispatch logs"
                     " (e.g. architect-*, architecture-reviewer-*)"
                 )
+
+            # Check template_used for dispatches to templated agents
+            for log_file in sprint_files:
+                content = log_file.read_text(encoding="utf-8")
+                if not content.startswith("---"):
+                    continue
+                parts = content.split("---", 2)
+                if len(parts) < 3:
+                    continue
+                try:
+                    fm = yaml.safe_load(parts[1])
+                except Exception:
+                    continue
+                if not isinstance(fm, dict):
+                    continue
+                child = fm.get("child", "")
+                if child in templated_agents and not fm.get("template_used"):
+                    issues.append(
+                        f"{log_file.name}: dispatch to '{child}' missing template_used"
+                    )
 
         if issues:
             return _fail("Dispatch logs exist", "; ".join(issues[:5]))

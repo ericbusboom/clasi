@@ -12,6 +12,10 @@ from pathlib import Path
 
 from claude_agent_skills.frontmatter import read_document, write_frontmatter
 
+# Agents that have dispatch templates and MUST include template_used
+# when dispatched to via log_dispatch.
+TEMPLATED_AGENTS = {"sprint-planner", "sprint-executor", "code-monkey"}
+
 
 def _log_dir() -> Path:
     """Return the log directory (``docs/clasi/log/``) relative to cwd."""
@@ -80,7 +84,17 @@ def log_dispatch(
     explicit list (even an empty one) to override.
 
     Directories are created on demand.
+
+    Raises:
+        ValueError: If *child* is in :data:`TEMPLATED_AGENTS` and
+            *template_used* is ``None``.
     """
+    if child in TEMPLATED_AGENTS and template_used is None:
+        raise ValueError(
+            f"Dispatch to '{child}' requires a template. "
+            f"Call get_dispatch_template('{child}') first and pass template_used."
+        )
+
     base = _log_dir()
 
     if sprint_name and ticket_id:
