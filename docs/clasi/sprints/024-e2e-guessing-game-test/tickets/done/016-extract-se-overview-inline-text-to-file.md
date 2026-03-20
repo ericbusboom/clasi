@@ -1,7 +1,7 @@
 ---
 id: "016"
 title: "Extract SE overview inline text to file"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: []
 github-issue: ""
@@ -53,12 +53,12 @@ to files -- with no functional difference in the tool's return value.
 
 ## Acceptance Criteria
 
-- [ ] Static Process Stages text extracted from `process_tools.py` to a content file
-- [ ] Static MCP Tools Quick Reference text extracted from `process_tools.py` to a content file
-- [ ] `get_se_overview()` reads static text from files at runtime
-- [ ] `get_se_overview()` output is identical before and after the change
-- [ ] No inline static prose remains in the `get_se_overview()` function body
-- [ ] `uv run pytest` passes with no regressions
+- [x] Static Process Stages text extracted from `process_tools.py` to a content file
+- [x] Static MCP Tools Quick Reference text extracted from `process_tools.py` to a content file
+- [x] `get_se_overview()` reads static text from files at runtime
+- [x] `get_se_overview()` output is identical before and after the change
+- [x] No inline static prose remains in the `get_se_overview()` function body
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

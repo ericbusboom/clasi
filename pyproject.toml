@@ -59,6 +59,7 @@ claude_agent_skills = [
     "instructions/languages/*.md",
     "rules/*.md",
     "templates/*.md",
+    "se-overview-template.md",
 ]
 
 [tool.setuptools.packages.find]

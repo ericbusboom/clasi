@@ -237,6 +237,56 @@ class TestGetUseCaseCoverage:
         assert result["total_use_cases"] == 0
 
 
+class TestSeOverviewTemplate:
+    """Tests for the SE overview template extraction (ticket 016)."""
+
+    def test_template_file_exists_and_non_empty(self):
+        from claude_agent_skills.process_tools import _SE_OVERVIEW_TEMPLATE_PATH
+        assert _SE_OVERVIEW_TEMPLATE_PATH.exists(), "SE overview template file must exist"
+        content = _SE_OVERVIEW_TEMPLATE_PATH.read_text(encoding="utf-8")
+        assert len(content) > 0, "SE overview template file must not be empty"
+
+    def test_template_contains_placeholders(self):
+        from claude_agent_skills.process_tools import _SE_OVERVIEW_TEMPLATE_PATH
+        content = _SE_OVERVIEW_TEMPLATE_PATH.read_text(encoding="utf-8")
+        assert "{agent_lines}" in content
+        assert "{skill_lines}" in content
+        assert "{instruction_lines}" in content
+
+    def test_template_contains_static_sections(self):
+        from claude_agent_skills.process_tools import _SE_OVERVIEW_TEMPLATE_PATH
+        content = _SE_OVERVIEW_TEMPLATE_PATH.read_text(encoding="utf-8")
+        assert "## Process Stages" in content
+        assert "## MCP Tools Quick Reference" in content
+        assert "Stage 1a" in content
+
+    def test_overview_output_contains_expected_sections(self):
+        result = get_se_overview()
+        assert "# CLASI SE Process Overview" in result
+        assert "## Process Stages" in result
+        assert "## Available Agents" in result
+        assert "## Available Skills" in result
+        assert "## Available Instructions" in result
+        assert "## MCP Tools Quick Reference" in result
+
+    def test_no_inline_static_prose_in_function(self):
+        """Verify the function body no longer contains static prose."""
+        import inspect
+        source = inspect.getsource(get_se_overview)
+        # Should not contain the literal static text anymore
+        assert "Stage 1a" not in source
+        assert "Artifact Management" not in source
+
+    def test_missing_template_raises_clear_error(self, tmp_path, monkeypatch):
+        """get_se_overview raises FileNotFoundError if template is missing."""
+        import claude_agent_skills.process_tools as pt
+        original = pt._SE_OVERVIEW_TEMPLATE_PATH
+        monkeypatch.setattr(pt, "_SE_OVERVIEW_TEMPLATE_PATH", tmp_path / "nonexistent.md")
+        with pytest.raises(FileNotFoundError, match="SE overview template not found"):
+            get_se_overview()
+        monkeypatch.setattr(pt, "_SE_OVERVIEW_TEMPLATE_PATH", original)
+
+
 class TestGetVersion:
     def test_returns_version_json(self):
         result = json.loads(get_version())
