@@ -40,6 +40,24 @@ def _next_sequence(directory: Path, prefix: str) -> int:
     return max_seq + 1
 
 
+def _auto_context_documents(sprint_name: str, ticket_id: str | None = None) -> list[str]:
+    """Derive standard planning documents from a sprint name.
+
+    Returns paths relative to the repository root for the standard sprint
+    planning documents (sprint.md, architecture-update.md, usecases.md)
+    plus the ticket file when *ticket_id* is provided.
+    """
+    sprint_dir = f"docs/clasi/sprints/{sprint_name}"
+    docs = [
+        f"{sprint_dir}/sprint.md",
+        f"{sprint_dir}/architecture-update.md",
+        f"{sprint_dir}/usecases.md",
+    ]
+    if ticket_id:
+        docs.append(f"{sprint_dir}/tickets/{ticket_id}.md")
+    return docs
+
+
 def log_dispatch(
     parent: str,
     child: str,
@@ -47,6 +65,8 @@ def log_dispatch(
     prompt: str,
     sprint_name: str | None = None,
     ticket_id: str | None = None,
+    template_used: str | None = None,
+    context_documents: list[str] | None = None,
 ) -> Path:
     """Log a subagent dispatch and return the path of the created log file.
 
@@ -54,6 +74,10 @@ def log_dispatch(
     - sprint_name + ticket_id  -> ``log/sprints/<sprint>/ticket-<ticket>-NNN.md``
     - sprint_name, no ticket   -> ``log/sprints/<sprint>/<child>-NNN.md``
     - no sprint_name           -> ``log/adhoc/NNN.md``
+
+    When *context_documents* is ``None`` and *sprint_name* is provided,
+    the standard sprint planning documents are auto-populated.  Pass an
+    explicit list (even an empty one) to override.
 
     Directories are created on demand.
     """
@@ -79,6 +103,11 @@ def log_dispatch(
 
     log_path = directory / filename
 
+    # Resolve context documents
+    resolved_docs: list[str] | None = context_documents
+    if resolved_docs is None and sprint_name:
+        resolved_docs = _auto_context_documents(sprint_name, ticket_id)
+
     # Build frontmatter
     fm: dict = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
@@ -90,9 +119,19 @@ def log_dispatch(
         fm["sprint"] = sprint_name
     if ticket_id:
         fm["ticket"] = ticket_id
+    if template_used:
+        fm["template_used"] = template_used
+    if resolved_docs is not None:
+        fm["context_documents"] = resolved_docs
 
     # Build body
     body = f"\n# Dispatch: {parent} → {child}\n\n{prompt}\n"
+
+    # Add context documents section
+    if resolved_docs:
+        body += "\n## Context Documents\n\n"
+        for doc in resolved_docs:
+            body += f"- `{doc}`\n"
 
     # Write frontmatter + body
     write_frontmatter(log_path, fm)

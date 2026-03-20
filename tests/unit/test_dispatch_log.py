@@ -4,6 +4,7 @@ import pytest
 from pathlib import Path
 
 from claude_agent_skills.dispatch_log import (
+    _auto_context_documents,
     _log_dir,
     _next_sequence,
     log_dispatch,
@@ -313,3 +314,194 @@ class TestUpdateDispatchResult:
         _, body_after = read_document(path)
         assert body_before == body_after
         assert "# Response:" not in body_after
+
+
+class TestTemplateUsed:
+    """Tests for the template_used parameter on log_dispatch."""
+
+    def test_template_used_recorded_in_frontmatter(self, tmp_path):
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan the sprint.",
+            sprint_name="001-sprint",
+            template_used="dispatch-sprint-planner.md",
+        )
+        fm, _ = read_document(path)
+        assert fm["template_used"] == "dispatch-sprint-planner.md"
+
+    def test_template_used_none_omitted_from_frontmatter(self, tmp_path):
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan the sprint.",
+            sprint_name="001-sprint",
+        )
+        fm, _ = read_document(path)
+        assert "template_used" not in fm
+
+    def test_template_used_with_ticket_dispatch(self, tmp_path):
+        path = log_dispatch(
+            parent="sprint-executor",
+            child="code-monkey",
+            scope="src/",
+            prompt="Implement ticket.",
+            sprint_name="001-sprint",
+            ticket_id="005",
+            template_used="dispatch-code-monkey.md",
+        )
+        fm, _ = read_document(path)
+        assert fm["template_used"] == "dispatch-code-monkey.md"
+        assert fm["ticket"] == "005"
+
+
+class TestAutoContextDocuments:
+    """Tests for _auto_context_documents helper."""
+
+    def test_sprint_only(self):
+        docs = _auto_context_documents("001-my-sprint")
+        assert docs == [
+            "docs/clasi/sprints/001-my-sprint/sprint.md",
+            "docs/clasi/sprints/001-my-sprint/architecture-update.md",
+            "docs/clasi/sprints/001-my-sprint/usecases.md",
+        ]
+
+    def test_sprint_with_ticket(self):
+        docs = _auto_context_documents("002-sprint", ticket_id="007")
+        assert docs == [
+            "docs/clasi/sprints/002-sprint/sprint.md",
+            "docs/clasi/sprints/002-sprint/architecture-update.md",
+            "docs/clasi/sprints/002-sprint/usecases.md",
+            "docs/clasi/sprints/002-sprint/tickets/007.md",
+        ]
+
+
+class TestContextDocuments:
+    """Tests for the context_documents parameter on log_dispatch."""
+
+    def test_auto_populated_from_sprint_name(self, tmp_path):
+        """When sprint_name is given and context_documents is None,
+        standard planning documents are auto-populated."""
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-executor",
+            scope="src/",
+            prompt="Execute the sprint.",
+            sprint_name="010-my-sprint",
+        )
+        fm, body = read_document(path)
+        assert "context_documents" in fm
+        assert fm["context_documents"] == [
+            "docs/clasi/sprints/010-my-sprint/sprint.md",
+            "docs/clasi/sprints/010-my-sprint/architecture-update.md",
+            "docs/clasi/sprints/010-my-sprint/usecases.md",
+        ]
+
+    def test_auto_populated_with_ticket(self, tmp_path):
+        """When sprint_name + ticket_id, ticket file is included."""
+        path = log_dispatch(
+            parent="sprint-executor",
+            child="code-monkey",
+            scope="src/",
+            prompt="Implement ticket.",
+            sprint_name="010-my-sprint",
+            ticket_id="003",
+        )
+        fm, _ = read_document(path)
+        assert "docs/clasi/sprints/010-my-sprint/tickets/003.md" in fm["context_documents"]
+
+    def test_explicit_context_documents_override(self, tmp_path):
+        """Passing an explicit list replaces auto-population."""
+        custom_docs = ["docs/overview.md", "docs/spec.md"]
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan it.",
+            sprint_name="010-my-sprint",
+            context_documents=custom_docs,
+        )
+        fm, _ = read_document(path)
+        assert fm["context_documents"] == custom_docs
+
+    def test_empty_list_overrides_auto_population(self, tmp_path):
+        """Passing an empty list explicitly prevents auto-population."""
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan it.",
+            sprint_name="010-my-sprint",
+            context_documents=[],
+        )
+        fm, _ = read_document(path)
+        assert fm["context_documents"] == []
+
+    def test_no_sprint_name_no_context_documents(self, tmp_path):
+        """Ad-hoc dispatches without sprint_name have no context_documents."""
+        path = log_dispatch(
+            parent="mc",
+            child="ah",
+            scope=".",
+            prompt="Ad-hoc.",
+        )
+        fm, _ = read_document(path)
+        assert "context_documents" not in fm
+
+    def test_context_documents_section_in_body(self, tmp_path):
+        """Dispatch log body includes a ## Context Documents section."""
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-executor",
+            scope="src/",
+            prompt="Execute.",
+            sprint_name="010-my-sprint",
+        )
+        _, body = read_document(path)
+        assert "## Context Documents" in body
+        assert "`docs/clasi/sprints/010-my-sprint/sprint.md`" in body
+        assert "`docs/clasi/sprints/010-my-sprint/architecture-update.md`" in body
+        assert "`docs/clasi/sprints/010-my-sprint/usecases.md`" in body
+
+    def test_explicit_context_documents_in_body(self, tmp_path):
+        """Explicit context_documents appear in the body section."""
+        custom_docs = ["docs/overview.md", "docs/spec.md"]
+        path = log_dispatch(
+            parent="team-lead",
+            child="sprint-planner",
+            scope="docs/",
+            prompt="Plan.",
+            sprint_name="010-my-sprint",
+            context_documents=custom_docs,
+        )
+        _, body = read_document(path)
+        assert "## Context Documents" in body
+        assert "`docs/overview.md`" in body
+        assert "`docs/spec.md`" in body
+
+    def test_no_context_documents_section_for_adhoc(self, tmp_path):
+        """Ad-hoc dispatch without context_documents omits the section."""
+        path = log_dispatch(
+            parent="mc",
+            child="ah",
+            scope=".",
+            prompt="Ad-hoc.",
+        )
+        _, body = read_document(path)
+        assert "## Context Documents" not in body
+
+    def test_frontmatter_matches_body_documents(self, tmp_path):
+        """Frontmatter context_documents match the documents listed in body."""
+        path = log_dispatch(
+            parent="sprint-executor",
+            child="code-monkey",
+            scope="src/",
+            prompt="Implement.",
+            sprint_name="010-sprint",
+            ticket_id="002",
+        )
+        fm, body = read_document(path)
+        for doc in fm["context_documents"]:
+            assert f"`{doc}`" in body

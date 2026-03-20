@@ -1,7 +1,7 @@
 ---
 id: "012"
 title: "Agent dispatch templates with role and field conventions"
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: ["009"]
 github-issue: ""
@@ -69,15 +69,15 @@ dispatch.
 
 ## Acceptance Criteria
 
-- [ ] Dispatch template exists for team-lead -> sprint-planner
-- [ ] Dispatch template exists for team-lead -> sprint-executor
-- [ ] Dispatch template exists for sprint-executor -> code-monkey
-- [ ] Each template includes role declaration, behavioral instructions, UPPERCASE fields, and context document references
-- [ ] Team-lead agent definition references dispatch templates for sprint-planner and sprint-executor dispatches
-- [ ] Sprint-executor agent definition references dispatch template for code-monkey dispatches
-- [ ] Code-monkey dispatch template includes mandatory `log_subagent_dispatch` / `update_dispatch_log` instructions
-- [ ] `log_subagent_dispatch` accepts optional `template_used` field
-- [ ] `uv run pytest` passes with no regressions
+- [x] Dispatch template exists for team-lead -> sprint-planner
+- [x] Dispatch template exists for team-lead -> sprint-executor
+- [x] Dispatch template exists for sprint-executor -> code-monkey
+- [x] Each template includes role declaration, behavioral instructions, UPPERCASE fields, and context document references
+- [x] Team-lead agent definition references dispatch templates for sprint-planner and sprint-executor dispatches
+- [x] Sprint-executor agent definition references dispatch template for code-monkey dispatches
+- [x] Code-monkey dispatch template includes mandatory `log_subagent_dispatch` / `update_dispatch_log` instructions
+- [x] `log_subagent_dispatch` accepts optional `template_used` field
+- [x] `uv run pytest` passes with no regressions
 
 ## Testing
 

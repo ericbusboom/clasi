@@ -140,6 +140,21 @@ When a doteam lead returns, validate before proceeding:
 - **"Close the sprint" / "Are we done?"** → Dispatch sprint-reviewer,
   then close if passed.
 
+## Dispatch Templates
+
+Before dispatching to any agent that has a dispatch template, load the
+template from `docs/clasi/templates/`, fill in all UPPERCASE fields
+with the actual values, and use the filled-in template as the dispatch
+prompt.
+
+| Target agent | Template |
+|-------------|----------|
+| sprint-planner | `docs/clasi/templates/dispatch-sprint-planner.md` |
+| sprint-executor | `docs/clasi/templates/dispatch-sprint-executor.md` |
+
+When calling `log_subagent_dispatch`, pass `template_used` with the
+template filename (e.g., `"dispatch-sprint-planner.md"`).
+
 ## Delegation Philosophy
 
 **Provide goals, not pre-digested content.** When dispatching to any

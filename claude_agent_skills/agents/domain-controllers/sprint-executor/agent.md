@@ -45,6 +45,16 @@ To team-lead:
 |------|-------|-------------------|
 | Implement ticket | **code-monkey** | Code changes, tests, updated ticket frontmatter |
 
+## Dispatch Templates
+
+Before dispatching code-monkey, load the dispatch template from
+`docs/clasi/templates/dispatch-code-monkey.md`, fill in all UPPERCASE
+fields (TICKET_PATH, TICKET_PLAN_PATH, SCOPE_DIRECTORY, SPRINT_NAME,
+TICKET_ID), and use the filled-in template as the dispatch prompt.
+
+When calling `log_subagent_dispatch`, pass `template_used` with the
+template filename (e.g., `"dispatch-code-monkey.md"`).
+
 ## Workflow
 
 1. Read the sprint directory to understand all tickets and their

@@ -1931,6 +1931,8 @@ def log_subagent_dispatch(
     prompt: str,
     sprint_name: str | None = None,
     ticket_id: str | None = None,
+    template_used: str | None = None,
+    context_documents: list[str] | None = None,
 ) -> str:
     """Log a subagent dispatch with full prompt text.
 
@@ -1950,6 +1952,11 @@ def log_subagent_dispatch(
         prompt: The FULL prompt text being sent to the subagent
         sprint_name: Optional sprint name for routing
         ticket_id: Optional ticket ID for routing
+        template_used: Optional name of the dispatch template used
+        context_documents: Optional list of planning document paths
+            relevant to this dispatch. When not provided and
+            sprint_name is given, auto-populated from the sprint
+            directory.
 
     Returns JSON with {log_path}.
     """
@@ -1962,6 +1969,8 @@ def log_subagent_dispatch(
         prompt=prompt,
         sprint_name=sprint_name,
         ticket_id=ticket_id,
+        template_used=template_used,
+        context_documents=context_documents,
     )
     return json.dumps({"log_path": str(log_path)}, indent=2)
 
