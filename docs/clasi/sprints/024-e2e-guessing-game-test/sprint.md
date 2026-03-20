@@ -67,11 +67,17 @@ testing today.
 - `tests/e2e/verify.py` -- verification script
 - `tests/e2e/README.md` -- documentation for e2e tests
 - `tests/e2e/guessing-game-spec.md` -- already exists
+- CLAUDE.md / AGENTS.md -- team-lead identity binding
+- `create_sprint` / `close_sprint` -- revise architecture process to use lightweight updates
+- Architect agent definition -- write updates instead of full rewrites
+- New consolidation skill for on-demand architecture merging
+- Team-lead agent definition -- pass raw stakeholder text to todo-worker
+- Todo-worker agent definition -- accept raw input, produce structured TODOs
+- Dispatch protocol -- support raw-text delegation pattern
 
 ### Out of Scope
 
-- Changes to the CLASI Python package (`claude_agent_skills/`)
-- Changes to MCP tools (the logging tools added previously are sufficient)
+- Changes to the CLASI Python package (`claude_agent_skills/`) beyond the items listed above
 - Automated CI integration (future work)
 - Performance benchmarks or timing constraints
 - Modifications to the guessing game spec itself
@@ -127,3 +133,9 @@ Before tickets can be created, all of the following must be true:
    - use-cases: SUC-002 | depends-on: none
 3. **003** -- Documentation and TODO cleanup
    - use-cases: SUC-001, SUC-002 | depends-on: 001, 002
+4. **004** -- Team-lead identity binding
+   - use-cases: none | depends-on: none | todo: team-lead-identity-binding.md
+5. **005** -- Revise architecture process
+   - use-cases: none | depends-on: none | todo: revise-architecture-process.md
+6. **006** -- Fix TODO delegation
+   - use-cases: none | depends-on: none | todo: fix-todo-delegation.md
