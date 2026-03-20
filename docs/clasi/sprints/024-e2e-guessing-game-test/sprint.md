@@ -251,3 +251,7 @@ Before tickets can be created, all of the following must be true:
    - use-cases: SUC-004 | depends-on: none | todo: todo-sprint-ticket-cross-references.md
 9. **009** -- Subagent dispatch logging at all levels
    - use-cases: SUC-003 | depends-on: none | todo: subagent-dispatch-logging-at-all-levels.md
+10. **010** -- Append subagent response to dispatch log
+    - use-cases: SUC-003 | depends-on: none | todo: append-subagent-response-to-dispatch-log.md
+11. **011** -- Missing sub-dispatch logs in e2e output
+    - use-cases: SUC-003 | depends-on: 009 | todo: missing-sub-dispatch-logs-in-e2e-output.md
