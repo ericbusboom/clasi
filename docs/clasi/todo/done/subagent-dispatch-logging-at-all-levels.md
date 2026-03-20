@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '024'
+tickets:
+- 009
 ---
 
 # All Dispatching Agents Must Log Subagent Dispatches
