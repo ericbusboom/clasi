@@ -1,7 +1,7 @@
 ---
-id: "024"
-title: "E2E Test and Process Improvements"
-status: planning
+id: '024'
+title: E2E Test and Process Improvements
+status: done
 branch: sprint/024-e2e-guessing-game-test
 use-cases:
 - SUC-001

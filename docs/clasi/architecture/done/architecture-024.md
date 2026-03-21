@@ -1,8 +1,8 @@
 ---
-version: "024"
+version: "001"
 status: draft
-sprint: "024"
-description: Architecture update for sprint 024 — E2E test infrastructure (no CLASI package changes)
+sprint: "001"
+description: Architecture update for sprint 001 — three-tier agent hierarchy, path-scoped rules, dispatch logging
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -101,8 +101,8 @@ specifics, see `pc-architecture.md`.
 flowchart TB
     user["Stakeholder"]
 
-    subgraph T0["Tier 0: Team Lead"]
-        mc["team-lead<br/>Knows: requirements, planning, execution<br/>Writes: nothing (dispatches only)"]
+    subgraph T0["Tier 0: Main Controller"]
+        mc["main-controller<br/>Knows: requirements, planning, execution<br/>Writes: nothing (dispatches only)"]
     end
 
     subgraph T1["Tier 1: Domain Controllers"]
@@ -149,7 +149,7 @@ flowchart TB
 
 | Tier | Agent | Receives | Returns | Write Scope | Delegates to |
 |------|-------|----------|---------|-------------|-------------|
-| 0 | **team-lead** | Stakeholder input | Status reports | None | T1 agents. Validates sprint frontmatter on return. |
+| 0 | **main-controller** | Stakeholder input | Status reports | None | T1 agents. Validates sprint frontmatter on return. |
 | 1 | **requirements-narrator** | Stakeholder narrative | Overview doc | `docs/clasi/overview.md` | None |
 | 1 | **todo-worker** | Ideas, GitHub issues | TODO files | `docs/clasi/todo/` | None |
 | 1 | **sprint-planner** | TODO IDs, goals | Sprint with tickets | `docs/clasi/sprints/NNN/` | architect, arch-reviewer, technical-lead |
@@ -165,11 +165,11 @@ flowchart TB
 ### Validation Chain
 
 The sprint-executor validates each ticket after the code-monkey returns,
-and the team lead validates the sprint after the executor returns:
+and the main controller validates the sprint after the executor returns:
 
 ```mermaid
 sequenceDiagram
-    participant MC as Team Lead
+    participant MC as Main Controller
     participant SE as Sprint Executor
     participant CM as Code Monkey
 
@@ -209,12 +209,12 @@ The code directory structure mirrors the hierarchy:
 
 ```
 agents/
-├── team-lead/
-│   └── team-lead/
+├── main-controller/
+│   └── main-controller/
 │       ├── agent.md
 │       ├── next.md
 │       └── project-status.md
-├── doteam-leads/
+├── domain-controllers/
 │   ├── requirements-narrator/
 │   │   ├── agent.md
 │   │   ├── elicit-requirements.md
@@ -410,7 +410,7 @@ watching may provide mechanical enforcement in the future.
 
 ### DR-008: Three-Tier Agent Hierarchy
 
-**Decision**: Organize agents into team-lead, doteam-leads,
+**Decision**: Organize agents into main-controller, domain-controllers,
 and task-workers with matching directory structure.
 
 **Context**: The flat agent model had project-manager doing everything.
@@ -418,7 +418,7 @@ No isolation between planning and execution, no clear delegation
 boundaries.
 
 **Why three tiers**: Main controller knows the process but not
-implementation. Doteam leads own lifecycles (sprint planning,
+implementation. Domain controllers own lifecycles (sprint planning,
 sprint execution, TODO management). Task workers do the actual work
 (code, review, architecture). Each tier validates the output of its
 children before passing results up.
@@ -438,61 +438,37 @@ None.
 
 ## Sprint Changes
 
-Changes planned for sprint 024:
-
-This sprint has two tracks: E2E test infrastructure and process
-improvements (agent delegation boundaries + TODO cross-referencing).
+Changes planned for sprint 001:
 
 ### New Components
 
-**`tests/e2e/run_e2e.py`** — E2E test harness script. Creates a
-temporary project directory, runs `clasi init`, copies the guessing game
-spec, and dispatches a team-lead subagent via the Agent tool to
-implement the spec across 4 sprints. Captures result and reports the
-temp project path for verification.
+**Agent directory hierarchy** — Three-tier structure under `agents/`
+with per-agent directories containing agent.md + agent-specific content.
 
-**`tests/e2e/verify.py`** — Verification script. Takes a project
-directory path as input. Checks: (1) the guessing game application
-works, (2) 4 sprints exist in `done/` with correct status, (3) all
-tickets are in `done/` with correct status, (4) dispatch logs exist
-with content, (5) the project's own pytest suite passes. Prints a
-pass/fail summary per check.
+**New agent definitions** — sprint-planner, sprint-executor,
+ad-hoc-executor, todo-worker, sprint-reviewer (5 new).
 
-**`tests/e2e/README.md`** — Documentation for the e2e test directory:
-purpose, prerequisites, how to run, how to add new e2e tests.
+**Refactored agents** — main-controller (pure dispatcher), code-monkey
+(language-agnostic, absorbs python-expert + documentation-expert).
+
+**Path-scoped rules** (`.claude/rules/`) — Four rule files.
+
+**Log directory** (`docs/clasi/log/`) — Dispatch logging with full
+prompt text.
 
 ### Changed Components
 
-**Agent definitions** — Team-lead, sprint-planner, and todo-worker
-agent definitions updated to enforce proper delegation boundaries:
-- Team-lead provides high-level goals and TODO references to subordinate
-  agents, not pre-digested specifications
-- Sprint planner owns ticket decomposition, scoping, and specification
-- Todo-worker owns TODO formatting and structuring from raw input
+**Init Command** — New `_create_rules()` function.
 
-**`create_ticket` MCP tool (`artifact_tools.py`)** — New optional `todo`
-parameter accepting a TODO filename or list of filenames. When provided,
-automatically updates the referenced TODO's frontmatter with sprint ID,
-ticket ID, and `status: in-progress`.
+**Process Tools** — Walk nested agent directories. New
+`get_agent_context()` tool.
 
-**`close_sprint` MCP tool (`artifact_tools.py`)** — On sprint close,
-checks for TODOs linked to the sprint (via frontmatter `sprint` field)
-and moves them to `todo/done/` with `status: done`.
+**Skill: `dispatch-subagent`** — scope_directory + logging.
 
-**`list_todos` MCP tool (`artifact_tools.py`)** — Output now includes
-sprint/ticket linkage for in-progress TODOs so stakeholders can see
-which TODOs are in flight.
-
-**Ticket frontmatter schema** — New `todo` field (string or list of
-strings) pointing back to source TODO filename(s). Enables bidirectional
-traceability: TODO -> ticket and ticket -> TODO.
-
-**TODO frontmatter schema** — Extended with `sprint` (string) and
-`tickets` (list of strings) fields. Status lifecycle: `pending` ->
-`in-progress` -> `done`.
+**Instruction: `subagent-protocol`** — Directory Scope section.
 
 ### Migration Concerns
 
-Existing tickets with `todo: "filename.md"` (single string) continue to
-work. The new list form is additive. Existing TODOs without sprint/ticket
-fields are unaffected — the new fields are optional.
+Non-breaking for external projects (rules are additive, init is
+idempotent). Internal migration requires moving 34 files per the
+migration table in `pc-architecture.md`.
