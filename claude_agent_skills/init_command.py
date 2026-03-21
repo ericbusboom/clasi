@@ -32,7 +32,23 @@ HOOKS_CONFIG = {
                 }
             ],
         }
-    ]
+    ],
+    "PostToolUse": [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": (
+                        "if echo \"$TOOL_INPUT\" | grep -q 'git commit' && "
+                        "git branch --show-current 2>/dev/null | grep -qE '^(master|main)$'; then "
+                        "echo 'CLASI: You committed on master. Call tag_version() to bump the version.'; "
+                        "fi"
+                    ),
+                }
+            ],
+        }
+    ],
 }
 
 # Path-scoped rules installed by `clasi init`.
@@ -290,14 +306,11 @@ def _update_settings_json(settings_path: Path) -> bool:
 
 
 def _update_hooks_config(settings_path: Path) -> bool:
-    """Add session-start hook to settings.json (shared, checked in).
+    """Install all CLASI hooks into settings.json (shared, checked in).
 
-    Installs a UserPromptSubmit hook that reminds the agent to load the
-    SE process.  Idempotent: if the hook already exists with the correct
-    command, no changes are made.
-
-    Hook format (per Claude Code spec):
-    {"matcher": "", "hooks": [{"type": "command", "command": "..."}]}
+    Installs hooks from HOOKS_CONFIG for each event type
+    (UserPromptSubmit, PostToolUse, etc.). Idempotent: checks by
+    matching the command string inside each hook entry.
 
     Returns True if the file was written/updated, False if unchanged.
     """
@@ -312,24 +325,25 @@ def _update_hooks_config(settings_path: Path) -> bool:
         data = {}
 
     hooks = data.setdefault("hooks", {})
-    target_entry = HOOKS_CONFIG["UserPromptSubmit"][0]
+    changed = False
 
-    existing = hooks.get("UserPromptSubmit", [])
+    for event_type, entries in HOOKS_CONFIG.items():
+        existing = hooks.get(event_type, [])
+        for target_entry in entries:
+            clasi_command = target_entry["hooks"][0]["command"]
+            already_present = any(
+                clasi_command in (h.get("command", "") for h in entry.get("hooks", []))
+                for entry in existing
+            )
+            if not already_present:
+                existing.append(target_entry)
+                changed = True
+        hooks[event_type] = existing
 
-    # Check if the CLASI hook entry already exists (by matching the
-    # command inside the hooks array)
-    clasi_command = target_entry["hooks"][0]["command"]
-    already_present = any(
-        clasi_command in (h.get("command", "") for h in entry.get("hooks", []))
-        for entry in existing
-    )
-
-    if already_present:
+    if not changed:
         click.echo("  Unchanged: .claude/settings.json (hooks)")
         return False
 
-    existing.append(target_entry)
-    hooks["UserPromptSubmit"] = existing
     settings_path.write_text(
         json.dumps(data, indent=2) + "\n", encoding="utf-8"
     )
