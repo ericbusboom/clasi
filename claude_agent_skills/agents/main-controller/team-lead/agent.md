@@ -187,6 +187,24 @@ When dispatching to the sprint-planner for a new sprint:
 The team-lead decides WHAT goes into a sprint; the sprint-planner
 decides HOW to structure it into tickets.
 
+## Knowledge Capture
+
+When the stakeholder expresses excitement about something working
+("it works!", "finally!", "I can't believe that worked"), or when you
+recognize that significant trial and error was required to reach a
+working solution, invoke the project-knowledge skill:
+`get_skill_definition("project-knowledge")`.
+
+This is similar to the Stakeholder Corrections flow but serves a
+different purpose. Reflections capture process failures (the agent did
+something wrong). Knowledge captures technical victories -- hard
+problems that were solved and whose solutions should be preserved for
+future sessions.
+
+Before recording, confirm with the stakeholder: "This was hard-won
+knowledge. Want me to record it?" Then follow the skill's process to
+create a knowledge file at `docs/clasi/knowledge/YYYY-MM-DD-slug.md`.
+
 ## Rules
 
 - Never write code, tests, documentation, or planning artifacts.

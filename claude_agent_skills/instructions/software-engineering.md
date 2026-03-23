@@ -220,6 +220,21 @@ Files in `todo/` are unordered and unprioritized — sprint planning is when
 prioritization happens. The `done/` subdirectory preserves consumed TODOs
 for reference.
 
+### 8. Knowledge Directory (`docs/clasi/knowledge/`)
+
+Captures hard-won technical understanding from difficult debugging sessions,
+non-obvious fixes, and solutions that required significant trial and error.
+Each file records what was broken, what was tried, what worked, why it works,
+and actionable guidance for future agents.
+
+This is distinct from reflections: reflections capture process failures (the
+agent did something wrong), while knowledge captures technical victories
+(the problem was genuinely hard and the solution should be preserved).
+
+Knowledge files use the naming convention `YYYY-MM-DD-slug.md` and include
+YAML frontmatter with date, tags, and related tickets. Use the
+`project-knowledge` skill (`/se knowledge <description>`) to create entries.
+
 ## Workflow
 
 ### Project Setup (requirements-analyst)
@@ -435,6 +450,8 @@ docs/clasi/
 │   ├── some-idea.md             # One idea per file
 │   └── done/                    # Consumed TODOs (archived)
 │       └── ...
+├── knowledge/                   # Hard-won technical understanding
+│   └── YYYY-MM-DD-slug.md       # One knowledge entry per file
 └── sprints/
     ├── 001-mcp-server/          # Active sprint directory
     │   ├── sprint.md            # Sprint goals, scope, notes
