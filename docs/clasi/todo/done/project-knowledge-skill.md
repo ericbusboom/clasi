@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Project Knowledge Skill — Capture Hard-Won Technical Understanding
