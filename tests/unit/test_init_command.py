@@ -384,8 +384,10 @@ class TestHooksConfig:
         run_init(str(target_dir))
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
-        # Other hook event types are preserved
-        assert len(data["hooks"]["PreToolUse"]) == 1
+        # Existing PreToolUse entry is preserved, CLASI role guard is added
+        assert len(data["hooks"]["PreToolUse"]) == 2
+        assert {"matcher": "", "hooks": [{"type": "command", "command": "echo pre"}]} in data["hooks"]["PreToolUse"]
+        assert HOOKS_CONFIG["PreToolUse"][0] in data["hooks"]["PreToolUse"]
         # Existing UserPromptSubmit entry is preserved alongside CLASI entry
         ups_entries = data["hooks"]["UserPromptSubmit"]
         assert len(ups_entries) == 2

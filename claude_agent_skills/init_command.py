@@ -6,6 +6,8 @@ MCP config, and permissions. Does not take over existing files.
 """
 
 import json
+import shutil
+import stat
 from pathlib import Path
 from typing import Dict
 
@@ -29,6 +31,17 @@ HOOKS_CONFIG = {
                         "echo 'CLASI: Call get_se_overview() to load the"
                         " SE process before doing any work.'"
                     ),
+                }
+            ],
+        }
+    ],
+    "PreToolUse": [
+        {
+            "matcher": "Edit|Write|MultiEdit",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "python3 .claude/hooks/role_guard.py",
                 }
             ],
         }
@@ -128,6 +141,7 @@ See `instructions/git-workflow` for full rules.
 _PACKAGE_DIR = Path(__file__).parent
 _SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
 _AGENTS_SECTION_PATH = _PACKAGE_DIR / "init" / "agents-section.md"
+_ROLE_GUARD_SOURCE = _PACKAGE_DIR / "hooks" / "role_guard.py"
 
 # Marker used to find/replace the CLASI section in CLAUDE.md.
 _AGENTS_SECTION_START = "<!-- CLASI:START -->"
@@ -380,6 +394,28 @@ def _create_rules(target: Path) -> bool:
     return changed
 
 
+def _install_role_guard(target: Path) -> bool:
+    """Install role_guard.py to .claude/hooks/ with execute permissions.
+
+    Copies from the package's hooks/role_guard.py source file.
+    Returns True if the file was written/updated, False if unchanged.
+    """
+    source = _ROLE_GUARD_SOURCE.read_text(encoding="utf-8")
+    dest = target / ".claude" / "hooks" / "role_guard.py"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    rel = ".claude/hooks/role_guard.py"
+
+    if dest.exists() and dest.read_text(encoding="utf-8") == source:
+        click.echo(f"  Unchanged: {rel}")
+        return False
+
+    dest.write_text(source, encoding="utf-8")
+    # Set execute permission
+    dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    click.echo(f"  Wrote: {rel}")
+    return True
+
+
 def run_init(target: str) -> None:
     """Initialize a repository for the CLASI SE process.
 
@@ -416,6 +452,11 @@ def run_init(target: str) -> None:
     click.echo("Session-start hook:")
     settings_shared = target_path / ".claude" / "settings.json"
     _update_hooks_config(settings_shared)
+    click.echo()
+
+    # Install role guard hook to .claude/hooks/
+    click.echo("Role guard hook:")
+    _install_role_guard(target_path)
     click.echo()
 
     # Install path-scoped rules in .claude/rules/
