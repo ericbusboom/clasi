@@ -1,11 +1,11 @@
 ---
-id: "008"
-title: "Add dispatch integration tests using e2e project"
-status: todo
+id: 008
+title: Add dispatch integration tests using e2e project
+status: in-progress
 use-cases: []
 depends-on: []
-github-issue: ""
-todo: ""
+github-issue: ''
+todo: ''
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 

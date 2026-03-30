@@ -1,11 +1,11 @@
 ---
-id: "007"
-title: "Create Agent class hierarchy and move dispatch into Agent.dispatch()"
-status: todo
+id: '007'
+title: Create Agent class hierarchy and move dispatch into Agent.dispatch()
+status: in-progress
 use-cases: []
 depends-on: []
-github-issue: ""
-todo: ""
+github-issue: ''
+todo: ''
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
