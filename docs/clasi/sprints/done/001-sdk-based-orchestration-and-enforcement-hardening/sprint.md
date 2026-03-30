@@ -1,27 +1,27 @@
 ---
-id: "001"
-title: "SDK-Based Orchestration and Enforcement Hardening"
-status: planned
+id: '001'
+title: SDK-Based Orchestration and Enforcement Hardening
+status: done
 phase: planning-docs
 branch: sprint/001-sdk-based-orchestration-and-enforcement-hardening
 todos:
-  - sdk-orchestration-cluster/sdk-based-orchestration.md
-  - sdk-orchestration-cluster/agent-contracts-as-process-description.md
-  - sdk-orchestration-cluster/absorb-git-close-into-close-sprint.md
-  - sdk-orchestration-cluster/pretooluse-role-guard-hook.md
-  - sdk-orchestration-cluster/todo-lifecycle-in-progress-directory.md
-  - sdk-orchestration-cluster/team-lead-parallel-sprint-planning.md
+- sdk-orchestration-cluster/sdk-based-orchestration.md
+- sdk-orchestration-cluster/agent-contracts-as-process-description.md
+- sdk-orchestration-cluster/absorb-git-close-into-close-sprint.md
+- sdk-orchestration-cluster/pretooluse-role-guard-hook.md
+- sdk-orchestration-cluster/todo-lifecycle-in-progress-directory.md
+- sdk-orchestration-cluster/team-lead-parallel-sprint-planning.md
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
-  - SUC-005
-  - SUC-006
-  - SUC-007
-  - SUC-008
-  - SUC-009
-  - SUC-010
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
+- SUC-008
+- SUC-009
+- SUC-010
 ---
 
 # Sprint 001: SDK-Based Orchestration and Enforcement Hardening
