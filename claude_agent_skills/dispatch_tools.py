@@ -157,11 +157,22 @@ async def _dispatch(
     except OSError:
         stderr_file = None
 
+    # Resolve MCP server config: if the contract lists server names,
+    # pass the .mcp.json path so the child process can find them.
+    mcp_servers_config = contract.get("mcp_servers", [])
+    if isinstance(mcp_servers_config, list) and mcp_servers_config:
+        # Contract lists server names like ["clasi"] — pass the
+        # .mcp.json file path so the child claude process loads them.
+        mcp_json = Path(work_dir) / ".mcp.json"
+        if not mcp_json.exists():
+            mcp_json = Path.cwd() / ".mcp.json"
+        mcp_servers_config = str(mcp_json) if mcp_json.exists() else {}
+
     options = ClaudeAgentOptions(
         system_prompt=_load_agent_system_prompt(child),
         cwd=work_dir,
         allowed_tools=contract.get("allowed_tools", []),
-        mcp_servers=contract.get("mcp_servers", []),
+        mcp_servers=mcp_servers_config,
         model=contract.get("model", "sonnet"),
         env=env,
         permission_mode="bypassPermissions",
@@ -199,10 +210,17 @@ async def _dispatch(
         )
         return json.dumps({
             "status": "error",
+            "fatal": True,
             "message": error_msg,
             "stderr": stderr_output,
             "exit_code": exit_code,
             "log_path": str(log_path),
+            "instruction": (
+                "DISPATCH FAILED. DO NOT attempt to do this work yourself. "
+                "DO NOT proceed without the subagent. STOP and report this "
+                "error to the stakeholder. The dispatch infrastructure must "
+                "be fixed before work can continue."
+            ),
         }, indent=2)
 
     # Close stderr file on success
