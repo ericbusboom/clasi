@@ -91,10 +91,11 @@ def run_server() -> None:
         logger.info("    - %s", name)
     logger.info("CLASI MCP server ready")
 
-    # Wrap call_tool to log every invocation
-    _original_call_tool = server.call_tool
+    # Wrap _tool_manager.call_tool to log every invocation
+    _tm = server._tool_manager
+    _original_call_tool = _tm.call_tool
 
-    async def _logged_call_tool(name, arguments):
+    async def _logged_call_tool(name, arguments, **kwargs):
         # Truncate large args for readability
         args_summary = {}
         for k, v in arguments.items():
@@ -102,7 +103,7 @@ def run_server() -> None:
             args_summary[k] = s[:200] + "..." if len(s) > 200 else s
         logger.info("CALL %s(%s)", name, json.dumps(args_summary))
         try:
-            result = await _original_call_tool(name, arguments)
+            result = await _original_call_tool(name, arguments, **kwargs)
             # Log result summary
             result_str = str(result)
             if len(result_str) > 500:
@@ -113,6 +114,6 @@ def run_server() -> None:
             logger.error("  FAIL %s -> %s: %s", name, type(e).__name__, e)
             raise
 
-    server.call_tool = _logged_call_tool
+    _tm.call_tool = _logged_call_tool
 
     server.run(transport="stdio")
