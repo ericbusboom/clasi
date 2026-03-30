@@ -35,8 +35,8 @@ completion, coordinating subagent dispatch and two-stage review.
 3. **Set in-progress**: Update the ticket's `status` to `in-progress`.
 4. **Dispatch implementation subagent** (skill: **dispatch-subagent**):
    Curate context following `instructions/subagent-protocol`, then dispatch
-   a fresh subagent via the Agent tool. The controller (this skill) does
-   NOT write code directly — all implementation is delegated.
+   code-monkey via `dispatch_to_code_monkey`. The controller (this skill)
+   does NOT write code directly — all implementation is delegated.
 
    **Context to include** (per subagent-protocol):
    - Ticket description and acceptance criteria

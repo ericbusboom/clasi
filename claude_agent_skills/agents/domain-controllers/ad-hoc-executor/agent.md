@@ -49,23 +49,15 @@ To team-lead:
 1. Confirm OOP authorization from the stakeholder (passed via
    team-lead).
 2. Analyze the change request to determine scope and affected files.
-3. **Log the dispatch**: Call `log_subagent_dispatch` (parent:
-   "ad-hoc-executor", child: "code-monkey", prompt).
-   Dispatch **code-monkey** with:
-   - The change description
-   - Relevant source files
-   - Coding standards and testing instructions
-   - Scope directory for the changes
-4. **Log the result**: Call `update_dispatch_log` with the outcome and
-   files modified.
-   On code-monkey return, run the full test suite.
+3. Call `dispatch_to_code_monkey(ticket_path, ticket_plan_path,
+   scope_directory, sprint_name, ticket_id)` to dispatch code-monkey.
+   The tool handles template rendering, dispatch logging, execution,
+   validation, and result logging automatically.
+4. On code-monkey return, run the full test suite.
 5. If the change is non-trivial (multiple files, architectural impact),
-   **log the dispatch** (`log_subagent_dispatch`, child:
-   "code-reviewer"), then dispatch **code-reviewer** to review the
-   changes. **Log the result** (`update_dispatch_log`) on return.
+   call `dispatch_to_code_reviewer(file_paths, review_scope)` to review
+   the changes. The tool handles dispatch and logging automatically.
 6. If review finds issues, re-dispatch code-monkey with feedback.
-   Log each re-dispatch with `log_subagent_dispatch` and
-   `update_dispatch_log`.
 7. Commit changes directly to the current branch.
 8. Return results to team-lead.
 
@@ -81,7 +73,7 @@ To team-lead:
 - If the change turns out to be larger than expected (would normally
   warrant a sprint), flag this to team-lead and let the
   stakeholder decide whether to continue OOP or switch to a sprint.
-- **Always log every subagent dispatch.** Call `log_subagent_dispatch`
-  before dispatching and `update_dispatch_log` after the subagent
-  returns. This applies to code-monkey and code-reviewer dispatches,
+- **Always use the typed dispatch tools** (`dispatch_to_code_monkey`,
+  `dispatch_to_code_reviewer`) for all subagent dispatches. These tools
+  handle logging automatically. This applies to all dispatches,
   including re-dispatches. No exceptions.

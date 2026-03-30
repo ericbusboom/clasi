@@ -33,9 +33,9 @@ Read these before planning:
 ## Behavioral Instructions
 
 - Use CLASI MCP tools for all sprint and ticket creation.
-- Log every subagent dispatch: call `log_subagent_dispatch` before
-  dispatching (architect, architecture-reviewer, technical-lead) and
-  `update_dispatch_log` after each returns.
+- Use the typed dispatch tools (`dispatch_to_architect`,
+  `dispatch_to_architecture_reviewer`, `dispatch_to_technical_lead`)
+  for all subagent dispatches. These handle logging automatically.
 - Do not write code or tests. You produce planning artifacts only.
 - Do not skip the architecture review gate.
 - Return the completed sprint plan to team-lead when done.

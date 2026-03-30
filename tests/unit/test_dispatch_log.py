@@ -571,129 +571,16 @@ class TestTemplateEnforcementRemoved:
         assert "template_used" not in fm
 
 
-class TestTypedDispatchTools:
-    """Tests for the three typed dispatch MCP tools."""
+class TestTypedDispatchToolsMigrated:
+    """Verify old typed dispatch tools moved to dispatch_tools module."""
 
-    def test_dispatch_to_sprint_planner_renders_template(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_sprint_planner
-        import json
-
-        result = json.loads(dispatch_to_sprint_planner(
-            sprint_id="024",
-            sprint_directory="docs/clasi/sprints/024-test",
-            todo_ids=["todo-001.md", "todo-002.md"],
-            goals="Build the feature",
-        ))
-        assert "rendered_prompt" in result
-        assert "log_path" in result
-        assert "024" in result["rendered_prompt"]
-        assert "docs/clasi/sprints/024-test" in result["rendered_prompt"]
-        assert "todo-001.md" in result["rendered_prompt"]
-        assert "todo-002.md" in result["rendered_prompt"]
-        assert "Build the feature" in result["rendered_prompt"]
-
-    def test_dispatch_to_sprint_planner_logs_dispatch(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_sprint_planner
-        import json
-
-        result = json.loads(dispatch_to_sprint_planner(
-            sprint_id="024",
-            sprint_directory="docs/clasi/sprints/024-test",
-            todo_ids=["todo-001.md"],
-            goals="Test goals",
-        ))
-        log_path = Path(result["log_path"])
-        assert log_path.exists()
-        fm, body = read_document(log_path)
-        assert fm["parent"] == "team-lead"
-        assert fm["child"] == "sprint-planner"
-        assert fm["template_used"] == "dispatch-template.md.j2"
-
-    def test_dispatch_to_sprint_executor_renders_template(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_sprint_executor
-        import json
-
-        result = json.loads(dispatch_to_sprint_executor(
-            sprint_id="024",
-            sprint_directory="docs/clasi/sprints/024-test",
-            branch_name="sprint/024-test",
-            tickets=["015", "016"],
-        ))
-        assert "rendered_prompt" in result
-        assert "log_path" in result
-        assert "024" in result["rendered_prompt"]
-        assert "sprint/024-test" in result["rendered_prompt"]
-        assert "015" in result["rendered_prompt"]
-        assert "016" in result["rendered_prompt"]
-
-    def test_dispatch_to_sprint_executor_logs_dispatch(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_sprint_executor
-        import json
-
-        result = json.loads(dispatch_to_sprint_executor(
-            sprint_id="024",
-            sprint_directory="docs/clasi/sprints/024-test",
-            branch_name="sprint/024-test",
-            tickets=["015"],
-        ))
-        log_path = Path(result["log_path"])
-        assert log_path.exists()
-        fm, _ = read_document(log_path)
-        assert fm["parent"] == "team-lead"
-        assert fm["child"] == "sprint-executor"
-        assert fm["template_used"] == "dispatch-template.md.j2"
-
-    def test_dispatch_to_code_monkey_renders_template(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_code_monkey
-        import json
-
-        result = json.loads(dispatch_to_code_monkey(
-            ticket_path="docs/clasi/sprints/024-test/tickets/015.md",
-            ticket_plan_path="docs/clasi/sprints/024-test/tickets/015-plan.md",
-            scope_directory="claude_agent_skills/",
-            sprint_name="024-test",
-            ticket_id="015",
-        ))
-        assert "rendered_prompt" in result
-        assert "log_path" in result
-        assert "015.md" in result["rendered_prompt"]
-        assert "015-plan.md" in result["rendered_prompt"]
-        assert "claude_agent_skills/" in result["rendered_prompt"]
-        assert "024-test" in result["rendered_prompt"]
-
-    def test_dispatch_to_code_monkey_logs_dispatch(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_code_monkey
-        import json
-
-        result = json.loads(dispatch_to_code_monkey(
-            ticket_path="docs/clasi/sprints/024-test/tickets/015.md",
-            ticket_plan_path="docs/clasi/sprints/024-test/tickets/015-plan.md",
-            scope_directory="claude_agent_skills/",
-            sprint_name="024-test",
-            ticket_id="015",
-        ))
-        log_path = Path(result["log_path"])
-        assert log_path.exists()
-        fm, _ = read_document(log_path)
-        assert fm["parent"] == "sprint-executor"
-        assert fm["child"] == "code-monkey"
-        assert fm["ticket"] == "015"
-        assert fm["template_used"] == "dispatch-template.md.j2"
-
-    def test_dispatch_to_code_monkey_returns_rendered_prompt_and_log_path(self, tmp_path):
-        from claude_agent_skills.artifact_tools import dispatch_to_code_monkey
-        import json
-
-        result = json.loads(dispatch_to_code_monkey(
-            ticket_path="tickets/001.md",
-            ticket_plan_path="tickets/001-plan.md",
-            scope_directory="src/",
-            sprint_name="001-sprint",
-            ticket_id="001",
-        ))
-        assert isinstance(result["rendered_prompt"], str)
-        assert isinstance(result["log_path"], str)
-        assert len(result["rendered_prompt"]) > 0
+    def test_old_dispatch_tools_removed_from_artifact_tools(self):
+        from claude_agent_skills import artifact_tools
+        assert not hasattr(artifact_tools, "dispatch_to_sprint_planner")
+        assert not hasattr(artifact_tools, "dispatch_to_sprint_executor")
+        assert not hasattr(artifact_tools, "dispatch_to_code_monkey")
+        assert not hasattr(artifact_tools, "log_subagent_dispatch")
+        assert not hasattr(artifact_tools, "update_dispatch_log")
 
     def test_get_dispatch_template_tool_removed(self):
         """The old get_dispatch_template tool no longer exists."""
@@ -701,9 +588,15 @@ class TestTypedDispatchTools:
         tools = server._tool_manager._tools
         assert "get_dispatch_template" not in tools
 
-    def test_log_subagent_dispatch_no_template_used_parameter(self):
-        """log_subagent_dispatch no longer accepts template_used."""
-        from claude_agent_skills.artifact_tools import log_subagent_dispatch
-        import inspect
-        sig = inspect.signature(log_subagent_dispatch)
-        assert "template_used" not in sig.parameters
+    def test_new_dispatch_tools_exist(self):
+        """New dispatch tools are importable from dispatch_tools."""
+        from claude_agent_skills.dispatch_tools import (
+            dispatch_to_sprint_planner,
+            dispatch_to_sprint_executor,
+            dispatch_to_code_monkey,
+        )
+        assert callable(dispatch_to_sprint_planner)
+        assert callable(dispatch_to_sprint_executor)
+        assert callable(dispatch_to_code_monkey)
+
+

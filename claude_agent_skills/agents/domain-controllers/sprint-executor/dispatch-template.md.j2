@@ -28,18 +28,14 @@ Read these before executing:
 - `{{ sprint_directory }}/usecases.md` -- use cases covered
 - Each ticket file listed above
 
-## Dispatch Logging -- MANDATORY
+## Dispatch -- MANDATORY
 
-**Before EACH code-monkey dispatch**, you MUST:
-1. Call `dispatch_to_code_monkey` with the ticket parameters. This
-   renders the template, logs the dispatch, and returns the prompt.
-2. Dispatch code-monkey with the rendered prompt.
-3. After code-monkey returns, call `update_dispatch_log` with the
-   log_path from step 1, the result, files_modified, and the
-   subagent's response text.
+**For EACH code-monkey dispatch**, call `dispatch_to_code_monkey` with
+the ticket parameters. This tool renders the template, logs the dispatch,
+executes the subagent via the Agent SDK, validates the result against the
+agent contract, logs the outcome, and returns structured JSON.
 
 This applies to every dispatch including re-dispatches. No exceptions.
-Failure to log dispatches breaks the audit trail.
 
 ## Behavioral Instructions
 

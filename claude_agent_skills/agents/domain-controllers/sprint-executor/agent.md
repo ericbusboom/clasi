@@ -53,9 +53,9 @@ To dispatch code-monkey, use the typed MCP tool:
 dispatch_to_code_monkey(ticket_path, ticket_plan_path, scope_directory, sprint_name, ticket_id)
 ```
 
-This renders the Jinja2 template with the provided parameters, logs the
-dispatch automatically, and returns the rendered prompt ready to pass to
-the Agent tool.
+This tool renders the Jinja2 template, logs the dispatch, executes the
+subagent via the Agent SDK, validates the result against the agent
+contract, logs the outcome, and returns structured JSON.
 
 ## Workflow
 
@@ -66,32 +66,17 @@ the Agent tool.
 3. For each ticket (in dependency order):
    a. Verify all dependencies have `status: done`.
    b. Set ticket status to `in-progress` (`update_ticket_status`).
-   c. **Log the dispatch**: Call `log_subagent_dispatch` with:
-      - `parent`: "sprint-executor"
-      - `child`: "code-monkey"
-      - `scope`: the ticket's scope directory
-      - `prompt`: the full prompt text
-      - `sprint_name`: the sprint name (e.g., "001-my-sprint")
-      - `ticket_id`: the ticket ID (e.g., "001") — **always pass this**
-        so the log file is named `ticket-NNN-001.md`
-   d. Dispatch **code-monkey** with:
-      - The ticket and its plan (if one exists)
-      - Relevant architecture sections
-      - Coding standards and testing instructions
-      - Source files the ticket will modify
-      - Scope directory for the ticket's changes
-   e. **Log the result**: Call `update_dispatch_log` with the dispatch ID
-      from step (c), the outcome (success/failure), a summary of files
-      modified, and the subagent's **response text** (via `response`
-      parameter).
-   f. On code-monkey return, **validate the ticket**:
+   c. Call `dispatch_to_code_monkey(ticket_path, ticket_plan_path,
+      scope_directory, sprint_name, ticket_id)`. The tool handles
+      template rendering, dispatch logging, execution, validation,
+      and result logging automatically.
+   d. On code-monkey return, **validate the ticket**:
       - All acceptance criteria are checked (`- [x]`)
       - Ticket frontmatter `status` is `done`
       - Tests pass (`uv run pytest`)
-   g. If validation fails, send the ticket back to code-monkey with
+   e. If validation fails, send the ticket back to code-monkey with
       specific feedback on what is missing. Maximum 2 re-dispatches
-      before escalating. Log each re-dispatch with `log_subagent_dispatch`
-      and `update_dispatch_log`.
+      before escalating.
    h. Move completed ticket to `tickets/done/` (`move_ticket_to_done`).
    i. Commit the ticket move.
 4. After all tickets are done, update sprint frontmatter to
@@ -120,7 +105,6 @@ After each code-monkey return, verify:
 - Always use CLASI MCP tools for ticket status updates and moves.
 - Run the full test suite after each ticket, not just the ticket's
   tests.
-- **Always log every code-monkey dispatch.** Call `log_subagent_dispatch`
-  before dispatching and `update_dispatch_log` after the subagent
-  returns. This applies to initial dispatches and re-dispatches. No
-  exceptions.
+- **Always use the typed dispatch tool** (`dispatch_to_code_monkey`)
+  for all code-monkey dispatches. The tool handles logging automatically.
+  This applies to initial dispatches and re-dispatches. No exceptions.

@@ -38,8 +38,7 @@ Read these for context:
 - Do not move the ticket to `tickets/done/` -- the sprint-executor
   handles that after validating your work.
 
-## Dispatch Logging Reminder
+## Dispatch Note
 
-The sprint-executor is responsible for logging this dispatch. If you are
-the sprint-executor reading this template to understand what was sent to
-code-monkey: remember to call `update_dispatch_log` AFTER code-monkey returns.
+This dispatch was executed via `dispatch_to_code_monkey`, which handles
+all logging, execution, validation, and result recording automatically.

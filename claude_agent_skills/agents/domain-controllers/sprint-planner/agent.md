@@ -58,50 +58,22 @@ To team-lead:
 1. Create the sprint directory and branch using CLASI MCP tools
    (`create_sprint`).
 2. Write `sprint.md` with goals, scope, and relevant TODO references.
-3. **Log the dispatch**: Call `log_subagent_dispatch` with:
-   - `parent`: "sprint-planner"
-   - `child`: "architect"
-   - `scope`: the sprint directory
-   - `prompt`: the full prompt text
-   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
-     (this is a planner dispatch, not a ticket execution)
-
-   Dispatch **architect** to write the architecture update for this
-   sprint's goals. Provide: sprint goals, reference to the current
-   consolidated architecture in `docs/clasi/architecture/`, relevant
-   TODOs, overview.
-   **Log the result**: Call `update_dispatch_log` with outcome,
-   summary, and the subagent's **response text** (`response` parameter).
-5. Advance to architecture-review phase
-   (`advance_sprint_phase`).
-6. **Log the dispatch**: Call `log_subagent_dispatch` with:
-   - `parent`: "sprint-planner"
-   - `child`: "architecture-reviewer"
-   - `scope`: the sprint directory
-   - `prompt`: the full prompt text
-   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
-
-   Dispatch **architecture-reviewer** to review the architecture.
-   Record the gate result (`record_gate_result`).
-   **Log the result**: Call `update_dispatch_log` with outcome,
-   summary, and the subagent's **response text** (`response` parameter).
-7. If the review fails, send feedback to architect, re-review. Maximum
-   2 iterations before escalating to team-lead. Log each re-dispatch.
-8. Present the plan to the stakeholder for approval (via team-lead
+3. Call `dispatch_to_architect(sprint_id, sprint_directory)` to write
+   the architecture update for this sprint's goals. The tool handles
+   template rendering, dispatch logging, execution, validation, and
+   result logging automatically.
+4. Advance to architecture-review phase (`advance_sprint_phase`).
+5. Call `dispatch_to_architecture_reviewer(sprint_id, sprint_directory)`
+   to review the architecture. Record the gate result
+   (`record_gate_result`).
+6. If the review fails, send feedback to architect, re-review. Maximum
+   2 iterations before escalating to team-lead.
+7. Present the plan to the stakeholder for approval (via team-lead
    return). Record stakeholder approval gate.
-9. Advance to ticketing phase.
-   **Log the dispatch**: Call `log_subagent_dispatch` with:
-   - `parent`: "sprint-planner"
-   - `child`: "technical-lead"
-   - `scope`: the sprint directory
-   - `prompt`: the full prompt text
-   - `sprint_name`: the sprint name — **do NOT pass `ticket_id`**
-
-   Dispatch **technical-lead** to create tickets from the architecture
-   and use cases.
-   **Log the result**: Call `update_dispatch_log` with outcome,
-   summary, and the subagent's **response text** (`response` parameter).
-10. Return the completed sprint plan to team-lead.
+8. Advance to ticketing phase.
+   Call `dispatch_to_technical_lead(sprint_id, sprint_directory)` to
+   create tickets from the architecture and use cases.
+9. Return the completed sprint plan to team-lead.
 
 ## Planning Decisions You Own
 
@@ -128,7 +100,7 @@ the following decisions:
   sprint doc and return the information to team-lead.
 - Keep sprint scope manageable. Prefer smaller, focused sprints over
   large multi-concern sprints.
-- **Always log every subagent dispatch.** Call `log_subagent_dispatch`
-  before dispatching and `update_dispatch_log` after the subagent
-  returns. This applies to architect, architecture-reviewer, and
-  technical-lead dispatches, including re-dispatches. No exceptions.
+- **Always use the typed dispatch tools** (`dispatch_to_architect`,
+  `dispatch_to_architecture_reviewer`, `dispatch_to_technical_lead`)
+  for all subagent dispatches. These tools handle logging automatically.
+  This applies to all dispatches, including re-dispatches. No exceptions.

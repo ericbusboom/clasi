@@ -37,5 +37,6 @@ def run_server() -> None:
     # Import tool modules to register their tools with the server
     import claude_agent_skills.process_tools  # noqa: F401
     import claude_agent_skills.artifact_tools  # noqa: F401
+    import claude_agent_skills.dispatch_tools  # noqa: F401
 
     server.run(transport="stdio")
