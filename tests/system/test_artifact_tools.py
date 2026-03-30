@@ -21,6 +21,7 @@ from claude_agent_skills.artifact_tools import (
     update_ticket_status,
 )
 from claude_agent_skills.frontmatter import read_frontmatter, write_frontmatter
+from claude_agent_skills.mcp_server import set_project
 from claude_agent_skills.state_db import (
     acquire_lock,
     advance_phase,
@@ -35,6 +36,7 @@ from claude_agent_skills.state_db import (
 def work_dir(tmp_path, monkeypatch):
     """Set up a temporary working directory with docs/clasi/sprints/ structure."""
     monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
     return tmp_path
 
 

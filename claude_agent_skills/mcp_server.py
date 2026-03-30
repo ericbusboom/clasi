@@ -3,6 +3,8 @@
 Provides SE Process Access and Artifact Management tools via MCP.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -11,13 +13,40 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from claude_agent_skills.project import Project
+
+# ---------------------------------------------------------------------------
+# Project singleton — all path resolution flows through here
+# ---------------------------------------------------------------------------
+
+_project: Project | None = None
+
+
+def get_project() -> Project:
+    """Get the active project. Created lazily from cwd at first access."""
+    global _project
+    if _project is None:
+        _project = Project(Path.cwd())
+    return _project
+
+
+def set_project(root: str | Path) -> Project:
+    """Set the active project root. Used for session management and tests."""
+    global _project
+    _project = Project(root)
+    return _project
+
+
+def reset_project() -> None:
+    """Reset the project singleton (for tests)."""
+    global _project
+    _project = None
+
+
 # ---------------------------------------------------------------------------
 # Logging setup — writes to docs/clasi/log/mcp-server.log
 # Uses stderr for fallback since stdout is reserved for MCP stdio transport.
 # ---------------------------------------------------------------------------
-
-_LOG_DIR = Path.cwd() / "docs" / "clasi" / "log"
-_LOG_FILE = _LOG_DIR / "mcp-server.log"
 
 logger = logging.getLogger("clasi.mcp")
 
@@ -27,10 +56,13 @@ def _setup_logging() -> None:
     log_level = os.environ.get("CLASI_LOG_LEVEL", "INFO").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
+    log_dir = get_project().log_dir
+    log_file = log_dir / "mcp-server.log"
+
     # Always log to file if the directory exists (or can be created)
     try:
-        _LOG_DIR.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(str(_LOG_FILE), encoding="utf-8")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(str(log_file), encoding="utf-8")
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%S",
@@ -72,13 +104,15 @@ def content_path(*parts: str) -> Path:
 
 def run_server() -> None:
     """Start the CLASI MCP server (stdio transport)."""
+    project = set_project(Path.cwd())
     _setup_logging()
     logger.info("=" * 60)
     logger.info("CLASI MCP server starting")
-    logger.info("  cwd: %s", Path.cwd())
+    logger.info("  project_root: %s", project.root)
+    logger.info("  clasi_dir: %s", project.clasi_dir)
     logger.info("  content_root: %s", _CONTENT_ROOT)
     logger.info("  python: %s", sys.executable)
-    logger.info("  log_file: %s", _LOG_FILE)
+    logger.info("  log_file: %s", project.log_dir / "mcp-server.log")
 
     # Import tool modules to register their tools with the server
     import claude_agent_skills.process_tools  # noqa: F401

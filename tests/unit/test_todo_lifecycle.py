@@ -16,6 +16,7 @@ from claude_agent_skills.artifact_tools import (
     move_ticket_to_done,
 )
 from claude_agent_skills.frontmatter import read_frontmatter, write_frontmatter
+from claude_agent_skills.mcp_server import set_project
 from claude_agent_skills.state_db import (
     acquire_lock,
     advance_phase,
@@ -44,6 +45,7 @@ def _advance_to_executing(work_dir, sprint_id: str) -> None:
 @pytest.fixture
 def work_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
     return tmp_path
 
 

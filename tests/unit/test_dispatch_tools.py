@@ -112,6 +112,8 @@ class TestLoadAgentSystemPrompt:
 def _chdir_to_tmp(tmp_path, monkeypatch):
     """Ensure every test runs with cwd set to tmp_path."""
     monkeypatch.chdir(tmp_path)
+    from claude_agent_skills.mcp_server import set_project
+    set_project(tmp_path)
 
 
 def _make_mock_sdk(query_func):

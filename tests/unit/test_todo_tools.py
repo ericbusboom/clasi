@@ -12,6 +12,7 @@ from claude_agent_skills.artifact_tools import (
     move_todo_to_done,
 )
 from claude_agent_skills.frontmatter import read_frontmatter, write_frontmatter
+from claude_agent_skills.mcp_server import set_project
 from claude_agent_skills.state_db import (
     acquire_lock,
     advance_phase,
@@ -23,6 +24,7 @@ from claude_agent_skills.state_db import (
 def todo_dir(tmp_path, monkeypatch):
     """Set up a temporary working directory with docs/clasi/todo/."""
     monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
     todo = tmp_path / "docs" / "clasi" / "todo"
     todo.mkdir(parents=True)
     return todo
@@ -72,6 +74,7 @@ class TestListTodos:
 
     def test_no_todo_directory(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         result = json.loads(list_todos())
         assert result == []
 
@@ -162,6 +165,7 @@ class TestCreateTicketWithTodo:
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         return tmp_path
 
     def _setup_sprint(self, work_dir):
@@ -252,6 +256,7 @@ class TestCloseSprintTodoHandling:
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         return tmp_path
 
     def test_close_succeeds_when_todos_already_done(self, work_dir):

@@ -23,7 +23,7 @@ from pathlib import Path
 
 logger = logging.getLogger("clasi.dispatch")
 
-from claude_agent_skills.mcp_server import server, content_path
+from claude_agent_skills.mcp_server import server, content_path, get_project
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ async def _dispatch(
         # .mcp.json file path so the child claude process loads them.
         mcp_json = Path(work_dir) / ".mcp.json"
         if not mcp_json.exists():
-            mcp_json = Path.cwd() / ".mcp.json"
+            mcp_json = get_project().mcp_config_path
         mcp_servers_config = str(mcp_json) if mcp_json.exists() else {}
 
     options = ClaudeAgentOptions(
@@ -301,7 +301,7 @@ async def dispatch_to_todo_worker(
         parent="team-lead",
         child="todo-worker",
         template_params={"todo_ids": todo_ids, "action": action},
-        scope=str(Path.cwd()),
+        scope=str(get_project().root),
     )
 
 
@@ -574,5 +574,5 @@ async def dispatch_to_code_reviewer(
             "file_paths": file_paths,
             "review_scope": review_scope,
         },
-        scope=str(Path.cwd()),
+        scope=str(get_project().root),
     )

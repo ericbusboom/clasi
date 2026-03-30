@@ -11,12 +11,14 @@ from claude_agent_skills.dispatch_log import (
     update_dispatch_result,
 )
 from claude_agent_skills.frontmatter import read_document
+from claude_agent_skills.mcp_server import set_project
 
 
 @pytest.fixture(autouse=True)
 def _chdir_to_tmp(tmp_path, monkeypatch):
     """Ensure every test runs with cwd set to tmp_path."""
     monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
 
 
 class TestLogDir:

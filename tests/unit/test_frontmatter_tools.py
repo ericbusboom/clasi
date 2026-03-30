@@ -8,11 +8,13 @@ from claude_agent_skills.artifact_tools import (
     read_artifact_frontmatter,
     write_artifact_frontmatter,
 )
+from claude_agent_skills.mcp_server import set_project
 
 
 @pytest.fixture
 def work_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
     return tmp_path
 
 

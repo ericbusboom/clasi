@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from claude_agent_skills.frontmatter import read_document, read_frontmatter, write_frontmatter
-from claude_agent_skills.mcp_server import server
+from claude_agent_skills.mcp_server import server, get_project
 
 logger = logging.getLogger("clasi.artifact")
 from claude_agent_skills.state_db import (
@@ -44,16 +44,17 @@ from claude_agent_skills.templates import (
 
 
 def _plans_dir() -> Path:
-    """Return the docs/clasi/ directory relative to cwd.
+    """Return the docs/clasi/ directory via the Project singleton.
 
     Prefers docs/clasi/ (current name). Falls back to docs/plans/
     (legacy name) if it exists and docs/clasi/ does not — and renames
     it to docs/clasi/ so the migration happens automatically.
     """
-    clasi = Path.cwd() / "docs" / "clasi"
+    project = get_project()
+    clasi = project.clasi_dir
     if clasi.is_dir():
         return clasi
-    legacy = Path.cwd() / "docs" / "plans"
+    legacy = project.root / "docs" / "plans"
     if legacy.is_dir():
         legacy.rename(clasi)
         return clasi
@@ -62,7 +63,7 @@ def _plans_dir() -> Path:
 
 def _sprints_dir() -> Path:
     """Return the docs/clasi/sprints/ directory."""
-    return _plans_dir() / "sprints"
+    return get_project().sprints_dir
 
 
 def resolve_artifact_path(path: str) -> Path:
@@ -1013,7 +1014,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
             version = compute_next_version()
-            detected = detect_version_file(Path.cwd())
+            detected = detect_version_file(get_project().root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
             create_version_tag(version)
@@ -1348,7 +1349,7 @@ def _close_sprint_full(
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
             version = compute_next_version()
-            detected = detect_version_file(Path.cwd())
+            detected = detect_version_file(get_project().root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
             create_version_tag(version)
@@ -1514,7 +1515,7 @@ def clear_sprint_recovery(sprint_id: str) -> str:
 
 def _db_path() -> Path:
     """Return the default state database path."""
-    return _plans_dir() / ".clasi.db"
+    return get_project().db.path
 
 
 @server.tool()
@@ -1657,7 +1658,7 @@ def release_execution_lock(sprint_id: str) -> str:
 
 def _todo_dir() -> Path:
     """Return the docs/clasi/todo/ directory."""
-    return _plans_dir() / "todo"
+    return get_project().todo_dir
 
 
 @server.tool()
@@ -2123,7 +2124,7 @@ def tag_version(major: int = 0) -> str:
     )
 
     version = compute_next_version(major)
-    detected = detect_version_file(Path.cwd())
+    detected = detect_version_file(get_project().root)
     if detected:
         update_version_file(detected[0], detected[1], version)
     create_version_tag(version)
