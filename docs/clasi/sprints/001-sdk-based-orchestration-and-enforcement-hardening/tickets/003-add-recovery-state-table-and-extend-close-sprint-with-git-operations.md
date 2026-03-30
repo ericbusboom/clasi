@@ -1,12 +1,12 @@
 ---
 id: '003'
 title: Add recovery_state table and extend close_sprint with git operations
-status: todo
+status: in-progress
 use-cases:
-  - SUC-003
-  - SUC-004
+- SUC-003
+- SUC-004
 depends-on:
-  - '002'
+- '002'
 github-issue: ''
 todo: sdk-orchestration-cluster/absorb-git-close-into-close-sprint.md
 ---

@@ -5,8 +5,10 @@ description: Validates and closes a completed sprint — verifies tickets, merge
 
 # Close Sprint Skill
 
-This skill closes a completed sprint: verify all tickets are done, merge
-the sprint branch, and archive the sprint document.
+This skill closes a completed sprint using the `close_sprint` MCP tool,
+which handles the full lifecycle: pre-condition verification with
+self-repair, test run, archive, state DB update, version bump, git
+merge, push tags, and branch deletion.
 
 ## Agent Used
 
@@ -19,84 +21,54 @@ the sprint branch, and archive the sprint document.
 
 ## Process
 
-1. **Identify the sprint**: Read active sprint directories from
-   `docs/clasi/sprints/`. If multiple sprints are active, select from those that
-   have all of their tickets done, then select the one with the lowest number. 
-
-2. **Verify all tickets are done**: Read each ticket in the sprint's
-   `tickets/` directory. Every ticket must:
-   - Have status `done` in its YAML frontmatter
-   - Be located in the sprint's `tickets/done/` directory
-   - Satisfy the Definition of Done (see SE instructions)
-
-   If any ticket is not done, report which tickets remain and stop.
-
-3. **Verify TODO completion**: Scan the sprint's done tickets for any
-   with a `todo` frontmatter field. For each referenced TODO, verify
-   it has been moved to `docs/clasi/todo/done/` (or `docs/plans/todo/done/`).
-   If any claimed TODOs are still in the active TODO directory, report
-   them — they should either be moved to done or explicitly deferred.
-
-4. **Confirm with stakeholder**: Present a summary of the sprint —
-   list the completed tickets and key changes. Use `AskUserQuestion`:
+1. **Confirm with stakeholder**: Present a summary of the sprint —
+   list the completed tickets and key changes. Ask whether to proceed:
    - "Close sprint and merge to main" (recommended)
    - "Review completed work first"
 
    If the stakeholder chooses to review, present the full sprint details
    and stop. Otherwise proceed with closing.
 
-5. **Advance to closing phase**: Call `advance_sprint_phase` to move
-   from `executing` to `closing`.
-
-6. **Run final validation**: Run `uv run pytest` (or the project's test
-   command) and confirm **ALL tests pass** before proceeding. Also verify
-   no uncommitted changes exist on the sprint branch. If tests fail,
-   report the failures and stop. Do not merge a branch with failing tests.
-   See `instructions/git-workflow.md` § Commit Timing for the rationale.
-
-7. **Close linked GitHub issues**: Read the sprint doc's `## GitHub
-   Issues` section. For each `owner/repo#N` reference listed:
-   - Call the `close_github_issue` MCP tool with the repo and issue number.
-   - If closing fails for any issue, log the failure but continue with
-     the remaining issues and the sprint closure.
-   - If no `## GitHub Issues` section exists or it is empty, skip this step.
-
-8. **Merge sprint branch**: Merge `sprint/NNN-slug` into main:
+2. **Call close_sprint**: Invoke the `close_sprint` MCP tool with the
+   full parameter set:
    ```
-   git checkout main
-   git merge sprint/NNN-slug
+   close_sprint(
+       sprint_id="NNN",
+       branch_name="sprint/NNN-slug",
+       main_branch="master",
+       push_tags=True,
+       delete_branch=True,
+   )
    ```
-   If there are merge conflicts, resolve them or escalate to the
-   stakeholder.
 
-9. **Architecture update is handled automatically**: The `close_sprint`
-    MCP tool copies the sprint's `architecture-update.md` to
-    `docs/clasi/architecture/architecture-update-NNN.md`. No manual
-    copy is needed. The full architecture is consolidated on demand
-    using the `consolidate-architecture` skill.
+   The tool handles all lifecycle steps internally:
+   - Pre-condition verification with self-repair (tickets in done/,
+     TODOs resolved, state DB in sync, execution lock held)
+   - Run `uv run pytest` to verify tests pass
+   - Archive sprint directory to `sprints/done/`
+   - Update state DB phase to `done`, release execution lock
+   - Version bump and create git tag
+   - `git checkout master && git merge --no-ff sprint/NNN-slug`
+   - `git push --tags`
+   - `git branch -d sprint/NNN-slug`
 
-10. **Close the sprint**: Call the `close_sprint` MCP tool. This
-    atomically:
-    - Updates the sprint document status to `done`
-    - Moves the sprint directory to `docs/clasi/sprints/done/NNN-slug/`
-    - Advances the state database phase to `done`
-    - Releases the execution lock
+   Each step is idempotent — retrying after a failure skips
+   already-completed steps.
 
-11. **Version update**: Run `clasi version bump`. It checks the
-    trigger setting internally and skips if set to `manual`.
+3. **Report result**: Parse the structured JSON response.
 
-12. **Commit the archive**: Run `git add` for the moved sprint directory
-    and the version file (if changed), then commit with a message like
-    `chore: close sprint NNN — archive to done, tag vX.Y.Z`.
+   **On success** (`status: "success"`): Report the completed sprint
+   summary including version tag, merged branch, and any self-repairs
+   that were performed.
 
-13. **Push tags**: If a version tag was created, run `git push --tags`.
+   **On error** (`status: "error"`): Report the specific blocker:
+   - Which step failed (`error.step`)
+   - What went wrong (`error.message`)
+   - What the agent or stakeholder should do (`error.recovery.instruction`)
+   - Which files can be edited to fix it (`error.recovery.allowed_paths`)
 
-14. **Delete sprint branch**: Run `git branch -d sprint/NNN-slug`.
-
-15. **Report completion**: Summarize what was accomplished in the sprint —
-    list of completed tickets, key changes, any notes for follow-up.
-    Include a summary of which GitHub issues were closed (if any) and
-    which TODOs were completed.
+   After the blocker is resolved, call `close_sprint` again — it will
+   resume from the failure point.
 
 ## Output
 

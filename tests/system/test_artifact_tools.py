@@ -2,8 +2,9 @@
 
 import json
 import os
+import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -19,12 +20,14 @@ from claude_agent_skills.artifact_tools import (
     reopen_ticket,
     update_ticket_status,
 )
-from claude_agent_skills.frontmatter import read_frontmatter
+from claude_agent_skills.frontmatter import read_frontmatter, write_frontmatter
 from claude_agent_skills.state_db import (
     acquire_lock,
     advance_phase,
+    get_recovery_state,
     get_sprint_state,
     record_gate,
+    write_recovery_state,
 )
 
 
@@ -620,3 +623,244 @@ class TestReopenTicket:
         assert fm["status"] == "todo"
         assert fm["title"] == "Important Task"
         assert fm["id"] == "001"
+
+
+class TestCloseSprintFull:
+    """Tests for close_sprint with branch_name (full lifecycle)."""
+
+    def _make_subprocess_result(self, returncode=0, stdout="", stderr=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stdout = stdout
+        result.stderr = stderr
+        return result
+
+    def test_branch_name_none_falls_back_to_legacy(self, work_dir):
+        """Omitting branch_name uses legacy behavior."""
+        create_sprint("Sprint")
+        result = json.loads(close_sprint("001"))
+        # Legacy result has old_path/new_path but no "status" key
+        assert "done" in result["new_path"]
+        assert "status" not in result  # Legacy format
+
+    def test_branch_name_none_explicit_falls_back(self, work_dir):
+        """Explicitly passing branch_name=None uses legacy behavior."""
+        create_sprint("Sprint")
+        result = json.loads(close_sprint("001", branch_name=None))
+        assert "done" in result["new_path"]
+        assert "status" not in result
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_full_lifecycle_success(self, mock_run, mock_ver, mock_tag, work_dir):
+        """Full lifecycle returns structured success JSON."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        # Create a ticket and move to done
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        # Mock subprocess calls: pytest, git rev-parse, git merge-base,
+        # git checkout, git merge, git push, git branch -d
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(0),  # git rev-parse --verify branch
+            self._make_subprocess_result(1),  # git merge-base --is-ancestor (not yet merged)
+            self._make_subprocess_result(0),  # git checkout master
+            self._make_subprocess_result(0),  # git merge --no-ff
+            self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(0),  # git branch -d
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+        assert "done" in result["new_path"]
+        assert result["git"]["merged"] is True
+        assert result["git"]["merge_target"] == "master"
+        assert result["git"]["branch_name"] == "sprint/001-sprint"
+
+    @patch("subprocess.run")
+    def test_test_failure_returns_error(self, mock_run, work_dir):
+        """When tests fail, return structured error with recovery."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.return_value = self._make_subprocess_result(
+            1, "FAILED test_foo.py", "1 failed"
+        )
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "tests"
+        assert "precondition_verification" in result["completed_steps"]
+        assert "tests" not in result["completed_steps"]
+        assert result["error"]["recovery"]["instruction"] is not None
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_merge_conflict_returns_error(self, mock_run, mock_ver, mock_tag, work_dir):
+        """When merge has conflicts, return structured error."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(0),  # git rev-parse --verify
+            self._make_subprocess_result(1),  # git merge-base (not ancestor)
+            self._make_subprocess_result(0),  # git checkout master
+            self._make_subprocess_result(1, "", "CONFLICT in foo.py"),  # git merge --no-ff
+            self._make_subprocess_result(0, "foo.py\n"),  # git diff --name-only
+            self._make_subprocess_result(0),  # git merge --abort
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "merge"
+        assert "foo.py" in result["error"]["recovery"]["allowed_paths"]
+        assert "archive" in result["completed_steps"]
+
+        # Verify recovery state was written
+        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        recovery = get_recovery_state(db_path)
+        assert recovery is not None
+        assert recovery["step"] == "merge"
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_already_merged_branch_is_idempotent(self, mock_run, mock_ver, mock_tag, work_dir):
+        """If branch doesn't exist, merge step is skipped."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(1),  # git rev-parse --verify (branch gone)
+            self._make_subprocess_result(0),  # git push --tags
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+        assert result["git"]["merged"] is True
+        assert result["git"]["branch_deleted"] is False  # branch didn't exist
+
+    def test_precondition_ticket_not_done_returns_error(self, work_dir):
+        """Ticket not in done status causes precondition error."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "in-progress")
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        assert "in-progress" in result["error"]["message"]
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_self_repair_moves_done_ticket(self, mock_run, mock_ver, mock_tag, work_dir):
+        """Ticket with done status but in tickets/ (not done/) gets moved."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        # Set status to done but don't move to done/
+        update_ticket_status(ticket["path"], "done")
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(0),  # git push --tags
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+        assert any("moved ticket" in r for r in result["repairs"])
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_structured_result_format(self, mock_run, mock_ver, mock_tag, work_dir):
+        """Verify all expected fields in success result."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(0),  # git push --tags
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+        assert "old_path" in result
+        assert "new_path" in result
+        assert "repairs" in result
+        assert isinstance(result["repairs"], list)
+        assert "git" in result
+        assert "merged" in result["git"]
+        assert "merge_target" in result["git"]
+        assert "tags_pushed" in result["git"]
+        assert "branch_deleted" in result["git"]
+        assert "branch_name" in result["git"]
+
+    @patch("claude_agent_skills.versioning.create_version_tag")
+    @patch("claude_agent_skills.versioning.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_recovery_state_cleared_on_success(self, mock_run, mock_ver, mock_tag, work_dir):
+        """Recovery state is cleared after successful close."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        # Pre-write a recovery state
+        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        write_recovery_state(str(db_path), "001", "tests", [], "old failure")
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(0),  # git push --tags
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+
+        # Recovery state should be cleared
+        recovery = get_recovery_state(db_path)
+        assert recovery is None

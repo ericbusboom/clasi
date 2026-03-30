@@ -25,6 +25,9 @@ from claude_agent_skills.state_db import (
     get_sprint_state as _get_sprint_state,
     register_sprint as _register_sprint,
     rename_sprint as _rename_sprint,
+    write_recovery_state as _write_recovery_state,
+    get_recovery_state as _get_recovery_state,
+    clear_recovery_state as _clear_recovery_state,
 )
 from claude_agent_skills.templates import (
     slugify,
@@ -809,14 +812,41 @@ def reopen_ticket(path: str) -> str:
 
 
 @server.tool()
-def close_sprint(sprint_id: str) -> str:
+def close_sprint(
+    sprint_id: str,
+    branch_name: Optional[str] = None,
+    main_branch: str = "master",
+    push_tags: bool = True,
+    delete_branch: bool = True,
+) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
+
+    When branch_name is provided, executes the full lifecycle including
+    pre-condition verification with self-repair, test run, archive, state
+    DB update, version bump, git merge, push tags, and branch deletion.
+
+    When branch_name is omitted, falls back to legacy behavior (archive
+    + state only, no git operations).
 
     Args:
         sprint_id: The sprint ID (e.g., '001')
+        branch_name: Sprint branch name (e.g., 'sprint/001-my-sprint').
+            When provided, enables full lifecycle with git operations.
+        main_branch: Target branch for merge (default: 'master')
+        push_tags: Whether to push tags after tagging (default: True)
+        delete_branch: Whether to delete the sprint branch after merge (default: True)
 
-    Returns JSON with {old_path, new_path}.
+    Returns JSON with structured result (success or error).
     """
+    if branch_name is not None:
+        return _close_sprint_full(
+            sprint_id, branch_name, main_branch, push_tags, delete_branch
+        )
+    return _close_sprint_legacy(sprint_id)
+
+
+def _close_sprint_legacy(sprint_id: str) -> str:
+    """Original close_sprint behavior: archive + state, no git."""
     sprint_dir = _find_sprint_dir(sprint_id)
 
     # Update sprint status to done
@@ -863,14 +893,12 @@ def close_sprint(sprint_id: str) -> str:
     if db.exists():
         try:
             state = _get_sprint_state(str(db), sprint_id)
-            # Advance through closing → done if needed
             from claude_agent_skills.state_db import PHASES
             phase_idx = PHASES.index(state["phase"])
             done_idx = PHASES.index("done")
             while phase_idx < done_idx:
                 _advance_phase(str(db), sprint_id)
                 phase_idx += 1
-            # Release execution lock if held
             if state["lock"]:
                 _release_lock(str(db), sprint_id)
         except (ValueError, Exception):
@@ -895,11 +923,10 @@ def close_sprint(sprint_id: str) -> str:
                 update_version_file(detected[0], detected[1], version)
             create_version_tag(version)
     except Exception as exc:
-        # Log the error instead of silently swallowing it
         import sys
         print(f"[CLASI] Versioning failed: {exc}", file=sys.stderr)
 
-    result = {
+    result: dict = {
         "old_path": str(sprint_dir),
         "new_path": str(new_path),
     }
@@ -909,6 +936,449 @@ def close_sprint(sprint_id: str) -> str:
         result["version"] = version
         result["tag"] = f"v{version}"
 
+    return json.dumps(result, indent=2)
+
+
+def _close_sprint_full(
+    sprint_id: str,
+    branch_name: str,
+    main_branch: str,
+    push_tags_flag: bool,
+    delete_branch_flag: bool,
+) -> str:
+    """Full lifecycle close: preconditions, tests, archive, git ops."""
+    db = _db_path()
+    db_str = str(db)
+    completed_steps: list[str] = []
+    repairs: list[str] = []
+
+    # ── Step 1: Pre-condition verification with self-repair ──
+
+    # 1a. Check tickets — all should be in tickets/done/ with status done
+    try:
+        sprint_dir = _find_sprint_dir(sprint_id)
+    except ValueError:
+        # Sprint dir might already be archived (idempotent retry)
+        done_dir = _sprints_dir() / "done"
+        sprint_dir_in_done = None
+        if done_dir.exists():
+            for d in sorted(done_dir.iterdir()):
+                if d.is_dir() and d.name.startswith(sprint_id):
+                    fm_check = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
+                    if fm_check.get("id") == sprint_id:
+                        sprint_dir_in_done = d
+                        break
+        if sprint_dir_in_done is None:
+            return json.dumps({
+                "status": "error",
+                "error": {
+                    "step": "precondition",
+                    "message": f"Sprint '{sprint_id}' not found in active or done",
+                    "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
+                },
+                "completed_steps": [],
+                "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            }, indent=2)
+
+    tickets_dir = sprint_dir / "tickets"
+    done_tickets_dir = tickets_dir / "done"
+    if tickets_dir.exists():
+        for ticket_file in sorted(tickets_dir.glob("*.md")):
+            if ticket_file.name == "done":
+                continue
+            t_fm = read_frontmatter(ticket_file)
+            if t_fm.get("status") == "done":
+                # Self-repair: move to done/
+                done_tickets_dir.mkdir(parents=True, exist_ok=True)
+                dest = done_tickets_dir / ticket_file.name
+                ticket_file.rename(dest)
+                # Also move plan file if exists
+                plan_file = ticket_file.with_suffix("").with_name(ticket_file.stem + "-plan.md")
+                if plan_file.exists():
+                    plan_file.rename(done_tickets_dir / plan_file.name)
+                repairs.append(f"moved ticket {t_fm.get('id', ticket_file.stem)} to done/")
+            elif t_fm.get("status") != "done":
+                # Ticket not done — unrepairable
+                error_msg = f"Ticket {t_fm.get('id', ticket_file.stem)} has status '{t_fm.get('status')}', not 'done'"
+                if db.exists():
+                    _write_recovery_state(
+                        db_str, sprint_id, "precondition",
+                        [str(ticket_file)], error_msg,
+                    )
+                return json.dumps({
+                    "status": "error",
+                    "error": {
+                        "step": "precondition",
+                        "message": error_msg,
+                        "recovery": {
+                            "recorded": db.exists(),
+                            "allowed_paths": [str(ticket_file)],
+                            "instruction": f"Complete ticket {t_fm.get('id', ticket_file.stem)} and set status to 'done', then call close_sprint again.",
+                        },
+                    },
+                    "completed_steps": [],
+                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+                }, indent=2)
+
+    # 1b. Check TODOs — sprint-tagged TODOs should be resolved
+    todo_directory = _todo_dir()
+    if todo_directory.exists():
+        for todo_file in sorted(todo_directory.glob("*.md")):
+            t_fm = read_frontmatter(todo_file)
+            if t_fm.get("sprint") == sprint_id:
+                if t_fm.get("status") in ("done", "complete", "completed"):
+                    # Self-repair: move to done/
+                    t_fm["status"] = "done"
+                    write_frontmatter(todo_file, t_fm)
+                    todo_done = todo_directory / "done"
+                    todo_done.mkdir(parents=True, exist_ok=True)
+                    todo_file.rename(todo_done / todo_file.name)
+                    repairs.append(f"moved TODO {todo_file.name} to done/")
+
+    # 1c. Check state DB phase — self-repair: advance if behind
+    if db.exists():
+        try:
+            state = _get_sprint_state(db_str, sprint_id)
+            phase = state["phase"]
+            if phase != "done":
+                phase_idx = _PHASES.index(phase)
+                # We need to be at least in 'closing' before we proceed
+                closing_idx = _PHASES.index("closing")
+                while phase_idx < closing_idx:
+                    try:
+                        _advance_phase(db_str, sprint_id)
+                        phase_idx += 1
+                        repairs.append(f"advanced DB phase to '{_PHASES[phase_idx]}'")
+                    except ValueError:
+                        # Can't advance further (missing gate, etc.) — skip
+                        break
+        except ValueError:
+            pass  # Sprint not in DB — skip DB checks
+
+    # 1d. Check execution lock — self-repair: re-acquire if not held
+    if db.exists():
+        try:
+            state = _get_sprint_state(db_str, sprint_id)
+            if not state["lock"]:
+                try:
+                    _acquire_lock(db_str, sprint_id)
+                    repairs.append("re-acquired execution lock")
+                except ValueError:
+                    pass  # Another sprint holds it — continue anyway
+        except ValueError:
+            pass
+
+    completed_steps.append("precondition_verification")
+
+    # ── Step 2: Run tests ──
+    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"]
+
+    try:
+        test_result = subprocess.run(
+            ["uv", "run", "pytest"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if test_result.returncode != 0:
+            error_msg = f"Tests failed (exit code {test_result.returncode})"
+            test_output = test_result.stdout[-2000:] if test_result.stdout else ""
+            if test_result.stderr:
+                test_output += "\n" + test_result.stderr[-500:]
+            if db.exists():
+                _write_recovery_state(
+                    db_str, sprint_id, "tests", [], error_msg,
+                )
+            return json.dumps({
+                "status": "error",
+                "error": {
+                    "step": "tests",
+                    "message": error_msg,
+                    "output": test_output.strip(),
+                    "recovery": {
+                        "recorded": db.exists(),
+                        "allowed_paths": [],
+                        "instruction": "Fix failing tests, then call close_sprint again.",
+                    },
+                },
+                "completed_steps": completed_steps,
+                "remaining_steps": [s for s in all_steps if s not in completed_steps],
+            }, indent=2)
+    except FileNotFoundError:
+        # uv not available — skip tests
+        repairs.append("skipped tests (uv not found)")
+    except subprocess.TimeoutExpired:
+        error_msg = "Test suite timed out after 300 seconds"
+        if db.exists():
+            _write_recovery_state(db_str, sprint_id, "tests", [], error_msg)
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "step": "tests",
+                "message": error_msg,
+                "recovery": {
+                    "recorded": db.exists(),
+                    "allowed_paths": [],
+                    "instruction": "Investigate slow tests, then call close_sprint again.",
+                },
+            },
+            "completed_steps": completed_steps,
+            "remaining_steps": [s for s in all_steps if s not in completed_steps],
+        }, indent=2)
+
+    completed_steps.append("tests")
+
+    # ── Step 3: Archive sprint directory ──
+    done_dir = _sprints_dir() / "done"
+    already_archived = False
+
+    # Check if already archived (idempotent)
+    if done_dir.exists():
+        for d in sorted(done_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id):
+                fm_check = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
+                if fm_check.get("id") == sprint_id:
+                    already_archived = True
+                    new_path = d
+                    # sprint_dir might still point to active — update
+                    sprint_dir = d
+                    break
+
+    if not already_archived:
+        # Update sprint status to done
+        sprint_file = sprint_dir / "sprint.md"
+        fm = read_frontmatter(sprint_file)
+        fm["status"] = "done"
+        write_frontmatter(sprint_file, fm)
+
+        # Move linked TODOs to done
+        if todo_directory.exists():
+            for todo_file in sorted(todo_directory.glob("*.md")):
+                todo_fm = read_frontmatter(todo_file)
+                if todo_fm.get("sprint") == sprint_id:
+                    todo_fm["status"] = "done"
+                    write_frontmatter(todo_file, todo_fm)
+                    todo_done = todo_directory / "done"
+                    todo_done.mkdir(parents=True, exist_ok=True)
+                    todo_file.rename(todo_done / todo_file.name)
+
+        # Copy architecture-update
+        arch_update = sprint_dir / "architecture-update.md"
+        if arch_update.exists():
+            arch_dir = _plans_dir() / "architecture"
+            arch_dir.mkdir(parents=True, exist_ok=True)
+            dest = arch_dir / f"architecture-update-{sprint_id}.md"
+            shutil.copy2(str(arch_update), str(dest))
+
+        # Move to done directory
+        done_dir.mkdir(parents=True, exist_ok=True)
+        new_path = done_dir / sprint_dir.name
+
+        if new_path.exists():
+            raise ValueError(f"Destination already exists: {new_path}")
+
+        old_path_str = str(sprint_dir)
+        shutil.move(str(sprint_dir), str(new_path))
+    else:
+        old_path_str = str(new_path)
+
+    completed_steps.append("archive")
+
+    # ── Step 4: Update state DB ──
+    if db.exists():
+        try:
+            state = _get_sprint_state(db_str, sprint_id)
+            if state["phase"] != "done":
+                phase_idx = _PHASES.index(state["phase"])
+                done_idx = _PHASES.index("done")
+                while phase_idx < done_idx:
+                    try:
+                        _advance_phase(db_str, sprint_id)
+                    except ValueError:
+                        break
+                    phase_idx += 1
+            if state["lock"]:
+                try:
+                    _release_lock(db_str, sprint_id)
+                except ValueError:
+                    pass
+        except (ValueError, Exception):
+            pass
+
+    completed_steps.append("db_update")
+
+    # ── Step 5: Version bump ──
+    version = None
+    try:
+        from claude_agent_skills.versioning import (
+            compute_next_version,
+            create_version_tag,
+            detect_version_file,
+            load_version_trigger,
+            should_version,
+            update_version_file,
+        )
+        trigger = load_version_trigger()
+        if should_version(trigger, "sprint_close"):
+            version = compute_next_version()
+            detected = detect_version_file(Path.cwd())
+            if detected:
+                update_version_file(detected[0], detected[1], version)
+            create_version_tag(version)
+    except Exception as exc:
+        import sys
+        print(f"[CLASI] Versioning failed: {exc}", file=sys.stderr)
+
+    completed_steps.append("version_bump")
+
+    # ── Step 6: Git merge ──
+    merged = False
+    # Check if already merged (idempotent): branch doesn't exist or is ancestor of main
+    branch_exists = subprocess.run(
+        ["git", "rev-parse", "--verify", branch_name],
+        capture_output=True, text=True,
+    ).returncode == 0
+
+    if not branch_exists:
+        # Branch already deleted/merged — skip
+        merged = True
+    else:
+        # Check if branch is already merged into main
+        is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", branch_name, main_branch],
+            capture_output=True, text=True,
+        ).returncode == 0
+
+        if is_ancestor:
+            merged = True
+        else:
+            # Perform the merge
+            checkout = subprocess.run(
+                ["git", "checkout", main_branch],
+                capture_output=True, text=True,
+            )
+            if checkout.returncode != 0:
+                error_msg = f"Failed to checkout {main_branch}: {checkout.stderr.strip()}"
+                if db.exists():
+                    _write_recovery_state(db_str, sprint_id, "merge", [], error_msg)
+                return json.dumps({
+                    "status": "error",
+                    "error": {
+                        "step": "merge",
+                        "message": error_msg,
+                        "recovery": {
+                            "recorded": db.exists(),
+                            "allowed_paths": [],
+                            "instruction": f"Resolve checkout issues, then call close_sprint again.",
+                        },
+                    },
+                    "completed_steps": completed_steps,
+                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
+                }, indent=2)
+
+            merge = subprocess.run(
+                ["git", "merge", "--no-ff", branch_name],
+                capture_output=True, text=True,
+            )
+            if merge.returncode != 0:
+                # Parse conflicted files
+                conflict_result = subprocess.run(
+                    ["git", "diff", "--name-only", "--diff-filter=U"],
+                    capture_output=True, text=True,
+                )
+                conflicted = [f.strip() for f in conflict_result.stdout.strip().split("\n") if f.strip()]
+                # Abort the failed merge
+                subprocess.run(["git", "merge", "--abort"], capture_output=True)
+                error_msg = f"Merge conflict: {merge.stderr.strip()}"
+                if db.exists():
+                    _write_recovery_state(db_str, sprint_id, "merge", conflicted, error_msg)
+                return json.dumps({
+                    "status": "error",
+                    "error": {
+                        "step": "merge",
+                        "message": error_msg,
+                        "recovery": {
+                            "recorded": db.exists(),
+                            "allowed_paths": conflicted,
+                            "instruction": "Resolve the merge conflicts in the listed files, then call close_sprint again.",
+                        },
+                    },
+                    "completed_steps": completed_steps,
+                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
+                }, indent=2)
+            merged = True
+
+    completed_steps.append("merge")
+
+    # ── Step 7: Push tags ──
+    tags_pushed = False
+    if push_tags_flag and version:
+        tag_name = f"v{version}"
+        push_result = subprocess.run(
+            ["git", "push", "--tags"],
+            capture_output=True, text=True,
+        )
+        tags_pushed = push_result.returncode == 0
+
+    completed_steps.append("push_tags")
+
+    # ── Step 8: Delete branch ──
+    branch_deleted = False
+    if delete_branch_flag and branch_exists:
+        del_result = subprocess.run(
+            ["git", "branch", "-d", branch_name],
+            capture_output=True, text=True,
+        )
+        branch_deleted = del_result.returncode == 0
+
+    completed_steps.append("delete_branch")
+
+    # ── Step 9: Clear recovery state ──
+    if db.exists():
+        try:
+            _clear_recovery_state(db_str)
+        except Exception:
+            pass
+
+    # ── Step 10: Return structured result ──
+    result: dict = {
+        "status": "success",
+        "old_path": old_path_str,
+        "new_path": str(new_path),
+        "repairs": repairs,
+    }
+    if version:
+        result["version"] = version
+        result["tag"] = f"v{version}"
+    result["git"] = {
+        "merged": merged,
+        "merge_strategy": "--no-ff",
+        "merge_target": main_branch,
+        "tags_pushed": tags_pushed,
+        "branch_deleted": branch_deleted,
+        "branch_name": branch_name,
+    }
+
+    return json.dumps(result, indent=2)
+
+
+@server.tool()
+def clear_sprint_recovery(sprint_id: str) -> str:
+    """Clear the recovery state record for a sprint.
+
+    Use this after manually resolving a failure that was recorded
+    during close_sprint.
+
+    Args:
+        sprint_id: The sprint ID (for confirmation; currently unused
+            since recovery_state is a singleton)
+
+    Returns JSON with {cleared: true/false}.
+    """
+    db = _db_path()
+    if not db.exists():
+        return json.dumps({"cleared": False, "reason": "No state database found"}, indent=2)
+    result = _clear_recovery_state(str(db))
     return json.dumps(result, indent=2)
 
 

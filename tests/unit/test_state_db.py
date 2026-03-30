@@ -1,6 +1,8 @@
 """Tests for claude_agent_skills.state_db module."""
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +16,9 @@ from claude_agent_skills.state_db import (
     acquire_lock,
     release_lock,
     get_lock_holder,
+    write_recovery_state,
+    get_recovery_state,
+    clear_recovery_state,
 )
 
 
@@ -322,3 +327,88 @@ class TestPhaseConstants:
             "ticketing", "executing", "closing", "done",
         }
         assert set(PHASES) == expected
+
+
+class TestRecoveryState:
+    def test_write_creates_record(self, db_path):
+        result = write_recovery_state(
+            db_path, "001", "merge", ["/path/a.py"], "conflict in a.py"
+        )
+        assert result["sprint_id"] == "001"
+        assert result["step"] == "merge"
+        assert result["allowed_paths"] == ["/path/a.py"]
+        assert result["reason"] == "conflict in a.py"
+        assert result["recorded_at"] is not None
+
+    def test_get_returns_record(self, db_path):
+        write_recovery_state(db_path, "001", "tests", [], "tests failed")
+        record = get_recovery_state(db_path)
+        assert record is not None
+        assert record["sprint_id"] == "001"
+        assert record["step"] == "tests"
+        assert record["allowed_paths"] == []
+        assert record["reason"] == "tests failed"
+
+    def test_get_returns_none_when_empty(self, db_path):
+        init_db(db_path)
+        assert get_recovery_state(db_path) is None
+
+    def test_ttl_clears_stale_record(self, db_path):
+        write_recovery_state(db_path, "001", "merge", [], "conflict")
+        # Manually set recorded_at to >24h ago
+        old_time = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE recovery_state SET recorded_at = ? WHERE id = 1",
+            (old_time,),
+        )
+        conn.commit()
+        conn.close()
+
+        result = get_recovery_state(db_path)
+        assert result is None
+
+        # Verify record was actually deleted
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("SELECT COUNT(*) FROM recovery_state").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+    def test_clear_removes_record(self, db_path):
+        write_recovery_state(db_path, "001", "merge", [], "conflict")
+        result = clear_recovery_state(db_path)
+        assert result["cleared"] is True
+        assert get_recovery_state(db_path) is None
+
+    def test_clear_when_no_record(self, db_path):
+        init_db(db_path)
+        result = clear_recovery_state(db_path)
+        assert result["cleared"] is False
+
+    def test_singleton_constraint(self, db_path):
+        """Writing twice should overwrite, not create two records."""
+        write_recovery_state(db_path, "001", "merge", ["/a.py"], "first")
+        write_recovery_state(db_path, "002", "tests", ["/b.py"], "second")
+
+        record = get_recovery_state(db_path)
+        assert record["sprint_id"] == "002"
+        assert record["step"] == "tests"
+
+        # Verify only one row
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute("SELECT COUNT(*) FROM recovery_state").fetchone()[0]
+        conn.close()
+        assert count == 1
+
+    def test_table_in_schema(self, db_path):
+        """recovery_state table should be created by init_db."""
+        init_db(db_path)
+        conn = sqlite3.connect(str(db_path))
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        conn.close()
+        assert "recovery_state" in tables

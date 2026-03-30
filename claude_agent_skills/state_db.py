@@ -5,8 +5,10 @@ execution locks. All functions take a db_path parameter and return
 results — no MCP decorators. The MCP tool layer calls these functions.
 """
 
+import json as _json
 import sqlite3
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -48,6 +50,15 @@ CREATE TABLE IF NOT EXISTS execution_locks (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     sprint_id TEXT NOT NULL REFERENCES sprints(id),
     acquired_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recovery_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    sprint_id TEXT NOT NULL,
+    step TEXT NOT NULL,
+    allowed_paths TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    recorded_at TEXT NOT NULL
 );
 """
 
@@ -450,5 +461,99 @@ def get_lock_holder(db_path: str | Path) -> Optional[dict[str, Any]]:
             "sprint_id": lock_row["sprint_id"],
             "acquired_at": lock_row["acquired_at"],
         }
+    finally:
+        conn.close()
+
+
+# --- Recovery state (ticket 003) ---
+
+_RECOVERY_TTL = timedelta(hours=24)
+
+
+def write_recovery_state(
+    db_path: str | Path,
+    sprint_id: str,
+    step: str,
+    allowed_paths: list[str],
+    reason: str,
+) -> dict[str, Any]:
+    """Write or overwrite the singleton recovery state record.
+
+    Only one recovery record exists at a time (id=1).  Calling this
+    again replaces any previous record.
+    """
+    init_db(db_path)
+    now = _now()
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO recovery_state "
+            "(id, sprint_id, step, allowed_paths, reason, recorded_at) "
+            "VALUES (1, ?, ?, ?, ?, ?)",
+            (sprint_id, step, _json.dumps(allowed_paths), reason, now),
+        )
+        conn.commit()
+        return {
+            "sprint_id": sprint_id,
+            "step": step,
+            "allowed_paths": allowed_paths,
+            "reason": reason,
+            "recorded_at": now,
+        }
+    finally:
+        conn.close()
+
+
+def get_recovery_state(db_path: str | Path) -> Optional[dict[str, Any]]:
+    """Read the recovery state record, auto-clearing stale entries.
+
+    Returns a dict with sprint_id, step, allowed_paths, reason, and
+    recorded_at -- or None if no record exists.  Records older than 24
+    hours are automatically deleted with a warning on stderr.
+    """
+    init_db(db_path)
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT sprint_id, step, allowed_paths, reason, recorded_at "
+            "FROM recovery_state WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return None
+
+        recorded_at = datetime.fromisoformat(row["recorded_at"])
+        if datetime.now(timezone.utc) - recorded_at > _RECOVERY_TTL:
+            conn.execute("DELETE FROM recovery_state WHERE id = 1")
+            conn.commit()
+            print(
+                f"[CLASI] Stale recovery state for sprint '{row['sprint_id']}' "
+                f"(recorded {row['recorded_at']}) auto-cleared after 24h TTL",
+                file=sys.stderr,
+            )
+            return None
+
+        return {
+            "sprint_id": row["sprint_id"],
+            "step": row["step"],
+            "allowed_paths": _json.loads(row["allowed_paths"]),
+            "reason": row["reason"],
+            "recorded_at": row["recorded_at"],
+        }
+    finally:
+        conn.close()
+
+
+def clear_recovery_state(db_path: str | Path) -> dict[str, Any]:
+    """Delete the recovery state record.
+
+    Returns {"cleared": True} if a record was removed,
+    {"cleared": False} if no record existed.
+    """
+    init_db(db_path)
+    conn = _connect(db_path)
+    try:
+        cursor = conn.execute("DELETE FROM recovery_state WHERE id = 1")
+        conn.commit()
+        return {"cleared": cursor.rowcount > 0}
     finally:
         conn.close()
