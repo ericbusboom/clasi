@@ -9,7 +9,7 @@ from pathlib import Path
 
 from claude_agent_skills import __version__
 from claude_agent_skills.frontmatter import read_document
-from claude_agent_skills.mcp_server import server, content_path
+from claude_agent_skills.mcp_server import server, content_path, get_project
 
 
 def _list_definitions(directory: Path) -> list[dict[str, str]]:
@@ -429,9 +429,10 @@ def get_use_case_coverage() -> str:
 
     Returns JSON with coverage data.
     """
-    plans_dir = Path.cwd() / "docs" / "clasi"
+    project = get_project()
+    plans_dir = project.clasi_dir
     if not plans_dir.is_dir():
-        legacy = Path.cwd() / "docs" / "plans"
+        legacy = project.root / "docs" / "plans"
         if legacy.is_dir():
             legacy.rename(plans_dir)
     sprints_dir = plans_dir / "sprints"

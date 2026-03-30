@@ -22,7 +22,7 @@ from claude_agent_skills.process_tools import (
     get_language_instruction,
     ACTIVITY_GUIDES,
 )
-from claude_agent_skills.mcp_server import content_path
+from claude_agent_skills.mcp_server import content_path, set_project
 
 
 class TestListDefinitions:
@@ -178,6 +178,7 @@ class TestGetUseCaseCoverage:
 
     def test_covered_and_uncovered(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         self._setup_project(tmp_path, top_level_ucs={
             "UC-001": "Authentication",
             "UC-002": "Authorization",
@@ -203,6 +204,7 @@ class TestGetUseCaseCoverage:
 
     def test_done_sprint_coverage(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         self._setup_project(tmp_path, top_level_ucs={
             "UC-001": "Feature A",
         }, sprints=[
@@ -222,6 +224,7 @@ class TestGetUseCaseCoverage:
 
     def test_no_usecases_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         (tmp_path / "docs" / "clasi").mkdir(parents=True)
         result = json.loads(get_use_case_coverage())
         assert result["total_use_cases"] == 0
@@ -230,6 +233,7 @@ class TestGetUseCaseCoverage:
 
     def test_empty_usecases_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
         plans = tmp_path / "docs" / "clasi"
         plans.mkdir(parents=True)
         (plans / "usecases.md").write_text("---\nstatus: draft\n---\n\n# Use Cases\n")

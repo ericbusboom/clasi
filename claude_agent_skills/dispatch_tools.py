@@ -12,22 +12,25 @@ Each dispatch tool follows the 7-step pattern:
 5. VALIDATE -- validate_return() on result JSON + file checks
 6. LOG      -- update_dispatch_result() -> post-execution log entry
 7. RETURN   -- structured JSON to caller
+
+All dispatch is now handled by ``Agent.dispatch()`` in
+``claude_agent_skills.agent``. The dispatch tool functions are thin
+wrappers that look up the agent, render the prompt, and call dispatch.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger("clasi.dispatch")
 
-from claude_agent_skills.mcp_server import server, content_path
+from claude_agent_skills.mcp_server import server, content_path, get_project
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers
+# Legacy helpers (kept for backward compatibility with existing imports)
 # ---------------------------------------------------------------------------
 
 def _load_jinja2_template(agent_name: str):
@@ -82,179 +85,23 @@ async def _dispatch(
 ) -> str:
     """Shared 7-step dispatch pattern.
 
+    Now delegates to Agent.dispatch(). Kept for backward compatibility.
+
     Returns a JSON string with status, result, log_path, and validations.
     """
-    from claude_agent_skills.dispatch_log import (
-        log_dispatch,
-        update_dispatch_result,
-    )
-    from claude_agent_skills.contracts import load_contract, validate_return
+    agent = get_project().get_agent(child)
+    prompt = agent.render_prompt(**template_params)
 
-    # 1. RENDER
-    template = _load_jinja2_template(child)
-    rendered = template.render(**template_params)
-
-    # 2. LOG (pre-execution -- always happens)
-    log_path = log_dispatch(
+    work_dir = cwd_override or scope
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=work_dir,
         parent=parent,
-        child=child,
-        scope=scope,
-        prompt=rendered,
+        mode=mode,
         sprint_name=sprint_name,
         ticket_id=ticket_id,
-        template_used="dispatch-template.md.j2",
     )
-
-    # 3. LOAD contract
-    contract = load_contract(child)
-
-    # Resolve working directory from contract or override
-    work_dir = cwd_override or scope
-    contract_cwd = contract.get("cwd", "")
-    if contract_cwd and not cwd_override:
-        # Substitute template variables in cwd
-        resolved_cwd = contract_cwd
-        for key, value in template_params.items():
-            resolved_cwd = resolved_cwd.replace(f"{{{key}}}", str(value))
-        # Only use if we resolved all variables
-        if "{" not in resolved_cwd:
-            work_dir = resolved_cwd
-
-    # Try to import the SDK -- handle gracefully if not available
-    try:
-        from claude_agent_sdk import (  # type: ignore[import-not-found]
-            query,
-            ClaudeAgentOptions,
-            ResultMessage,
-        )
-    except ImportError:
-        # SDK not installed -- log the error and return
-        error_msg = (
-            "claude-agent-sdk is not installed. "
-            "Install it to enable subagent dispatch."
-        )
-        update_dispatch_result(
-            log_path,
-            result="error",
-            files_modified=[],
-            response=error_msg,
-        )
-        return json.dumps({
-            "status": "error",
-            "message": error_msg,
-            "log_path": str(log_path),
-        }, indent=2)
-
-    # Build options from contract
-    # Unset CLAUDECODE to allow nested sessions from claude -p
-    env = {k: v for k, v in os.environ.items()}
-    env.pop("CLAUDECODE", None)
-
-    # Write stderr to a file for error diagnostics
-    stderr_log = Path(work_dir) / ".dispatch-stderr.log"
-    try:
-        stderr_file = open(stderr_log, "w", encoding="utf-8")
-    except OSError:
-        stderr_file = None
-
-    # Resolve MCP server config: if the contract lists server names,
-    # pass the .mcp.json path so the child process can find them.
-    mcp_servers_config = contract.get("mcp_servers", [])
-    if isinstance(mcp_servers_config, list) and mcp_servers_config:
-        # Contract lists server names like ["clasi"] — pass the
-        # .mcp.json file path so the child claude process loads them.
-        mcp_json = Path(work_dir) / ".mcp.json"
-        if not mcp_json.exists():
-            mcp_json = Path.cwd() / ".mcp.json"
-        mcp_servers_config = str(mcp_json) if mcp_json.exists() else {}
-
-    options = ClaudeAgentOptions(
-        system_prompt=_load_agent_system_prompt(child),
-        cwd=work_dir,
-        allowed_tools=contract.get("allowed_tools", []),
-        mcp_servers=mcp_servers_config,
-        model=contract.get("model", "sonnet"),
-        env=env,
-        permission_mode="bypassPermissions",
-        debug_stderr=stderr_file,
-    )
-
-    # 4. EXECUTE
-    result_text = ""
-    try:
-        async for message in query(prompt=rendered, options=options):
-            if isinstance(message, ResultMessage):
-                result_text = message.result
-    except Exception as e:
-        # Extract detailed error info if available
-        error_msg = str(e)
-        if stderr_file:
-            stderr_file.close()
-        stderr_from_file = ""
-        try:
-            stderr_from_file = stderr_log.read_text(encoding="utf-8").strip()
-        except OSError:
-            pass
-        stderr_output = stderr_from_file or getattr(e, "stderr", None) or ""
-        exit_code = getattr(e, "exit_code", None)
-        detail = error_msg
-        if stderr_output:
-            detail = f"{error_msg}\nSTDERR: {stderr_output}"
-        logger.error("dispatch %s -> %s FAILED: %s", parent, child, detail)
-
-        update_dispatch_result(
-            log_path,
-            result="error",
-            files_modified=[],
-            response=detail,
-        )
-        return json.dumps({
-            "status": "error",
-            "fatal": True,
-            "message": error_msg,
-            "stderr": stderr_output,
-            "exit_code": exit_code,
-            "log_path": str(log_path),
-            "instruction": (
-                "DISPATCH FAILED. DO NOT attempt to do this work yourself. "
-                "DO NOT proceed without the subagent. STOP and report this "
-                "error to the stakeholder. The dispatch infrastructure must "
-                "be fixed before work can continue."
-            ),
-        }, indent=2)
-
-    # Close stderr file on success
-    if stderr_file:
-        stderr_file.close()
-
-    # 5. VALIDATE
-    validation = validate_return(contract, mode, result_text, work_dir)
-
-    # 6. LOG (post-execution -- always happens)
-    files_modified = []
-    if validation.get("result_json") and isinstance(
-        validation["result_json"].get("files_changed"), list
-    ):
-        files_modified = validation["result_json"]["files_changed"]
-    elif validation.get("result_json") and isinstance(
-        validation["result_json"].get("files_created"), list
-    ):
-        files_modified = validation["result_json"]["files_created"]
-
-    update_dispatch_result(
-        log_path,
-        result=validation["status"],
-        files_modified=files_modified,
-        response=result_text,
-    )
-
-    # 7. RETURN
-    return json.dumps({
-        "status": validation["status"],
-        "result": result_text,
-        "log_path": str(log_path),
-        "validations": validation,
-    }, indent=2)
+    return json.dumps(result, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -274,12 +121,14 @@ async def dispatch_to_requirements_narrator(
     Args:
         project_path: Path to the project root
     """
-    return await _dispatch(
+    agent = get_project().get_agent("requirements-narrator")
+    prompt = agent.render_prompt(project_path=project_path)
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=project_path,
         parent="team-lead",
-        child="requirements-narrator",
-        template_params={"project_path": project_path},
-        scope=project_path,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -297,12 +146,14 @@ async def dispatch_to_todo_worker(
         todo_ids: List of TODO IDs to operate on
         action: What to do (create, import, list, summarize, prioritize)
     """
-    return await _dispatch(
+    agent = get_project().get_agent("todo-worker")
+    prompt = agent.render_prompt(todo_ids=todo_ids, action=action)
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=str(get_project().root),
         parent="team-lead",
-        child="todo-worker",
-        template_params={"todo_ids": todo_ids, "action": action},
-        scope=str(Path.cwd()),
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -326,21 +177,23 @@ async def dispatch_to_sprint_planner(
         goals: High-level goals for the sprint
         mode: Planning mode -- 'roadmap' (lightweight) or 'detail' (full)
     """
-    sprint_name = Path(sprint_directory).name
-    return await _dispatch(
-        parent="team-lead",
-        child="sprint-planner",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-            "todo_ids": todo_ids,
-            "goals": goals,
-            "mode": mode,
-        },
-        scope=sprint_directory,
-        sprint_name=sprint_name,
+    agent = get_project().get_agent("sprint-planner")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+        todo_ids=todo_ids,
+        goals=goals,
         mode=mode,
     )
+    sprint_name = Path(sprint_directory).name
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
+        parent="team-lead",
+        mode=mode,
+        sprint_name=sprint_name,
+    )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -362,19 +215,21 @@ async def dispatch_to_sprint_executor(
         branch_name: Git branch name for the sprint
         tickets: List of ticket references to execute
     """
+    agent = get_project().get_agent("sprint-executor")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+        branch_name=branch_name,
+        tickets=tickets,
+    )
     sprint_name = Path(sprint_directory).name
-    return await _dispatch(
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
         parent="team-lead",
-        child="sprint-executor",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-            "branch_name": branch_name,
-            "tickets": tickets,
-        },
-        scope=sprint_directory,
         sprint_name=sprint_name,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -392,15 +247,17 @@ async def dispatch_to_ad_hoc_executor(
         task_description: Description of the change to make
         scope_directory: Directory scope for the change
     """
-    return await _dispatch(
-        parent="team-lead",
-        child="ad-hoc-executor",
-        template_params={
-            "task_description": task_description,
-            "scope_directory": scope_directory,
-        },
-        scope=scope_directory,
+    agent = get_project().get_agent("ad-hoc-executor")
+    prompt = agent.render_prompt(
+        task_description=task_description,
+        scope_directory=scope_directory,
     )
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=scope_directory,
+        parent="team-lead",
+    )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -418,17 +275,19 @@ async def dispatch_to_sprint_reviewer(
         sprint_id: The sprint ID to review
         sprint_directory: Path to the sprint directory
     """
+    agent = get_project().get_agent("sprint-reviewer")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+    )
     sprint_name = Path(sprint_directory).name
-    return await _dispatch(
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
         parent="team-lead",
-        child="sprint-reviewer",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-        },
-        scope=sprint_directory,
         sprint_name=sprint_name,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -446,17 +305,19 @@ async def dispatch_to_architect(
         sprint_id: The sprint ID for the architecture update
         sprint_directory: Path to the sprint directory
     """
+    agent = get_project().get_agent("architect")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+    )
     sprint_name = Path(sprint_directory).name
-    return await _dispatch(
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
         parent="sprint-planner",
-        child="architect",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-        },
-        scope=sprint_directory,
         sprint_name=sprint_name,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -474,17 +335,19 @@ async def dispatch_to_architecture_reviewer(
         sprint_id: The sprint ID whose architecture to review
         sprint_directory: Path to the sprint directory
     """
+    agent = get_project().get_agent("architecture-reviewer")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+    )
     sprint_name = Path(sprint_directory).name
-    return await _dispatch(
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
         parent="sprint-planner",
-        child="architecture-reviewer",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-        },
-        scope=sprint_directory,
         sprint_name=sprint_name,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -502,17 +365,19 @@ async def dispatch_to_technical_lead(
         sprint_id: The sprint ID to create tickets for
         sprint_directory: Path to the sprint directory
     """
+    agent = get_project().get_agent("technical-lead")
+    prompt = agent.render_prompt(
+        sprint_id=sprint_id,
+        sprint_directory=sprint_directory,
+    )
     sprint_name = Path(sprint_directory).name
-    return await _dispatch(
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=sprint_directory,
         parent="sprint-planner",
-        child="technical-lead",
-        template_params={
-            "sprint_id": sprint_id,
-            "sprint_directory": sprint_directory,
-        },
-        scope=sprint_directory,
         sprint_name=sprint_name,
     )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -536,20 +401,22 @@ async def dispatch_to_code_monkey(
         sprint_name: Sprint name (e.g., '001-feature-name')
         ticket_id: Ticket ID (e.g., '001')
     """
-    return await _dispatch(
-        parent="sprint-executor",
-        child="code-monkey",
-        template_params={
-            "ticket_path": ticket_path,
-            "ticket_plan_path": ticket_plan_path,
-            "scope_directory": scope_directory,
-            "sprint_name": sprint_name,
-            "ticket_id": ticket_id,
-        },
-        scope=scope_directory,
+    agent = get_project().get_agent("code-monkey")
+    prompt = agent.render_prompt(
+        ticket_path=ticket_path,
+        ticket_plan_path=ticket_plan_path,
+        scope_directory=scope_directory,
         sprint_name=sprint_name,
         ticket_id=ticket_id,
     )
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=scope_directory,
+        parent="sprint-executor",
+        sprint_name=sprint_name,
+        ticket_id=ticket_id,
+    )
+    return json.dumps(result, indent=2)
 
 
 @server.tool()
@@ -567,12 +434,14 @@ async def dispatch_to_code_reviewer(
         file_paths: List of file paths to review
         review_scope: Description of what to review and the acceptance criteria
     """
-    return await _dispatch(
-        parent="ad-hoc-executor",
-        child="code-reviewer",
-        template_params={
-            "file_paths": file_paths,
-            "review_scope": review_scope,
-        },
-        scope=str(Path.cwd()),
+    agent = get_project().get_agent("code-reviewer")
+    prompt = agent.render_prompt(
+        file_paths=file_paths,
+        review_scope=review_scope,
     )
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=str(get_project().root),
+        parent="ad-hoc-executor",
+    )
+    return json.dumps(result, indent=2)

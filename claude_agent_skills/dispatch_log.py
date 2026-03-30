@@ -11,10 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from claude_agent_skills.frontmatter import read_document, write_frontmatter
+from claude_agent_skills.mcp_server import get_project
+
 
 def _log_dir() -> Path:
-    """Return the log directory (``docs/clasi/log/``) relative to cwd."""
-    return Path.cwd() / "docs" / "clasi" / "log"
+    """Return the log directory via the Project singleton."""
+    return get_project().log_dir
 
 
 def _next_sequence(directory: Path, prefix: str) -> int:
