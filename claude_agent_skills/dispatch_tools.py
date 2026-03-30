@@ -277,6 +277,7 @@ async def dispatch_to_sprint_planner(
             "sprint_directory": sprint_directory,
             "todo_ids": todo_ids,
             "goals": goals,
+            "mode": mode,
         },
         scope=sprint_directory,
         sprint_name=sprint_name,

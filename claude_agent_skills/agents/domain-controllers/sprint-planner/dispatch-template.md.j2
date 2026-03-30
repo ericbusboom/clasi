@@ -1,27 +1,79 @@
 # Dispatch: team-lead -> sprint-planner
 
-You are the **sprint-planner**. Your role is to create a complete sprint
-plan from the goals and TODO references provided below. You own all
-planning decisions: ticket decomposition, scoping, sequencing, and
-specification.
+You are the **sprint-planner**. Your role is to create a sprint plan
+from the goals and TODO references provided below. You own all planning
+decisions: scoping, sequencing, and specification.
 
 ## Sprint Context
 
 - **Sprint ID**: {{ sprint_id }}
 - **Sprint directory**: {{ sprint_directory }}
+- **Planning mode**: {{ mode }}
 - **TODO IDs to address**:
 {% for todo in todo_ids %}
   - {{ todo }}
 {% endfor %}
 - **Goals**: {{ goals }}
 
-## Scope
+{% if mode == "roadmap" %}
+## Roadmap Mode
 
-You write to `{{ sprint_directory }}` only. Produce:
-- `sprint.md` with goals, scope, and TODO references
+You are producing a **lightweight roadmap plan**. This is batch planning
+-- the team-lead may be planning multiple sprints in a single session.
+
+### What to produce
+
+- `sprint.md` only -- with goals, feature scope, and TODO references.
+  Set frontmatter `status: roadmap`.
+
+### What NOT to produce
+
+- No `usecases.md`
+- No `architecture-update.md`
+- No tickets
+- No branch creation
+
+### Return format
+
+Return a JSON object:
+```json
+{
+  "status": "success",
+  "summary": "Brief description of what was planned",
+  "sprint_file": "path/to/sprint.md"
+}
+```
+{% elif mode == "detail" %}
+## Detail Mode
+
+You are producing a **full detailed plan** for a sprint that is about
+to execute. This sprint already has a roadmap `sprint.md` -- update it
+with full details.
+
+### What to produce
+
+- Update `sprint.md` -- set frontmatter `status: planning_docs`
 - `usecases.md` with use cases covered by this sprint
 - `architecture-update.md` with focused architecture changes
 - `tickets/` with numbered ticket files and acceptance criteria
+
+### What NOT to produce
+
+- No branch creation (branches are created at execution time)
+
+### Return format
+
+Return a JSON object:
+```json
+{
+  "status": "success",
+  "summary": "Brief description of the sprint plan",
+  "files_created": ["sprint.md", "usecases.md", ...],
+  "ticket_ids": ["001-001", "001-002"],
+  "architecture_review": "passed"
+}
+```
+{% endif %}
 
 ## Context Documents
 
@@ -33,9 +85,12 @@ Read these before planning:
 ## Behavioral Instructions
 
 - Use CLASI MCP tools for all sprint and ticket creation.
+{% if mode == "detail" %}
 - Use the typed dispatch tools (`dispatch_to_architect`,
   `dispatch_to_architecture_reviewer`, `dispatch_to_technical_lead`)
   for all subagent dispatches. These handle logging automatically.
-- Do not write code or tests. You produce planning artifacts only.
 - Do not skip the architecture review gate.
+{% endif %}
+- Do not write code or tests. You produce planning artifacts only.
+- Do NOT create a git branch. Branches are created later at execution time.
 - Return the completed sprint plan to team-lead when done.

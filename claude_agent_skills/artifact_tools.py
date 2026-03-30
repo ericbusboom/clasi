@@ -113,6 +113,32 @@ def _find_sprint_dir(sprint_id: str) -> Path:
     raise ValueError(f"Sprint '{sprint_id}' not found")
 
 
+def _is_ticket_done(ticket_ref: str) -> bool:
+    """Check if a ticket (referenced as 'sprint_id-ticket_id') has status done.
+
+    Searches both active and done ticket directories across all sprints.
+    Returns True if the ticket is found with status 'done', False otherwise.
+    """
+    parts = ticket_ref.split("-", 1)
+    if len(parts) != 2:
+        return False
+    sprint_id, ticket_id = parts
+    try:
+        sprint_dir = _find_sprint_dir(sprint_id)
+    except ValueError:
+        return False
+    tickets_dir = sprint_dir / "tickets"
+    # Check in tickets/ and tickets/done/
+    for search_dir in [tickets_dir, tickets_dir / "done"]:
+        if not search_dir.exists():
+            continue
+        for ticket_file in search_dir.glob("*.md"):
+            fm = read_frontmatter(ticket_file)
+            if fm.get("id") == ticket_id:
+                return fm.get("status") == "done"
+    return False
+
+
 def _next_sprint_id() -> str:
     """Determine the next sprint number (NNN format)."""
     sprints = _sprints_dir()
@@ -510,12 +536,22 @@ def create_ticket(
             ticket_fm["todo"] = todo_list
         write_frontmatter(path, ticket_fm)
 
-        # Update each referenced TODO file
+        # Update each referenced TODO file and move to in-progress/
         full_ticket_id = f"{sprint_id}-{ticket_id}"
         todo_directory = _todo_dir()
+        in_progress_dir = todo_directory / "in-progress"
+        in_progress_dir.mkdir(parents=True, exist_ok=True)
         for todo_filename in todo_list:
-            todo_path = todo_directory / todo_filename
-            if not todo_path.exists():
+            # Check in-progress/ first, then pending (todo/)
+            todo_path_in_progress = in_progress_dir / todo_filename
+            todo_path_pending = todo_directory / todo_filename
+            if todo_path_in_progress.exists():
+                # Already in-progress — just append ticket ID
+                todo_path = todo_path_in_progress
+            elif todo_path_pending.exists():
+                # Pending — move to in-progress/
+                todo_path = todo_path_pending
+            else:
                 continue  # Skip missing TODOs gracefully
             todo_fm = read_frontmatter(todo_path)
             todo_fm["status"] = "in-progress"
@@ -528,6 +564,9 @@ def create_ticket(
                 existing_tickets.append(full_ticket_id)
             todo_fm["tickets"] = existing_tickets
             write_frontmatter(todo_path, todo_fm)
+            # Move from pending to in-progress/ if not already there
+            if todo_path == todo_path_pending:
+                todo_path.rename(in_progress_dir / todo_filename)
 
     return json.dumps({
         "id": ticket_id,
@@ -750,6 +789,41 @@ def move_ticket_to_done(path: str) -> str:
         result["plan_old_path"] = str(plan_path)
         result["plan_new_path"] = str(new_plan_path)
 
+    # Check if this ticket references any TODOs and trigger completion
+    ticket_fm = read_frontmatter(new_path)
+    todo_refs = ticket_fm.get("todo")
+    if todo_refs is not None:
+        if isinstance(todo_refs, str):
+            todo_refs = [todo_refs]
+        todo_directory = _todo_dir()
+        in_progress_dir = todo_directory / "in-progress"
+        completed_todos: list[str] = []
+        for todo_filename in todo_refs:
+            todo_path = in_progress_dir / todo_filename
+            if not todo_path.exists():
+                continue
+            todo_fm = read_frontmatter(todo_path)
+            ref_tickets = todo_fm.get("tickets", [])
+            if isinstance(ref_tickets, str):
+                ref_tickets = [ref_tickets]
+            # Check if ALL referencing tickets are done
+            all_done = True
+            for ref_ticket_id in ref_tickets:
+                # ref_ticket_id is like "001-003" — find the ticket file
+                if not _is_ticket_done(ref_ticket_id):
+                    all_done = False
+                    break
+            if all_done and ref_tickets:
+                # Move TODO from in-progress/ to done/
+                todo_fm["status"] = "done"
+                write_frontmatter(todo_path, todo_fm)
+                todo_done_dir = todo_directory / "done"
+                todo_done_dir.mkdir(parents=True, exist_ok=True)
+                todo_path.rename(todo_done_dir / todo_filename)
+                completed_todos.append(todo_filename)
+        if completed_todos:
+            result["completed_todos"] = completed_todos
+
     return json.dumps(result, indent=2)
 
 
@@ -855,20 +929,38 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     fm["status"] = "done"
     write_frontmatter(sprint_file, fm)
 
-    # Move linked TODOs to done
-    moved_todos: list[str] = []
+    # Check in-progress TODOs — they should already be resolved individually
+    unresolved_todos: list[str] = []
     todo_directory = _todo_dir()
+    in_progress_todo_dir = todo_directory / "in-progress"
+    if in_progress_todo_dir.exists():
+        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+            todo_fm = read_frontmatter(todo_file)
+            if todo_fm.get("sprint") == sprint_id:
+                if todo_fm.get("status") in ("done", "complete", "completed"):
+                    # Self-repair: move to done/
+                    todo_fm["status"] = "done"
+                    write_frontmatter(todo_file, todo_fm)
+                    todo_done = todo_directory / "done"
+                    todo_done.mkdir(parents=True, exist_ok=True)
+                    todo_file.rename(todo_done / todo_file.name)
+                else:
+                    unresolved_todos.append(todo_file.name)
+
+    # Also check legacy pending TODOs tagged with this sprint
+    moved_todos: list[str] = []
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
             todo_fm = read_frontmatter(todo_file)
             if todo_fm.get("sprint") == sprint_id:
-                todo_fm["status"] = "done"
-                write_frontmatter(todo_file, todo_fm)
-                todo_done = todo_directory / "done"
-                todo_done.mkdir(parents=True, exist_ok=True)
-                dest_todo = todo_done / todo_file.name
-                todo_file.rename(dest_todo)
-                moved_todos.append(todo_file.name)
+                if todo_fm.get("status") in ("done", "complete", "completed"):
+                    todo_fm["status"] = "done"
+                    write_frontmatter(todo_file, todo_fm)
+                    todo_done = todo_directory / "done"
+                    todo_done.mkdir(parents=True, exist_ok=True)
+                    dest_todo = todo_done / todo_file.name
+                    todo_file.rename(dest_todo)
+                    moved_todos.append(todo_file.name)
 
     # Copy architecture-update to the architecture directory
     arch_update = sprint_dir / "architecture-update.md"
@@ -932,6 +1024,8 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     }
     if moved_todos:
         result["moved_todos"] = moved_todos
+    if unresolved_todos:
+        result["unresolved_todos"] = unresolved_todos
     if version:
         result["version"] = version
         result["tag"] = f"v{version}"
@@ -1020,8 +1114,44 @@ def _close_sprint_full(
                     "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                 }, indent=2)
 
-    # 1b. Check TODOs — sprint-tagged TODOs should be resolved
+    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved
     todo_directory = _todo_dir()
+    in_progress_todo_dir = todo_directory / "in-progress"
+    if in_progress_todo_dir.exists():
+        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+            t_fm = read_frontmatter(todo_file)
+            if t_fm.get("sprint") == sprint_id:
+                if t_fm.get("status") in ("done", "complete", "completed"):
+                    # Self-repair: move to done/
+                    t_fm["status"] = "done"
+                    write_frontmatter(todo_file, t_fm)
+                    todo_done = todo_directory / "done"
+                    todo_done.mkdir(parents=True, exist_ok=True)
+                    todo_file.rename(todo_done / todo_file.name)
+                    repairs.append(f"moved TODO {todo_file.name} to done/")
+                else:
+                    # TODO still in-progress — unrepairable
+                    error_msg = f"TODO {todo_file.name} is still in-progress for sprint {sprint_id}"
+                    if db.exists():
+                        _write_recovery_state(
+                            db_str, sprint_id, "precondition",
+                            [str(todo_file)], error_msg,
+                        )
+                    return json.dumps({
+                        "status": "error",
+                        "error": {
+                            "step": "precondition",
+                            "message": error_msg,
+                            "recovery": {
+                                "recorded": db.exists(),
+                                "allowed_paths": [str(todo_file)],
+                                "instruction": f"Complete all tickets referencing {todo_file.name}, then call close_sprint again.",
+                            },
+                        },
+                        "completed_steps": [],
+                        "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+                    }, indent=2)
+    # Also check pending TODOs in todo/ that are tagged with this sprint (legacy)
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
             t_fm = read_frontmatter(todo_file)
@@ -1151,16 +1281,10 @@ def _close_sprint_full(
         fm["status"] = "done"
         write_frontmatter(sprint_file, fm)
 
-        # Move linked TODOs to done
-        if todo_directory.exists():
-            for todo_file in sorted(todo_directory.glob("*.md")):
-                todo_fm = read_frontmatter(todo_file)
-                if todo_fm.get("sprint") == sprint_id:
-                    todo_fm["status"] = "done"
-                    write_frontmatter(todo_file, todo_fm)
-                    todo_done = todo_directory / "done"
-                    todo_done.mkdir(parents=True, exist_ok=True)
-                    todo_file.rename(todo_done / todo_file.name)
+        # NOTE: TODOs are not bulk-moved at sprint close.
+        # They are moved individually by move_ticket_to_done when all
+        # referencing tickets are done. The precondition check (step 1b)
+        # already verified that no in-progress TODOs remain for this sprint.
 
         # Copy architecture-update
         arch_update = sprint_dir / "architecture-update.md"
@@ -1451,18 +1575,59 @@ def record_gate_result(
 
 @server.tool()
 def acquire_execution_lock(sprint_id: str) -> str:
-    """Acquire the execution lock for a sprint.
+    """Acquire the execution lock for a sprint and create the sprint branch.
 
     Only one sprint can hold the lock at a time. Prevents concurrent
     sprint execution in the same repository.
 
+    Late branching: the sprint branch (``sprint/NNN-slug``) is created
+    here, not during planning. All planning (roadmap and detail phases)
+    happens on main. The branch is only created when execution begins.
+
+    If the lock is re-entrant (already held by this sprint), the branch
+    is assumed to already exist and is not re-created.
+
     Args:
         sprint_id: The sprint ID
 
-    Returns JSON with {sprint_id, acquired_at, reentrant}.
+    Returns JSON with {sprint_id, acquired_at, reentrant, branch}.
     """
     try:
         lock = _acquire_lock(str(_db_path()), sprint_id)
+
+        # Late branching: create the sprint branch when acquiring
+        # the execution lock (not during planning).
+        if not lock.get("reentrant"):
+            state = _get_sprint_state(str(_db_path()), sprint_id)
+            slug = state.get("slug", "")
+            branch_name = f"sprint/{sprint_id}-{slug}" if slug else f"sprint/{sprint_id}"
+            branch_result = subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                capture_output=True,
+                text=True,
+            )
+            if branch_result.returncode != 0:
+                # Branch may already exist -- try checking it out
+                branch_result = subprocess.run(
+                    ["git", "checkout", branch_name],
+                    capture_output=True,
+                    text=True,
+                )
+                if branch_result.returncode != 0:
+                    return json.dumps({
+                        "error": (
+                            f"Failed to create/checkout branch "
+                            f"'{branch_name}': "
+                            f"{branch_result.stderr.strip()}"
+                        ),
+                        "lock": lock,
+                    }, indent=2)
+            lock["branch"] = branch_name
+        else:
+            # Re-entrant: look up existing branch
+            state = _get_sprint_state(str(_db_path()), sprint_id)
+            lock["branch"] = state.get("branch", "")
+
         return json.dumps(lock, indent=2)
     except ValueError as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -1496,15 +1661,19 @@ def _todo_dir() -> Path:
 def list_todos() -> str:
     """List all active TODO files with sprint/ticket linkage.
 
-    Scans docs/clasi/todo/*.md (excludes done/ subdirectory).
+    Scans docs/clasi/todo/*.md (pending) and docs/clasi/todo/in-progress/*.md.
+    Excludes the done/ subdirectory.
 
     Returns JSON array of {filename, title, status, sprint, tickets}.
     The sprint and tickets fields are present only for in-progress TODOs.
     """
     todo = _todo_dir()
     results = []
-    if todo.exists():
-        for f in sorted(todo.glob("*.md")):
+
+    def _scan_todo_files(directory: Path) -> None:
+        if not directory.exists():
+            return
+        for f in sorted(directory.glob("*.md")):
             title = f.stem
             # Extract title from first # heading
             for line in f.read_text(encoding="utf-8").splitlines():
@@ -1523,6 +1692,12 @@ def list_todos() -> str:
                 if tickets:
                     entry["tickets"] = tickets
             results.append(entry)
+
+    # Scan pending TODOs (top-level todo/)
+    _scan_todo_files(todo)
+    # Scan in-progress TODOs
+    _scan_todo_files(todo / "in-progress")
+
     return json.dumps(results, indent=2)
 
 
@@ -1543,8 +1718,13 @@ def move_todo_to_done(
     """
     todo = _todo_dir()
     src = todo / filename
+    # Also check in-progress/ directory
     if not src.exists():
-        raise ValueError(f"TODO not found: {filename}")
+        src_in_progress = todo / "in-progress" / filename
+        if src_in_progress.exists():
+            src = src_in_progress
+        else:
+            raise ValueError(f"TODO not found: {filename}")
 
     # Write traceability frontmatter before moving
     fm = read_frontmatter(src)

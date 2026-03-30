@@ -85,19 +85,43 @@ After verifying MCP, assess where the project stands:
 
 The full sprint lifecycle from team-lead's perspective:
 
-1. **Plan**: Call `dispatch_to_sprint_planner` with sprint ID, directory,
-   TODO IDs, and goals. The tool renders the template, logs the dispatch,
-   executes the subagent, validates the result, and logs the outcome.
-2. **Review plan**: Sprint-planner returns with completed plan.
+#### Two-Phase Planning
+
+Sprint planning uses a two-phase model:
+
+**Phase 1 -- Batch Roadmap Planning**: Plan multiple sprints in a single
+session using `dispatch_to_sprint_planner(mode="roadmap")`. Each roadmap
+sprint produces a lightweight `sprint.md` with goals, scope, and TODO
+references. No branches, no architecture documents, no tickets. This
+lets you lay out the project roadmap quickly.
+
+**Phase 2 -- Detailed Planning**: When a sprint is ready for execution,
+call `dispatch_to_sprint_planner(mode="detail")` for that one sprint.
+This fills in full artifacts (usecases.md, architecture-update.md,
+tickets), runs architecture review, and gets stakeholder approval.
+
+Branches are NOT created during planning. They are created by
+`acquire_execution_lock` when execution begins (late branching).
+
+#### Lifecycle Steps
+
+1. **Roadmap plan**: Call `dispatch_to_sprint_planner(mode="roadmap")`
+   with sprint ID, directory, TODO IDs, and goals. Repeat for multiple
+   sprints as needed to build the roadmap.
+2. **Detail plan**: When ready to execute, call
+   `dispatch_to_sprint_planner(mode="detail")` for the next sprint.
+   Sprint-planner fills in full artifacts and gets reviews.
+3. **Review plan**: Sprint-planner returns with completed plan.
    Present to stakeholder for approval.
-3. **Execute**: After approval, acquire execution lock
-   (`acquire_execution_lock`). Call `dispatch_to_sprint_executor` with
+4. **Execute**: After approval, acquire execution lock
+   (`acquire_execution_lock`). This creates the sprint branch
+   (`sprint/NNN-slug`). Call `dispatch_to_sprint_executor` with
    sprint ID, directory, branch name, and tickets. The tool handles
    dispatch, execution, validation, and logging automatically.
-4. **Validate**: Sprint-executor returns with completed sprint. Call
+5. **Validate**: Sprint-executor returns with completed sprint. Call
    `dispatch_to_sprint_reviewer` with sprint ID and directory. The tool
    handles dispatch, execution, validation, and logging automatically.
-5. **Close**: If sprint-reviewer passes, close the sprint:
+6. **Close**: If sprint-reviewer passes, close the sprint:
    - Merge sprint branch to main
    - Call `close_sprint` MCP tool (archives directory, copies
      architecture update, releases lock)

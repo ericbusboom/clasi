@@ -351,3 +351,207 @@ class TestOldDispatchFunctionsRemoved:
     def test_no_load_jinja2_template(self):
         from claude_agent_skills import artifact_tools
         assert not hasattr(artifact_tools, "_load_jinja2_template")
+
+
+class TestSprintPlannerModeParameter:
+    """Tests for the two-phase sprint planning mode parameter."""
+
+    def test_dispatch_to_sprint_planner_accepts_mode_parameter(self):
+        """dispatch_to_sprint_planner has a mode parameter with default 'detail'."""
+        import inspect
+        sig = inspect.signature(dispatch_to_sprint_planner)
+        assert "mode" in sig.parameters
+        assert sig.parameters["mode"].default == "detail"
+
+    def test_sprint_planner_mode_values(self):
+        """The mode parameter accepts 'roadmap' and 'detail'."""
+        import inspect
+        sig = inspect.signature(dispatch_to_sprint_planner)
+        # Just verify the parameter exists and has a string default
+        param = sig.parameters["mode"]
+        assert isinstance(param.default, str)
+        assert param.default in ("roadmap", "detail")
+
+    def test_mode_passed_through_template_rendering(self):
+        """Verify mode is available in the Jinja2 template context."""
+        template = _load_jinja2_template("sprint-planner")
+        for mode_val in ("roadmap", "detail"):
+            rendered = template.render(
+                sprint_id="001",
+                sprint_directory="/tmp/test",
+                todo_ids=["T-001"],
+                goals="Test goals",
+                mode=mode_val,
+            )
+            assert mode_val in rendered, (
+                f"Mode '{mode_val}' should appear in rendered template"
+            )
+
+    def test_roadmap_template_excludes_detail_artifacts(self):
+        """Roadmap mode template should not mention ticket creation."""
+        template = _load_jinja2_template("sprint-planner")
+        rendered = template.render(
+            sprint_id="001",
+            sprint_directory="/tmp/test",
+            todo_ids=["T-001"],
+            goals="Test goals",
+            mode="roadmap",
+        )
+        assert "Roadmap Mode" in rendered
+        assert "tickets/" not in rendered
+        assert "usecases.md" not in rendered.split("What NOT to produce")[0] or \
+            "No `usecases.md`" in rendered
+
+    def test_detail_template_includes_full_artifacts(self):
+        """Detail mode template should include full artifact requirements."""
+        template = _load_jinja2_template("sprint-planner")
+        rendered = template.render(
+            sprint_id="001",
+            sprint_directory="/tmp/test",
+            todo_ids=["T-001"],
+            goals="Test goals",
+            mode="detail",
+        )
+        assert "Detail Mode" in rendered
+        assert "usecases.md" in rendered
+        assert "architecture-update.md" in rendered
+
+    def test_template_says_no_branch_creation(self):
+        """Both modes should say no branch creation during planning."""
+        template = _load_jinja2_template("sprint-planner")
+        for mode_val in ("roadmap", "detail"):
+            rendered = template.render(
+                sprint_id="001",
+                sprint_directory="/tmp/test",
+                todo_ids=["T-001"],
+                goals="Test goals",
+                mode=mode_val,
+            )
+            assert "Do NOT create a git branch" in rendered
+
+
+class TestSprintPlannerContractModes:
+    """Tests for mode-specific outputs and returns in the sprint-planner contract."""
+
+    def test_contract_has_mode_specific_outputs(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        outputs = contract["outputs"]
+        assert "roadmap" in outputs, "Contract should have roadmap outputs"
+        assert "detail" in outputs, "Contract should have detail outputs"
+
+    def test_roadmap_outputs_only_sprint_md(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        roadmap_required = contract["outputs"]["roadmap"]["required"]
+        paths = [o["path"] for o in roadmap_required]
+        assert "sprint.md" in paths
+        assert len(paths) == 1, "Roadmap should only require sprint.md"
+
+    def test_detail_outputs_include_full_artifacts(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        detail_required = contract["outputs"]["detail"]["required"]
+        paths = [o["path"] for o in detail_required]
+        assert "sprint.md" in paths
+        assert "usecases.md" in paths
+        assert "architecture-update.md" in paths
+        assert "tickets/*.md" in paths
+
+    def test_contract_has_mode_specific_returns(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        returns = contract["returns"]
+        assert "roadmap" in returns, "Contract should have roadmap return schema"
+        assert "detail" in returns, "Contract should have detail return schema"
+
+    def test_roadmap_return_schema(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        roadmap_returns = contract["returns"]["roadmap"]
+        assert "sprint_file" in roadmap_returns["required"]
+        assert "status" in roadmap_returns["required"]
+
+    def test_detail_return_schema(self):
+        from claude_agent_skills.contracts import load_contract
+        contract = load_contract("sprint-planner")
+        detail_returns = contract["returns"]["detail"]
+        assert "files_created" in detail_returns["required"]
+        assert "ticket_ids" in detail_returns["required"]
+
+    def test_validate_return_uses_roadmap_schema(self, tmp_path):
+        """validate_return with mode='roadmap' uses roadmap return schema."""
+        from claude_agent_skills.contracts import load_contract, validate_return
+        contract = load_contract("sprint-planner")
+
+        # Create sprint.md in tmp_path
+        (tmp_path / "sprint.md").write_text("---\nstatus: roadmap\n---\n# Test")
+
+        result_text = json.dumps({
+            "status": "success",
+            "summary": "Planned sprint",
+            "sprint_file": "sprint.md",
+        })
+        validation = validate_return(contract, "roadmap", result_text, str(tmp_path))
+        assert validation["status"] == "valid"
+
+    def test_validate_return_uses_detail_schema(self, tmp_path):
+        """validate_return with mode='detail' uses detail return schema."""
+        from claude_agent_skills.contracts import load_contract, validate_return
+        contract = load_contract("sprint-planner")
+
+        # Create required files
+        (tmp_path / "sprint.md").write_text("---\nstatus: planning_docs\n---\n# Test")
+        (tmp_path / "usecases.md").write_text("# Use cases")
+        (tmp_path / "architecture-update.md").write_text(
+            "---\nstatus: draft\n---\n# Arch"
+        )
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        (tickets_dir / "001.md").write_text(
+            "---\nstatus: pending\nid: '001'\n---\n# Ticket"
+        )
+
+        result_text = json.dumps({
+            "status": "success",
+            "summary": "Full plan",
+            "files_created": ["sprint.md", "usecases.md"],
+            "ticket_ids": ["001"],
+            "architecture_review": "passed",
+        })
+        validation = validate_return(contract, "detail", result_text, str(tmp_path))
+        assert validation["status"] == "valid"
+
+    def test_validate_return_roadmap_rejects_missing_field(self, tmp_path):
+        """validate_return with mode='roadmap' rejects result missing sprint_file."""
+        from claude_agent_skills.contracts import load_contract, validate_return
+        contract = load_contract("sprint-planner")
+
+        (tmp_path / "sprint.md").write_text("---\nstatus: roadmap\n---\n# Test")
+
+        result_text = json.dumps({
+            "status": "success",
+            "summary": "Planned sprint",
+            # missing sprint_file
+        })
+        validation = validate_return(contract, "roadmap", result_text, str(tmp_path))
+        assert validation["status"] == "invalid"
+        assert any("sprint_file" in e for e in validation["errors"])
+
+    def test_validate_return_detail_reports_missing_files(self, tmp_path):
+        """validate_return with mode='detail' reports missing output files."""
+        from claude_agent_skills.contracts import load_contract, validate_return
+        contract = load_contract("sprint-planner")
+
+        # Only create sprint.md, not the others
+        (tmp_path / "sprint.md").write_text("---\nstatus: planning_docs\n---\n# Test")
+
+        result_text = json.dumps({
+            "status": "success",
+            "summary": "Full plan",
+            "files_created": ["sprint.md"],
+            "ticket_ids": ["001"],
+        })
+        validation = validate_return(contract, "detail", result_text, str(tmp_path))
+        assert validation["status"] == "invalid"
+        assert len(validation["missing_files"]) > 0
