@@ -106,6 +106,60 @@ class Agent:
         template = Template(template_path.read_text(encoding="utf-8"))
         return template.render(**params)
 
+    def _build_role_guard_hooks(self) -> dict:
+        """Build SDK hooks dict that blocks dispatchers from writing files.
+
+        Returns a hooks dict suitable for ClaudeAgentOptions.hooks.
+        The hook blocks Edit/Write/MultiEdit for tier 0-1 agents,
+        directing them to dispatch to task workers instead.
+        """
+        from claude_agent_sdk import HookMatcher, PreToolUseHookInput, HookContext
+
+        agent_name = self.name
+
+        async def role_guard_hook(
+            hook_input: PreToolUseHookInput,
+            context: HookContext,
+        ):
+            """Block dispatchers from writing files directly."""
+            from claude_agent_sdk import HookJSONOutput
+
+            # Extract file path from tool input
+            tool_input = hook_input.tool_input or {}
+            file_path = (
+                tool_input.get("file_path")
+                or tool_input.get("path")
+                or tool_input.get("new_path")
+                or ""
+            )
+            if not file_path:
+                return None  # Allow — can't determine path
+
+            # Allow safe list
+            for prefix in [".claude/", "CLAUDE.md", "AGENTS.md"]:
+                if file_path == prefix or file_path.startswith(prefix):
+                    return None  # Allow
+
+            # Block
+            return HookJSONOutput(
+                decision="block",
+                reason=(
+                    f"CLASI ROLE VIOLATION: {agent_name} attempted direct "
+                    f"file write to: {file_path}. "
+                    f"Dispatchers must use dispatch_to_code_monkey or "
+                    f"dispatch_to_architect instead of writing files directly."
+                ),
+            )
+
+        return {
+            "PreToolUse": [
+                HookMatcher(
+                    matcher="Edit|Write|MultiEdit",
+                    hooks=[role_guard_hook],
+                ),
+            ],
+        }
+
     async def dispatch(
         self,
         prompt: str,
@@ -202,6 +256,31 @@ class Agent:
             mcp_json = self._project.mcp_config_path
             mcp_servers_config = str(mcp_json) if mcp_json.exists() else {}
 
+        # Enforcement configuration:
+        #
+        # We do NOT use setting_sources=["project"] because that loads
+        # CLAUDE.md which says "You are the team-lead" — wrong for
+        # subagents. Instead we:
+        #
+        # 1. Pass the agent.md as system_prompt (already done above)
+        # 2. Pass hooks programmatically via the SDK hooks parameter
+        #    so the role guard fires for dispatchers (tier 0-1) but
+        #    allows task workers (tier 2) to write files.
+        # 3. Use acceptEdits so hooks actually fire (bypassPermissions
+        #    skips them entirely).
+
+        env["CLASI_AGENT_TIER"] = str(self.tier)
+        env["CLASI_AGENT_NAME"] = self.name
+
+        # Build hooks: for dispatchers (tier 0-1), add role guard.
+        # Task workers (tier 2) don't need hooks — they write files.
+        sdk_hooks = None
+        if self.tier < 2:
+            try:
+                sdk_hooks = self._build_role_guard_hooks()
+            except Exception:
+                logger.warning("Failed to build role guard hooks for %s", self.name)
+
         options = ClaudeAgentOptions(
             system_prompt=self.definition,
             cwd=work_dir,
@@ -209,7 +288,8 @@ class Agent:
             mcp_servers=mcp_servers_config,
             model=self.model,
             env=env,
-            permission_mode="bypassPermissions",
+            permission_mode="acceptEdits",
+            hooks=sdk_hooks,
             debug_stderr=stderr_file,
         )
 

@@ -1,6 +1,7 @@
 """Tests for claude_agent_skills.hooks.role_guard module."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,14 +19,23 @@ _ROLE_GUARD_SCRIPT = str(
 )
 
 
-def _run_role_guard(tool_input: dict, cwd: str | None = None) -> subprocess.CompletedProcess:
+def _run_role_guard(
+    tool_input: dict, cwd: str | None = None, env: dict | None = None,
+) -> subprocess.CompletedProcess:
     """Run role_guard.py as a subprocess with the given tool input on stdin."""
+    run_env = dict(os.environ)
+    # Clear tier/name from parent env to avoid test pollution
+    run_env.pop("CLASI_AGENT_TIER", None)
+    run_env.pop("CLASI_AGENT_NAME", None)
+    if env:
+        run_env.update(env)
     return subprocess.run(
         [sys.executable, _ROLE_GUARD_SCRIPT],
         input=json.dumps(tool_input),
         capture_output=True,
         text=True,
         cwd=cwd,
+        env=run_env,
     )
 
 
@@ -195,3 +205,65 @@ class TestRoleGuardEdgeCases:
             cwd=str(tmp_path),
         )
         assert result.returncode == 1
+
+
+class TestRoleGuardTierAware:
+    """Tests that role_guard respects CLASI_AGENT_TIER."""
+
+    def test_tier_2_allowed_to_write(self, tmp_path):
+        """Task workers (tier 2) can write files — that's their job."""
+        result = _run_role_guard(
+            {"file_path": "guessing_game/menu.py"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "2", "CLASI_AGENT_NAME": "code-monkey"},
+        )
+        assert result.returncode == 0
+
+    def test_tier_1_blocked_from_writing(self, tmp_path):
+        """Domain controllers (tier 1) must dispatch, not write."""
+        result = _run_role_guard(
+            {"file_path": "guessing_game/menu.py"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "1", "CLASI_AGENT_NAME": "sprint-executor"},
+        )
+        assert result.returncode == 1
+        assert "sprint-executor" in result.stdout
+        assert "dispatch_to_code_monkey" in result.stdout
+
+    def test_tier_0_blocked_from_writing(self, tmp_path):
+        """Main controller (tier 0) must dispatch, not write."""
+        result = _run_role_guard(
+            {"file_path": "src/main.py"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0", "CLASI_AGENT_NAME": "team-lead"},
+        )
+        assert result.returncode == 1
+        assert "team-lead" in result.stdout
+
+    def test_no_tier_defaults_to_blocked(self, tmp_path):
+        """No tier set (interactive session) blocks like team-lead."""
+        result = _run_role_guard(
+            {"file_path": "src/main.py"},
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 1
+
+    def test_tier_2_still_blocked_by_safe_list_only(self, tmp_path):
+        """Tier 2 is allowed to write anything, not just safe list paths."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "2", "CLASI_AGENT_NAME": "architect"},
+        )
+        assert result.returncode == 0
+
+    def test_tier_1_error_message_suggests_dispatch_tools(self, tmp_path):
+        """Tier 1 error message names dispatch_to_* tools, not agent names."""
+        result = _run_role_guard(
+            {"file_path": "guessing_game/game.py"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "1", "CLASI_AGENT_NAME": "sprint-executor"},
+        )
+        assert result.returncode == 1
+        assert "dispatch_to_code_monkey" in result.stdout
+        assert "dispatch_to_architect" in result.stdout

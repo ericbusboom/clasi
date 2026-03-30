@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""CLASI role guard: blocks team-lead from writing files directly.
+"""CLASI role guard: blocks dispatchers from writing files directly.
 
 Fires on PreToolUse for Edit, Write, MultiEdit.
 Reads TOOL_INPUT from stdin as JSON.
+
+Tier-aware enforcement:
+- Tier 2 (task workers: code-monkey, architect, etc.) — ALLOWED to write
+- Tier 1 (domain controllers: sprint-executor, sprint-planner) — BLOCKED
+- Tier 0 (main controller: team-lead) — BLOCKED
+- No tier set (interactive session with CLAUDE.md) — BLOCKED (team-lead)
+
+The agent tier is passed via CLASI_AGENT_TIER environment variable,
+set by Agent.dispatch() in agent.py.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +32,11 @@ def main() -> None:
 
     if not file_path:
         sys.exit(0)  # Can't determine path, allow
+
+    # Task workers (tier 2) are allowed to write files — that's their job
+    agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
+    if agent_tier == "2":
+        sys.exit(0)
 
     # Check OOP bypass
     if Path(".clasi-oop").exists():
@@ -44,18 +59,28 @@ def main() -> None:
         if file_path == prefix or file_path.startswith(prefix):
             sys.exit(0)
 
-    # Block
+    # Block — determine who's violating
+    agent_name = os.environ.get("CLASI_AGENT_NAME", "team-lead")
     print(
-        f"CLASI ROLE VIOLATION: team-lead attempted direct file write to: {file_path}"
+        f"CLASI ROLE VIOLATION: {agent_name} (tier {agent_tier or '0'}) "
+        f"attempted direct file write to: {file_path}"
     )
     print(
-        "The team-lead does not write files. Dispatch to the appropriate subagent:"
+        "Dispatchers do not write files. Dispatch to the appropriate subagent:"
     )
-    print("- sprint-planner for sprint/architecture/ticket artifacts")
-    print("- code-monkey for source code and tests")
-    print("- todo-worker for TODOs")
-    print("- ad-hoc-executor for out-of-process changes")
-    print('Call get_agent_definition("team-lead") to review your delegation map.')
+    if agent_tier == "1":
+        # Domain controller — should dispatch to task workers
+        print("- dispatch_to_code_monkey for source code and tests")
+        print("- dispatch_to_architect for architecture documents")
+        print("- dispatch_to_technical_lead for ticket plans")
+    else:
+        # Team-lead (tier 0 or unknown)
+        print("- sprint-planner for sprint/architecture/ticket artifacts")
+        print("- sprint-executor for ticket execution")
+        print("- code-monkey for source code and tests")
+        print("- todo-worker for TODOs")
+        print("- ad-hoc-executor for out-of-process changes")
+    print(f'Call get_agent_definition("{agent_name}") to review your delegation map.')
     sys.exit(1)
 
 
