@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "clasi": {
-      "command": "clasi",
-      "args": ["mcp"]
+      "command": "/usr/local/bin/uv",
+      "args": ["run", "clasi", "mcp"]
     }
   }
 }

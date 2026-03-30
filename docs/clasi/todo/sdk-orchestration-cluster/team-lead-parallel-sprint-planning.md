@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '001'
+tickets:
+- 001-006
 ---
 
 # Team Lead Should Plan Multiple Sprints in One Pass

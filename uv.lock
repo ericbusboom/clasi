@@ -132,6 +132,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },
+    { name = "jsonschema" },
     { name = "mcp" },
     { name = "pyyaml" },
 ]
@@ -146,6 +147,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
     { name = "jinja2", specifier = ">=3.0" },
+    { name = "jsonschema", specifier = ">=4.0" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },

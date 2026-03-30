@@ -1,6 +1,9 @@
 ---
-status: pending
+status: in-progress
 source: https://github.com/ericbusboom/clasi/issues/11
+sprint: '001'
+tickets:
+- 001-003
 ---
 
 # Absorb Git Close Operations into the `close_sprint` MCP Tool

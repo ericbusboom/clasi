@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '001'
+tickets:
+- 001-001
 ---
 
 # Agent Contracts as Process Description

@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '001'
+tickets:
+- 001-005
 ---
 
 # TODO lifecycle: add in-progress directory and granular completion

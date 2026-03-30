@@ -1,6 +1,9 @@
 ---
-status: pending
+status: in-progress
 source: https://github.com/ericbusboom/clasi/issues/9
+sprint: '001'
+tickets:
+- 001-002
 ---
 
 # SDK based orchestration

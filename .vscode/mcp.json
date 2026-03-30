@@ -2,8 +2,10 @@
 	"servers": {
 		"clasi": {
 			"type": "stdio",
-			"command": "clasi",
+			"command": "/usr/local/bin/uv",
 			"args": [
+				"run",
+				"clasi",
 				"mcp"
 			]
 		}
