@@ -27,10 +27,23 @@ returns:
       description: Summary of what was accomplished or decided
 
 delegates_to:
-  - agent: requirements-narrator
+  - agent: project-manager
+    mode: initiation
     when: >
-      Stakeholder describes project goals or wants requirements
-      captured as an overview document.
+      Stakeholder provides a written specification to process into
+      structured project documents (overview, spec, use cases).
+
+  - agent: project-manager
+    mode: roadmap
+    when: >
+      Assessed TODOs are ready to be grouped into a sprint roadmap.
+      Requires TODO assessments from project-architect.
+
+  - agent: project-architect
+    when: >
+      TODOs need impact assessment against the codebase before
+      roadmap planning. Produces difficulty estimates and dependency
+      analysis.
 
   - agent: todo-worker
     when: >

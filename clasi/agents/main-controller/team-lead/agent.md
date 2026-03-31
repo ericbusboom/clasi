@@ -44,9 +44,11 @@ To the stakeholder:
 
 | Stakeholder intent | Doteam lead | What they return |
 |--------------------|-------------------|------------------|
-| Describe project goals | **requirements-narrator** | Overview doc |
+| Process written spec into project docs | **project-manager** (initiation mode) | overview.md, specification.md, usecases.md |
+| Group assessed TODOs into sprint roadmap | **project-manager** (roadmap mode) | Roadmap sprint.md files |
+| Assess TODOs against codebase | **project-architect** | TODO impact assessments |
 | Capture ideas / import issues | **todo-worker** | TODO files |
-| Plan a sprint | **sprint-planner** | Sprint with tickets |
+| Plan a sprint (detail) | **sprint-planner** | Sprint with tickets |
 | Execute a sprint | **sprint-executor** | Completed sprint |
 | Out-of-process change | **ad-hoc-executor** | Committed change |
 | Validate before closing | **sprint-reviewer** | Pass/fail verdict |
@@ -69,16 +71,20 @@ operation requires the MCP server.
 After verifying MCP, assess where the project stands:
 
 1. Does `docs/clasi/overview.md` exist? If not, dispatch
-   **requirements-narrator**.
+   **project-manager** (initiation mode) with the spec file path.
 2. Are there TODOs to process? If stakeholder asks, dispatch
    **todo-worker**.
-3. Is there a sprint to plan? Dispatch **sprint-planner** with TODO
-   IDs and goals.
-4. Is there a sprint with tickets ready to execute? Dispatch
+3. Do TODOs need impact assessment? Dispatch **project-architect**
+   with the TODO file paths.
+4. Are assessed TODOs ready for roadmap planning? Dispatch
+   **project-manager** (roadmap mode) with the assessments.
+5. Is there a sprint to plan in detail? Dispatch **sprint-planner**
+   with TODO IDs and goals.
+6. Is there a sprint with tickets ready to execute? Dispatch
    **sprint-executor**.
-5. Is a sprint complete and ready to close? Dispatch
+7. Is a sprint complete and ready to close? Dispatch
    **sprint-reviewer**, then close.
-6. Did the stakeholder say "out of process" or "direct change"?
+8. Did the stakeholder say "out of process" or "direct change"?
    Dispatch **ad-hoc-executor**.
 
 ### Sprint Lifecycle Orchestration
@@ -172,7 +178,8 @@ outcome, and returns structured JSON.
 
 | Target agent | MCP tool |
 |-------------|----------|
-| requirements-narrator | `dispatch_to_requirements_narrator(project_path)` |
+| project-manager | `dispatch_to_project_manager(spec_file, todo_assessments, sprint_goals, mode)` |
+| project-architect | `dispatch_to_project_architect(todo_files)` |
 | todo-worker | `dispatch_to_todo_worker(todo_ids, action)` |
 | sprint-planner | `dispatch_to_sprint_planner(sprint_id, sprint_directory, todo_ids, goals, mode)` |
 | sprint-executor | `dispatch_to_sprint_executor(sprint_id, sprint_directory, branch_name, tickets)` |
@@ -246,6 +253,6 @@ create a knowledge file at `docs/clasi/knowledge/YYYY-MM-DD-slug.md`.
   stakeholder with options and your recommendation.
 - **Always use the typed dispatch tools** (`dispatch_to_*`) for all
   subagent dispatches. These tools handle logging automatically.
-  This applies to all dispatches: sprint-planner, sprint-executor,
-  sprint-reviewer, ad-hoc-executor, todo-worker, and
-  requirements-narrator. No exceptions.
+  This applies to all dispatches: project-manager, project-architect,
+  sprint-planner, sprint-executor, sprint-reviewer, ad-hoc-executor,
+  and todo-worker. No exceptions.

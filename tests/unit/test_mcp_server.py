@@ -92,7 +92,6 @@ class TestToolRegistration:
     }
 
     EXPECTED_DISPATCH_TOOLS = {
-        "dispatch_to_requirements_narrator",
         "dispatch_to_todo_worker",
         "dispatch_to_sprint_planner",
         "dispatch_to_sprint_executor",
@@ -125,7 +124,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 52
+        assert len(registered) == 51
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
