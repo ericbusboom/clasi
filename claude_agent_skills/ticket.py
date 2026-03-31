@@ -29,13 +29,17 @@ class Ticket:
 
     @property
     def title(self) -> str:
-        """From frontmatter 'title' field."""
+        """From frontmatter 'title' field. Set once at creation."""
         return self.frontmatter.get("title", "")
 
     @property
     def status(self) -> str:
         """From frontmatter 'status' field."""
         return self.frontmatter.get("status", "todo")
+
+    @status.setter
+    def status(self, value: str) -> None:
+        self._artifact.update_frontmatter(status=value)
 
     @property
     def depends_on(self) -> list[str]:
