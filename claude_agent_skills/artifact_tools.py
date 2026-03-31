@@ -15,55 +15,22 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from claude_agent_skills.frontmatter import read_document, read_frontmatter, write_frontmatter
+from claude_agent_skills.frontmatter import read_document, read_frontmatter
 from claude_agent_skills.mcp_server import server, get_project
 
 logger = logging.getLogger("clasi.artifact")
 from claude_agent_skills.state_db import (
     PHASES as _PHASES,
-    advance_phase as _advance_phase,
-    record_gate as _record_gate,
-    acquire_lock as _acquire_lock,
-    release_lock as _release_lock,
-    get_sprint_state as _get_sprint_state,
-    register_sprint as _register_sprint,
     rename_sprint as _rename_sprint,
-    write_recovery_state as _write_recovery_state,
-    get_recovery_state as _get_recovery_state,
-    clear_recovery_state as _clear_recovery_state,
 )
 from claude_agent_skills.templates import (
     slugify,
     SPRINT_TEMPLATE,
     SPRINT_USECASES_TEMPLATE,
-    SPRINT_ARCHITECTURE_TEMPLATE,
     SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
     OVERVIEW_TEMPLATE,
 )
-
-
-def _plans_dir() -> Path:
-    """Return the docs/clasi/ directory via the Project singleton.
-
-    Prefers docs/clasi/ (current name). Falls back to docs/plans/
-    (legacy name) if it exists and docs/clasi/ does not — and renames
-    it to docs/clasi/ so the migration happens automatically.
-    """
-    project = get_project()
-    clasi = project.clasi_dir
-    if clasi.is_dir():
-        return clasi
-    legacy = project.root / "docs" / "plans"
-    if legacy.is_dir():
-        legacy.rename(clasi)
-        return clasi
-    return clasi
-
-
-def _sprints_dir() -> Path:
-    """Return the docs/clasi/sprints/ directory."""
-    return get_project().sprints_dir
 
 
 def resolve_artifact_path(path: str) -> Path:
@@ -98,24 +65,6 @@ def resolve_artifact_path(path: str) -> Path:
     )
 
 
-def _find_sprint_dir(sprint_id: str) -> Path:
-    """Find a sprint directory by its ID (checks active and done)."""
-    sprints = _sprints_dir()
-    # Check active sprints
-    for d in sorted(sprints.iterdir()) if sprints.exists() else []:
-        if d.is_dir() and d.name.startswith(sprint_id):
-            fm = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
-            if fm.get("id") == sprint_id:
-                return d
-    # Check done sprints
-    done_dir = sprints / "done"
-    for d in sorted(done_dir.iterdir()) if done_dir.exists() else []:
-        if d.is_dir() and d.name.startswith(sprint_id):
-            fm = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
-            if fm.get("id") == sprint_id:
-                return d
-    raise ValueError(f"Sprint '{sprint_id}' not found")
-
 
 def _is_ticket_done(ticket_ref: str) -> bool:
     """Check if a ticket (referenced as 'sprint_id-ticket_id') has status done.
@@ -128,54 +77,13 @@ def _is_ticket_done(ticket_ref: str) -> bool:
         return False
     sprint_id, ticket_id = parts
     try:
-        sprint_dir = _find_sprint_dir(sprint_id)
+        sprint = get_project().get_sprint(sprint_id)
+        ticket = sprint.get_ticket(ticket_id)
+        return ticket.status == "done"
     except ValueError:
         return False
-    tickets_dir = sprint_dir / "tickets"
-    # Check in tickets/ and tickets/done/
-    for search_dir in [tickets_dir, tickets_dir / "done"]:
-        if not search_dir.exists():
-            continue
-        for ticket_file in search_dir.glob("*.md"):
-            fm = read_frontmatter(ticket_file)
-            if fm.get("id") == ticket_id:
-                return fm.get("status") == "done"
-    return False
 
 
-def _next_sprint_id() -> str:
-    """Determine the next sprint number (NNN format)."""
-    sprints = _sprints_dir()
-    max_id = 0
-    for location in [sprints, sprints / "done"]:
-        if not location.exists():
-            continue
-        for d in location.iterdir():
-            if d.is_dir() and (d / "sprint.md").exists():
-                fm = read_frontmatter(d / "sprint.md")
-                try:
-                    num = int(fm.get("id", "0"))
-                    max_id = max(max_id, num)
-                except (ValueError, TypeError):
-                    pass
-    return f"{max_id + 1:03d}"
-
-
-def _next_ticket_id(sprint_dir: Path) -> str:
-    """Determine the next ticket number within a sprint."""
-    tickets_dir = sprint_dir / "tickets"
-    max_id = 0
-    for location in [tickets_dir, tickets_dir / "done"]:
-        if not location.exists():
-            continue
-        for f in location.glob("*.md"):
-            fm = read_frontmatter(f)
-            try:
-                num = int(fm.get("id", "0"))
-                max_id = max(max_id, num)
-            except (ValueError, TypeError):
-                pass
-    return f"{max_id + 1:03d}"
 
 
 # --- Create tools (ticket 008) ---
@@ -187,7 +95,7 @@ def _find_latest_architecture() -> Path | None:
     Looks for the top-level file in docs/clasi/architecture/ (most recent
     version). Returns None if no architecture documents exist.
     """
-    arch_dir = _plans_dir() / "architecture"
+    arch_dir = get_project().clasi_dir / "architecture"
     if not arch_dir.exists():
         return None
 
@@ -211,47 +119,27 @@ def create_sprint(title: str) -> str:
     Args:
         title: The sprint title (e.g., 'MCP Server Implementation')
     """
-    sprint_id = _next_sprint_id()
-    slug = slugify(title)
-    sprint_dir = _sprints_dir() / f"{sprint_id}-{slug}"
-
-    if sprint_dir.exists():
-        raise ValueError(f"Sprint directory already exists: {sprint_dir}")
-
-    sprint_dir.mkdir(parents=True, exist_ok=True)
-    (sprint_dir / "tickets").mkdir()
-    (sprint_dir / "tickets" / "done").mkdir()
-
-    fmt = {"id": sprint_id, "title": title, "slug": slug}
-
-    files = {}
-    for name, template in [
-        ("sprint.md", SPRINT_TEMPLATE),
-        ("usecases.md", SPRINT_USECASES_TEMPLATE),
-    ]:
-        path = sprint_dir / name
-        path.write_text(template.format(**fmt), encoding="utf-8")
-        files[name] = str(path)
-
-    # Architecture: lightweight update template (not a full copy)
-    arch_update_path = sprint_dir / "architecture-update.md"
-    arch_update_path.write_text(
-        SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
-    )
-    files["architecture-update.md"] = str(arch_update_path)
+    project = get_project()
+    sprint = project.create_sprint(title)
 
     # Register sprint in state database (lazy init)
     try:
-        _register_sprint(
-            str(_db_path()), sprint_id, slug, f"sprint/{sprint_id}-{slug}"
+        project.db.register_sprint(
+            sprint.id, sprint.slug, f"sprint/{sprint.id}-{sprint.slug}"
         )
     except Exception:
         pass  # Graceful degradation if DB fails
 
+    files = {
+        "sprint.md": str(sprint.path / "sprint.md"),
+        "usecases.md": str(sprint.path / "usecases.md"),
+        "architecture-update.md": str(sprint.path / "architecture-update.md"),
+    }
+
     return json.dumps({
-        "id": sprint_id,
-        "path": str(sprint_dir),
-        "branch": f"sprint/{sprint_id}-{slug}",
+        "id": sprint.id,
+        "path": str(sprint.path),
+        "branch": f"sprint/{sprint.id}-{sprint.slug}",
         "files": files,
         "phase": "planning-docs",
     }, indent=2)
@@ -262,30 +150,22 @@ def _list_active_sprints() -> list[dict]:
 
     Each entry has keys: id (int), str_id (str), dir (Path), slug (str).
     """
-    sprints = _sprints_dir()
-    if not sprints.exists():
-        return []
-
+    project = get_project()
     results = []
-    for d in sorted(sprints.iterdir()):
-        if not d.is_dir() or d.name == "done":
+    for sprint in project.list_sprints():
+        # Only active (not in done/)
+        if sprint.path.parent.name == "done":
             continue
-        sprint_file = d / "sprint.md"
-        if not sprint_file.exists():
-            continue
-        fm = read_frontmatter(sprint_file)
-        str_id = fm.get("id", "")
+        str_id = sprint.id
         try:
             num_id = int(str_id)
         except (ValueError, TypeError):
             continue
-        # Extract slug: directory name minus the "NNN-" prefix
-        slug = d.name[len(str_id) + 1:] if d.name.startswith(str_id) else d.name
         results.append({
             "id": num_id,
             "str_id": str_id,
-            "dir": d,
-            "slug": slug,
+            "dir": sprint.path,
+            "slug": sprint.slug,
         })
 
     return sorted(results, key=lambda s: s["id"])
@@ -293,11 +173,11 @@ def _list_active_sprints() -> list[dict]:
 
 def _get_sprint_phase_safe(sprint_id: str) -> str | None:
     """Get a sprint's phase from the state DB, or None if unavailable."""
-    db = _db_path()
-    if not db.exists():
+    project = get_project()
+    if not project.db.path.exists():
         return None
     try:
-        state = _get_sprint_state(str(db), sprint_id)
+        state = project.db.get_sprint_state(sprint_id)
         return state["phase"]
     except (ValueError, Exception):
         return None
@@ -316,6 +196,8 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
 
     Returns the new directory path.
     """
+    from claude_agent_skills.artifact import Artifact
+
     # Rename directory
     slug = sprint_dir.name[len(old_id) + 1:] if sprint_dir.name.startswith(old_id) else sprint_dir.name
     new_dir_name = f"{new_id}-{slug}"
@@ -326,10 +208,7 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
     # Update sprint.md frontmatter
     sprint_file = new_dir / "sprint.md"
     if sprint_file.exists():
-        fm = read_frontmatter(sprint_file)
-        fm["id"] = new_id
-        fm["branch"] = f"sprint/{new_id}-{slug}"
-        write_frontmatter(sprint_file, fm)
+        Artifact(sprint_file).update_frontmatter(id=new_id, branch=f"sprint/{new_id}-{slug}")
 
         # Update body references: "Sprint NNN" -> "Sprint MMM"
         content = sprint_file.read_text(encoding="utf-8")
@@ -350,10 +229,10 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
         if not ticket_location.exists():
             continue
         for ticket_file in ticket_location.glob("*.md"):
-            fm = read_frontmatter(ticket_file)
+            artifact = Artifact(ticket_file)
+            fm = artifact.frontmatter
             if fm.get("sprint_id") == old_id:
-                fm["sprint_id"] = new_id
-                write_frontmatter(ticket_file, fm)
+                artifact.update_frontmatter(sprint_id=new_id)
 
     return new_dir
 
@@ -371,8 +250,9 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
         title: The new sprint's title
     """
     # Validate the anchor sprint exists
+    project = get_project()
     try:
-        _find_sprint_dir(after_sprint_id)
+        project.get_sprint(after_sprint_id)
     except ValueError:
         raise ValueError(f"Sprint '{after_sprint_id}' not found")
 
@@ -397,7 +277,6 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     # Renumber existing sprints in reverse order (highest first) to avoid
     # directory name collisions
     renumbered = []
-    db = _db_path()
     for sprint in reversed(to_renumber):
         old_str_id = sprint["str_id"]
         new_num = sprint["id"] + 1
@@ -406,10 +285,10 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
         new_dir = _renumber_sprint_dir(sprint["dir"], old_str_id, new_str_id)
 
         # Update state database if it exists
-        if db.exists():
+        if project.db.path.exists():
             try:
                 _rename_sprint(
-                    str(db), old_str_id, new_str_id,
+                    str(project.db.path), old_str_id, new_str_id,
                     new_branch=f"sprint/{new_dir.name}",
                 )
             except (ValueError, Exception):
@@ -426,8 +305,11 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     renumbered.reverse()
 
     # Now create the new sprint at the insertion point
+    # NOTE: Cannot use project.create_sprint() here because it auto-assigns
+    # the next ID, but we need a specific ID (the insertion point).
+    # TODO: Add Project.create_sprint_with_id() to support insert_sprint.
     slug = slugify(title)
-    sprint_dir = _sprints_dir() / f"{new_id}-{slug}"
+    sprint_dir = project.sprints_dir / f"{new_id}-{slug}"
 
     sprint_dir.mkdir(parents=True, exist_ok=True)
     (sprint_dir / "tickets").mkdir()
@@ -452,9 +334,7 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
 
     # Register in state database
     try:
-        _register_sprint(
-            str(_db_path()), new_id, slug, f"sprint/{new_id}-{slug}"
-        )
+        project.db.register_sprint(new_id, slug, f"sprint/{new_id}-{slug}")
     except Exception:
         pass  # Graceful degradation
 
@@ -474,11 +354,11 @@ def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
     Degrades gracefully: if the DB doesn't exist or the sprint isn't
     registered, the check is skipped (backward compatibility).
     """
-    db = _db_path()
-    if not db.exists():
+    project = get_project()
+    if not project.db.path.exists():
         return
     try:
-        state = _get_sprint_state(str(db), sprint_id)
+        state = project.db.get_sprint_state(sprint_id)
         phase_idx = _PHASES.index(state["phase"])
         ticketing_idx = _PHASES.index("ticketing")
         if phase_idx < ticketing_idx:
@@ -517,64 +397,38 @@ def create_ticket(
               ['idea-a.md', 'idea-b.md'])
     """
     _check_sprint_phase_for_ticketing(sprint_id)
-    sprint_dir = _find_sprint_dir(sprint_id)
-    ticket_id = _next_ticket_id(sprint_dir)
-    slug = slugify(title)
-    tickets_dir = sprint_dir / "tickets"
-    tickets_dir.mkdir(parents=True, exist_ok=True)
+    project = get_project()
+    sprint = project.get_sprint(sprint_id)
 
-    path = tickets_dir / f"{ticket_id}-{slug}.md"
-    if path.exists():
-        raise ValueError(f"Ticket file already exists: {path}")
-
-    content = TICKET_TEMPLATE.format(id=ticket_id, title=title)
-    path.write_text(content, encoding="utf-8")
-
-    # Set the todo field in the ticket frontmatter if provided
+    # Determine todo_arg for Sprint.create_ticket (single string or None)
+    todo_list: list[str] | None = None
+    todo_arg: str | None = None
     if todo is not None:
         todo_list = [todo] if isinstance(todo, str) else list(todo)
-        ticket_fm = read_frontmatter(path)
         if len(todo_list) == 1:
-            ticket_fm["todo"] = todo_list[0]
-        else:
-            ticket_fm["todo"] = todo_list
-        write_frontmatter(path, ticket_fm)
+            todo_arg = todo_list[0]
 
-        # Update each referenced TODO file and move to in-progress/
-        full_ticket_id = f"{sprint_id}-{ticket_id}"
-        todo_directory = _todo_dir()
-        in_progress_dir = todo_directory / "in-progress"
-        in_progress_dir.mkdir(parents=True, exist_ok=True)
+    ticket = sprint.create_ticket(title, todo=todo_arg)
+
+    # If multiple TODOs, set the todo field to a list
+    if todo_list and len(todo_list) > 1:
+        ticket._artifact.update_frontmatter(todo=todo_list)
+
+    # Update each referenced TODO file and move to in-progress
+    if todo_list:
+        full_ticket_id = f"{sprint_id}-{ticket.id}"
         for todo_filename in todo_list:
-            # Check in-progress/ first, then pending (todo/)
-            todo_path_in_progress = in_progress_dir / todo_filename
-            todo_path_pending = todo_directory / todo_filename
-            if todo_path_in_progress.exists():
-                # Already in-progress — just append ticket ID
-                todo_path = todo_path_in_progress
-            elif todo_path_pending.exists():
-                # Pending — move to in-progress/
-                todo_path = todo_path_pending
-            else:
+            try:
+                todo_obj = project.get_todo(todo_filename)
+            except ValueError:
                 continue  # Skip missing TODOs gracefully
-            todo_fm = read_frontmatter(todo_path)
-            todo_fm["status"] = "in-progress"
-            todo_fm["sprint"] = sprint_id
-            # Append ticket ID to the tickets list
-            existing_tickets = todo_fm.get("tickets", [])
-            if isinstance(existing_tickets, str):
-                existing_tickets = [existing_tickets]
-            if full_ticket_id not in existing_tickets:
-                existing_tickets.append(full_ticket_id)
-            todo_fm["tickets"] = existing_tickets
-            write_frontmatter(todo_path, todo_fm)
-            # Move from pending to in-progress/ if not already there
-            if todo_path == todo_path_pending:
-                todo_path.rename(in_progress_dir / todo_filename)
+            todo_obj.move_to_in_progress(sprint_id, full_ticket_id)
+
+    content = TICKET_TEMPLATE.format(id=ticket.id, title=title)
 
     return json.dumps({
-        "id": ticket_id,
-        "path": str(path),
+        "id": ticket.id,
+        "path": str(ticket.path),
         "template_content": content,
     }, indent=2)
 
@@ -589,7 +443,7 @@ def create_overview() -> str:
 
     Returns an error if the file already exists.
     """
-    path = _plans_dir() / "overview.md"
+    path = get_project().clasi_dir / "overview.md"
     if path.exists():
         raise ValueError(f"Overview already exists: {path}")
 
@@ -612,26 +466,14 @@ def list_sprints(status: Optional[str] = None) -> str:
     Returns JSON array of {id, title, status, path, branch}.
     """
     results = []
-    sprints = _sprints_dir()
-
-    for location in [sprints, sprints / "done"]:
-        if not location.exists():
-            continue
-        for d in sorted(location.iterdir()):
-            sprint_file = d / "sprint.md"
-            if not d.is_dir() or not sprint_file.exists():
-                continue
-            fm = read_frontmatter(sprint_file)
-            sprint_status = fm.get("status", "unknown")
-            if status and sprint_status != status:
-                continue
-            results.append({
-                "id": fm.get("id", ""),
-                "title": fm.get("title", ""),
-                "status": sprint_status,
-                "path": str(d),
-                "branch": fm.get("branch", ""),
-            })
+    for s in get_project().list_sprints(status=status):
+        results.append({
+            "id": s.id,
+            "title": s.title,
+            "status": s.status,
+            "path": str(s.path),
+            "branch": s.branch,
+        })
 
     return json.dumps(results, indent=2)
 
@@ -646,45 +488,28 @@ def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) 
 
     Returns JSON array of {id, title, status, sprint_id, path}.
     """
+    project = get_project()
     results = []
-    sprints = _sprints_dir()
 
-    # Collect sprint directories to scan
-    sprint_dirs = []
     if sprint_id:
         try:
-            sprint_dirs.append(_find_sprint_dir(sprint_id))
+            sprints_to_scan = [project.get_sprint(sprint_id)]
         except ValueError:
             return json.dumps([], indent=2)
     else:
-        for location in [sprints, sprints / "done"]:
-            if not location.exists():
-                continue
-            for d in sorted(location.iterdir()):
-                if d.is_dir() and (d / "sprint.md").exists():
-                    sprint_dirs.append(d)
+        sprints_to_scan = project.list_sprints()
 
-    for sprint_dir in sprint_dirs:
-        sprint_fm = read_frontmatter(sprint_dir / "sprint.md")
-        sid = sprint_fm.get("id", "")
-
-        for ticket_location in [sprint_dir / "tickets", sprint_dir / "tickets" / "done"]:
-            if not ticket_location.exists():
+    for sprint in sprints_to_scan:
+        for ticket in sprint.list_tickets(status=status):
+            if not ticket.id:
                 continue
-            for f in sorted(ticket_location.glob("*.md")):
-                fm = read_frontmatter(f)
-                if not fm.get("id"):
-                    continue
-                ticket_status = fm.get("status", "unknown")
-                if status and ticket_status != status:
-                    continue
-                results.append({
-                    "id": fm.get("id", ""),
-                    "title": fm.get("title", ""),
-                    "status": ticket_status,
-                    "sprint_id": sid,
-                    "path": str(f),
-                })
+            results.append({
+                "id": ticket.id,
+                "title": ticket.title,
+                "status": ticket.status,
+                "sprint_id": sprint.id,
+                "path": str(ticket.path),
+            })
 
     return json.dumps(results, indent=2)
 
@@ -698,28 +523,23 @@ def get_sprint_status(sprint_id: str) -> str:
 
     Returns JSON with {id, title, status, branch, tickets: {todo, in_progress, done}}.
     """
-    sprint_dir = _find_sprint_dir(sprint_id)
-    fm = read_frontmatter(sprint_dir / "sprint.md")
+    sprint = get_project().get_sprint(sprint_id)
 
     counts = {"todo": 0, "in_progress": 0, "done": 0}
-    for ticket_location in [sprint_dir / "tickets", sprint_dir / "tickets" / "done"]:
-        if not ticket_location.exists():
+    for ticket in sprint.list_tickets():
+        if not ticket.id:
             continue
-        for f in sorted(ticket_location.glob("*.md")):
-            ticket_fm = read_frontmatter(f)
-            if not ticket_fm.get("id"):
-                continue
-            s = ticket_fm.get("status", "todo")
-            if s == "in-progress":
-                s = "in_progress"
-            if s in counts:
-                counts[s] += 1
+        s = ticket.status
+        if s == "in-progress":
+            s = "in_progress"
+        if s in counts:
+            counts[s] += 1
 
     return json.dumps({
-        "id": fm.get("id", ""),
-        "title": fm.get("title", ""),
-        "status": fm.get("status", ""),
-        "branch": fm.get("branch", ""),
+        "id": sprint.id,
+        "title": sprint.title,
+        "status": sprint.status,
+        "branch": sprint.branch,
         "tickets": counts,
     }, indent=2)
 
@@ -737,6 +557,8 @@ def update_ticket_status(path: str, status: str) -> str:
 
     Returns JSON with {path, old_status, new_status}.
     """
+    from claude_agent_skills.artifact import Artifact
+
     valid_statuses = {"todo", "in-progress", "done"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
@@ -746,10 +568,9 @@ def update_ticket_status(path: str, status: str) -> str:
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    fm = read_frontmatter(ticket_path)
-    old_status = fm.get("status", "unknown")
-    fm["status"] = status
-    write_frontmatter(ticket_path, fm)
+    artifact = Artifact(ticket_path)
+    old_status = artifact.frontmatter.get("status", "unknown")
+    artifact.update_frontmatter(status=status)
 
     return json.dumps({
         "path": str(ticket_path),
@@ -767,63 +588,65 @@ def move_ticket_to_done(path: str) -> str:
 
     Returns JSON with {old_path, new_path}.
     """
+    from claude_agent_skills.ticket import Ticket
+    from claude_agent_skills.sprint import Sprint
+
     try:
         ticket_path = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    # If resolved to done/, the parent is already the done dir — go up one more
+    old_path = ticket_path
+
+    # Determine the tickets_dir (go up from done/ if already there)
     tickets_dir = ticket_path.parent
     if tickets_dir.name == "done":
         tickets_dir = tickets_dir.parent
-    done_dir = tickets_dir / "done"
-    done_dir.mkdir(parents=True, exist_ok=True)
+    sprint_dir = tickets_dir.parent
 
-    new_path = done_dir / ticket_path.name
-    ticket_path.rename(new_path)
+    # Create domain objects
+    project = get_project()
+    sprint = Sprint(sprint_dir, project)
+    ticket = Ticket(ticket_path, sprint)
 
-    result = {"old_path": str(ticket_path), "new_path": str(new_path)}
+    # Move the ticket
+    new_path = ticket.move_to_done()
+
+    result: dict = {"old_path": str(old_path), "new_path": str(new_path)}
 
     # Also move the plan file if it exists
-    plan_name = ticket_path.stem + "-plan.md"
+    plan_name = old_path.stem + "-plan.md"
     plan_path = tickets_dir / plan_name
     if plan_path.exists():
+        done_dir = tickets_dir / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
         new_plan_path = done_dir / plan_name
         plan_path.rename(new_plan_path)
         result["plan_old_path"] = str(plan_path)
         result["plan_new_path"] = str(new_plan_path)
 
     # Check if this ticket references any TODOs and trigger completion
-    ticket_fm = read_frontmatter(new_path)
-    todo_refs = ticket_fm.get("todo")
+    todo_refs = ticket.todo_ref
     if todo_refs is not None:
-        if isinstance(todo_refs, str):
-            todo_refs = [todo_refs]
-        todo_directory = _todo_dir()
-        in_progress_dir = todo_directory / "in-progress"
+        todo_list = [todo_refs] if isinstance(todo_refs, str) else list(todo_refs)
         completed_todos: list[str] = []
-        for todo_filename in todo_refs:
-            todo_path = in_progress_dir / todo_filename
-            if not todo_path.exists():
+        for todo_filename in todo_list:
+            try:
+                todo = project.get_todo(todo_filename)
+            except ValueError:
                 continue
-            todo_fm = read_frontmatter(todo_path)
-            ref_tickets = todo_fm.get("tickets", [])
-            if isinstance(ref_tickets, str):
-                ref_tickets = [ref_tickets]
+            # Only process in-progress TODOs
+            if todo.status != "in-progress":
+                continue
+            ref_tickets = todo.tickets
             # Check if ALL referencing tickets are done
             all_done = True
             for ref_ticket_id in ref_tickets:
-                # ref_ticket_id is like "001-003" — find the ticket file
                 if not _is_ticket_done(ref_ticket_id):
                     all_done = False
                     break
             if all_done and ref_tickets:
-                # Move TODO from in-progress/ to done/
-                todo_fm["status"] = "done"
-                write_frontmatter(todo_path, todo_fm)
-                todo_done_dir = todo_directory / "done"
-                todo_done_dir.mkdir(parents=True, exist_ok=True)
-                todo_path.rename(todo_done_dir / todo_filename)
+                todo.move_to_done()
                 completed_todos.append(todo_filename)
         if completed_todos:
             result["completed_todos"] = completed_todos
@@ -847,13 +670,15 @@ def reopen_ticket(path: str) -> str:
 
     Returns JSON with {old_path, new_path, old_status, new_status}.
     """
+    from claude_agent_skills.artifact import Artifact
+
     try:
         ticket_path = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    fm = read_frontmatter(ticket_path)
-    old_status = fm.get("status", "unknown")
+    artifact = Artifact(ticket_path)
+    old_status = artifact.frontmatter.get("status", "unknown")
 
     # Determine if ticket is in a done/ directory
     in_done = ticket_path.parent.name == "done"
@@ -867,7 +692,7 @@ def reopen_ticket(path: str) -> str:
         # Also move plan file if it exists in done/
         plan_name = ticket_path.stem + "-plan.md"
         plan_path = ticket_path.parent / plan_name
-        result = {"old_path": str(ticket_path), "new_path": str(new_path)}
+        result: dict = {"old_path": str(ticket_path), "new_path": str(new_path)}
         if plan_path.exists():
             new_plan_path = tickets_dir / plan_name
             plan_path.rename(new_plan_path)
@@ -875,13 +700,11 @@ def reopen_ticket(path: str) -> str:
             result["plan_new_path"] = str(new_plan_path)
 
         # Update frontmatter on the moved file
-        fm["status"] = "todo"
-        write_frontmatter(new_path, fm)
+        Artifact(new_path).update_frontmatter(status="todo")
     else:
         # Ticket exists but not in done/ — just reset status
         new_path = ticket_path
-        fm["status"] = "todo"
-        write_frontmatter(ticket_path, fm)
+        artifact.update_frontmatter(status="todo")
         result = {"old_path": str(ticket_path), "new_path": str(new_path)}
 
     result["old_status"] = old_status
@@ -925,29 +748,26 @@ def close_sprint(
 
 def _close_sprint_legacy(sprint_id: str) -> str:
     """Original close_sprint behavior: archive + state, no git."""
-    sprint_dir = _find_sprint_dir(sprint_id)
+    from claude_agent_skills.todo import Todo
+
+    project = get_project()
+    sprint = project.get_sprint(sprint_id)
+    sprint_dir = sprint.path
 
     # Update sprint status to done
-    sprint_file = sprint_dir / "sprint.md"
-    fm = read_frontmatter(sprint_file)
-    fm["status"] = "done"
-    write_frontmatter(sprint_file, fm)
+    sprint.sprint_doc.update_frontmatter(status="done")
 
     # Check in-progress TODOs — they should already be resolved individually
     unresolved_todos: list[str] = []
-    todo_directory = _todo_dir()
+    todo_directory = project.todo_dir
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            todo_fm = read_frontmatter(todo_file)
-            if todo_fm.get("sprint") == sprint_id:
-                if todo_fm.get("status") in ("done", "complete", "completed"):
+            todo = Todo(todo_file, project)
+            if todo.sprint == sprint_id:
+                if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
-                    todo_fm["status"] = "done"
-                    write_frontmatter(todo_file, todo_fm)
-                    todo_done = todo_directory / "done"
-                    todo_done.mkdir(parents=True, exist_ok=True)
-                    todo_file.rename(todo_done / todo_file.name)
+                    todo.move_to_done()
                 else:
                     unresolved_todos.append(todo_file.name)
 
@@ -955,27 +775,22 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     moved_todos: list[str] = []
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
-            todo_fm = read_frontmatter(todo_file)
-            if todo_fm.get("sprint") == sprint_id:
-                if todo_fm.get("status") in ("done", "complete", "completed"):
-                    todo_fm["status"] = "done"
-                    write_frontmatter(todo_file, todo_fm)
-                    todo_done = todo_directory / "done"
-                    todo_done.mkdir(parents=True, exist_ok=True)
-                    dest_todo = todo_done / todo_file.name
-                    todo_file.rename(dest_todo)
+            todo = Todo(todo_file, project)
+            if todo.sprint == sprint_id:
+                if todo.status in ("done", "complete", "completed"):
+                    todo.move_to_done()
                     moved_todos.append(todo_file.name)
 
     # Copy architecture-update to the architecture directory
     arch_update = sprint_dir / "architecture-update.md"
     if arch_update.exists():
-        arch_dir = _plans_dir() / "architecture"
+        arch_dir = project.clasi_dir / "architecture"
         arch_dir.mkdir(parents=True, exist_ok=True)
         dest = arch_dir / f"architecture-update-{sprint_id}.md"
         shutil.copy2(str(arch_update), str(dest))
 
     # Move to done directory
-    done_dir = _sprints_dir() / "done"
+    done_dir = project.sprints_dir / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
     new_path = done_dir / sprint_dir.name
 
@@ -985,18 +800,18 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     shutil.move(str(sprint_dir), str(new_path))
 
     # Update state database: advance to done and release lock
-    db = _db_path()
-    if db.exists():
+    db = project.db
+    if db.path.exists():
         try:
-            state = _get_sprint_state(str(db), sprint_id)
+            state = db.get_sprint_state(sprint_id)
             from claude_agent_skills.state_db import PHASES
             phase_idx = PHASES.index(state["phase"])
             done_idx = PHASES.index("done")
             while phase_idx < done_idx:
-                _advance_phase(str(db), sprint_id)
+                db.advance_phase(sprint_id)
                 phase_idx += 1
             if state["lock"]:
-                _release_lock(str(db), sprint_id)
+                db.release_lock(sprint_id)
         except (ValueError, Exception):
             pass  # Graceful degradation
 
@@ -1014,7 +829,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
             version = compute_next_version()
-            detected = detect_version_file(get_project().root)
+            detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
             create_version_tag(version)
@@ -1045,8 +860,12 @@ def _close_sprint_full(
     delete_branch_flag: bool,
 ) -> str:
     """Full lifecycle close: preconditions, tests, archive, git ops."""
-    db = _db_path()
-    db_str = str(db)
+    from claude_agent_skills.sprint import Sprint
+    from claude_agent_skills.ticket import Ticket
+    from claude_agent_skills.todo import Todo
+
+    project = get_project()
+    db = project.db
     completed_steps: list[str] = []
     repairs: list[str] = []
 
@@ -1054,29 +873,20 @@ def _close_sprint_full(
 
     # 1a. Check tickets — all should be in tickets/done/ with status done
     try:
-        sprint_dir = _find_sprint_dir(sprint_id)
+        sprint = project.get_sprint(sprint_id)
+        sprint_dir = sprint.path
     except ValueError:
         # Sprint dir might already be archived (idempotent retry)
-        done_dir = _sprints_dir() / "done"
-        sprint_dir_in_done = None
-        if done_dir.exists():
-            for d in sorted(done_dir.iterdir()):
-                if d.is_dir() and d.name.startswith(sprint_id):
-                    fm_check = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
-                    if fm_check.get("id") == sprint_id:
-                        sprint_dir_in_done = d
-                        break
-        if sprint_dir_in_done is None:
-            return json.dumps({
-                "status": "error",
-                "error": {
-                    "step": "precondition",
-                    "message": f"Sprint '{sprint_id}' not found in active or done",
-                    "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
-                },
-                "completed_steps": [],
-                "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
-            }, indent=2)
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "step": "precondition",
+                "message": f"Sprint '{sprint_id}' not found in active or done",
+                "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
+            },
+            "completed_steps": [],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+        }, indent=2)
 
     tickets_dir = sprint_dir / "tickets"
     done_tickets_dir = tickets_dir / "done"
@@ -1084,23 +894,22 @@ def _close_sprint_full(
         for ticket_file in sorted(tickets_dir.glob("*.md")):
             if ticket_file.name == "done":
                 continue
-            t_fm = read_frontmatter(ticket_file)
-            if t_fm.get("status") == "done":
+            ticket = Ticket(ticket_file, sprint)
+            if ticket.status == "done":
                 # Self-repair: move to done/
-                done_tickets_dir.mkdir(parents=True, exist_ok=True)
-                dest = done_tickets_dir / ticket_file.name
-                ticket_file.rename(dest)
+                ticket.move_to_done()
                 # Also move plan file if exists
                 plan_file = ticket_file.with_suffix("").with_name(ticket_file.stem + "-plan.md")
                 if plan_file.exists():
+                    done_tickets_dir.mkdir(parents=True, exist_ok=True)
                     plan_file.rename(done_tickets_dir / plan_file.name)
-                repairs.append(f"moved ticket {t_fm.get('id', ticket_file.stem)} to done/")
-            elif t_fm.get("status") != "done":
+                repairs.append(f"moved ticket {ticket.id or ticket_file.stem} to done/")
+            else:
                 # Ticket not done — unrepairable
-                error_msg = f"Ticket {t_fm.get('id', ticket_file.stem)} has status '{t_fm.get('status')}', not 'done'"
-                if db.exists():
-                    _write_recovery_state(
-                        db_str, sprint_id, "precondition",
+                error_msg = f"Ticket {ticket.id or ticket_file.stem} has status '{ticket.status}', not 'done'"
+                if db.path.exists():
+                    db.write_recovery_state(
+                        sprint_id, "precondition",
                         [str(ticket_file)], error_msg,
                     )
                 return json.dumps({
@@ -1109,9 +918,9 @@ def _close_sprint_full(
                         "step": "precondition",
                         "message": error_msg,
                         "recovery": {
-                            "recorded": db.exists(),
+                            "recorded": db.path.exists(),
                             "allowed_paths": [str(ticket_file)],
-                            "instruction": f"Complete ticket {t_fm.get('id', ticket_file.stem)} and set status to 'done', then call close_sprint again.",
+                            "instruction": f"Complete ticket {ticket.id or ticket_file.stem} and set status to 'done', then call close_sprint again.",
                         },
                     },
                     "completed_steps": [],
@@ -1119,26 +928,22 @@ def _close_sprint_full(
                 }, indent=2)
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved
-    todo_directory = _todo_dir()
+    todo_directory = project.todo_dir
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            t_fm = read_frontmatter(todo_file)
-            if t_fm.get("sprint") == sprint_id:
-                if t_fm.get("status") in ("done", "complete", "completed"):
+            todo = Todo(todo_file, project)
+            if todo.sprint == sprint_id:
+                if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
-                    t_fm["status"] = "done"
-                    write_frontmatter(todo_file, t_fm)
-                    todo_done = todo_directory / "done"
-                    todo_done.mkdir(parents=True, exist_ok=True)
-                    todo_file.rename(todo_done / todo_file.name)
+                    todo.move_to_done()
                     repairs.append(f"moved TODO {todo_file.name} to done/")
                 else:
                     # TODO still in-progress — unrepairable
                     error_msg = f"TODO {todo_file.name} is still in-progress for sprint {sprint_id}"
-                    if db.exists():
-                        _write_recovery_state(
-                            db_str, sprint_id, "precondition",
+                    if db.path.exists():
+                        db.write_recovery_state(
+                            sprint_id, "precondition",
                             [str(todo_file)], error_msg,
                         )
                     return json.dumps({
@@ -1147,7 +952,7 @@ def _close_sprint_full(
                             "step": "precondition",
                             "message": error_msg,
                             "recovery": {
-                                "recorded": db.exists(),
+                                "recorded": db.path.exists(),
                                 "allowed_paths": [str(todo_file)],
                                 "instruction": f"Complete all tickets referencing {todo_file.name}, then call close_sprint again.",
                             },
@@ -1158,21 +963,17 @@ def _close_sprint_full(
     # Also check pending TODOs in todo/ that are tagged with this sprint (legacy)
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
-            t_fm = read_frontmatter(todo_file)
-            if t_fm.get("sprint") == sprint_id:
-                if t_fm.get("status") in ("done", "complete", "completed"):
+            todo = Todo(todo_file, project)
+            if todo.sprint == sprint_id:
+                if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
-                    t_fm["status"] = "done"
-                    write_frontmatter(todo_file, t_fm)
-                    todo_done = todo_directory / "done"
-                    todo_done.mkdir(parents=True, exist_ok=True)
-                    todo_file.rename(todo_done / todo_file.name)
+                    todo.move_to_done()
                     repairs.append(f"moved TODO {todo_file.name} to done/")
 
     # 1c. Check state DB phase — self-repair: advance if behind
-    if db.exists():
+    if db.path.exists():
         try:
-            state = _get_sprint_state(db_str, sprint_id)
+            state = db.get_sprint_state(sprint_id)
             phase = state["phase"]
             if phase != "done":
                 phase_idx = _PHASES.index(phase)
@@ -1180,7 +981,7 @@ def _close_sprint_full(
                 closing_idx = _PHASES.index("closing")
                 while phase_idx < closing_idx:
                     try:
-                        _advance_phase(db_str, sprint_id)
+                        db.advance_phase(sprint_id)
                         phase_idx += 1
                         repairs.append(f"advanced DB phase to '{_PHASES[phase_idx]}'")
                     except ValueError:
@@ -1190,12 +991,12 @@ def _close_sprint_full(
             pass  # Sprint not in DB — skip DB checks
 
     # 1d. Check execution lock — self-repair: re-acquire if not held
-    if db.exists():
+    if db.path.exists():
         try:
-            state = _get_sprint_state(db_str, sprint_id)
+            state = db.get_sprint_state(sprint_id)
             if not state["lock"]:
                 try:
-                    _acquire_lock(db_str, sprint_id)
+                    db.acquire_lock(sprint_id)
                     repairs.append("re-acquired execution lock")
                 except ValueError:
                     pass  # Another sprint holds it — continue anyway
@@ -1219,9 +1020,9 @@ def _close_sprint_full(
             test_output = test_result.stdout[-2000:] if test_result.stdout else ""
             if test_result.stderr:
                 test_output += "\n" + test_result.stderr[-500:]
-            if db.exists():
-                _write_recovery_state(
-                    db_str, sprint_id, "tests", [], error_msg,
+            if db.path.exists():
+                db.write_recovery_state(
+                    sprint_id, "tests", [], error_msg,
                 )
             return json.dumps({
                 "status": "error",
@@ -1230,7 +1031,7 @@ def _close_sprint_full(
                     "message": error_msg,
                     "output": test_output.strip(),
                     "recovery": {
-                        "recorded": db.exists(),
+                        "recorded": db.path.exists(),
                         "allowed_paths": [],
                         "instruction": "Fix failing tests, then call close_sprint again.",
                     },
@@ -1243,15 +1044,15 @@ def _close_sprint_full(
         repairs.append("skipped tests (uv not found)")
     except subprocess.TimeoutExpired:
         error_msg = "Test suite timed out after 300 seconds"
-        if db.exists():
-            _write_recovery_state(db_str, sprint_id, "tests", [], error_msg)
+        if db.path.exists():
+            db.write_recovery_state(sprint_id, "tests", [], error_msg)
         return json.dumps({
             "status": "error",
             "error": {
                 "step": "tests",
                 "message": error_msg,
                 "recovery": {
-                    "recorded": db.exists(),
+                    "recorded": db.path.exists(),
                     "allowed_paths": [],
                     "instruction": "Investigate slow tests, then call close_sprint again.",
                 },
@@ -1263,27 +1064,15 @@ def _close_sprint_full(
     completed_steps.append("tests")
 
     # ── Step 3: Archive sprint directory ──
-    done_dir = _sprints_dir() / "done"
-    already_archived = False
+    done_dir = project.sprints_dir / "done"
+    already_archived = sprint_dir.parent.name == "done"
 
-    # Check if already archived (idempotent)
-    if done_dir.exists():
-        for d in sorted(done_dir.iterdir()):
-            if d.is_dir() and d.name.startswith(sprint_id):
-                fm_check = read_frontmatter(d / "sprint.md") if (d / "sprint.md").exists() else {}
-                if fm_check.get("id") == sprint_id:
-                    already_archived = True
-                    new_path = d
-                    # sprint_dir might still point to active — update
-                    sprint_dir = d
-                    break
-
-    if not already_archived:
+    if already_archived:
+        new_path = sprint_dir
+        old_path_str = str(new_path)
+    else:
         # Update sprint status to done
-        sprint_file = sprint_dir / "sprint.md"
-        fm = read_frontmatter(sprint_file)
-        fm["status"] = "done"
-        write_frontmatter(sprint_file, fm)
+        sprint.sprint_doc.update_frontmatter(status="done")
 
         # NOTE: TODOs are not bulk-moved at sprint close.
         # They are moved individually by move_ticket_to_done when all
@@ -1293,7 +1082,7 @@ def _close_sprint_full(
         # Copy architecture-update
         arch_update = sprint_dir / "architecture-update.md"
         if arch_update.exists():
-            arch_dir = _plans_dir() / "architecture"
+            arch_dir = project.clasi_dir / "architecture"
             arch_dir.mkdir(parents=True, exist_ok=True)
             dest = arch_dir / f"architecture-update-{sprint_id}.md"
             shutil.copy2(str(arch_update), str(dest))
@@ -1307,27 +1096,25 @@ def _close_sprint_full(
 
         old_path_str = str(sprint_dir)
         shutil.move(str(sprint_dir), str(new_path))
-    else:
-        old_path_str = str(new_path)
 
     completed_steps.append("archive")
 
     # ── Step 4: Update state DB ──
-    if db.exists():
+    if db.path.exists():
         try:
-            state = _get_sprint_state(db_str, sprint_id)
+            state = db.get_sprint_state(sprint_id)
             if state["phase"] != "done":
                 phase_idx = _PHASES.index(state["phase"])
                 done_idx = _PHASES.index("done")
                 while phase_idx < done_idx:
                     try:
-                        _advance_phase(db_str, sprint_id)
+                        db.advance_phase(sprint_id)
                     except ValueError:
                         break
                     phase_idx += 1
             if state["lock"]:
                 try:
-                    _release_lock(db_str, sprint_id)
+                    db.release_lock(sprint_id)
                 except ValueError:
                     pass
         except (ValueError, Exception):
@@ -1349,7 +1136,7 @@ def _close_sprint_full(
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
             version = compute_next_version()
-            detected = detect_version_file(get_project().root)
+            detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
             create_version_tag(version)
@@ -1387,15 +1174,15 @@ def _close_sprint_full(
             )
             if checkout.returncode != 0:
                 error_msg = f"Failed to checkout {main_branch}: {checkout.stderr.strip()}"
-                if db.exists():
-                    _write_recovery_state(db_str, sprint_id, "merge", [], error_msg)
+                if db.path.exists():
+                    db.write_recovery_state(sprint_id, "merge", [], error_msg)
                 return json.dumps({
                     "status": "error",
                     "error": {
                         "step": "merge",
                         "message": error_msg,
                         "recovery": {
-                            "recorded": db.exists(),
+                            "recorded": db.path.exists(),
                             "allowed_paths": [],
                             "instruction": f"Resolve checkout issues, then call close_sprint again.",
                         },
@@ -1418,15 +1205,15 @@ def _close_sprint_full(
                 # Abort the failed merge
                 subprocess.run(["git", "merge", "--abort"], capture_output=True)
                 error_msg = f"Merge conflict: {merge.stderr.strip()}"
-                if db.exists():
-                    _write_recovery_state(db_str, sprint_id, "merge", conflicted, error_msg)
+                if db.path.exists():
+                    db.write_recovery_state(sprint_id, "merge", conflicted, error_msg)
                 return json.dumps({
                     "status": "error",
                     "error": {
                         "step": "merge",
                         "message": error_msg,
                         "recovery": {
-                            "recorded": db.exists(),
+                            "recorded": db.path.exists(),
                             "allowed_paths": conflicted,
                             "instruction": "Resolve the merge conflicts in the listed files, then call close_sprint again.",
                         },
@@ -1462,9 +1249,9 @@ def _close_sprint_full(
     completed_steps.append("delete_branch")
 
     # ── Step 9: Clear recovery state ──
-    if db.exists():
+    if db.path.exists():
         try:
-            _clear_recovery_state(db_str)
+            db.clear_recovery_state()
         except Exception:
             pass
 
@@ -1503,19 +1290,15 @@ def clear_sprint_recovery(sprint_id: str) -> str:
 
     Returns JSON with {cleared: true/false}.
     """
-    db = _db_path()
-    if not db.exists():
+    project = get_project()
+    if not project.db.path.exists():
         return json.dumps({"cleared": False, "reason": "No state database found"}, indent=2)
-    result = _clear_recovery_state(str(db))
+    result = project.db.clear_recovery_state()
     return json.dumps(result, indent=2)
 
 
 # --- State management tools (ticket 005) ---
 
-
-def _db_path() -> Path:
-    """Return the default state database path."""
-    return get_project().db.path
 
 
 @server.tool()
@@ -1528,7 +1311,7 @@ def get_sprint_phase(sprint_id: str) -> str:
     Returns JSON with {id, phase, gates, lock}.
     """
     try:
-        state = _get_sprint_state(str(_db_path()), sprint_id)
+        state = get_project().db.get_sprint_state(sprint_id)
         return json.dumps(state, indent=2)
     except ValueError as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -1547,7 +1330,8 @@ def advance_sprint_phase(sprint_id: str) -> str:
     Returns JSON with {sprint_id, old_phase, new_phase}.
     """
     try:
-        result = _advance_phase(str(_db_path()), sprint_id)
+        sprint = get_project().get_sprint(sprint_id)
+        result = sprint.advance_phase()
         return json.dumps(result, indent=2)
     except ValueError as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -1571,7 +1355,8 @@ def record_gate_result(
     Returns JSON with {sprint_id, gate_name, result, recorded_at}.
     """
     try:
-        gate_result = _record_gate(str(_db_path()), sprint_id, gate, result, notes)
+        sprint = get_project().get_sprint(sprint_id)
+        gate_result = sprint.record_gate(gate, result, notes)
         return json.dumps(gate_result, indent=2)
     except ValueError as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -1597,12 +1382,14 @@ def acquire_execution_lock(sprint_id: str) -> str:
     Returns JSON with {sprint_id, acquired_at, reentrant, branch}.
     """
     try:
-        lock = _acquire_lock(str(_db_path()), sprint_id)
+        project = get_project()
+        sprint = project.get_sprint(sprint_id)
+        lock = sprint.acquire_lock()
 
         # Late branching: create the sprint branch when acquiring
         # the execution lock (not during planning).
         if not lock.get("reentrant"):
-            state = _get_sprint_state(str(_db_path()), sprint_id)
+            state = project.db.get_sprint_state(sprint_id)
             slug = state.get("slug", "")
             branch_name = f"sprint/{sprint_id}-{slug}" if slug else f"sprint/{sprint_id}"
             branch_result = subprocess.run(
@@ -1629,7 +1416,7 @@ def acquire_execution_lock(sprint_id: str) -> str:
             lock["branch"] = branch_name
         else:
             # Re-entrant: look up existing branch
-            state = _get_sprint_state(str(_db_path()), sprint_id)
+            state = project.db.get_sprint_state(sprint_id)
             lock["branch"] = state.get("branch", "")
 
         return json.dumps(lock, indent=2)
@@ -1647,7 +1434,8 @@ def release_execution_lock(sprint_id: str) -> str:
     Returns JSON with {sprint_id, released}.
     """
     try:
-        result = _release_lock(str(_db_path()), sprint_id)
+        sprint = get_project().get_sprint(sprint_id)
+        result = sprint.release_lock()
         return json.dumps(result, indent=2)
     except ValueError as e:
         return json.dumps({"error": str(e)}, indent=2)
@@ -1655,10 +1443,6 @@ def release_execution_lock(sprint_id: str) -> str:
 
 # --- TODO management tools ---
 
-
-def _todo_dir() -> Path:
-    """Return the docs/clasi/todo/ directory."""
-    return get_project().todo_dir
 
 
 @server.tool()
@@ -1671,36 +1455,18 @@ def list_todos() -> str:
     Returns JSON array of {filename, title, status, sprint, tickets}.
     The sprint and tickets fields are present only for in-progress TODOs.
     """
-    todo = _todo_dir()
+    project = get_project()
     results = []
 
-    def _scan_todo_files(directory: Path) -> None:
-        if not directory.exists():
-            return
-        for f in sorted(directory.glob("*.md")):
-            title = f.stem
-            # Extract title from first # heading
-            for line in f.read_text(encoding="utf-8").splitlines():
-                if line.startswith("# "):
-                    title = line[2:].strip()
-                    break
-            fm = read_frontmatter(f)
-            entry: dict = {"filename": f.name, "title": title}
-            status = fm.get("status", "pending")
-            entry["status"] = status
-            if status == "in-progress":
-                sprint = fm.get("sprint")
-                if sprint:
-                    entry["sprint"] = sprint
-                tickets = fm.get("tickets")
-                if tickets:
-                    entry["tickets"] = tickets
-            results.append(entry)
-
-    # Scan pending TODOs (top-level todo/)
-    _scan_todo_files(todo)
-    # Scan in-progress TODOs
-    _scan_todo_files(todo / "in-progress")
+    for todo in project.list_todos():
+        entry: dict = {"filename": todo.path.name, "title": todo.title}
+        entry["status"] = todo.status
+        if todo.status == "in-progress":
+            if todo.sprint:
+                entry["sprint"] = todo.sprint
+            if todo.tickets:
+                entry["tickets"] = todo.tickets
+        results.append(entry)
 
     return json.dumps(results, indent=2)
 
@@ -1720,33 +1486,24 @@ def move_todo_to_done(
 
     Returns JSON with {old_path, new_path}.
     """
-    todo = _todo_dir()
-    src = todo / filename
-    # Also check in-progress/ directory
-    if not src.exists():
-        src_in_progress = todo / "in-progress" / filename
-        if src_in_progress.exists():
-            src = src_in_progress
-        else:
-            raise ValueError(f"TODO not found: {filename}")
+    project = get_project()
+    try:
+        todo = project.get_todo(filename)
+    except ValueError:
+        raise ValueError(f"TODO not found: {filename}")
+    old_path = todo.path
 
     # Write traceability frontmatter before moving
-    fm = read_frontmatter(src)
-    fm["status"] = "done"
     if sprint_id is not None:
-        fm["sprint"] = sprint_id
+        todo._artifact.update_frontmatter(sprint=sprint_id)
     if ticket_ids is not None:
-        fm["tickets"] = ticket_ids
-    write_frontmatter(src, fm)
+        todo._artifact.update_frontmatter(tickets=ticket_ids)
 
-    done = todo / "done"
-    done.mkdir(parents=True, exist_ok=True)
-    dst = done / filename
-    src.rename(dst)
+    todo.move_to_done()
 
     return json.dumps({
-        "old_path": str(src),
-        "new_path": str(dst),
+        "old_path": str(old_path),
+        "new_path": str(todo.path),
     }, indent=2)
 
 
@@ -2059,12 +1816,14 @@ def read_artifact_frontmatter(path: str) -> str:
 
     Returns JSON dict of frontmatter fields.
     """
+    from claude_agent_skills.artifact import Artifact
+
     try:
         resolved = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"File not found: {path}")
 
-    fm = read_frontmatter(resolved)
+    fm = Artifact(resolved).frontmatter
     return json.dumps(fm, indent=2)
 
 
@@ -2081,6 +1840,8 @@ def write_artifact_frontmatter(path: str, updates: str) -> str:
 
     Returns JSON with {path, updated_fields}.
     """
+    from claude_agent_skills.artifact import Artifact
+
     try:
         resolved = resolve_artifact_path(path)
     except FileNotFoundError:
@@ -2091,9 +1852,7 @@ def write_artifact_frontmatter(path: str, updates: str) -> str:
     except (json.JSONDecodeError, ValueError) as e:
         raise ValueError(f"Invalid JSON for updates: {e}")
 
-    fm = read_frontmatter(resolved)
-    fm.update(update_dict)
-    write_frontmatter(resolved, fm)
+    Artifact(resolved).update_frontmatter(**update_dict)
 
     return json.dumps({
         "path": str(resolved),
@@ -2202,21 +1961,20 @@ def _check_git_branch() -> str:
 
 def _collect_tickets(sprint_dir: Path) -> list:
     """Collect all tickets from a sprint directory with their metadata."""
+    from claude_agent_skills.sprint import Sprint
+
+    sprint = Sprint(sprint_dir, get_project())
     tickets = []
-    for ticket_location in [sprint_dir / "tickets", sprint_dir / "tickets" / "done"]:
-        if not ticket_location.exists():
+    for ticket in sprint.list_tickets():
+        if not ticket.id:
             continue
-        for f in sorted(ticket_location.glob("*.md")):
-            fm = read_frontmatter(f)
-            if not fm.get("id"):
-                continue
-            tickets.append({
-                "id": fm.get("id", ""),
-                "title": fm.get("title", ""),
-                "status": fm.get("status", "unknown"),
-                "path": str(f),
-                "in_done_dir": "done" in f.parent.name,
-            })
+        tickets.append({
+            "id": ticket.id,
+            "title": ticket.title,
+            "status": ticket.status,
+            "path": str(ticket.path),
+            "in_done_dir": ticket.path.parent.name == "done",
+        })
     return tickets
 
 
@@ -2234,9 +1992,10 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     """
     issues = []
 
-    # Find sprint directory
+    # Find sprint
     try:
-        sprint_dir = _find_sprint_dir(sprint_id)
+        sprint = get_project().get_sprint(sprint_id)
+        sprint_dir = sprint.path
     except ValueError:
         return json.dumps({
             "passed": False,
@@ -2249,8 +2008,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
             }],
         }, indent=2)
 
-    sprint_fm = read_frontmatter(sprint_dir / "sprint.md")
-    expected_branch = sprint_fm.get("branch", f"sprint/{sprint_id}")
+    expected_branch = sprint.branch or f"sprint/{sprint_id}"
 
     # Check branch
     current_branch = _check_git_branch()
@@ -2357,7 +2115,8 @@ def review_sprint_pre_close(sprint_id: str) -> str:
     issues = []
 
     try:
-        sprint_dir = _find_sprint_dir(sprint_id)
+        sprint = get_project().get_sprint(sprint_id)
+        sprint_dir = sprint.path
     except ValueError:
         return json.dumps({
             "passed": False,
@@ -2370,8 +2129,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
             }],
         }, indent=2)
 
-    sprint_fm = read_frontmatter(sprint_dir / "sprint.md")
-    expected_branch = sprint_fm.get("branch", f"sprint/{sprint_id}")
+    expected_branch = sprint.branch or f"sprint/{sprint_id}"
 
     # Check branch
     current_branch = _check_git_branch()
@@ -2491,49 +2249,35 @@ def review_sprint_post_close(sprint_id: str) -> str:
         })
 
     # Check sprint is in done/ directory
-    done_dir = _sprints_dir() / "done"
+    project = get_project()
     sprint_in_done = False
     sprint_dir = None
 
-    if done_dir.exists():
-        for d in done_dir.iterdir():
-            if d.is_dir() and (d / "sprint.md").exists():
-                fm = read_frontmatter(d / "sprint.md")
-                if fm.get("id") == sprint_id:
-                    sprint_in_done = True
-                    sprint_dir = d
-                    break
+    try:
+        sprint = project.get_sprint(sprint_id)
+        sprint_dir = sprint.path
+        sprint_in_done = sprint_dir.parent.name == "done"
+    except ValueError:
+        sprint_dir = None
 
-    if not sprint_in_done:
-        # Check if it's still in the active directory
-        active_dir = None
-        if _sprints_dir().exists():
-            for d in _sprints_dir().iterdir():
-                if d.is_dir() and d.name != "done" and (d / "sprint.md").exists():
-                    fm = read_frontmatter(d / "sprint.md")
-                    if fm.get("id") == sprint_id:
-                        active_dir = d
-                        break
-
-        if active_dir:
-            issues.append({
-                "severity": "error",
-                "check": "sprint_archived",
-                "message": f"Sprint directory still in active location:"
-                           f" {active_dir.name}",
-                "fix": "Close the sprint using close_sprint MCP tool"
-                       " to archive it",
-                "path": str(active_dir),
-            })
-            sprint_dir = active_dir
-        else:
-            issues.append({
-                "severity": "error",
-                "check": "sprint_dir_exists",
-                "message": f"Sprint '{sprint_id}' directory not found anywhere",
-                "fix": "Check the sprint ID is correct",
-                "path": None,
-            })
+    if sprint_dir and not sprint_in_done:
+        issues.append({
+            "severity": "error",
+            "check": "sprint_archived",
+            "message": f"Sprint directory still in active location:"
+                       f" {sprint_dir.name}",
+            "fix": "Close the sprint using close_sprint MCP tool"
+                   " to archive it",
+            "path": str(sprint_dir),
+        })
+    elif sprint_dir is None:
+        issues.append({
+            "severity": "error",
+            "check": "sprint_dir_exists",
+            "message": f"Sprint '{sprint_id}' directory not found anywhere",
+            "fix": "Check the sprint ID is correct",
+            "path": None,
+        })
 
     if sprint_dir:
         # Check all tickets are done

@@ -48,7 +48,10 @@ def _auto_context_documents(sprint_name: str, ticket_id: str | None = None) -> l
     planning documents (sprint.md, architecture-update.md, usecases.md)
     plus the ticket file when *ticket_id* is provided.
     """
-    sprint_dir = f"docs/clasi/sprints/{sprint_name}"
+    project = get_project()
+    sprint_dir = str(
+        (project.sprints_dir / sprint_name).relative_to(project.root)
+    )
     docs = [
         f"{sprint_dir}/sprint.md",
         f"{sprint_dir}/architecture-update.md",
