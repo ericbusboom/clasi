@@ -160,6 +160,7 @@ async def dispatch_to_project_manager(
         sprint_goals: High-level goals for the sprint roadmap
                       (used in roadmap mode)
     """
+    _check_delegation_edge("dispatch_to_project_manager", frozenset({"team-lead"}))
     agent = get_project().get_agent("project-manager")
     prompt = agent.render_prompt(
         mode=mode,
@@ -189,6 +190,7 @@ async def dispatch_to_project_architect(
     Args:
         todo_files: List of TODO file paths to assess
     """
+    _check_delegation_edge("dispatch_to_project_architect", frozenset({"team-lead"}))
     agent = get_project().get_agent("project-architect")
     prompt = agent.render_prompt(todo_files=todo_files)
     result = await agent.dispatch(
@@ -214,6 +216,7 @@ async def dispatch_to_todo_worker(
         todo_ids: List of TODO IDs to operate on
         action: What to do (create, import, list, summarize, prioritize)
     """
+    _check_delegation_edge("dispatch_to_todo_worker", frozenset({"team-lead"}))
     agent = get_project().get_agent("todo-worker")
     prompt = agent.render_prompt(todo_ids=todo_ids, action=action)
     result = await agent.dispatch(
@@ -245,6 +248,7 @@ async def dispatch_to_sprint_planner(
         goals: High-level goals for the sprint
         mode: Planning mode -- 'roadmap' (lightweight) or 'detail' (full)
     """
+    _check_delegation_edge("dispatch_to_sprint_planner", frozenset({"team-lead"}))
     agent = get_project().get_agent("sprint-planner")
     prompt = agent.render_prompt(
         sprint_id=sprint_id,
@@ -283,6 +287,7 @@ async def dispatch_to_sprint_executor(
         branch_name: Git branch name for the sprint
         tickets: List of ticket references to execute
     """
+    _check_delegation_edge("dispatch_to_sprint_executor", frozenset({"team-lead"}))
     agent = get_project().get_agent("sprint-executor")
     prompt = agent.render_prompt(
         sprint_id=sprint_id,
@@ -315,6 +320,7 @@ async def dispatch_to_ad_hoc_executor(
         task_description: Description of the change to make
         scope_directory: Directory scope for the change
     """
+    _check_delegation_edge("dispatch_to_ad_hoc_executor", frozenset({"team-lead"}))
     agent = get_project().get_agent("ad-hoc-executor")
     prompt = agent.render_prompt(
         task_description=task_description,
@@ -343,6 +349,7 @@ async def dispatch_to_sprint_reviewer(
         sprint_id: The sprint ID to review
         sprint_directory: Path to the sprint directory
     """
+    _check_delegation_edge("dispatch_to_sprint_reviewer", frozenset({"team-lead"}))
     agent = get_project().get_agent("sprint-reviewer")
     prompt = agent.render_prompt(
         sprint_id=sprint_id,

@@ -561,3 +561,518 @@ class TestSprintPlannerContractModes:
         validation = validate_return(contract, "detail", result_text, str(tmp_path))
         assert validation["status"] == "invalid"
         assert len(validation["missing_files"]) > 0
+
+
+class TestCheckDelegationEdge:
+    """Tests for the _check_delegation_edge helper."""
+
+    def test_no_warning_when_caller_is_allowed(self, caplog):
+        """No warning is emitted when CLASI_AGENT_NAME is in allowed_callers."""
+        with patch.dict(os.environ, {"CLASI_AGENT_NAME": "sprint-executor"}):
+            with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                _check_delegation_edge(
+                    "dispatch_to_code_monkey",
+                    frozenset({"sprint-executor", "ad-hoc-executor"}),
+                )
+        assert "DELEGATION VIOLATION" not in caplog.text
+
+    def test_warning_emitted_when_caller_not_allowed(self, caplog):
+        """A WARNING is emitted when CLASI_AGENT_NAME is not in allowed_callers."""
+        with patch.dict(os.environ, {"CLASI_AGENT_NAME": "team-lead"}):
+            with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                _check_delegation_edge(
+                    "dispatch_to_code_monkey",
+                    frozenset({"sprint-executor", "ad-hoc-executor"}),
+                )
+        assert "DELEGATION VIOLATION" in caplog.text
+        assert "team-lead" in caplog.text
+        assert "dispatch_to_code_monkey" in caplog.text
+
+    def test_default_caller_is_team_lead_when_env_unset(self, caplog, monkeypatch):
+        """When CLASI_AGENT_NAME is absent, caller defaults to 'team-lead'."""
+        monkeypatch.delenv("CLASI_AGENT_NAME", raising=False)
+        with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+            _check_delegation_edge(
+                "dispatch_to_architect",
+                frozenset({"sprint-planner"}),
+            )
+        assert "team-lead" in caplog.text
+        assert "DELEGATION VIOLATION" in caplog.text
+
+    def test_no_warning_when_env_unset_and_team_lead_allowed(
+        self, caplog, monkeypatch
+    ):
+        """No warning when CLASI_AGENT_NAME absent and 'team-lead' is allowed."""
+        monkeypatch.delenv("CLASI_AGENT_NAME", raising=False)
+        with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+            _check_delegation_edge(
+                "dispatch_to_sprint_executor",
+                frozenset({"team-lead"}),
+            )
+        assert "DELEGATION VIOLATION" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "tool_name,allowed_callers,env_caller,expect_violation",
+        [
+            # Tier-2 tools: team-lead should trigger violations
+            (
+                "dispatch_to_architect",
+                frozenset({"sprint-planner"}),
+                "team-lead",
+                True,
+            ),
+            (
+                "dispatch_to_architecture_reviewer",
+                frozenset({"sprint-planner"}),
+                "team-lead",
+                True,
+            ),
+            (
+                "dispatch_to_technical_lead",
+                frozenset({"sprint-planner"}),
+                "team-lead",
+                True,
+            ),
+            (
+                "dispatch_to_code_monkey",
+                frozenset({"sprint-executor", "ad-hoc-executor"}),
+                "team-lead",
+                True,
+            ),
+            (
+                "dispatch_to_code_reviewer",
+                frozenset({"ad-hoc-executor"}),
+                "team-lead",
+                True,
+            ),
+            # Correct callers: no violation
+            (
+                "dispatch_to_architect",
+                frozenset({"sprint-planner"}),
+                "sprint-planner",
+                False,
+            ),
+            (
+                "dispatch_to_code_monkey",
+                frozenset({"sprint-executor", "ad-hoc-executor"}),
+                "sprint-executor",
+                False,
+            ),
+            (
+                "dispatch_to_code_reviewer",
+                frozenset({"ad-hoc-executor"}),
+                "ad-hoc-executor",
+                False,
+            ),
+        ],
+    )
+    def test_delegation_edges_for_tier2_tools(
+        self,
+        caplog,
+        tool_name,
+        allowed_callers,
+        env_caller,
+        expect_violation,
+    ):
+        """Parametrised check: correct callers pass, team-lead triggers violation."""
+        with patch.dict(os.environ, {"CLASI_AGENT_NAME": env_caller}):
+            with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                _check_delegation_edge(tool_name, allowed_callers)
+        if expect_violation:
+            assert "DELEGATION VIOLATION" in caplog.text
+        else:
+            assert "DELEGATION VIOLATION" not in caplog.text
+
+    @pytest.mark.parametrize(
+        "tool_name,allowed_callers,env_caller,expect_violation",
+        [
+            # Tier-1 tools: unauthorized callers should trigger violations
+            (
+                "dispatch_to_sprint_executor",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_sprint_planner",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_sprint_reviewer",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_project_manager",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_project_architect",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_todo_worker",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            (
+                "dispatch_to_ad_hoc_executor",
+                frozenset({"team-lead"}),
+                "sprint-executor",
+                True,
+            ),
+            # Correct callers for tier-1 tools: no violation
+            (
+                "dispatch_to_sprint_executor",
+                frozenset({"team-lead"}),
+                "team-lead",
+                False,
+            ),
+            (
+                "dispatch_to_sprint_planner",
+                frozenset({"team-lead"}),
+                "team-lead",
+                False,
+            ),
+            (
+                "dispatch_to_sprint_reviewer",
+                frozenset({"team-lead"}),
+                "team-lead",
+                False,
+            ),
+            (
+                "dispatch_to_ad_hoc_executor",
+                frozenset({"team-lead"}),
+                "team-lead",
+                False,
+            ),
+        ],
+    )
+    def test_delegation_edges_for_tier1_tools(
+        self,
+        caplog,
+        tool_name,
+        allowed_callers,
+        env_caller,
+        expect_violation,
+    ):
+        """Tier-1 tools: team-lead is correct caller; others trigger violation."""
+        with patch.dict(os.environ, {"CLASI_AGENT_NAME": env_caller}):
+            with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                _check_delegation_edge(tool_name, allowed_callers)
+        if expect_violation:
+            assert "DELEGATION VIOLATION" in caplog.text
+        else:
+            assert "DELEGATION VIOLATION" not in caplog.text
+
+
+class TestDispatchToolsCallDelegationCheck:
+    """Verify each dispatch tool actually calls _check_delegation_edge."""
+
+    def _make_mock_agent(self):
+        """Create a mock agent with render_prompt and async dispatch."""
+        from unittest.mock import AsyncMock
+        mock_agent = MagicMock()
+        mock_agent.render_prompt.return_value = "test prompt"
+        mock_agent.dispatch = AsyncMock(return_value={
+            "status": "success",
+            "summary": "done",
+            "log_path": "/tmp/log.json",
+        })
+        return mock_agent
+
+    def _make_mock_project(self, mock_agent):
+        """Create a mock project that returns the given mock agent."""
+        mock_project = MagicMock()
+        mock_project.root = Path("/tmp/test-project")
+        mock_project.get_agent.return_value = mock_agent
+        return mock_project
+
+    @pytest.mark.parametrize(
+        "tool_fn,tool_name,kwargs,authorized_caller,unauthorized_caller",
+        [
+            (
+                dispatch_to_sprint_executor,
+                "dispatch_to_sprint_executor",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                    "branch_name": "sprint-001",
+                    "tickets": ["001-001"],
+                },
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_sprint_planner,
+                "dispatch_to_sprint_planner",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                    "todo_ids": ["T-001"],
+                    "goals": "Test goals",
+                },
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_sprint_reviewer,
+                "dispatch_to_sprint_reviewer",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_project_manager,
+                "dispatch_to_project_manager",
+                {"mode": "initiation"},
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_project_architect,
+                "dispatch_to_project_architect",
+                {"todo_files": ["t.md"]},
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_todo_worker,
+                "dispatch_to_todo_worker",
+                {"todo_ids": ["T-001"], "action": "list"},
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_ad_hoc_executor,
+                "dispatch_to_ad_hoc_executor",
+                {
+                    "task_description": "Fix bug",
+                    "scope_directory": "/tmp/scope",
+                },
+                "team-lead",
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_architect,
+                "dispatch_to_architect",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+                "team-lead",
+            ),
+            (
+                dispatch_to_architecture_reviewer,
+                "dispatch_to_architecture_reviewer",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+                "team-lead",
+            ),
+            (
+                dispatch_to_technical_lead,
+                "dispatch_to_technical_lead",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+                "team-lead",
+            ),
+            (
+                dispatch_to_code_monkey,
+                "dispatch_to_code_monkey",
+                {
+                    "ticket_path": "t.md",
+                    "ticket_plan_path": "tp.md",
+                    "scope_directory": "/tmp/scope",
+                    "sprint_name": "test",
+                    "ticket_id": "001",
+                },
+                "sprint-executor",
+                "team-lead",
+            ),
+            (
+                dispatch_to_code_reviewer,
+                "dispatch_to_code_reviewer",
+                {
+                    "file_paths": ["test.py"],
+                    "review_scope": "Review tests",
+                },
+                "ad-hoc-executor",
+                "team-lead",
+            ),
+        ],
+    )
+    def test_warning_logged_for_unauthorized_caller(
+        self,
+        caplog,
+        tool_fn,
+        tool_name,
+        kwargs,
+        authorized_caller,
+        unauthorized_caller,
+    ):
+        """Each dispatch tool logs DELEGATION VIOLATION for unauthorized callers."""
+        mock_agent = self._make_mock_agent()
+        mock_project = self._make_mock_project(mock_agent)
+
+        with patch("clasi.tools.dispatch_tools.get_project", return_value=mock_project):
+            with patch.dict(os.environ, {"CLASI_AGENT_NAME": unauthorized_caller}):
+                with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                    asyncio.run(tool_fn(**kwargs))
+
+        assert "DELEGATION VIOLATION" in caplog.text, (
+            f"{tool_name}: expected DELEGATION VIOLATION when called by "
+            f"'{unauthorized_caller}'"
+        )
+        assert unauthorized_caller in caplog.text
+        assert tool_name in caplog.text
+
+    @pytest.mark.parametrize(
+        "tool_fn,tool_name,kwargs,authorized_caller",
+        [
+            (
+                dispatch_to_sprint_executor,
+                "dispatch_to_sprint_executor",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                    "branch_name": "sprint-001",
+                    "tickets": ["001-001"],
+                },
+                "team-lead",
+            ),
+            (
+                dispatch_to_sprint_planner,
+                "dispatch_to_sprint_planner",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                    "todo_ids": ["T-001"],
+                    "goals": "Test goals",
+                },
+                "team-lead",
+            ),
+            (
+                dispatch_to_sprint_reviewer,
+                "dispatch_to_sprint_reviewer",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "team-lead",
+            ),
+            (
+                dispatch_to_project_manager,
+                "dispatch_to_project_manager",
+                {"mode": "initiation"},
+                "team-lead",
+            ),
+            (
+                dispatch_to_project_architect,
+                "dispatch_to_project_architect",
+                {"todo_files": ["t.md"]},
+                "team-lead",
+            ),
+            (
+                dispatch_to_todo_worker,
+                "dispatch_to_todo_worker",
+                {"todo_ids": ["T-001"], "action": "list"},
+                "team-lead",
+            ),
+            (
+                dispatch_to_ad_hoc_executor,
+                "dispatch_to_ad_hoc_executor",
+                {
+                    "task_description": "Fix bug",
+                    "scope_directory": "/tmp/scope",
+                },
+                "team-lead",
+            ),
+            (
+                dispatch_to_architect,
+                "dispatch_to_architect",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+            ),
+            (
+                dispatch_to_architecture_reviewer,
+                "dispatch_to_architecture_reviewer",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+            ),
+            (
+                dispatch_to_technical_lead,
+                "dispatch_to_technical_lead",
+                {
+                    "sprint_id": "001",
+                    "sprint_directory": "/tmp/sprint",
+                },
+                "sprint-planner",
+            ),
+            (
+                dispatch_to_code_monkey,
+                "dispatch_to_code_monkey",
+                {
+                    "ticket_path": "t.md",
+                    "ticket_plan_path": "tp.md",
+                    "scope_directory": "/tmp/scope",
+                    "sprint_name": "test",
+                    "ticket_id": "001",
+                },
+                "sprint-executor",
+            ),
+            (
+                dispatch_to_code_reviewer,
+                "dispatch_to_code_reviewer",
+                {
+                    "file_paths": ["test.py"],
+                    "review_scope": "Review tests",
+                },
+                "ad-hoc-executor",
+            ),
+        ],
+    )
+    def test_no_warning_for_authorized_caller(
+        self,
+        caplog,
+        tool_fn,
+        tool_name,
+        kwargs,
+        authorized_caller,
+    ):
+        """Each dispatch tool does NOT log a warning for authorized callers."""
+        mock_agent = self._make_mock_agent()
+        mock_project = self._make_mock_project(mock_agent)
+
+        with patch("clasi.tools.dispatch_tools.get_project", return_value=mock_project):
+            with patch.dict(os.environ, {"CLASI_AGENT_NAME": authorized_caller}):
+                with caplog.at_level(logging.WARNING, logger="clasi.dispatch"):
+                    asyncio.run(tool_fn(**kwargs))
+
+        assert "DELEGATION VIOLATION" not in caplog.text, (
+            f"{tool_name}: unexpected DELEGATION VIOLATION when called by "
+            f"'{authorized_caller}'"
+        )

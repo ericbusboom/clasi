@@ -1,11 +1,11 @@
 ---
-id: "002"
-title: "Add caller validation warnings to dispatch tools"
-status: todo
+id: '002'
+title: Add caller validation warnings to dispatch tools
+status: done
 use-cases: []
 depends-on: []
-github-issue: ""
-todo: ""
+github-issue: ''
+todo: ''
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -50,14 +50,14 @@ The allowed callers for each tool:
 
 ## Acceptance Criteria
 
-- [ ] Each dispatch tool reads `CLASI_AGENT_NAME` from the environment
-- [ ] Each dispatch tool has a defined `allowed_callers` set
-- [ ] A warning is logged when the caller is not in `allowed_callers`
-- [ ] The warning message includes the caller name and the expected callers
-- [ ] The dispatch tool still proceeds after logging the warning (no blocking)
-- [ ] Tests verify that the warning is logged for unauthorized callers
-- [ ] Tests verify that no warning is logged for authorized callers
-- [ ] `uv run pytest` passes with no failures
+- [x] Each dispatch tool reads `CLASI_AGENT_NAME` from the environment
+- [x] Each dispatch tool has a defined `allowed_callers` set
+- [x] A warning is logged when the caller is not in `allowed_callers`
+- [x] The warning message includes the caller name and the expected callers
+- [x] The dispatch tool still proceeds after logging the warning (no blocking)
+- [x] Tests verify that the warning is logged for unauthorized callers
+- [x] Tests verify that no warning is logged for authorized callers
+- [x] `uv run pytest` passes with no failures
 
 ## Testing
 
