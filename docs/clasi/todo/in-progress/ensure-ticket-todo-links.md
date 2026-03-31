@@ -1,6 +1,9 @@
 ---
-status: pending
+status: in-progress
 source: https://github.com/ericbusboom/clasi/issues/12
+sprint: 028
+tickets:
+- 028-006
 ---
 
 # Ensure All Tickets That Implement a TODO Are Linked
