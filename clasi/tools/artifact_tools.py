@@ -400,6 +400,12 @@ def create_ticket(
     project = get_project()
     sprint = project.get_sprint(sprint_id)
 
+    # Auto-link to sprint TODOs when no explicit todo parameter given
+    if todo is None:
+        sprint_todos = sprint.sprint_doc.frontmatter.get("todos")
+        if sprint_todos and isinstance(sprint_todos, list):
+            todo = sprint_todos
+
     # Determine todo_arg for Sprint.create_ticket (single string or None)
     todo_list: list[str] | None = None
     todo_arg: str | None = None

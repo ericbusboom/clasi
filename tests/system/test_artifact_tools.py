@@ -158,7 +158,45 @@ class TestCreateTicket:
         with pytest.raises(ValueError, match="planning-docs.*phase"):
             create_ticket("001", "Too Early")
 
+    def test_auto_links_sprint_todos_when_no_todo_param(self, work_dir):
+        """create_ticket without todo param auto-links from sprint.md todos."""
+        create_sprint("My Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        # Add todos field to sprint.md frontmatter
+        sprint_md = (
+            work_dir / "docs" / "clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+        )
+        fm = read_frontmatter(sprint_md)
+        fm["todos"] = ["idea-a.md", "idea-b.md"]
+        write_frontmatter(sprint_md, fm)
 
+        result = json.loads(create_ticket("001", "Auto Linked"))
+        ticket_fm = read_frontmatter(result["path"])
+        assert ticket_fm["todo"] == ["idea-a.md", "idea-b.md"]
+
+    def test_explicit_todo_not_overridden_by_sprint_todos(self, work_dir):
+        """Explicit todo param takes priority over sprint.md todos."""
+        create_sprint("My Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        sprint_md = (
+            work_dir / "docs" / "clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+        )
+        fm = read_frontmatter(sprint_md)
+        fm["todos"] = ["idea-a.md", "idea-b.md"]
+        write_frontmatter(sprint_md, fm)
+
+        result = json.loads(create_ticket("001", "Explicit", todo="explicit.md"))
+        ticket_fm = read_frontmatter(result["path"])
+        assert ticket_fm["todo"] == "explicit.md"
+
+    def test_no_todos_field_no_auto_link(self, work_dir):
+        """When sprint.md has no todos field, no auto-linking happens."""
+        create_sprint("My Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        result = json.loads(create_ticket("001", "No Link"))
+        ticket_fm = read_frontmatter(result["path"])
+        # todo field should be empty string (from template default)
+        assert not ticket_fm.get("todo")
 
 
 class TestListSprints:
