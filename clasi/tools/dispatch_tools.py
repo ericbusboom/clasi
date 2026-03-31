@@ -109,29 +109,6 @@ async def _dispatch(
 # ---------------------------------------------------------------------------
 
 @server.tool()
-async def dispatch_to_requirements_narrator(
-    project_path: str,
-) -> str:
-    """Dispatch to the requirements-narrator agent via Agent SDK.
-
-    Renders the dispatch template, logs the dispatch, executes the
-    subagent via query(), validates the result against the agent
-    contract, logs the result, and returns structured JSON.
-
-    Args:
-        project_path: Path to the project root
-    """
-    agent = get_project().get_agent("requirements-narrator")
-    prompt = agent.render_prompt(project_path=project_path)
-    result = await agent.dispatch(
-        prompt=prompt,
-        cwd=project_path,
-        parent="team-lead",
-    )
-    return json.dumps(result, indent=2)
-
-
-@server.tool()
 async def dispatch_to_todo_worker(
     todo_ids: list[str],
     action: str,

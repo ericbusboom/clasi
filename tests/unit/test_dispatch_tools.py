@@ -17,7 +17,6 @@ from clasi.tools.dispatch_tools import (
     dispatch_to_ad_hoc_executor,
     dispatch_to_code_monkey,
     dispatch_to_code_reviewer,
-    dispatch_to_requirements_narrator,
     dispatch_to_sprint_executor,
     dispatch_to_sprint_planner,
     dispatch_to_sprint_reviewer,
@@ -32,7 +31,6 @@ ALL_DISPATCH_TOOLS = [
     dispatch_to_ad_hoc_executor,
     dispatch_to_code_monkey,
     dispatch_to_code_reviewer,
-    dispatch_to_requirements_narrator,
     dispatch_to_sprint_executor,
     dispatch_to_sprint_planner,
     dispatch_to_sprint_reviewer,
@@ -55,7 +53,7 @@ class TestDispatchToolsExist:
             )
 
     def test_dispatch_tools_count(self):
-        assert len(ALL_DISPATCH_TOOLS) == 11
+        assert len(ALL_DISPATCH_TOOLS) == 10
 
 
 class TestLoadJinja2Template:
@@ -81,7 +79,6 @@ class TestLoadJinja2Template:
             _load_jinja2_template("nonexistent-agent")
 
     @pytest.mark.parametrize("agent_name", [
-        "requirements-narrator",
         "todo-worker",
         "ad-hoc-executor",
         "sprint-reviewer",

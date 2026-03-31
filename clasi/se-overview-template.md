@@ -2,8 +2,8 @@
 
 ## Process Stages
 
-1. **Stage 1a — Requirements**: Elicit requirements, produce overview
-   - Skill: `elicit-requirements` | Agent: `requirements-narrator`
+1. **Stage 1a — Requirements**: Process specification, produce project documents
+   - Agent: `project-manager` (initiation mode)
 2. **Stage 1b — Architecture**: Design architecture per sprint
    - Skill: `plan-sprint` (architecture step) | Agent: `architect`
 3. **Sprints**: Plan and execute sprints

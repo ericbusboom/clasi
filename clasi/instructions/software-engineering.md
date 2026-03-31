@@ -39,8 +39,7 @@ Supporting agents used during implementation:
 
 Reusable workflows that correspond to each stage:
 
-- **project-initiation** — New project: narration → project overview
-- **elicit-requirements** — Stage 1a: narrative → brief → use cases (detailed)
+- **project-initiation** — New project: spec → overview, specification, use cases (via project-manager)
 - **create-tickets** — Stage 2: architecture → numbered tickets
 - **execute-ticket** — Stage 3: ticket → plan → implement → test → done
 - **project-status** — Anytime: scan artifacts and report progress
@@ -237,16 +236,12 @@ YAML frontmatter with date, tags, and related tickets. Use the
 
 ## Workflow
 
-### Project Setup (requirements-analyst)
+### Project Setup (project-manager, initiation mode)
 
-Skill: **elicit-requirements**
-
-1. Take the stakeholder's narrative about the project.
-2. Ask clarifying questions about stakeholders, components, requirements,
-   constraints, and success criteria.
-3. Write the project overview (`docs/clasi/overview.md`) using the
-   `create_overview` MCP tool. The overview covers problem, users,
-   constraints, high-level requirements, tech stack, and sprint roadmap.
+1. The stakeholder provides a written specification file.
+2. Dispatch to **project-manager** (initiation mode) with the spec path.
+3. Project-manager processes the spec into structured documents:
+   `overview.md`, `specification.md`, and `usecases.md`.
 4. **Review gate**: Present the overview to the stakeholder. Wait for
    approval before proceeding. If the stakeholder requests changes, revise
    and re-present.
