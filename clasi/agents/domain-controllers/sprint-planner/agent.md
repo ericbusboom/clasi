@@ -28,7 +28,13 @@ From team-lead:
 - **High-level goals** describing what the sprint should accomplish
 - **TODO file references** (paths or filenames) identifying the items
   to address — read these yourself to understand the details
-- The current project state (overview, latest architecture version)
+- **`docs/clasi/overview.md`** for project context — this is a concise
+  one-page project summary, not the full specification
+- The latest architecture version for structural context
+
+The sprint-planner's detail comes from the sprint goals and TODO
+references, not the specification. The overview provides just enough
+project context to make informed planning decisions.
 
 The team-lead provides WHAT goes into the sprint. You decide HOW to
 structure it into tickets, architecture updates, and use cases. The

@@ -87,22 +87,37 @@ After verifying MCP, assess where the project stands:
 8. Did the stakeholder say "out of process" or "direct change"?
    Dispatch **ad-hoc-executor**.
 
+### Project Initiation Flow
+
+When starting a new project from a written specification:
+
+1. **Process spec**: Dispatch `dispatch_to_project_manager(mode="initiation",
+   spec_file=...)`. Project-manager produces `overview.md`,
+   `specification.md`, and `usecases.md`.
+2. **Initial architecture**: Dispatch `dispatch_to_architect(...)` to
+   produce the initial architecture document.
+3. **Assess TODOs**: Dispatch `dispatch_to_project_architect(todo_files=...)`
+   to assess TODOs against the codebase with difficulty estimates and
+   dependency analysis.
+4. **Build roadmap**: Dispatch `dispatch_to_project_manager(mode="roadmap",
+   todo_assessments=..., sprint_goals=...)` to group assessed TODOs into
+   a sprint roadmap.
+
 ### Sprint Lifecycle Orchestration
 
 The full sprint lifecycle from team-lead's perspective:
 
-#### Two-Phase Planning
+#### Planning
 
-Sprint planning uses a two-phase model:
+Sprint planning has two levels:
 
-**Phase 1 -- Batch Roadmap Planning**: Plan multiple sprints in a single
-session using `dispatch_to_sprint_planner(mode="roadmap")`. Each roadmap
-sprint produces a lightweight `sprint.md` with goals, scope, and TODO
-references. No branches, no architecture documents, no tickets. This
-lets you lay out the project roadmap quickly.
+**Roadmap Planning**: The project-manager (roadmap mode) produces
+lightweight `sprint.md` files with goals, scope, and TODO references.
+No branches, no architecture documents, no tickets. This lays out the
+project roadmap.
 
-**Phase 2 -- Detailed Planning**: When a sprint is ready for execution,
-call `dispatch_to_sprint_planner(mode="detail")` for that one sprint.
+**Detailed Planning**: When a sprint is ready for execution, call
+`dispatch_to_sprint_planner(mode="detail")` for that one sprint.
 This fills in full artifacts (usecases.md, architecture-update.md,
 tickets), runs architecture review, and gets stakeholder approval.
 
@@ -111,9 +126,8 @@ Branches are NOT created during planning. They are created by
 
 #### Lifecycle Steps
 
-1. **Roadmap plan**: Call `dispatch_to_sprint_planner(mode="roadmap")`
-   with sprint ID, directory, TODO IDs, and goals. Repeat for multiple
-   sprints as needed to build the roadmap.
+1. **Roadmap plan**: Dispatch `dispatch_to_project_manager(mode="roadmap")`
+   with TODO assessments and goals. Produces lightweight sprint.md files.
 2. **Detail plan**: When ready to execute, call
    `dispatch_to_sprint_planner(mode="detail")` for the next sprint.
    Sprint-planner fills in full artifacts and gets reviews.

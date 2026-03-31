@@ -17,6 +17,13 @@ inputs:
       description: High-level goals for the sprint
 
   optional:
+    - name: project-overview
+      type: file
+      description: >
+        Project overview (docs/clasi/overview.md) for high-level context.
+        This is a concise summary, not the full specification.
+      default: "docs/clasi/overview.md"
+
     - name: sprint-guidance
       type: file
       description: >
