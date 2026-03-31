@@ -66,6 +66,13 @@ Each agent directory contains two key files:
    ``clasi.contracts.validate_return`` which checks the return schema
    defined in the contract.
 
+5b. **Retry** -- If validation fails, build a retry prompt that includes
+   the validation errors and the required JSON schema, then re-invoke
+   ``query()`` once. If the retry returns valid JSON, proceed normally
+   with the retry result. If the retry also fails validation (or returns
+   nothing), return a ``fatal`` error dict so the caller knows the
+   dispatch did not complete successfully.
+
 6. **Log (post-execution)** -- Update the dispatch log with the final status
    and list of modified files.
 
@@ -231,6 +238,77 @@ class Agent:
                 ),
             ],
         }
+
+    def _build_retry_prompt(
+        self,
+        original_prompt: str,
+        validation: dict,
+        mode: str | None,
+    ) -> str:
+        """Build a retry prompt when contract validation fails.
+
+        Appends a validation-failure section to the original prompt that
+        explains what went wrong and asks the agent to return valid JSON.
+
+        Args:
+            original_prompt: The original prompt sent to the subagent.
+            validation: The validation result dict from validate_return().
+            mode: The mode name (for multi-mode agents), or None.
+
+        Returns:
+            The retry prompt string.
+        """
+        import json as _json
+
+        errors = validation.get("errors", [])
+        missing = validation.get("missing_files", [])
+
+        lines = [
+            original_prompt,
+            "",
+            "---",
+            "",
+            "## RETRY: Contract Validation Failed",
+            "",
+            "Your previous response failed contract validation.",
+            "",
+        ]
+
+        if errors:
+            lines.append("**Errors:**")
+            for err in errors:
+                lines.append(f"- {err}")
+            lines.append("")
+
+        if missing:
+            lines.append("**Missing required output files:**")
+            for f in missing:
+                lines.append(f"- {f}")
+            lines.append("")
+
+        # Include the return schema so the agent knows what to produce
+        contract = self.contract
+        returns = contract.get("returns", {})
+        if mode is not None and isinstance(returns, dict) and "type" not in returns:
+            return_schema = returns.get(mode, {})
+        else:
+            return_schema = returns
+
+        if return_schema:
+            lines.append(
+                "Your response MUST end with a JSON block matching this schema:"
+            )
+            lines.append("```json")
+            lines.append(_json.dumps(return_schema, indent=2))
+            lines.append("```")
+            lines.append("")
+
+        lines.append(
+            "Please re-state your result in the required JSON format. "
+            "The JSON block must be the last thing in your response."
+        )
+
+        return "\n".join(lines)
 
     async def dispatch(
         self,
@@ -412,6 +490,55 @@ class Agent:
 
         # 5. VALIDATE
         validation = validate_return(contract, mode, result_text, work_dir)
+
+        # 5b. RETRY on validation failure (one retry, max)
+        if validation["status"] != "valid":
+            retry_prompt = self._build_retry_prompt(prompt, validation, mode)
+            retry_result_text = ""
+            try:
+                async for message in query(prompt=retry_prompt, options=options):
+                    if isinstance(message, ResultMessage):
+                        retry_result_text = message.result
+            except Exception as retry_exc:
+                logger.warning(
+                    "dispatch %s -> %s retry FAILED with exception: %s",
+                    parent,
+                    child,
+                    retry_exc,
+                )
+
+            if retry_result_text:
+                retry_validation = validate_return(
+                    contract, mode, retry_result_text, work_dir
+                )
+                if retry_validation["status"] == "valid":
+                    result_text = retry_result_text
+                    validation = retry_validation
+                else:
+                    # Both original and retry failed validation
+                    update_dispatch_result(
+                        log_path,
+                        result="error",
+                        files_modified=[],
+                        response=retry_result_text,
+                    )
+                    return {
+                        "status": "error",
+                        "fatal": True,
+                        "message": (
+                            "Subagent failed contract validation after retry. "
+                            "Retry errors: "
+                            + "; ".join(retry_validation.get("errors", []))
+                        ),
+                        "validations": retry_validation,
+                        "log_path": str(log_path),
+                        "instruction": (
+                            "DISPATCH FAILED: Subagent did not return valid JSON "
+                            "matching the contract schema after one retry. "
+                            "DO NOT proceed without fixing this. STOP and report "
+                            "the failure to the stakeholder."
+                        ),
+                    }
 
         # 6. LOG (post-execution -- always happens)
         files_modified = []
