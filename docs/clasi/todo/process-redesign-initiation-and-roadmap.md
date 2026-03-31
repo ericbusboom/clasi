@@ -36,6 +36,15 @@ reads it and produces the project documents: overview.md,
 specification.md, usecases.md. The architect produces the initial
 architecture.md. This happens once at the start of a project.
 
+**Critical: do not lose information.** Elicitation reorganizes and
+extracts from the stakeholder's spec — it does not summarize or
+condense. The overview is an additional document (a short reference
+for agents that don't need the full detail), NOT a replacement for
+the spec. specification.md must preserve every detail the stakeholder
+provided: exact messages, behavior rules, edge cases, test
+expectations. If the stakeholder wrote it, it must survive into the
+project documents. Agents downstream depend on this detail.
+
 ### Phase 2: TODO-driven work (ongoing)
 
 Everything after elicitation runs off TODOs. The stakeholder creates
