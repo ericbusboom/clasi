@@ -54,7 +54,7 @@ Before sprint planning begins, these documents should exist:
 ```
 1. Stakeholder provides a written specification
        │
-2. requirements-narrator produces:
+2. project-manager produces:
        ├── overview.md (summary)
        ├── specification.md (full detail, preserved)
        └── usecases.md (extracted use cases)
@@ -104,7 +104,18 @@ architect but has its own agent.md.
 
 ### project-manager (tier 1, model: sonnet)
 
-Plans the roadmap — which TODOs go in which sprints. Reads:
+Owns all pre-sprint project-level work. Two modes:
+
+**Mode 1: Project initiation.** Receives a written spec from the
+stakeholder. Produces:
+- overview.md (summary for context)
+- specification.md (full detail, preserved)
+- usecases.md (extracted use cases)
+
+This absorbs the requirements-narrator role. The requirements-narrator
+agent is removed.
+
+**Mode 2: Roadmap planning.** Reads:
 - specification.md (full detail)
 - architecture.md (baseline)
 - TODO assessments (from project-architect)
@@ -115,28 +126,34 @@ Groups TODOs into sprints based on:
 - Incremental value delivery
 - Difficulty balancing
 
-Does NOT need codebase access — works from assessments.
+Does NOT need codebase access — works from assessments and specs.
 Output: roadmap sprint.md files (lightweight — goals, TODO refs).
 
 ## Changes Required
 
-1. **requirements-narrator**: Rename or repurpose. No longer interviews
-   — it reads a provided spec and extracts overview.md, specification.md,
-   and usecases.md. The spec is the input, always.
+1. **Remove requirements-narrator.** Its role (extracting overview,
+   spec, and use cases) is absorbed by the project-manager. Delete
+   the agent directory, contract, dispatch template, and dispatch tool.
+   Remove from team-lead delegation map.
 
-2. **New agents**: Create project-architect and project-manager with
-   agent.md and contract.yaml.
+2. **Create project-manager agent** with two modes: initiation
+   (extract documents from spec) and roadmap (plan sprints from
+   assessments). Agent.md, contract.yaml, dispatch template.
 
-3. **Initial architecture**: Team-lead dispatches to architect after
-   requirements but before roadmap planning.
+3. **Create project-architect agent** for TODO assessment. Agent.md,
+   contract.yaml, dispatch template.
 
-4. **Team-lead delegation map**: Add dispatch_to_project_architect
-   and dispatch_to_project_manager edges.
+4. **Initial architecture**: Team-lead dispatches to architect after
+   project-manager produces documents but before roadmap planning.
 
-5. **Sprint-planner contract**: Input is overview.md (not the full
+5. **Team-lead delegation map**: Remove dispatch_to_requirements_narrator.
+   Add dispatch_to_project_architect and dispatch_to_project_manager.
+
+6. **Sprint-planner contract**: Input is overview.md (not the full
    spec). Gets project context, not implementation detail.
 
-6. **Dispatch templates and contracts**: For all new agents.
+7. **Dispatch templates and contracts**: For project-manager and
+   project-architect.
 
 ## What Doesn't Change
 
