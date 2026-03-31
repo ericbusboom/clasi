@@ -1,7 +1,7 @@
 ---
-id: "029"
-title: "Dispatch Retry on Contract Validation Failure"
-status: planning
+id: 029
+title: Dispatch Retry on Contract Validation Failure
+status: done
 branch: sprint/029-dispatch-retry-on-contract-validation-failure
 use-cases: []
 ---
