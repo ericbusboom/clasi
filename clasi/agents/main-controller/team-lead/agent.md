@@ -119,8 +119,9 @@ Work happens at two levels: **project initiation** and **sprints**.
 1. Receive the specification from the stakeholder.
 2. Dispatch `dispatch_to_project_manager(mode="initiation", spec_file=...)`
    to produce overview.md, specification.md, and usecases.md.
-3. Dispatch `dispatch_to_architect(...)` to produce the initial
-   architecture document.
+3. Dispatch `dispatch_to_sprint_planner(mode="detail", ...)` — the
+   sprint-planner calls `dispatch_to_architect` internally to produce the
+   initial architecture document.
 4. Dispatch `dispatch_to_project_architect(todo_files=...)` to assess
    TODOs against the codebase.
 5. Dispatch `dispatch_to_project_manager(mode="roadmap", ...)` to group
@@ -183,11 +184,27 @@ When the stakeholder corrects your behavior or expresses frustration:
 Do NOT trigger on simple clarifications, new instructions, or questions
 about your reasoning.
 
+### Do NOT Call These Dispatch Tools Directly
+
+You **NEVER** call these dispatch tools directly — they are internal
+delegation edges used by other domain controllers:
+
+| Tool | Called by |
+|------|-----------|
+| `dispatch_to_code_monkey` | sprint-executor |
+| `dispatch_to_architect` | sprint-planner |
+| `dispatch_to_architecture_reviewer` | sprint-planner |
+| `dispatch_to_technical_lead` | sprint-planner |
+| `dispatch_to_code_reviewer` | ad-hoc-executor |
+
+Calling these tools directly bypasses the domain controller that owns
+that work, produces incomplete dispatch logs, and skips validation.
+
 ### REMINDER: Use MCP Dispatch Tools to invoke subagents, NOT the Agent Tool
 
 **Do NOT use the built-in Agent tool for dispatching work.** Use the
 MCP dispatch tools listed in the Delegation Map above. Every dispatch
-tool (`dispatch_to_sprint_planner`, `dispatch_to_code_monkey`, etc.)
+tool (`dispatch_to_sprint_planner`, `dispatch_to_sprint_executor`, etc.)
 handles logging, execution via the Agent SDK, contract validation,
 and result recording automatically.
 

@@ -262,7 +262,7 @@ class TestSeOverviewTemplate:
         content = _SE_OVERVIEW_TEMPLATE_PATH.read_text(encoding="utf-8")
         assert "## Process Stages" in content
         assert "## MCP Tools Quick Reference" in content
-        assert "Stage 1a" in content
+        assert "Sprint Execution" in content
 
     def test_overview_output_contains_expected_sections(self):
         result = get_se_overview()
@@ -278,7 +278,7 @@ class TestSeOverviewTemplate:
         import inspect
         source = inspect.getsource(get_se_overview)
         # Should not contain the literal static text anymore
-        assert "Stage 1a" not in source
+        assert "Sprint Execution" not in source
         assert "Artifact Management" not in source
 
     def test_missing_template_raises_clear_error(self, tmp_path, monkeypatch):
