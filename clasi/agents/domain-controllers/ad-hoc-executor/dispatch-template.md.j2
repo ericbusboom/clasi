@@ -23,3 +23,28 @@ to validate the change before committing.
 - Optionally dispatch code-reviewer for quality validation.
 - Commit all changes with a descriptive message.
 - Return structured JSON with status, summary, and files_changed.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "What was changed and why",
+  "files_changed": [
+    "path/to/file1.py",
+    "path/to/file2.py"
+  ],
+  "tests_passed": true
+}
+```
+
+- **status**: "success" if the change is implemented and tests pass,
+  "failed" if something went wrong.
+- **summary**: What was changed and why.
+- **files_changed**: Paths to files created or modified.
+- **tests_passed**: Whether the test suite passes.
+- **errors**: (optional) List of issues encountered if status is "failed".

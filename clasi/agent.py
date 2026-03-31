@@ -1,8 +1,80 @@
 """Agent class hierarchy for CLASI.
 
-Represents agent definitions with their contracts and dispatch templates.
-Provides the dispatch lifecycle: render template, log, query(), validate,
-log result, return structured JSON.
+## Class Hierarchy
+
+The module defines four classes that form a three-tier agent architecture:
+
+- **Agent** -- Base class. Loads an agent definition from a directory on
+  disk, resolves its contract, renders its dispatch template, and runs the
+  full dispatch lifecycle.
+
+- **MainController** (tier 0) -- Orchestrates the entire project. Dispatches
+  to domain controllers only. Never writes files directly.
+
+- **DomainController** (tier 1) -- Orchestrates work within one domain (e.g.
+  sprint execution, architecture). Dispatches to task workers. Never writes
+  files directly.
+
+- **TaskWorker** (tier 2) -- Performs concrete work: writes code, produces
+  architecture documents, reviews pull requests, etc. Does not dispatch to
+  other agents.
+
+Tier is determined from the parent directory name inside the agents tree
+(``main-controller/``, ``domain-controllers/``, ``task-workers/``). The
+concrete subclasses override ``tier`` to hard-code the value so callers
+never need to inspect the directory layout directly.
+
+## Contracts and Templates
+
+Each agent directory contains two key files:
+
+- **agent.md** -- The agent's system prompt / role definition. Read as the
+  ``definition`` property and passed as ``system_prompt`` when dispatching.
+
+- **contract.yaml** -- Machine-readable contract that specifies the agent's
+  allowed tools, delegation edges (``delegates_to``), expected return schema,
+  and optional MCP server list. Loaded lazily by the ``contract`` property
+  via ``clasi.contracts.load_contract``.
+
+- **dispatch-template.md.j2** (optional) -- Jinja2 template rendered by
+  ``render_prompt()`` to produce the user-turn prompt for a subagent
+  dispatch. Agents without this file cannot be dispatched via
+  ``render_prompt()`` and raise ``ValueError`` if called.
+
+## Dispatch Lifecycle
+
+``Agent.dispatch()`` runs the full dispatch lifecycle in seven steps:
+
+1. **Log (pre-execution)** -- Write a dispatch log entry via
+   ``clasi.dispatch_log.log_dispatch``. This always happens, even if the
+   subagent call later fails.
+
+2. **Resolve working directory** -- Always use the project root as ``cwd``
+   for subagents. Using a sprint subdirectory causes path-nesting bugs in
+   the MCP server.
+
+3. **Import SDK** -- Import ``claude_agent_sdk``. If the SDK is not
+   installed, return an error dict immediately.
+
+4. **Execute** -- Call ``claude_agent_sdk.query()`` with a
+   ``ClaudeAgentOptions`` built from the contract. Tier 0-1 agents receive a
+   role-guard hook (via ``_build_role_guard_hooks``) that blocks direct file
+   writes and redirects the agent to use dispatch tools instead. Tier 2
+   agents have no such restriction.
+
+5. **Validate** -- Pass the raw result text through
+   ``clasi.contracts.validate_return`` which checks the return schema
+   defined in the contract.
+
+6. **Log (post-execution)** -- Update the dispatch log with the final status
+   and list of modified files.
+
+7. **Return** -- Return a dict with ``status``, ``result``, ``log_path``,
+   and ``validations``.
+
+If the SDK call raises an exception the lifecycle short-circuits after step
+4, logs an error, and returns a ``fatal`` error dict instructing the caller
+to stop and report the failure rather than attempting the work inline.
 """
 
 from __future__ import annotations

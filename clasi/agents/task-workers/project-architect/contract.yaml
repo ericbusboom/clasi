@@ -1,0 +1,81 @@
+name: project-architect
+tier: 2
+model: "opus"
+description: >
+  Assesses TODOs against the current codebase to produce impact
+  assessments. For each TODO, evaluates what the feature requires,
+  which existing code it touches, difficulty, dependencies on other
+  TODOs, and type of changes needed. Works at the TODO/feature level
+  across the whole project, unlike the sprint architect which works
+  at the implementation level within a single sprint.
+
+inputs:
+  required:
+    - name: todo-files
+      type: file-list
+      description: Paths to TODO files to assess
+      pattern: "docs/clasi/todo/*.md"
+
+  optional:
+    - name: current-architecture
+      type: file
+      description: Current architecture document for context
+      default: "docs/clasi/architecture/architecture-{latest}.md"
+
+outputs:
+  required:
+    - path: todo-assessments.md
+      frontmatter:
+        status: draft
+  validates:
+    - "Each TODO has a difficulty estimate (small / medium / large)"
+    - "Each TODO lists affected files/modules"
+    - "Dependencies between TODOs are identified"
+
+returns:
+  type: object
+  required: [status, summary, assessments]
+  properties:
+    status:
+      type: string
+      enum: [success, failed]
+    summary:
+      type: string
+      description: Overall summary of the TODO assessment
+    assessments:
+      type: array
+      description: Per-TODO assessment results
+      items:
+        type: object
+        required: [todo_id, difficulty, type_of_changes]
+        properties:
+          todo_id:
+            type: string
+          difficulty:
+            type: string
+            enum: [small, medium, large]
+          type_of_changes:
+            type: array
+            items: { type: string }
+          dependencies:
+            type: array
+            items: { type: string }
+    errors:
+      type: array
+      items: { type: string }
+
+delegates_to: []
+
+allowed_tools:
+  - Read
+  - Bash
+  - Glob
+  - Grep
+  - Write
+  - Edit
+  - "mcp__clasi__*"
+
+mcp_servers:
+  - clasi
+
+cwd: "{project_root}"

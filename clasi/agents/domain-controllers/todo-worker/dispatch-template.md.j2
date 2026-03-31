@@ -22,3 +22,28 @@ Operate on TODO files in `docs/clasi/todo/`. Depending on the action:
 - Follow the TODO frontmatter format with proper status fields.
 - Do not write code or tests. You manage TODO artifacts only.
 - Return structured JSON with status, summary, and created/updated paths.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Created 3 TODOs from stakeholder input",
+  "todos_created": [
+    "docs/clasi/todo/TODO-001.md",
+    "docs/clasi/todo/TODO-002.md"
+  ],
+  "todos_updated": []
+}
+```
+
+- **status**: "success" if all actions completed, "partial" if some
+  remain, "failed" if unable to proceed.
+- **summary**: What was done with the TODOs.
+- **todos_created**: (optional) Paths to created TODO files.
+- **todos_updated**: (optional) Paths to updated TODO files.
+- **errors**: (optional) List of issues encountered.

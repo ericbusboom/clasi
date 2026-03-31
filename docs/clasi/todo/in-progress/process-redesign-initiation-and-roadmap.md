@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: 028
+tickets:
+- 028-001
 ---
 
 # Redesign Project Initiation and Roadmap Planning

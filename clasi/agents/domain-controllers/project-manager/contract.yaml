@@ -1,0 +1,105 @@
+name: project-manager
+tier: 1
+model: "sonnet"
+description: >
+  Processes written specifications into structured project documents
+  (initiation mode) and groups assessed TODOs into sprint roadmaps
+  (roadmap mode). Does not interview stakeholders or access the codebase.
+
+inputs:
+  required:
+    - name: spec-file
+      type: file
+      description: >
+        Path to the stakeholder's written specification file.
+        Used in initiation mode.
+
+    - name: todo-assessments
+      type: file-list
+      description: >
+        TODO assessment files from the project-architect.
+        Used in roadmap mode.
+      pattern: "docs/clasi/todo/*.md"
+
+  optional:
+    - name: existing-architecture
+      type: file
+      description: Current architecture document for context
+      default: "docs/clasi/architecture/architecture-{latest}.md"
+
+outputs:
+  initiation:
+    required:
+      - path: "docs/clasi/overview.md"
+      - path: "docs/clasi/specification.md"
+      - path: "docs/clasi/usecases.md"
+    validates:
+      - "specification.md preserves ALL stakeholder detail without summarization"
+      - "overview.md is a concise one-page summary"
+      - "usecases.md contains numbered UC-NNN use cases with full structure"
+
+  roadmap:
+    required:
+      - path: "docs/clasi/sprints/*/sprint.md"
+        min_count: 1
+        frontmatter:
+          status: roadmap
+
+returns:
+  initiation:
+    type: object
+    required: [status, summary, files_created]
+    properties:
+      status:
+        type: string
+        enum: [success, partial, failed]
+      summary:
+        type: string
+        description: Brief description of what was produced
+      files_created:
+        type: array
+        items: { type: string }
+        description: Paths to created project documents
+      use_case_count:
+        type: integer
+        description: Number of use cases extracted
+      errors:
+        type: array
+        items: { type: string }
+
+  roadmap:
+    type: object
+    required: [status, summary, sprint_count]
+    properties:
+      status:
+        type: string
+        enum: [success, partial, failed]
+      summary:
+        type: string
+        description: Brief description of the roadmap
+      sprint_count:
+        type: integer
+        description: Number of sprints in the roadmap
+      sprint_files:
+        type: array
+        items: { type: string }
+        description: Paths to created sprint.md files
+      errors:
+        type: array
+        items: { type: string }
+
+delegates_to: []
+
+allowed_tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - "mcp__clasi__*"
+
+mcp_servers:
+  - clasi
+
+cwd: "{project_root}"

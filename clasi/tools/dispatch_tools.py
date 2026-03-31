@@ -109,23 +109,62 @@ async def _dispatch(
 # ---------------------------------------------------------------------------
 
 @server.tool()
-async def dispatch_to_requirements_narrator(
-    project_path: str,
+async def dispatch_to_project_manager(
+    mode: str,
+    spec_file: str = "",
+    todo_assessments: list[str] | None = None,
+    sprint_goals: str = "",
 ) -> str:
-    """Dispatch to the requirements-narrator agent via Agent SDK.
+    """Dispatch to the project-manager agent via Agent SDK.
 
     Renders the dispatch template, logs the dispatch, executes the
     subagent via query(), validates the result against the agent
     contract, logs the result, and returns structured JSON.
 
     Args:
-        project_path: Path to the project root
+        mode: Operating mode -- 'initiation' (process spec into project
+              docs) or 'roadmap' (group assessed TODOs into sprints)
+        spec_file: Path to the stakeholder's specification file
+                   (required for initiation mode)
+        todo_assessments: List of TODO assessment file paths
+                         (required for roadmap mode)
+        sprint_goals: High-level goals for the sprint roadmap
+                      (used in roadmap mode)
     """
-    agent = get_project().get_agent("requirements-narrator")
-    prompt = agent.render_prompt(project_path=project_path)
+    agent = get_project().get_agent("project-manager")
+    prompt = agent.render_prompt(
+        mode=mode,
+        spec_file=spec_file,
+        todo_assessments=todo_assessments or [],
+        sprint_goals=sprint_goals,
+    )
     result = await agent.dispatch(
         prompt=prompt,
-        cwd=project_path,
+        cwd=str(get_project().root),
+        parent="team-lead",
+        mode=mode,
+    )
+    return json.dumps(result, indent=2)
+
+
+@server.tool()
+async def dispatch_to_project_architect(
+    todo_files: list[str],
+) -> str:
+    """Dispatch to the project-architect agent via Agent SDK.
+
+    Renders the dispatch template, logs the dispatch, executes the
+    subagent via query(), validates the result against the agent
+    contract, logs the result, and returns structured JSON.
+
+    Args:
+        todo_files: List of TODO file paths to assess
+    """
+    agent = get_project().get_agent("project-architect")
+    prompt = agent.render_prompt(todo_files=todo_files)
+    result = await agent.dispatch(
+        prompt=prompt,
+        cwd=str(get_project().root),
         parent="team-lead",
     )
     return json.dumps(result, indent=2)

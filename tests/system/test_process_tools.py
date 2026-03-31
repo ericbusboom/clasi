@@ -43,7 +43,7 @@ class TestListDefinitions:
 class TestGetDefinition:
     def test_gets_agent(self):
         content = _get_definition(content_path("agents"), "team-lead")
-        assert "Team Lead" in content
+        assert "team-lead" in content
 
     def test_not_found(self):
         with pytest.raises(ValueError, match="not found"):
@@ -74,7 +74,7 @@ class TestMCPTools:
 
     def test_get_agent_definition(self):
         result = get_agent_definition("team-lead")
-        assert "Team Lead" in result
+        assert "team-lead" in result
 
     def test_get_skill_definition(self):
         result = get_skill_definition("execute-ticket")

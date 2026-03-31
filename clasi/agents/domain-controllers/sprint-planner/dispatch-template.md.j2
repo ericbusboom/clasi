@@ -94,3 +94,50 @@ Read these before planning:
 - Do not write code or tests. You produce planning artifacts only.
 - Do NOT create a git branch. Branches are created later at execution time.
 - Return the completed sprint plan to team-lead when done.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+{% if mode == "roadmap" %}
+```json
+{
+  "status": "success",
+  "summary": "Brief description of what was planned",
+  "sprint_file": "path/to/sprint.md"
+}
+```
+
+- **status**: "success" if the roadmap plan was created, "failed" otherwise.
+- **summary**: Brief description of what was planned.
+- **sprint_file**: Path to the created sprint.md.
+{% elif mode == "detail" %}
+```json
+{
+  "status": "success",
+  "summary": "Brief description of the sprint plan",
+  "files_created": [
+    "sprint.md",
+    "usecases.md",
+    "architecture-update.md",
+    "tickets/NNN-001-title.md"
+  ],
+  "ticket_ids": [
+    "NNN-001",
+    "NNN-002"
+  ],
+  "architecture_review": "passed"
+}
+```
+
+- **status**: "success" if all planning artifacts produced, "partial" if
+  some remain, "failed" if planning could not proceed.
+- **summary**: Brief description of the sprint plan.
+- **files_created**: Paths to all created planning artifacts.
+- **ticket_ids**: IDs of created tickets.
+- **architecture_review**: (optional) Result of architecture review gate
+  ("passed", "failed", or "skipped").
+- **errors**: (optional) List of issues encountered.
+{% endif %}

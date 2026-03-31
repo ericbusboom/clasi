@@ -34,3 +34,35 @@ Read these before creating tickets:
 - Ensure dependencies reference valid ticket IDs.
 - Each ticket should be independently implementable (given deps are met).
 - Return structured JSON with status, summary, ticket_ids, and files_created.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Created 4 tickets covering all sprint use cases",
+  "ticket_ids": [
+    "NNN-001",
+    "NNN-002",
+    "NNN-003",
+    "NNN-004"
+  ],
+  "files_created": [
+    "tickets/NNN-001-setup.md",
+    "tickets/NNN-002-core.md",
+    "tickets/NNN-003-api.md",
+    "tickets/NNN-004-tests.md"
+  ]
+}
+```
+
+- **status**: "success" if all tickets created, "partial" if some remain,
+  "failed" if ticket creation could not proceed.
+- **summary**: Summary of ticket decomposition.
+- **ticket_ids**: IDs of created tickets.
+- **files_created**: Paths to created ticket files.
+- **errors**: (optional) List of issues encountered.

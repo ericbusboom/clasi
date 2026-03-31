@@ -98,8 +98,15 @@ class Clasi:
         """Start the CLASI MCP server (stdio transport)."""
         self.set_project(Path.cwd())
         self._setup_logging()
+        # Identify who this MCP server instance is serving
+        agent_name = os.environ.get("CLASI_AGENT_NAME", "team-lead")
+        agent_tier = os.environ.get("CLASI_AGENT_TIER", "0")
+        self._serving_agent = agent_name
+        self._serving_tier = agent_tier
+
         logger.info("=" * 60)
         logger.info("CLASI MCP server starting")
+        logger.info("  serving: %s (tier %s)", agent_name, agent_tier)
         logger.info("  project_root: %s", self.project.root)
         logger.info("  clasi_dir: %s", self.project.clasi_dir)
         logger.info("  content_root: %s", self.content_root)
@@ -126,16 +133,16 @@ class Clasi:
             for k, v in arguments.items():
                 s = str(v)
                 args_summary[k] = s[:200] + "..." if len(s) > 200 else s
-            logger.info("CALL %s(%s)", name, json.dumps(args_summary))
+            logger.info("[%s] CALL %s(%s)", agent_name, name, json.dumps(args_summary))
             try:
                 result = await _original_call_tool(name, arguments, **kwargs)
                 result_str = str(result)
                 if len(result_str) > 500:
                     result_str = result_str[:500] + "..."
-                logger.info("  OK %s -> %s", name, result_str)
+                logger.info("[%s]   OK %s -> %s", agent_name, name, result_str)
                 return result
             except Exception as e:
-                logger.error("  FAIL %s -> %s: %s", name, type(e).__name__, e)
+                logger.error("[%s]   FAIL %s -> %s: %s", agent_name, name, type(e).__name__, e)
                 raise
 
         _tm.call_tool = _logged_call_tool

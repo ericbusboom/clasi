@@ -320,8 +320,8 @@ def get_language_instruction(language: str) -> str:
 # agent, skill, and instruction files.
 ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
     "requirements": {
-        "agents": ["requirements-narrator"],
-        "skills": ["elicit-requirements"],
+        "agents": ["project-manager"],
+        "skills": [],
         "instructions": ["software-engineering"],
     },
     "architecture": {

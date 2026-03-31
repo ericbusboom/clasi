@@ -2,16 +2,16 @@
 
 ## Process Stages
 
-1. **Stage 1a — Requirements**: Elicit requirements, produce overview
-   - Skill: `elicit-requirements` | Agent: `requirements-narrator`
-2. **Stage 1b — Architecture**: Design architecture per sprint
-   - Skill: `plan-sprint` (architecture step) | Agent: `architect`
-3. **Sprints**: Plan and execute sprints
-   - Skills: `plan-sprint`, `close-sprint` | Agents: `sprint-planner`, `sprint-executor`
-4. **Stage 2 — Ticketing**: Break plan into numbered tickets
-   - Skill: `create-tickets` | Agent: `technical-lead`
-5. **Stage 3 — Implementation**: Execute tickets (plan → implement → test → review → done)
-   - Skill: `execute-ticket` | Agents: `code-monkey`, `code-reviewer`
+1. **Project Initiation**: Process written spec into project documents
+   - Agent: `project-manager` (initiation mode) → overview.md, specification.md, usecases.md
+2. **TODO Assessment**: Assess TODOs against codebase for impact analysis
+   - Agent: `project-architect` → difficulty estimates, dependencies
+3. **Roadmap Planning**: Group assessed TODOs into sprint roadmap
+   - Agent: `project-manager` (roadmap mode) → lightweight sprint.md files
+4. **Sprint Detail Planning**: Full planning for the next sprint to execute
+   - Skill: `plan-sprint` | Agent: `sprint-planner` → usecases, architecture, tickets
+5. **Sprint Execution**: Execute tickets in a planned sprint
+   - Skill: `execute-ticket` | Agents: `sprint-executor`, `code-monkey`, `code-reviewer`
 
 ## Available Agents
 
