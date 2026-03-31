@@ -257,6 +257,30 @@ def _success_query():
     return mock_query
 
 
+def make_prose_then_json_subagent(
+    prose_response: str,
+    json_payload: dict,
+) -> tuple:
+    """Factory: create a mock subagent query that returns prose first, then JSON.
+
+    Returns a (query_func, call_counter) tuple so callers can assert how many
+    times the subagent was invoked.
+
+    The ``call_counter`` is a plain list; its length tracks call count so it
+    can be captured in the async closure without a ``nonlocal`` statement.
+    """
+    calls: list[int] = []
+
+    async def mock_subagent(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            yield _make_result_message(prose_response)
+        else:
+            yield _make_result_message(json.dumps(json_payload))
+
+    return mock_subagent, calls
+
+
 class TestAgentDispatch:
     """Test Agent.dispatch with mocked query()."""
 
@@ -487,3 +511,367 @@ class TestAgentDispatch:
                 ))
 
         assert post_log_called
+
+
+# ---------------------------------------------------------------------------
+# Agent._build_retry_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRetryPrompt:
+    """Test Agent._build_retry_prompt helper method."""
+
+    def test_includes_original_prompt(self, project):
+        agent = project.get_agent("code-monkey")
+        validation = {
+            "status": "error",
+            "errors": ["No valid JSON found in agent result text"],
+            "missing_files": [],
+        }
+        prompt = agent._build_retry_prompt("original prompt text", validation, None)
+        assert "original prompt text" in prompt
+
+    def test_includes_validation_errors(self, project):
+        agent = project.get_agent("code-monkey")
+        validation = {
+            "status": "error",
+            "errors": ["No valid JSON found in agent result text"],
+            "missing_files": [],
+        }
+        prompt = agent._build_retry_prompt("do work", validation, None)
+        assert "No valid JSON found" in prompt
+
+    def test_includes_missing_files(self, project):
+        agent = project.get_agent("code-monkey")
+        validation = {
+            "status": "invalid",
+            "errors": [],
+            "missing_files": ["docs/output.md"],
+        }
+        prompt = agent._build_retry_prompt("do work", validation, None)
+        assert "docs/output.md" in prompt
+
+    def test_includes_retry_section_header(self, project):
+        agent = project.get_agent("code-monkey")
+        validation = {
+            "status": "error",
+            "errors": ["some error"],
+            "missing_files": [],
+        }
+        prompt = agent._build_retry_prompt("do work", validation, None)
+        assert "RETRY" in prompt
+
+    def test_includes_return_schema(self, project):
+        agent = project.get_agent("code-monkey")
+        validation = {
+            "status": "error",
+            "errors": ["No valid JSON found in agent result text"],
+            "missing_files": [],
+        }
+        prompt = agent._build_retry_prompt("do work", validation, None)
+        # Contract for code-monkey requires status, summary, files_changed, tests_passed
+        assert "status" in prompt
+        assert "summary" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Agent.dispatch retry logic
+# ---------------------------------------------------------------------------
+
+
+class TestAgentDispatchRetry:
+    """Test the retry logic in Agent.dispatch()."""
+
+    def test_retry_on_no_json_then_success(self, tmp_path):
+        """Dispatch retries when first response has no JSON, succeeds on retry."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        call_count = 0
+
+        async def mock_query_prose_then_json(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call returns prose (no JSON)
+                yield _make_result_message(
+                    "I worked really hard and everything is done now!"
+                )
+            else:
+                # Second call (retry) returns valid JSON
+                yield _make_result_message(json.dumps({
+                    "status": "success",
+                    "summary": "done on retry",
+                    "files_changed": ["test.py"],
+                    "tests_passed": True,
+                }))
+
+        mock_sdk = _make_mock_sdk(mock_query_prose_then_json)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="test prompt",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert call_count == 2, "query() should have been called twice"
+        assert result["status"] == "valid"
+        assert "done on retry" in result["result"]
+
+    def test_retry_not_triggered_on_success(self, tmp_path):
+        """When first response is valid, no retry is attempted."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        call_count = 0
+
+        async def mock_query(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            yield _make_result_message(json.dumps({
+                "status": "success",
+                "summary": "done first time",
+                "files_changed": [],
+                "tests_passed": True,
+            }))
+
+        mock_sdk = _make_mock_sdk(mock_query)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            asyncio.run(agent.dispatch(
+                prompt="test prompt",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert call_count == 1, "query() should only have been called once"
+
+    def test_retry_both_fail_returns_fatal(self, tmp_path):
+        """When both original and retry fail validation, returns fatal error."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        async def mock_query_always_prose(**kwargs):
+            yield _make_result_message(
+                "Sorry I cannot provide a JSON response, here is prose instead."
+            )
+
+        mock_sdk = _make_mock_sdk(mock_query_always_prose)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="test prompt",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert result["status"] == "error"
+        assert result.get("fatal") is True
+        assert "log_path" in result
+        assert "instruction" in result
+
+    def test_retry_prompt_sent_on_validation_failure(self, tmp_path):
+        """The retry prompt includes validation error context."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        prompts_seen = []
+
+        async def mock_query_capture_prompt(**kwargs):
+            prompt_text = kwargs.get("prompt", "")
+            prompts_seen.append(prompt_text)
+            yield _make_result_message(
+                "prose response with no JSON"
+            )
+
+        mock_sdk = _make_mock_sdk(mock_query_capture_prompt)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            asyncio.run(agent.dispatch(
+                prompt="original dispatch prompt",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert len(prompts_seen) == 2
+        # Original prompt unchanged on first call
+        assert prompts_seen[0] == "original dispatch prompt"
+        # Retry prompt includes original + validation error info
+        assert "original dispatch prompt" in prompts_seen[1]
+        assert "RETRY" in prompts_seen[1]
+
+    def test_retry_query_exception_falls_through(self, tmp_path):
+        """If retry query raises exception, dispatch continues with original invalid result."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        call_count = 0
+
+        async def mock_query_first_prose_then_raises(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield _make_result_message("prose with no json")
+            else:
+                raise RuntimeError("Retry query crashed")
+                yield  # pragma: no cover
+
+        mock_sdk = _make_mock_sdk(mock_query_first_prose_then_raises)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="test prompt",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert call_count == 2
+        # Should still return a result, not crash
+        assert "status" in result
+        assert "log_path" in result
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchRetryMockSubagent -- integration-style tests using
+# the make_prose_then_json_subagent factory.
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchRetryMockSubagent:
+    """Integration-style tests for dispatch retry using the mock subagent factory.
+
+    These tests use ``make_prose_then_json_subagent`` to create a reusable
+    mock subagent that returns prose on the first call and valid JSON on the
+    second call.  They verify the caller-visible contract of the retry path:
+    the return shape, the call count, and the embedded result text.
+    """
+
+    def test_mock_subagent_returns_valid_after_retry(self, tmp_path):
+        """dispatch() returns status=valid when mock subagent gives prose then JSON."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        mock_query, calls = make_prose_then_json_subagent(
+            prose_response="I finished the task!",
+            json_payload={
+                "status": "success",
+                "summary": "All done via retry",
+                "files_changed": ["src/foo.py"],
+                "tests_passed": True,
+            },
+        )
+        mock_sdk = _make_mock_sdk(mock_query)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="implement the feature",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert len(calls) == 2, "mock subagent should have been called twice"
+        assert result["status"] == "valid"
+
+    def test_mock_subagent_retry_result_contains_json_summary(self, tmp_path):
+        """The result text from a successful retry contains the summary field."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        mock_query, _calls = make_prose_then_json_subagent(
+            prose_response="Working on it...",
+            json_payload={
+                "status": "success",
+                "summary": "retry result summary here",
+                "files_changed": [],
+                "tests_passed": False,
+            },
+        )
+        mock_sdk = _make_mock_sdk(mock_query)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="do work",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert "retry result summary here" in result["result"]
+
+    def test_mock_subagent_retry_result_contains_log_path(self, tmp_path):
+        """dispatch() always returns a log_path regardless of retry outcome."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        mock_query, _calls = make_prose_then_json_subagent(
+            prose_response="prose only, no json",
+            json_payload={
+                "status": "success",
+                "summary": "ok",
+                "files_changed": [],
+                "tests_passed": True,
+            },
+        )
+        mock_sdk = _make_mock_sdk(mock_query)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="do work",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert "log_path" in result
+        assert result["log_path"]  # non-empty
+
+    def test_mock_subagent_always_prose_is_fatal(self, tmp_path):
+        """When mock subagent always returns prose, dispatch returns fatal error."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        # Both calls return the same prose-only response
+        calls: list[int] = []
+
+        async def always_prose(**kwargs):
+            calls.append(1)
+            yield _make_result_message("I did the work but won't give you JSON.")
+
+        mock_sdk = _make_mock_sdk(always_prose)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = asyncio.run(agent.dispatch(
+                prompt="do work",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        assert len(calls) == 2, "should attempt original + one retry"
+        assert result["status"] == "error"
+        assert result.get("fatal") is True
+        assert "instruction" in result
+
+    def test_mock_subagent_exactly_one_retry_attempted(self, tmp_path):
+        """Retry is limited to exactly one attempt; no infinite loop."""
+        project = Project(tmp_path)
+        agent = project.get_agent("code-monkey")
+
+        calls: list[int] = []
+
+        async def always_prose(**kwargs):
+            calls.append(1)
+            # Return prose unconditionally — even on the 3rd+ call if somehow invoked
+            yield _make_result_message("just prose, no json")
+
+        mock_sdk = _make_mock_sdk(always_prose)
+
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            asyncio.run(agent.dispatch(
+                prompt="do work",
+                cwd=str(tmp_path),
+                parent="sprint-executor",
+            ))
+
+        # Must be exactly 2: original + one retry, never more
+        assert len(calls) == 2, (
+            f"Expected exactly 2 calls (original + one retry), got {len(calls)}"
+        )
