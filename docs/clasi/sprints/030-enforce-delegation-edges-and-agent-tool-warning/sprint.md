@@ -1,7 +1,7 @@
 ---
-id: "030"
-title: "Enforce Delegation Edges and Agent Tool Warning"
-status: planning
+id: '030'
+title: Enforce Delegation Edges and Agent Tool Warning
+status: done
 branch: sprint/030-enforce-delegation-edges-and-agent-tool-warning
 use-cases: []
 ---
