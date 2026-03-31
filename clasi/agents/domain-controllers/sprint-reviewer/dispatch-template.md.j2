@@ -30,3 +30,32 @@ files. Your output is a structured review report.
 - Run `uv run pytest` to verify test suite status.
 - Do not modify any files.
 - Return structured JSON with verdict, checklist results, and any issues.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "verdict": "pass",
+  "checklist": [
+    {
+      "item": "All tickets in tickets/done/",
+      "result": "pass",
+      "details": "3/3 tickets moved to done"
+    }
+  ],
+  "blocking_issues": [],
+  "advisory_notes": ["Consider adding integration tests"]
+}
+```
+
+- **status**: "success" if the review completed, "failed" if it could not.
+- **verdict**: "pass" if the sprint is ready to close, "fail" if not.
+- **checklist**: Array of checklist items, each with item name, result
+  ("pass"/"fail"), and optional details.
+- **blocking_issues**: (optional) Issues that must be fixed before closing.
+- **advisory_notes**: (optional) Non-blocking observations.

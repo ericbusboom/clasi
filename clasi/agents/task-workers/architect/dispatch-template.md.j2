@@ -31,3 +31,28 @@ Read these before writing:
 - The architecture update is a focused diff, not a full rewrite.
 - Set frontmatter status to "draft" on architecture-update.md.
 - Return structured JSON with status, summary, and architecture_file.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Summary of architectural changes",
+  "architecture_file": "docs/clasi/sprints/NNN/architecture-update.md",
+  "components_affected": [
+    "clasi/tools/dispatch.py",
+    "clasi/agents/"
+  ]
+}
+```
+
+- **status**: "success" if the architecture update was produced, "failed"
+  otherwise.
+- **summary**: Summary of architectural changes.
+- **architecture_file**: Path to the architecture update file.
+- **components_affected**: (optional) Components added, modified, or removed.
+- **errors**: (optional) List of issues encountered.
