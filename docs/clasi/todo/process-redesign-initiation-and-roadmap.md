@@ -27,17 +27,16 @@ sprints:
    there's no baseline architecture before the first sprint. The
    project-manager needs an architecture to plan the roadmap.
 
-## Three Entry Paths
+## Two Entry Paths
 
-### Path 1: Interview the stakeholder
-Requirements-narrator interviews, produces project documents.
-
-### Path 2: Receive a written spec
+### Path 1: Receive a written spec
 Requirements-narrator reads the spec, extracts project documents,
-preserves the full spec as specification.md.
+preserves the full spec as specification.md. No stakeholder interview
+— the spec is the input. (Stakeholder interviews happen outside CLASI,
+in the Claude project or conversation that produces the spec.)
 
-### Path 3: Existing project, new TODOs
-Skip to roadmap planning with existing documents.
+### Path 2: Existing project, new TODOs
+Spec and architecture already exist. Skip to roadmap planning.
 
 ## Document Hierarchy
 
@@ -50,10 +49,10 @@ Before sprint planning begins, these documents should exist:
 | usecases.md | medium | Numbered UC-NNN scenarios | sprint-planner, technical-lead |
 | architecture.md | medium | Baseline architecture | project-architect, sprint architect |
 
-## Process Flow (Paths 1 and 2)
+## Process Flow (Path 1 — new project with spec)
 
 ```
-1. Stakeholder input (interview or spec)
+1. Stakeholder provides a written specification
        │
 2. requirements-narrator produces:
        ├── overview.md (summary)
@@ -121,9 +120,9 @@ Output: roadmap sprint.md files (lightweight — goals, TODO refs).
 
 ## Changes Required
 
-1. **requirements-narrator**: Produce specification.md alongside
-   overview.md and usecases.md. When receiving a full spec, preserve
-   the detail — don't just summarize.
+1. **requirements-narrator**: Rename or repurpose. No longer interviews
+   — it reads a provided spec and extracts overview.md, specification.md,
+   and usecases.md. The spec is the input, always.
 
 2. **New agents**: Create project-architect and project-manager with
    agent.md and contract.yaml.
