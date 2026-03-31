@@ -1,7 +1,7 @@
 ---
-id: "027"
-title: "Cleanup — Remove ghtodo and Fix Log Numbering"
-status: planning
+id: '027'
+title: "Cleanup \u2014 Remove ghtodo and Fix Log Numbering"
+status: done
 branch: sprint/027-cleanup-remove-ghtodo-and-fix-log-numbering
 use-cases: []
 ---
