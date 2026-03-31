@@ -137,9 +137,20 @@ class Sprint:
         raise ValueError(f"Ticket '{ticket_id}' not found in sprint {self.id}")
 
     def create_ticket(self, title: str, todo: str | None = None) -> Ticket:
-        """Create a new ticket in this sprint's tickets/ directory."""
+        """Create a new ticket in this sprint's tickets/ directory.
+
+        When ``todo`` is not provided, automatically links to TODOs
+        listed in the sprint's ``sprint.md`` frontmatter ``todos`` field.
+        """
         from clasi.ticket import Ticket
         from clasi.frontmatter import read_frontmatter
+
+        # Auto-link to sprint TODOs when no explicit todo given
+        if todo is None:
+            sprint_todos = self.sprint_doc.frontmatter.get("todos")
+            if sprint_todos and isinstance(sprint_todos, list):
+                if len(sprint_todos) == 1:
+                    todo = sprint_todos[0]
 
         tickets_dir = self._path / "tickets"
         tickets_dir.mkdir(parents=True, exist_ok=True)
