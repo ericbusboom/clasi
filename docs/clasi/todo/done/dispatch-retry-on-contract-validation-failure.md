@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: 029
+tickets:
+- 029-001
 ---
 
 # Retry or Reject When Subagent Return Fails Contract Validation
