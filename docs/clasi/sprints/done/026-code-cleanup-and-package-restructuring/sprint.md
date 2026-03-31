@@ -1,13 +1,13 @@
 ---
-id: "026"
-title: "Code Cleanup and Package Restructuring"
-status: planned
+id: '026'
+title: Code Cleanup and Package Restructuring
+status: done
 phase: planning-docs
 branch: sprint/026-code-cleanup-and-package-restructuring
 todos:
-  - code-review-procedural-bypasses.md
-  - refactor-tools-into-module.md
-  - rename-source-dir-to-clasi.md
+- code-review-procedural-bypasses.md
+- refactor-tools-into-module.md
+- rename-source-dir-to-clasi.md
 ---
 
 # Sprint 026: Code Cleanup and Package Restructuring
