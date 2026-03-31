@@ -1,7 +1,7 @@
 ---
-id: "028"
-title: "Process Redesign — Project Manager and Project Architect"
-status: planning
+id: 028
+title: "Process Redesign \u2014 Project Manager and Project Architect"
+status: done
 branch: sprint/028-process-redesign-project-manager-and-project-architect
 use-cases: []
 ---
