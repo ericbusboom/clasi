@@ -3,6 +3,10 @@ tier: 0
 description: >
   Top-level dispatcher. Routes stakeholder requests to domain
   controllers. Validates results on return. Never writes files.
+  INFORMATIONAL ONLY: This contract is not read by any dispatch tool
+  because the team-lead is never dispatched to — it IS the top-level
+  session. The contract documents the delegation edges and allowed
+  tools for process overview purposes.
 
 inputs:
   required:

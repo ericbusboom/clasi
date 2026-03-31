@@ -151,7 +151,7 @@ See `instructions/git-workflow` for full rules.
 
 _PACKAGE_DIR = Path(__file__).parent
 _SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
-_AGENTS_SECTION_PATH = _PACKAGE_DIR / "init" / "agents-section.md"
+_AGENTS_SECTION_PATH = _PACKAGE_DIR / "agents" / "main-controller" / "team-lead" / "agent.md"
 _ROLE_GUARD_SOURCE = _PACKAGE_DIR / "hooks" / "role_guard.py"
 
 # Marker used to find/replace the CLASI section in CLAUDE.md.
@@ -180,11 +180,17 @@ def _write_se_skill(target: Path) -> bool:
 
 
 def _read_agents_section() -> str:
-    """Read the AGENTS.md section content from the package file.
+    """Read the CLASI section from the team-lead agent.md.
 
-    Returns the section text with trailing whitespace stripped.
+    The agent.md contains YAML frontmatter (stripped) and the CLAUDE.md
+    section delimited by CLASI:START/END markers. Returns everything
+    from the start marker to the end marker, inclusive.
     """
-    return _AGENTS_SECTION_PATH.read_text(encoding="utf-8").rstrip()
+    content = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
+    # Extract just the CLASI:START to CLASI:END block (skip frontmatter)
+    start = content.index(_AGENTS_SECTION_START)
+    end = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
+    return content[start:end].rstrip()
 
 
 def _update_claude_md(target: Path) -> bool:
