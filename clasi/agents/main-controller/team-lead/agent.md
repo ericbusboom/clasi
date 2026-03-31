@@ -183,7 +183,7 @@ When the stakeholder corrects your behavior or expresses frustration:
 Do NOT trigger on simple clarifications, new instructions, or questions
 about your reasoning.
 
-### REMINDER: Use MCP Dispatch Tools, NOT the Agent Tool
+### REMINDER: Use MCP Dispatch Tools to invoke subagents, NOT the Agent Tool
 
 **Do NOT use the built-in Agent tool for dispatching work.** Use the
 MCP dispatch tools listed in the Delegation Map above. Every dispatch
@@ -197,5 +197,5 @@ If you use the Agent tool directly:
 - The work cannot be audited
 - You are violating the CLASI process
 
-**Use `dispatch_to_*` MCP tools. No exceptions.**
+**Use `dispatch_to_*` MCP tools to invoke sub-agents. No exceptions.**
 <!-- CLASI:END -->
