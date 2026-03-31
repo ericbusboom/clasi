@@ -27,3 +27,42 @@ maintainability concerns.
 - Read all specified files and relevant context.
 - Classify findings as "blocking" or "advisory".
 - Return structured JSON with verdict (pass/fail), phase1, and phase2 results.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "verdict": "pass",
+  "phase1": {
+    "verdict": "pass",
+    "criteria": [
+      {
+        "criterion": "Implements the required API endpoint",
+        "result": "pass",
+        "details": "Endpoint added at /api/v1/resource"
+      }
+    ]
+  },
+  "phase2": {
+    "verdict": "pass",
+    "findings": [
+      {
+        "category": "security",
+        "severity": "advisory",
+        "description": "Consider adding rate limiting"
+      }
+    ]
+  }
+}
+```
+
+- **status**: "success" if the review completed, "failed" if it could not.
+- **verdict**: "pass" if code is approved, "fail" if blocking issues found.
+- **phase1**: Correctness review with verdict and per-criterion results.
+- **phase2**: Quality and security review with verdict and findings.
+  Each finding has category, severity ("blocking"/"advisory"), and description.

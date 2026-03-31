@@ -38,7 +38,32 @@ Read these for context:
 - Do not move the ticket to `tickets/done/` -- the sprint-executor
   handles that after validating your work.
 
-## Dispatch Note
+## Required Return Format
 
-This dispatch was executed via `dispatch_to_code_monkey`, which handles
-all logging, execution, validation, and result recording automatically.
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Brief description of what was implemented",
+  "files_changed": [
+    "path/to/file1.py",
+    "path/to/file2.py"
+  ],
+  "tests_passed": true,
+  "test_output": "last 20 lines of pytest output",
+  "acceptance_criteria": {
+    "total": 3,
+    "checked": 3
+  }
+}
+```
+
+- **status**: "success" if all acceptance criteria met and tests pass,
+  "partial" if some criteria remain, "failed" if tests fail.
+- **files_changed**: Every file you created or modified.
+- **tests_passed**: Result of `uv run pytest`.
+- **acceptance_criteria**: Count of total and checked-off criteria.
+- **errors**: (optional) List of issues encountered if status != "success".

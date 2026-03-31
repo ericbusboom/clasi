@@ -34,3 +34,32 @@ Read these before reviewing:
 - Do not modify any files.
 - Classify findings as "blocking" or "advisory".
 - Return structured JSON with verdict (passed/failed) and findings.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "verdict": "passed",
+  "findings": [
+    {
+      "category": "consistency",
+      "severity": "advisory",
+      "description": "Consider aligning naming with existing modules"
+    }
+  ],
+  "recommendations": [
+    "Add migration notes for renamed modules"
+  ]
+}
+```
+
+- **status**: "success" if the review completed, "failed" if it could not.
+- **verdict**: "passed" if the architecture is approved, "failed" if not.
+- **findings**: Array of findings, each with category (consistency, quality,
+  alignment, risk), severity ("blocking"/"advisory"), and description.
+- **recommendations**: (optional) Suggested improvements.

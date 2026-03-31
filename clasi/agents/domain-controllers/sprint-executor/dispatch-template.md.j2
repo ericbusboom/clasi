@@ -48,3 +48,29 @@ This applies to every dispatch including re-dispatches. No exceptions.
 - If a ticket fails validation after 2 re-dispatches, escalate to
   team-lead.
 - Run the full test suite after each ticket, not just the ticket's tests.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Summary of sprint execution results",
+  "tickets_completed": [
+    "NNN-001",
+    "NNN-002"
+  ],
+  "tickets_failed": [],
+  "errors": []
+}
+```
+
+- **status**: "success" if all tickets completed, "partial" if some
+  remain, "failed" if execution could not proceed.
+- **summary**: Summary of sprint execution results.
+- **tickets_completed**: IDs of tickets completed.
+- **tickets_failed**: (optional) IDs of tickets that failed.
+- **errors**: (optional) List of issues encountered.

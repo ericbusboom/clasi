@@ -32,3 +32,31 @@ Read these for architectural context:
 - List real files and modules, not hypothetical ones.
 - Identify dependencies between TODOs explicitly.
 - Set frontmatter status to "draft" on the assessment document.
+
+## Required Return Format
+
+Your final message MUST end with a JSON block matching this schema.
+The dispatch tool validates this JSON — if it's missing or malformed,
+your work will be rejected.
+
+```json
+{
+  "status": "success",
+  "summary": "Assessed 5 TODOs against the codebase",
+  "assessments": [
+    {
+      "todo_id": "TODO-001",
+      "difficulty": "medium",
+      "type_of_changes": ["new_module", "config_change"],
+      "dependencies": ["TODO-003"]
+    }
+  ]
+}
+```
+
+- **status**: "success" if all TODOs assessed, "failed" otherwise.
+- **summary**: Overall summary of the TODO assessment.
+- **assessments**: Per-TODO assessment results, each with todo_id,
+  difficulty ("small"/"medium"/"large"), type_of_changes array,
+  and optional dependencies array.
+- **errors**: (optional) List of issues encountered.
