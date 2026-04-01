@@ -1,7 +1,7 @@
 ---
-id: "031"
-title: "Refactor dispatch_to_sprint_planner"
-status: planning
+id: '031'
+title: Refactor dispatch_to_sprint_planner
+status: planning_docs
 branch: sprint/031-refactor-dispatch-to-sprint-planner
 use-cases: []
 ---
