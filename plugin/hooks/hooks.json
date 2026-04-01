@@ -22,18 +22,9 @@
         ]
       }
     ],
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook task-created"
-          }
-        ]
-      }
-    ],
     "TaskCompleted": [
       {
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",

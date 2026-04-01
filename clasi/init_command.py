@@ -234,15 +234,6 @@ def _update_claude_md(target: Path) -> bool:
         return True
 
 
-VSCODE_MCP_CONFIG = {
-    "clasi": {
-        "type": "stdio",
-        "command": "clasi",
-        "args": ["mcp"],
-    }
-}
-
-
 def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
     """Merge MCP server config into .mcp.json.
 
@@ -272,41 +263,6 @@ def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
     click.echo(f"  Updated: {rel}")
     return True
 
-
-def _update_vscode_mcp_json(target: Path) -> bool:
-    """Merge MCP server config into .vscode/mcp.json.
-
-    Uses the VS Code format (servers key with type field).
-    Returns True if the file was written/updated, False if unchanged.
-    """
-    vscode_dir = target / ".vscode"
-    mcp_json_path = vscode_dir / "mcp.json"
-    rel = ".vscode/mcp.json"
-
-    if mcp_json_path.exists():
-        try:
-            data = json.loads(mcp_json_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, ValueError):
-            data = {}
-    else:
-        data = {}
-
-    servers = data.setdefault("servers", {})
-
-    mcp_config = _detect_mcp_command(target)
-    vscode_config = {"type": "stdio", **mcp_config}
-
-    if servers.get("clasi") == vscode_config:
-        click.echo(f"  Unchanged: {rel}")
-        return False
-
-    vscode_dir.mkdir(parents=True, exist_ok=True)
-    servers["clasi"] = vscode_config
-    mcp_json_path.write_text(
-        json.dumps(data, indent=2) + "\n", encoding="utf-8"
-    )
-    click.echo(f"  Updated: {rel}")
-    return True
 
 
 def _update_settings_json(settings_path: Path) -> bool:
@@ -405,11 +361,6 @@ def _create_rules(target: Path) -> bool:
     for filename, content in RULES.items():
         path = rules_dir / filename
         rel = f".claude/rules/{filename}"
-
-        if path.exists() and path.read_text(encoding="utf-8") == content:
-            click.echo(f"  Unchanged: {rel}")
-            continue
-
         path.write_text(content, encoding="utf-8")
         click.echo(f"  Wrote: {rel}")
         changed = True
@@ -439,6 +390,58 @@ def _install_role_guard(target: Path) -> bool:
     return True
 
 
+_CLAUDE_MD_CONTENT = """\
+# CLASI Software Engineering Process
+
+This project uses the CLASI SE process. Your role and workflow are
+defined in `.claude/agents/team-lead/agent.md` — read it at session start.
+
+Available skills: run `/se` for a list.
+"""
+
+
+def _write_claude_md(target: Path) -> bool:
+    """Write a minimal CLAUDE.md that points to the team-lead agent definition.
+
+    If CLAUDE.md already exists, appends the CLASI section (or updates it
+    if the old CLASI:START/END markers are present). If it doesn't exist,
+    creates it.
+    """
+    claude_md = target / "CLAUDE.md"
+
+    if claude_md.exists():
+        content = claude_md.read_text(encoding="utf-8")
+
+        # Replace old CLASI:START/END block if present
+        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
+            start_idx = content.index(_AGENTS_SECTION_START)
+            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
+            new_content = content[:start_idx] + _CLAUDE_MD_CONTENT.strip() + content[end_idx:]
+            if new_content != content:
+                claude_md.write_text(new_content, encoding="utf-8")
+                click.echo("  Updated: CLAUDE.md (replaced old CLASI section)")
+                return True
+            click.echo("  Unchanged: CLAUDE.md")
+            return False
+
+        # Check if our new content is already there
+        if "CLASI SE process" in content and "team-lead/agent.md" in content:
+            click.echo("  Unchanged: CLAUDE.md")
+            return False
+
+        # Append
+        if not content.endswith("\n"):
+            content += "\n"
+        content += "\n" + _CLAUDE_MD_CONTENT
+        claude_md.write_text(content, encoding="utf-8")
+        click.echo("  Updated: CLAUDE.md (appended CLASI section)")
+        return True
+    else:
+        claude_md.write_text(_CLAUDE_MD_CONTENT, encoding="utf-8")
+        click.echo("  Created: CLAUDE.md")
+        return True
+
+
 def _install_plugin_content(target: Path) -> None:
     """Copy skills, agents, and hooks from the plugin/ directory to .claude/.
 
@@ -464,11 +467,8 @@ def _install_plugin_content(target: Path) -> None:
             dest = dest_dir / "SKILL.md"
             source_content = skill_md.read_text(encoding="utf-8")
             rel = f".claude/skills/{skill_dir.name}/SKILL.md"
-            if dest.exists() and dest.read_text(encoding="utf-8") == source_content:
-                click.echo(f"  Unchanged: {rel}")
-            else:
-                dest.write_text(source_content, encoding="utf-8")
-                click.echo(f"  Wrote: {rel}")
+            dest.write_text(source_content, encoding="utf-8")
+            click.echo(f"  Wrote: {rel}")
         click.echo()
 
     # Copy agents
@@ -485,11 +485,8 @@ def _install_plugin_content(target: Path) -> None:
                 dest = dest_dir / md_file.name
                 source_content = md_file.read_text(encoding="utf-8")
                 rel = f".claude/agents/{agent_dir.name}/{md_file.name}"
-                if dest.exists() and dest.read_text(encoding="utf-8") == source_content:
-                    click.echo(f"  Unchanged: {rel}")
-                else:
-                    dest.write_text(source_content, encoding="utf-8")
-                    click.echo(f"  Wrote: {rel}")
+                dest.write_text(source_content, encoding="utf-8")
+                click.echo(f"  Wrote: {rel}")
         click.echo()
 
     # Merge hooks from plugin hooks.json into .claude/settings.json
@@ -556,15 +553,14 @@ def run_init(target: str, plugin_mode: bool = False) -> None:
         # Project-local mode: copy plugin content to .claude/
         _install_plugin_content(target_path)
 
-    # Create or update CLAUDE.md with inline CLASI section
+    # Create CLAUDE.md with minimal CLASI pointer (if it doesn't exist)
     click.echo("CLAUDE.md:")
-    _update_claude_md(target_path)
+    _write_claude_md(target_path)
     click.echo()
 
     # Configure MCP server in .mcp.json at project root
     click.echo("MCP server configuration:")
     _update_mcp_json(target_path / ".mcp.json", target_path)
-    _update_vscode_mcp_json(target_path)
     click.echo()
 
     # Add MCP permission to .claude/settings.local.json

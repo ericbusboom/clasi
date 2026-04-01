@@ -225,8 +225,8 @@ class Agent:
                 reason=(
                     f"CLASI ROLE VIOLATION: {agent_name} attempted direct "
                     f"file write to: {file_path}. "
-                    f"Dispatchers must use dispatch_to_code_monkey or "
-                    f"dispatch_to_architect instead of writing files directly."
+                    f"Dispatchers must delegate to the appropriate subagent "
+                    f"instead of writing files directly."
                 ),
             )
 

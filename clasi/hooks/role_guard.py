@@ -70,9 +70,9 @@ def main() -> None:
     )
     if agent_tier == "1":
         # Domain controller — should dispatch to task workers
-        print("- dispatch_to_code_monkey for source code and tests")
-        print("- dispatch_to_architect for architecture documents")
-        print("- dispatch_to_technical_lead for ticket plans")
+        print("- code-monkey for source code and tests")
+        print("- architect for architecture documents")
+        print("- technical-lead for ticket plans")
     else:
         # Team-lead (tier 0 or unknown)
         print("- sprint-planner for sprint/architecture/ticket artifacts")
@@ -80,7 +80,6 @@ def main() -> None:
         print("- code-monkey for source code and tests")
         print("- todo-worker for TODOs")
         print("- ad-hoc-executor for out-of-process changes")
-    print(f'Call get_agent_definition("{agent_name}") to review your delegation map.')
     sys.exit(1)
 
 

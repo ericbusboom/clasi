@@ -131,7 +131,6 @@ def _get_definition(directory: Path, name: str) -> str:
 _SE_OVERVIEW_TEMPLATE_PATH = Path(__file__).parent.parent / "se-overview-template.md"
 
 
-@server.tool()
 def get_se_overview() -> str:
     """Get a curated overview of the CLASI SE process.
 
@@ -166,7 +165,7 @@ def get_se_overview() -> str:
     )
 
 
-@server.tool()
+#@server.tool()
 def list_agents() -> str:
     """List all available agent definitions.
 
@@ -176,7 +175,7 @@ def list_agents() -> str:
     return json.dumps(_list_agents_recursive(content_path("agents")), indent=2)
 
 
-@server.tool()
+#@server.tool()
 def list_skills() -> str:
     """List all available skill definitions.
 
@@ -190,7 +189,7 @@ def list_skills() -> str:
     )
 
 
-@server.tool()
+#@server.tool()
 def list_instructions() -> str:
     """List all available instruction files.
 
@@ -199,7 +198,7 @@ def list_instructions() -> str:
     return json.dumps(_list_definitions(content_path("instructions")), indent=2)
 
 
-@server.tool()
+#@server.tool()
 def get_agent_definition(name: str) -> str:
     """Get the full markdown content of a named agent definition.
 
@@ -229,7 +228,7 @@ def get_agent_definition(name: str) -> str:
     return agent_content
 
 
-@server.tool()
+#@server.tool()
 def get_skill_definition(name: str) -> str:
     """Get the full markdown content of a named skill definition.
 
@@ -253,7 +252,7 @@ def get_skill_definition(name: str) -> str:
     )
 
 
-@server.tool()
+#@server.tool()
 def get_agent_context(name: str) -> str:
     """Get an agent definition plus all files in its directory.
 
@@ -287,7 +286,7 @@ def get_agent_context(name: str) -> str:
     return "\n\n---\n\n".join(sections)
 
 
-@server.tool()
+#@server.tool()
 def get_instruction(name: str) -> str:
     """Get the full markdown content of a named instruction file.
 
@@ -297,7 +296,7 @@ def get_instruction(name: str) -> str:
     return _get_definition(content_path("instructions"), name)
 
 
-@server.tool()
+#@server.tool()
 def list_language_instructions() -> str:
     """List all available language instruction files.
 
@@ -306,7 +305,7 @@ def list_language_instructions() -> str:
     return json.dumps(_list_definitions(content_path("instructions", "languages")), indent=2)
 
 
-@server.tool()
+#@server.tool()
 def get_language_instruction(language: str) -> str:
     """Get the full markdown content of a language instruction file.
 
@@ -362,7 +361,7 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
 }
 
 
-@server.tool()
+#@server.tool()
 def get_activity_guide(activity: str) -> str:
     """Get tailored guidance for a specific SE activity.
 

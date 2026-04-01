@@ -45,7 +45,6 @@ class TestToolRegistration:
     """Verify all expected MCP tools are registered on the server."""
 
     EXPECTED_PROCESS_TOOLS = {
-        "get_se_overview",
         "list_agents",
         "list_skills",
         "list_instructions",
@@ -91,22 +90,9 @@ class TestToolRegistration:
         "review_sprint_post_close",
     }
 
-    EXPECTED_DISPATCH_TOOLS = {
-        "dispatch_to_project_manager",
-        "dispatch_to_project_architect",
-        "dispatch_to_todo_worker",
-        "dispatch_to_sprint_planner",
-        "dispatch_to_sprint_executor",
-        "dispatch_to_ad_hoc_executor",
-        "dispatch_to_sprint_reviewer",
-        "dispatch_to_architect",
-        "dispatch_to_architecture_reviewer",
-        "dispatch_to_technical_lead",
-        "dispatch_to_code_monkey",
-        "dispatch_to_code_reviewer",
-    }
+    EXPECTED_DISPATCH_TOOLS: set[str] = set()
 
-    EXPECTED_ALL = EXPECTED_PROCESS_TOOLS | EXPECTED_ARTIFACT_TOOLS | EXPECTED_DISPATCH_TOOLS
+    EXPECTED_ALL = EXPECTED_PROCESS_TOOLS | EXPECTED_ARTIFACT_TOOLS
 
     def _registered_tool_names(self) -> set[str]:
         """Get the set of tool names registered on the server."""
@@ -126,7 +112,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 53
+        assert len(registered) == 40
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

@@ -2,15 +2,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'CLASI: You used the Agent tool instead of a dispatch_to_* MCP tool.'; echo 'Dispatch tools provide logging and contract validation.'; echo 'Use dispatch_to_* unless you have a specific reason not to.'"
-          }
-        ]
-      },
-      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {

@@ -137,7 +137,6 @@ async def _dispatch(
 # Dispatch tools
 # ---------------------------------------------------------------------------
 
-@server.tool()
 async def dispatch_to_project_manager(
     mode: str,
     spec_file: str = "",
@@ -177,7 +176,6 @@ async def dispatch_to_project_manager(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_project_architect(
     todo_files: list[str],
 ) -> str:
@@ -201,7 +199,6 @@ async def dispatch_to_project_architect(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_todo_worker(
     todo_ids: list[str],
     action: str,
@@ -227,7 +224,6 @@ async def dispatch_to_todo_worker(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_sprint_planner(
     sprint_id: str,
     sprint_directory: str,
@@ -268,7 +264,6 @@ async def dispatch_to_sprint_planner(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_sprint_executor(
     sprint_id: str,
     sprint_directory: str,
@@ -305,7 +300,6 @@ async def dispatch_to_sprint_executor(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_ad_hoc_executor(
     task_description: str,
     scope_directory: str,
@@ -334,7 +328,6 @@ async def dispatch_to_ad_hoc_executor(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_sprint_reviewer(
     sprint_id: str,
     sprint_directory: str,
@@ -365,7 +358,6 @@ async def dispatch_to_sprint_reviewer(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_architect(
     sprint_id: str,
     sprint_directory: str,
@@ -396,7 +388,6 @@ async def dispatch_to_architect(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_architecture_reviewer(
     sprint_id: str,
     sprint_directory: str,
@@ -429,7 +420,6 @@ async def dispatch_to_architecture_reviewer(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_technical_lead(
     sprint_id: str,
     sprint_directory: str,
@@ -460,7 +450,6 @@ async def dispatch_to_technical_lead(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_code_monkey(
     ticket_path: str,
     ticket_plan_path: str,
@@ -502,7 +491,6 @@ async def dispatch_to_code_monkey(
     return json.dumps(result, indent=2)
 
 
-@server.tool()
 async def dispatch_to_code_reviewer(
     file_paths: list[str],
     review_scope: str,

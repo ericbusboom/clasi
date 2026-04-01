@@ -178,41 +178,6 @@ class TestRunInit:
         assert "mcp__clasi__*" in data["permissions"]["allow"]
         assert data["other"] == "kept"
 
-    def test_creates_vscode_mcp_json(self, target_dir):
-        target_dir.mkdir()
-        run_init(str(target_dir))
-
-        vscode_mcp = target_dir / ".vscode" / "mcp.json"
-        assert vscode_mcp.exists()
-        data = json.loads(vscode_mcp.read_text(encoding="utf-8"))
-        expected = {"type": "stdio", **_detect_mcp_command(target_dir)}
-        assert data["servers"]["clasi"] == expected
-
-    def test_vscode_mcp_json_idempotent(self, target_dir):
-        target_dir.mkdir()
-        run_init(str(target_dir))
-        run_init(str(target_dir))
-
-        vscode_mcp = target_dir / ".vscode" / "mcp.json"
-        data = json.loads(vscode_mcp.read_text(encoding="utf-8"))
-        expected = {"type": "stdio", **_detect_mcp_command(target_dir)}
-        assert data["servers"]["clasi"] == expected
-
-    def test_vscode_mcp_json_merges_existing(self, target_dir):
-        target_dir.mkdir()
-        vscode_dir = target_dir / ".vscode"
-        vscode_dir.mkdir()
-        existing = {"servers": {"other": {"type": "stdio", "command": "other"}}}
-        (vscode_dir / "mcp.json").write_text(json.dumps(existing),
-                                             encoding="utf-8")
-
-        run_init(str(target_dir))
-
-        data = json.loads((vscode_dir / "mcp.json").read_text(encoding="utf-8"))
-        assert data["servers"]["other"] == {"type": "stdio", "command": "other"}
-        expected = {"type": "stdio", **_detect_mcp_command(target_dir)}
-        assert data["servers"]["clasi"] == expected
-
     def test_does_not_create_agents_md(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))

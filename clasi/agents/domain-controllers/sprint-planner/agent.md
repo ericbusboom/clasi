@@ -69,12 +69,12 @@ If the sprint is not already created, follow these steps to create and plan the 
 
 After the sprint directory is created and `sprint.md` is populated, follow these steps to complete the sprint planning:
 
-3. Call `dispatch_to_architect(sprint_id, sprint_directory)` to write
+3. Call `the architect agent(sprint_id, sprint_directory)` to write
    the architecture update for this sprint's goals. The tool handles
    template rendering, dispatch logging, execution, validation, and
    result logging automatically.
 4. Advance to architecture-review phase (`advance_sprint_phase`).
-5. Call `dispatch_to_architecture_reviewer(sprint_id, sprint_directory)`
+5. Call `the architect agenture_reviewer(sprint_id, sprint_directory)`
    to review the architecture. Record the gate result
    (`record_gate_result`).
 6. If the review fails, send feedback to architect, re-review. Maximum
@@ -111,7 +111,7 @@ the following decisions:
   sprint doc and return the information to team-lead.
 - Keep sprint scope manageable. Prefer smaller, focused sprints over
   large multi-concern sprints.
-- **Always use the typed dispatch tools** (`dispatch_to_architect`,
-  `dispatch_to_architecture_reviewer`, `dispatch_to_technical_lead`)
+- **Always use the typed dispatch tools** (`the architect agent`,
+  `the architect agenture_reviewer`, `dispatch_to_technical_lead`)
   for all subagent dispatches. These tools handle logging automatically.
   This applies to all dispatches, including re-dispatches. No exceptions.
