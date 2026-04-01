@@ -252,39 +252,6 @@ def get_skill_definition(name: str) -> str:
     )
 
 
-#@server.tool()
-def get_agent_context(name: str) -> str:
-    """Get an agent definition plus all files in its directory.
-
-    Returns the agent.md content followed by all sibling files
-    (skills, instructions specific to this agent).
-
-    Args:
-        name: The agent name (e.g., 'code-monkey', 'sprint-planner')
-    """
-    agents_dir = content_path("agents")
-    agent_dir = _find_agent_dir(agents_dir, name)
-    if not agent_dir:
-        available = [d["name"] for d in _list_agents_recursive(agents_dir)]
-        raise ValueError(
-            f"Agent '{name}' not found. Available: {', '.join(available)}"
-        )
-
-    sections = []
-    agent_md = agent_dir / "agent.md"
-    sections.append(f"# Agent: {name}\n\n{agent_md.read_text(encoding='utf-8')}")
-
-    for sibling in sorted(agent_dir.glob("*.md")):
-        if sibling.name == "agent.md":
-            continue
-        if sibling.name.endswith("-legacy.md"):
-            continue
-        sections.append(
-            f"## {sibling.stem}\n\n{sibling.read_text(encoding='utf-8')}"
-        )
-
-    return "\n\n---\n\n".join(sections)
-
 
 #@server.tool()
 def get_instruction(name: str) -> str:

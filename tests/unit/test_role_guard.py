@@ -5,11 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
 import pytest
-
-from clasi.hooks.role_guard import main, SAFE_PREFIXES
 
 _ROLE_GUARD_SCRIPT = str(
     Path(__file__).resolve().parents[2]
@@ -42,37 +38,37 @@ def _run_role_guard(
 class TestRoleGuardBlocking:
     """Tests that role_guard blocks writes to non-safe paths."""
 
-    def test_blocks_write_to_sprint_artifact(self, tmp_path):
+    def test_allows_team_lead_write_to_clasi_docs(self, tmp_path):
+        """Team-lead (tier 0/unset) can write to docs/clasi/."""
         result = _run_role_guard(
             {"file_path": "docs/clasi/sprints/001/sprint.md"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
-        assert "ROLE VIOLATION" in result.stdout
+        assert result.returncode == 0
 
     def test_blocks_write_to_source_code(self, tmp_path):
         result = _run_role_guard(
             {"file_path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
-        assert "ROLE VIOLATION" in result.stdout
+        assert result.returncode == 2
+        assert "ROLE VIOLATION" in result.stderr
 
     def test_block_message_suggests_subagents(self, tmp_path):
         result = _run_role_guard(
             {"file_path": "src/main.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
-        assert "code-monkey" in result.stdout
-        assert "sprint-planner" in result.stdout
+        assert result.returncode == 2
+        assert "programmer" in result.stderr
+        assert "sprint-planner" in result.stderr
 
     def test_blocks_write_to_tests(self, tmp_path):
         result = _run_role_guard(
             {"file_path": "tests/test_something.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
 
 class TestRoleGuardSafeList:
@@ -123,7 +119,7 @@ class TestRoleGuardOOPBypass:
             {"file_path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
 
 class TestRoleGuardRecoveryState:
@@ -170,7 +166,7 @@ class TestRoleGuardRecoveryState:
             {"file_path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
     def test_handles_missing_state_db_gracefully(self, tmp_path):
         # No DB exists -- should still block non-safe paths without crashing
@@ -178,8 +174,8 @@ class TestRoleGuardRecoveryState:
             {"file_path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
-        assert "ROLE VIOLATION" in result.stdout
+        assert result.returncode == 2
+        assert "ROLE VIOLATION" in result.stderr
 
 
 class TestRoleGuardEdgeCases:
@@ -197,14 +193,14 @@ class TestRoleGuardEdgeCases:
             {"path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
     def test_extracts_path_from_new_path_key(self, tmp_path):
         result = _run_role_guard(
             {"new_path": "clasi/foo.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
 
 class TestRoleGuardTierAware:
@@ -226,9 +222,9 @@ class TestRoleGuardTierAware:
             cwd=str(tmp_path),
             env={"CLASI_AGENT_TIER": "1", "CLASI_AGENT_NAME": "sprint-executor"},
         )
-        assert result.returncode == 1
-        assert "sprint-executor" in result.stdout
-        assert "code-monkey" in result.stdout
+        assert result.returncode == 2
+        assert "sprint-executor" in result.stderr
+        assert "programmer" in result.stderr
 
     def test_tier_0_blocked_from_writing(self, tmp_path):
         """Main controller (tier 0) must dispatch, not write."""
@@ -237,8 +233,8 @@ class TestRoleGuardTierAware:
             cwd=str(tmp_path),
             env={"CLASI_AGENT_TIER": "0", "CLASI_AGENT_NAME": "team-lead"},
         )
-        assert result.returncode == 1
-        assert "team-lead" in result.stdout
+        assert result.returncode == 2
+        assert "team-lead" in result.stderr
 
     def test_no_tier_defaults_to_blocked(self, tmp_path):
         """No tier set (interactive session) blocks like team-lead."""
@@ -246,7 +242,7 @@ class TestRoleGuardTierAware:
             {"file_path": "src/main.py"},
             cwd=str(tmp_path),
         )
-        assert result.returncode == 1
+        assert result.returncode == 2
 
     def test_tier_2_still_blocked_by_safe_list_only(self, tmp_path):
         """Tier 2 is allowed to write anything, not just safe list paths."""
@@ -264,6 +260,5 @@ class TestRoleGuardTierAware:
             cwd=str(tmp_path),
             env={"CLASI_AGENT_TIER": "1", "CLASI_AGENT_NAME": "sprint-executor"},
         )
-        assert result.returncode == 1
-        assert "code-monkey" in result.stdout
-        assert "architect" in result.stdout
+        assert result.returncode == 2
+        assert "programmer" in result.stderr

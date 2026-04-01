@@ -40,43 +40,6 @@ def _detect_mcp_command(target: Path) -> dict:
     return {"command": "clasi", "args": ["mcp"]}
 
 
-MCP_CONFIG = {
-    "clasi": {
-        "command": "clasi",
-        "args": ["mcp"],
-    }
-}
-
-HOOKS_CONFIG = {
-    "PreToolUse": [
-        {
-            "matcher": "Edit|Write|MultiEdit",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "python3 .claude/hooks/role_guard.py",
-                }
-            ],
-        }
-    ],
-    "PostToolUse": [
-        {
-            "matcher": "Bash",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": (
-                        "if echo \"$TOOL_INPUT\" | grep -q 'git commit' && "
-                        "git branch --show-current 2>/dev/null | grep -qE '^(master|main)$'; then "
-                        "echo 'CLASI: You committed on master. Call tag_version() to bump the version.'; "
-                        "fi"
-                    ),
-                }
-            ],
-        }
-    ],
-}
-
 # Path-scoped rules installed by `clasi init`.
 # Each key is the filename under `.claude/rules/`, each value is the
 # complete file content (YAML frontmatter + markdown body).
@@ -151,87 +114,9 @@ See `instructions/git-workflow` for full rules.
 """,
 }
 
-_PACKAGE_DIR = Path(__file__).parent
-_SE_SKILL_PATH = _PACKAGE_DIR / "skills" / "se.md"
-_AGENTS_SECTION_PATH = _PACKAGE_DIR / "agents" / "main-controller" / "team-lead" / "agent.md"
-_ROLE_GUARD_SOURCE = _PACKAGE_DIR / "hooks" / "role_guard.py"
-
 # Marker used to find/replace the CLASI section in CLAUDE.md.
 _AGENTS_SECTION_START = "<!-- CLASI:START -->"
 _AGENTS_SECTION_END = "<!-- CLASI:END -->"
-
-
-def _write_se_skill(target: Path) -> bool:
-    """Write the /se skill stub to .claude/skills/se/SKILL.md.
-
-    Copies from the package's skills/se.md source file.
-    Returns True if the file was written/updated, False if unchanged.
-    """
-    source = _SE_SKILL_PATH.read_text(encoding="utf-8")
-    path = target / ".claude" / "skills" / "se" / "SKILL.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    rel = ".claude/skills/se/SKILL.md"
-
-    if path.exists() and path.read_text(encoding="utf-8") == source:
-        click.echo(f"  Unchanged: {rel}")
-        return False
-
-    path.write_text(source, encoding="utf-8")
-    click.echo(f"  Wrote: {rel}")
-    return True
-
-
-def _read_agents_section() -> str:
-    """Read the CLASI section from the team-lead agent.md.
-
-    The agent.md contains YAML frontmatter (stripped) and the CLAUDE.md
-    section delimited by CLASI:START/END markers. Returns everything
-    from the start marker to the end marker, inclusive.
-    """
-    content = _AGENTS_SECTION_PATH.read_text(encoding="utf-8")
-    # Extract just the CLASI:START to CLASI:END block (skip frontmatter)
-    start = content.index(_AGENTS_SECTION_START)
-    end = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-    return content[start:end].rstrip()
-
-
-def _update_claude_md(target: Path) -> bool:
-    """Append or update the CLASI section in CLAUDE.md.
-
-    If CLAUDE.md doesn't exist, creates it with just the CLASI section.
-    If it exists but has no CLASI section, appends the section.
-    If it exists with a CLASI section, replaces it in place.
-
-    Returns True if the file was written/updated, False if unchanged.
-    """
-    claude_md = target / "CLAUDE.md"
-    section = _read_agents_section()
-
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
-
-        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
-            # Replace existing CLASI section in place
-            start_idx = content.index(_AGENTS_SECTION_START)
-            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            new_content = content[:start_idx] + section + content[end_idx:]
-        else:
-            # Append to existing content
-            if not content.endswith("\n"):
-                content += "\n"
-            new_content = content + "\n" + section + "\n"
-
-        if new_content == content:
-            click.echo("  Unchanged: CLAUDE.md")
-            return False
-
-        claude_md.write_text(new_content, encoding="utf-8")
-        click.echo("  Updated: CLAUDE.md")
-        return True
-    else:
-        claude_md.write_text(section + "\n", encoding="utf-8")
-        click.echo("  Created: CLAUDE.md")
-        return True
 
 
 def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
@@ -298,52 +183,6 @@ def _update_settings_json(settings_path: Path) -> bool:
     return True
 
 
-def _update_hooks_config(settings_path: Path) -> bool:
-    """Install all CLASI hooks into settings.json (shared, checked in).
-
-    Installs hooks from HOOKS_CONFIG for each event type
-    (UserPromptSubmit, PostToolUse, etc.). Idempotent: checks by
-    matching the command string inside each hook entry.
-
-    Returns True if the file was written/updated, False if unchanged.
-    """
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if settings_path.exists():
-        try:
-            data = json.loads(settings_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, ValueError):
-            data = {}
-    else:
-        data = {}
-
-    hooks = data.setdefault("hooks", {})
-    changed = False
-
-    for event_type, entries in HOOKS_CONFIG.items():
-        existing = hooks.get(event_type, [])
-        for target_entry in entries:
-            clasi_command = target_entry["hooks"][0]["command"]
-            already_present = any(
-                clasi_command in (h.get("command", "") for h in entry.get("hooks", []))
-                for entry in existing
-            )
-            if not already_present:
-                existing.append(target_entry)
-                changed = True
-        hooks[event_type] = existing
-
-    if not changed:
-        click.echo("  Unchanged: .claude/settings.json (hooks)")
-        return False
-
-    settings_path.write_text(
-        json.dumps(data, indent=2) + "\n", encoding="utf-8"
-    )
-    click.echo("  Updated: .claude/settings.json (hooks)")
-    return True
-
-
 def _create_rules(target: Path) -> bool:
     """Create path-scoped rule files in .claude/rules/.
 
@@ -366,28 +205,6 @@ def _create_rules(target: Path) -> bool:
         changed = True
 
     return changed
-
-
-def _install_role_guard(target: Path) -> bool:
-    """Install role_guard.py to .claude/hooks/ with execute permissions.
-
-    Copies from the package's hooks/role_guard.py source file.
-    Returns True if the file was written/updated, False if unchanged.
-    """
-    source = _ROLE_GUARD_SOURCE.read_text(encoding="utf-8")
-    dest = target / ".claude" / "hooks" / "role_guard.py"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    rel = ".claude/hooks/role_guard.py"
-
-    if dest.exists() and dest.read_text(encoding="utf-8") == source:
-        click.echo(f"  Unchanged: {rel}")
-        return False
-
-    dest.write_text(source, encoding="utf-8")
-    # Set execute permission
-    dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    click.echo(f"  Wrote: {rel}")
-    return True
 
 
 _CLAUDE_MD_CONTENT = """\
