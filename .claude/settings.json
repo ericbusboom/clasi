@@ -1,5 +1,38 @@
 {
   "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/subagent_start.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/subagent_stop.py"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/task_completed.py"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -7,15 +40,6 @@
           {
             "type": "command",
             "command": "python3 .claude/hooks/role_guard.py"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook role-guard"
           }
         ]
       }
@@ -30,53 +54,6 @@
           }
         ]
       }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook subagent-start"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook subagent-stop"
-          }
-        ]
-      }
-    ],
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook task-created"
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run clasi hook task-completed"
-          }
-        ]
-      }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "mcp__clasi__get_version"
     ]
   }
 }

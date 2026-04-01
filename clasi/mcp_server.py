@@ -118,10 +118,8 @@ class Clasi:
         import clasi.tools.artifact_tools  # noqa: F401
         import clasi.tools.dispatch_tools  # noqa: F401
 
-        tool_names = sorted(self.server._tool_manager._tools.keys())
-        logger.info("  tools registered: %d", len(tool_names))
-        for name in tool_names:
-            logger.info("    - %s", name)
+        tool_count = len(self.server._tool_manager._tools)
+        logger.info("  tools registered: %d", tool_count)
         logger.info("CLASI MCP server ready")
 
         # Wrap _tool_manager.call_tool to log every invocation

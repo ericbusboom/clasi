@@ -228,7 +228,7 @@ class TestRoleGuardTierAware:
         )
         assert result.returncode == 1
         assert "sprint-executor" in result.stdout
-        assert "dispatch_to_code_monkey" in result.stdout
+        assert "code-monkey" in result.stdout
 
     def test_tier_0_blocked_from_writing(self, tmp_path):
         """Main controller (tier 0) must dispatch, not write."""
@@ -257,13 +257,13 @@ class TestRoleGuardTierAware:
         )
         assert result.returncode == 0
 
-    def test_tier_1_error_message_suggests_dispatch_tools(self, tmp_path):
-        """Tier 1 error message names dispatch_to_* tools, not agent names."""
+    def test_tier_1_error_message_suggests_agents(self, tmp_path):
+        """Tier 1 error message names agent names."""
         result = _run_role_guard(
             {"file_path": "guessing_game/game.py"},
             cwd=str(tmp_path),
             env={"CLASI_AGENT_TIER": "1", "CLASI_AGENT_NAME": "sprint-executor"},
         )
         assert result.returncode == 1
-        assert "dispatch_to_code_monkey" in result.stdout
-        assert "dispatch_to_architect" in result.stdout
+        assert "code-monkey" in result.stdout
+        assert "architect" in result.stdout

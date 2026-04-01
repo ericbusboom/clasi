@@ -489,6 +489,22 @@ def _install_plugin_content(target: Path) -> None:
                 click.echo(f"  Wrote: {rel}")
         click.echo()
 
+    # Copy hook scripts
+    plugin_hooks_dir = _PLUGIN_DIR / "hooks"
+    if plugin_hooks_dir.exists():
+        target_hooks = target / ".claude" / "hooks"
+        target_hooks.mkdir(parents=True, exist_ok=True)
+        click.echo("Hook scripts:")
+        for py_file in sorted(plugin_hooks_dir.glob("*.py")):
+            dest = target_hooks / py_file.name
+            source_content = py_file.read_text(encoding="utf-8")
+            rel = f".claude/hooks/{py_file.name}"
+            dest.write_text(source_content, encoding="utf-8")
+            # Set execute permission
+            dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            click.echo(f"  Wrote: {rel}")
+        click.echo()
+
     # Merge hooks from plugin hooks.json into .claude/settings.json
     plugin_hooks = _PLUGIN_DIR / "hooks" / "hooks.json"
     if plugin_hooks.exists():

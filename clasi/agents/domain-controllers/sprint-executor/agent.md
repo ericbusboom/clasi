@@ -45,18 +45,6 @@ To team-lead:
 |------|-------|-------------------|
 | Implement ticket | **code-monkey** | Code changes, tests, updated ticket frontmatter |
 
-## Typed Dispatch Tool
-
-To dispatch code-monkey, use the typed MCP tool:
-
-```
-dispatch_to_code_monkey(ticket_path, ticket_plan_path, scope_directory, sprint_name, ticket_id)
-```
-
-This tool renders the Jinja2 template, logs the dispatch, executes the
-subagent via the Agent SDK, validates the result against the agent
-contract, logs the outcome, and returns structured JSON.
-
 ## Workflow
 
 1. Read the sprint directory to understand all tickets and their
@@ -66,10 +54,8 @@ contract, logs the outcome, and returns structured JSON.
 3. For each ticket (in dependency order):
    a. Verify all dependencies have `status: done`.
    b. Set ticket status to `in-progress` (`update_ticket_status`).
-   c. Call `dispatch_to_code_monkey(ticket_path, ticket_plan_path,
-      scope_directory, sprint_name, ticket_id)`. The tool handles
-      template rendering, dispatch logging, execution, validation,
-      and result logging automatically.
+   c. Dispatch to code-monkey with the ticket path, plan path,
+      scope directory, sprint name, and ticket ID.
    d. On code-monkey return, **validate the ticket**:
       - All acceptance criteria are checked (`- [x]`)
       - Ticket frontmatter `status` is `done`
@@ -105,6 +91,5 @@ After each code-monkey return, verify:
 - Always use CLASI MCP tools for ticket status updates and moves.
 - Run the full test suite after each ticket, not just the ticket's
   tests.
-- **Always use the typed dispatch tool** (`dispatch_to_code_monkey`)
-  for all code-monkey dispatches. The tool handles logging automatically.
-  This applies to initial dispatches and re-dispatches. No exceptions.
+- **Always dispatch to code-monkey** for all implementation work.
+  Do not write code yourself.

@@ -111,7 +111,5 @@ the following decisions:
   sprint doc and return the information to team-lead.
 - Keep sprint scope manageable. Prefer smaller, focused sprints over
   large multi-concern sprints.
-- **Always use the typed dispatch tools** (`the architect agent`,
-  `the architect agenture_reviewer`, `dispatch_to_technical_lead`)
-  for all subagent dispatches. These tools handle logging automatically.
-  This applies to all dispatches, including re-dispatches. No exceptions.
+- **Always dispatch to subagents** (architect, architecture-reviewer,
+  technical-lead) for their respective tasks. Do not do their work yourself.

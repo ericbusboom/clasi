@@ -42,8 +42,8 @@ at execution time by `acquire_execution_lock`.
 
 ## Phase 1: Roadmap Mode
 
-Use `dispatch_to_sprint_planner(mode="roadmap")` for batch roadmap
-planning. The team-lead can plan multiple sprints in a single session.
+The team-lead dispatches to sprint-planner in roadmap mode for batch
+planning. Multiple sprints can be planned in a single session.
 
 ### Roadmap Process
 
@@ -77,9 +77,9 @@ planning. The team-lead can plan multiple sprints in a single session.
 
 ## Phase 2: Detail Mode
 
-Use `dispatch_to_sprint_planner(mode="detail")` when a roadmap sprint
-is ready for execution. Detail mode fills in full planning artifacts
-for one sprint at a time.
+The team-lead dispatches to sprint-planner in detail mode when a
+roadmap sprint is ready for execution. Detail mode fills in full
+planning artifacts for one sprint at a time.
 
 ### Detail Process
 

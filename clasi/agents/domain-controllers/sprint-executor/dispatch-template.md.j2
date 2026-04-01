@@ -28,14 +28,10 @@ Read these before executing:
 - `{{ sprint_directory }}/usecases.md` -- use cases covered
 - Each ticket file listed above
 
-## Dispatch -- MANDATORY
+## Dispatch
 
-**For EACH code-monkey dispatch**, call `dispatch_to_code_monkey` with
-the ticket parameters. This tool renders the template, logs the dispatch,
-executes the subagent via the Agent SDK, validates the result against the
-agent contract, logs the outcome, and returns structured JSON.
-
-This applies to every dispatch including re-dispatches. No exceptions.
+**For EACH ticket**, dispatch to code-monkey with the ticket parameters.
+This applies to every dispatch including re-dispatches.
 
 ## Behavioral Instructions
 

@@ -283,7 +283,7 @@ class TestHooksConfig:
         # Existing entry preserved
         assert {"matcher": "", "hooks": [{"type": "command", "command": "echo pre"}]} in pre_tool
         # CLASI role guard added
-        assert any("role-guard" in h.get("command", "")
+        assert any("role_guard" in h.get("command", "")
                     for entry in pre_tool for h in entry.get("hooks", []))
 
 

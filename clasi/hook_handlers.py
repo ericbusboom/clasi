@@ -136,11 +136,11 @@ def _handle_role_guard(payload: dict) -> None:
 def _handle_subagent_start(payload: dict) -> None:
     """Log when a subagent starts.
 
-    Creates a log entry in docs/clasi/log/ with timestamp, agent info.
+    Creates a log file in docs/clasi/log/ with frontmatter. The stop
+    hook appends the transcript to this same file.
     """
     log_dir = Path("docs/clasi/log")
     if not log_dir.exists():
-        # No log directory — skip silently (project may not be initialized)
         sys.exit(0)
 
     agent_type = payload.get("agent_type", "unknown")
@@ -148,18 +148,31 @@ def _handle_subagent_start(payload: dict) -> None:
     session_id = payload.get("session_id", "")
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Write a start marker file that subagent-stop can find
+    # Create the log file
+    _next = _next_log_number(log_dir)
+    log_file = log_dir / f"{_next:03d}-{agent_type}.md"
+
+    lines = [
+        "---",
+        f"agent_type: {agent_type}",
+        f"agent_id: {agent_id}",
+        f"started_at: {timestamp}",
+        "---",
+        "",
+        f"# Subagent: {agent_type}",
+        "",
+    ]
+    log_file.write_text("\n".join(lines))
+
+    # Write a marker so stop can find this log file
     marker_dir = log_dir / ".active"
     marker_dir.mkdir(parents=True, exist_ok=True)
-
     marker_id = agent_id or session_id or "unknown"
     marker = marker_dir / f"{marker_id}.json"
     marker.write_text(
         json.dumps(
             {
-                "agent_type": agent_type,
-                "agent_id": agent_id,
-                "session_id": session_id,
+                "log_file": str(log_file),
                 "started_at": timestamp,
             },
             indent=2,
@@ -170,51 +183,92 @@ def _handle_subagent_start(payload: dict) -> None:
 
 
 def _handle_subagent_stop(payload: dict) -> None:
-    """Log when a subagent finishes.
-
-    Reads the start marker, computes duration, writes a log entry.
-    """
+    """Append transcript to the log file created by subagent-start."""
     log_dir = Path("docs/clasi/log")
     if not log_dir.exists():
         sys.exit(0)
 
-    agent_type = payload.get("agent_type", "unknown")
     agent_id = payload.get("agent_id", "")
     session_id = payload.get("session_id", "")
+    last_message = payload.get("last_assistant_message", "")
+    transcript_path = payload.get("agent_transcript_path", "")
     stop_time = datetime.now(timezone.utc)
 
-    # Find and read start marker
+    # Find the log file from the start marker
     marker_dir = log_dir / ".active"
     marker_id = agent_id or session_id or "unknown"
     marker = marker_dir / f"{marker_id}.json"
 
-    start_info = {}
-    duration_s = None
+    log_file = None
+    started_at = None
     if marker.exists():
         try:
             start_info = json.loads(marker.read_text())
-            started_at = datetime.fromisoformat(start_info["started_at"])
-            duration_s = (stop_time - started_at).total_seconds()
+            log_file = Path(start_info["log_file"])
+            started_at = start_info.get("started_at")
         except (json.JSONDecodeError, KeyError, ValueError):
             pass
         marker.unlink(missing_ok=True)
 
-    # Write log entry
-    _next = _next_log_number(log_dir)
-    log_file = log_dir / f"{_next:03d}-{agent_type}.md"
+    if not log_file or not log_file.exists():
+        sys.exit(0)
 
-    lines = [
-        "---",
-        f"agent_type: {agent_type}",
-        f"agent_id: {agent_id}",
-        f"started_at: {start_info.get('started_at', 'unknown')}",
-        f"stopped_at: {stop_time.isoformat()}",
-    ]
-    if duration_s is not None:
-        lines.append(f"duration_seconds: {duration_s:.1f}")
-    lines.extend(["---", "", f"# Subagent: {agent_type}", ""])
+    # Build content to append
+    lines = []
 
-    log_file.write_text("\n".join(lines))
+    # Add duration to frontmatter by rewriting the file
+    if started_at:
+        try:
+            duration_s = (stop_time - datetime.fromisoformat(started_at)).total_seconds()
+            content = log_file.read_text(encoding="utf-8")
+            content = content.replace(
+                "---\n\n",
+                f"stopped_at: {stop_time.isoformat()}\n"
+                f"duration_seconds: {duration_s:.1f}\n"
+                "---\n\n",
+                1,
+            )
+            log_file.write_text(content, encoding="utf-8")
+        except (ValueError, OSError):
+            pass
+
+    # Extract prompt from transcript
+    prompt = ""
+    if transcript_path:
+        prompt = _extract_prompt_from_transcript(transcript_path)
+
+    if prompt:
+        lines.extend(["## Prompt", "", prompt, ""])
+
+    if last_message:
+        lines.extend(["## Result", "", last_message, ""])
+
+    # Append full transcript as pretty-printed JSON array
+    if transcript_path:
+        transcript_file = Path(transcript_path)
+        if transcript_file.exists():
+            try:
+                transcript_content = transcript_file.read_text(encoding="utf-8")
+                messages = []
+                for line in transcript_content.splitlines():
+                    if line.strip():
+                        messages.append(json.loads(line))
+                pretty = json.dumps(messages, indent=2)
+                lines.extend([
+                    "## Transcript",
+                    "",
+                    "```json",
+                    pretty,
+                    "```",
+                    "",
+                ])
+            except OSError:
+                pass
+
+    if lines:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
     sys.exit(0)
 
 
@@ -248,6 +302,38 @@ def _handle_task_completed(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _extract_prompt_from_transcript(transcript_path: str) -> str:
+    """Extract the initial user prompt from a subagent transcript.
+
+    The transcript is a JSONL file where each line is a message object.
+    The first message with role "user" contains the prompt sent to the
+    subagent.
+    """
+    path = Path(transcript_path)
+    if not path.exists():
+        return ""
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            msg = json.loads(line)
+            if msg.get("role") == "user":
+                # The content may be a string or a list of content blocks
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            parts.append(block["text"])
+                        elif isinstance(block, str):
+                            parts.append(block)
+                    return "\n".join(parts)
+                return str(content)
+    except (json.JSONDecodeError, OSError, KeyError):
+        pass
+    return ""
 
 
 def _next_log_number(log_dir: Path) -> int:

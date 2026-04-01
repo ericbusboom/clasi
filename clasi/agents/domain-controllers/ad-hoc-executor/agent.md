@@ -49,14 +49,10 @@ To team-lead:
 1. Confirm OOP authorization from the stakeholder (passed via
    team-lead).
 2. Analyze the change request to determine scope and affected files.
-3. Call `dispatch_to_code_monkey(ticket_path, ticket_plan_path,
-   scope_directory, sprint_name, ticket_id)` to dispatch code-monkey.
-   The tool handles template rendering, dispatch logging, execution,
-   validation, and result logging automatically.
+3. Dispatch to code-monkey with the change details and scope.
 4. On code-monkey return, run the full test suite.
 5. If the change is non-trivial (multiple files, architectural impact),
-   call `dispatch_to_code_reviewer(file_paths, review_scope)` to review
-   the changes. The tool handles dispatch and logging automatically.
+   dispatch to code-reviewer with the file paths and review scope.
 6. If review finds issues, re-dispatch code-monkey with feedback.
 7. Commit changes directly to the current branch.
 8. Return results to team-lead.
@@ -73,7 +69,5 @@ To team-lead:
 - If the change turns out to be larger than expected (would normally
   warrant a sprint), flag this to team-lead and let the
   stakeholder decide whether to continue OOP or switch to a sprint.
-- **Always use the typed dispatch tools** (`dispatch_to_code_monkey`,
-  `dispatch_to_code_reviewer`) for all subagent dispatches. These tools
-  handle logging automatically. This applies to all dispatches,
-  including re-dispatches. No exceptions.
+- **Always dispatch to subagents** (code-monkey, code-reviewer) for
+  implementation and review. Do not write code yourself.

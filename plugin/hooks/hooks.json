@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run clasi hook subagent-start"
+            "command": "python3 .claude/hooks/subagent_start.py"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run clasi hook subagent-stop"
+            "command": "python3 .claude/hooks/subagent_stop.py"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run clasi hook task-completed"
+            "command": "python3 .claude/hooks/task_completed.py"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run clasi hook role-guard"
+            "command": "python3 .claude/hooks/role_guard.py"
           }
         ]
       }

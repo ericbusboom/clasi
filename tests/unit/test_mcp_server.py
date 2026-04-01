@@ -45,16 +45,6 @@ class TestToolRegistration:
     """Verify all expected MCP tools are registered on the server."""
 
     EXPECTED_PROCESS_TOOLS = {
-        "list_agents",
-        "list_skills",
-        "list_instructions",
-        "get_agent_definition",
-        "get_agent_context",
-        "get_skill_definition",
-        "get_instruction",
-        "list_language_instructions",
-        "get_language_instruction",
-        "get_activity_guide",
         "get_use_case_coverage",
         "get_version",
     }
@@ -112,7 +102,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 40
+        assert len(registered) == 30
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
