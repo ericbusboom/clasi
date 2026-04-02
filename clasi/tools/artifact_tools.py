@@ -510,22 +510,12 @@ def get_sprint_status(sprint_id: str) -> str:
     """
     sprint = get_project().get_sprint(sprint_id)
 
-    counts = {"todo": 0, "in_progress": 0, "done": 0}
-    for ticket in sprint.list_tickets():
-        if not ticket.id:
-            continue
-        s = ticket.status
-        if s == "in-progress":
-            s = "in_progress"
-        if s in counts:
-            counts[s] += 1
-
     return json.dumps({
         "id": sprint.id,
         "title": sprint.title,
         "status": sprint.status,
         "branch": sprint.branch,
-        "tickets": counts,
+        "tickets": sprint.ticket_counts(),
     }, indent=2)
 
 
@@ -581,8 +571,6 @@ def move_ticket_to_done(path: str) -> str:
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    old_path = ticket_path
-
     # Determine the tickets_dir (go up from done/ if already there)
     tickets_dir = ticket_path.parent
     if tickets_dir.name == "done":
@@ -594,21 +582,8 @@ def move_ticket_to_done(path: str) -> str:
     sprint = Sprint(sprint_dir, project)
     ticket = Ticket(ticket_path, sprint)
 
-    # Move the ticket
-    new_path = ticket.move_to_done()
-
-    result: dict = {"old_path": str(old_path), "new_path": str(new_path)}
-
-    # Also move the plan file if it exists
-    plan_name = old_path.stem + "-plan.md"
-    plan_path = tickets_dir / plan_name
-    if plan_path.exists():
-        done_dir = tickets_dir / "done"
-        done_dir.mkdir(parents=True, exist_ok=True)
-        new_plan_path = done_dir / plan_name
-        plan_path.rename(new_plan_path)
-        result["plan_old_path"] = str(plan_path)
-        result["plan_new_path"] = str(new_plan_path)
+    # Move the ticket and its plan file
+    result = ticket.move_to_done_with_plan()
 
     # Check if this ticket references any TODOs and trigger completion
     todo_refs = ticket.todo_ref
@@ -625,11 +600,7 @@ def move_ticket_to_done(path: str) -> str:
                 continue
             ref_tickets = todo.tickets
             # Check if ALL referencing tickets are done
-            all_done = True
-            for ref_ticket_id in ref_tickets:
-                if not _is_ticket_done(ref_ticket_id):
-                    all_done = False
-                    break
+            all_done = all(_is_ticket_done(ref_ticket_id) for ref_ticket_id in ref_tickets)
             if all_done and ref_tickets:
                 todo.move_to_done()
                 completed_todos.append(todo_filename)
@@ -655,45 +626,25 @@ def reopen_ticket(path: str) -> str:
 
     Returns JSON with {old_path, new_path, old_status, new_status}.
     """
-    from clasi.artifact import Artifact
+    from clasi.ticket import Ticket
+    from clasi.sprint import Sprint
 
     try:
         ticket_path = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    artifact = Artifact(ticket_path)
-    old_status = artifact.frontmatter.get("status", "unknown")
+    # Determine the sprint directory
+    tickets_dir = ticket_path.parent
+    if tickets_dir.name == "done":
+        tickets_dir = tickets_dir.parent
+    sprint_dir = tickets_dir.parent
 
-    # Determine if ticket is in a done/ directory
-    in_done = ticket_path.parent.name == "done"
+    project = get_project()
+    sprint = Sprint(sprint_dir, project)
+    ticket = Ticket(ticket_path, sprint)
 
-    if in_done:
-        # Move from tickets/done/ back to tickets/
-        tickets_dir = ticket_path.parent.parent
-        new_path = tickets_dir / ticket_path.name
-        ticket_path.rename(new_path)
-
-        # Also move plan file if it exists in done/
-        plan_name = ticket_path.stem + "-plan.md"
-        plan_path = ticket_path.parent / plan_name
-        result: dict = {"old_path": str(ticket_path), "new_path": str(new_path)}
-        if plan_path.exists():
-            new_plan_path = tickets_dir / plan_name
-            plan_path.rename(new_plan_path)
-            result["plan_old_path"] = str(plan_path)
-            result["plan_new_path"] = str(new_plan_path)
-
-        # Update frontmatter on the moved file
-        Artifact(new_path).update_frontmatter(status="todo")
-    else:
-        # Ticket exists but not in done/ — just reset status
-        new_path = ticket_path
-        artifact.update_frontmatter(status="todo")
-        result = {"old_path": str(ticket_path), "new_path": str(new_path)}
-
-    result["old_status"] = old_status
-    result["new_status"] = "todo"
+    result = ticket.reopen()
     return json.dumps(result, indent=2)
 
 
@@ -737,10 +688,6 @@ def _close_sprint_legacy(sprint_id: str) -> str:
 
     project = get_project()
     sprint = project.get_sprint(sprint_id)
-    sprint_dir = sprint.path
-
-    # Update sprint status to done
-    sprint.sprint_doc.update_frontmatter(status="done")
 
     # Check in-progress TODOs — they should already be resolved individually
     unresolved_todos: list[str] = []
@@ -766,22 +713,8 @@ def _close_sprint_legacy(sprint_id: str) -> str:
                     todo.move_to_done()
                     moved_todos.append(todo_file.name)
 
-    # Copy architecture-update to the architecture directory
-    if sprint.architecture_update_md.exists():
-        arch_dir = project.clasi_dir / "architecture"
-        arch_dir.mkdir(parents=True, exist_ok=True)
-        dest = arch_dir / f"architecture-update-{sprint_id}.md"
-        shutil.copy2(str(sprint.architecture_update_md), str(dest))
-
-    # Move to done directory
-    done_dir = project.sprints_dir / "done"
-    done_dir.mkdir(parents=True, exist_ok=True)
-    new_path = done_dir / sprint_dir.name
-
-    if new_path.exists():
-        raise ValueError(f"Destination already exists: {new_path}")
-
-    shutil.move(str(sprint_dir), str(new_path))
+    # Archive sprint directory (updates status, copies architecture-update, moves dir)
+    archive_result = sprint.archive()
 
     # Update state database: advance to done and release lock
     db = project.db
@@ -822,8 +755,8 @@ def _close_sprint_legacy(sprint_id: str) -> str:
         print(f"[CLASI] Versioning failed: {exc}", file=sys.stderr)
 
     result: dict = {
-        "old_path": str(sprint_dir),
-        "new_path": str(new_path),
+        "old_path": archive_result["old_path"],
+        "new_path": archive_result["new_path"],
     }
     if moved_todos:
         result["moved_todos"] = moved_todos
@@ -1046,37 +979,21 @@ def _close_sprint_full(
     completed_steps.append("tests")
 
     # ── Step 3: Archive sprint directory ──
-    done_dir = project.sprints_dir / "done"
     already_archived = sprint_dir.parent.name == "done"
 
     if already_archived:
         new_path = sprint_dir
         old_path_str = str(new_path)
     else:
-        # Update sprint status to done
-        sprint.sprint_doc.update_frontmatter(status="done")
-
         # NOTE: TODOs are not bulk-moved at sprint close.
         # They are moved individually by move_ticket_to_done when all
         # referencing tickets are done. The precondition check (step 1b)
         # already verified that no in-progress TODOs remain for this sprint.
 
-        # Copy architecture-update
-        if sprint.architecture_update_md.exists():
-            arch_dir = project.clasi_dir / "architecture"
-            arch_dir.mkdir(parents=True, exist_ok=True)
-            dest = arch_dir / f"architecture-update-{sprint_id}.md"
-            shutil.copy2(str(sprint.architecture_update_md), str(dest))
-
-        # Move to done directory
-        done_dir.mkdir(parents=True, exist_ok=True)
-        new_path = done_dir / sprint_dir.name
-
-        if new_path.exists():
-            raise ValueError(f"Destination already exists: {new_path}")
-
-        old_path_str = str(sprint_dir)
-        shutil.move(str(sprint_dir), str(new_path))
+        # Archive sprint directory (updates status, copies architecture-update, moves dir)
+        archive_result = sprint.archive()
+        new_path = sprint.path  # Sprint.archive() updates self._path
+        old_path_str = archive_result["old_path"]
 
     completed_steps.append("archive")
 

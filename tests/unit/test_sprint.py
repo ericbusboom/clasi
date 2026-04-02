@@ -642,3 +642,113 @@ class TestSprintDeleteBranch:
             assert False, "Expected RuntimeError"
         except RuntimeError as e:
             assert "no 'branch' field" in str(e)
+
+
+class TestSprintTicketCounts:
+    """Tests for Sprint.ticket_counts()."""
+
+    def test_ticket_counts_empty(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert counts == {"todo": 0, "in_progress": 0, "done": 0}
+
+    def test_ticket_counts_with_todo_tickets(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "First", status="todo")
+        _add_ticket(sprint_dir, "002", "Second", status="todo")
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert counts["todo"] == 2
+        assert counts["in_progress"] == 0
+        assert counts["done"] == 0
+
+    def test_ticket_counts_mixed_statuses(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "Todo", status="todo")
+        _add_ticket(sprint_dir, "002", "In Progress", status="in-progress")
+        _add_ticket(sprint_dir, "003", "Done", status="done", done=True)
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert counts["todo"] == 1
+        assert counts["in_progress"] == 1
+        assert counts["done"] == 1
+
+    def test_ticket_counts_returns_in_progress_key(self, tmp_path):
+        """Status 'in-progress' maps to 'in_progress' key."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "In Progress", status="in-progress")
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert "in_progress" in counts
+        assert counts["in_progress"] == 1
+
+    def test_ticket_counts_includes_done_dir(self, tmp_path):
+        """Counts include tickets in tickets/done/ directory."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "Done", status="done", done=True)
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert counts["done"] == 1
+
+
+class TestSprintArchive:
+    """Tests for Sprint.archive()."""
+
+    def test_archive_moves_to_done(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.archive()
+        assert not sprint_dir.exists()
+        done_dir = proj.sprints_dir / "done" / sprint_dir.name
+        assert done_dir.exists()
+        assert result["new_path"] == str(done_dir)
+        assert result["old_path"] == str(sprint_dir)
+
+    def test_archive_updates_status(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+        # After archiving, read frontmatter from new location
+        new_sprint_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
+        from clasi.frontmatter import read_frontmatter
+        fm = read_frontmatter(new_sprint_md)
+        assert fm.get("status") == "done"
+
+    def test_archive_updates_path(self, tmp_path):
+        """Sprint._path is updated to the archived location."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+        assert s.path.parent.name == "done"
+
+    def test_archive_copies_architecture_update(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        arch_update = sprint_dir / "architecture-update.md"
+        arch_update.write_text("---\nstatus: final\n---\n# Update\n", encoding="utf-8")
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+        arch_dir = proj.clasi_dir / "architecture"
+        dest = arch_dir / "architecture-update-001.md"
+        assert dest.exists()
+
+    def test_archive_raises_if_destination_exists(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        # Pre-create the destination
+        done_dir = proj.sprints_dir / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        (done_dir / sprint_dir.name).mkdir()
+        s = Sprint(sprint_dir, proj)
+        try:
+            s.archive()
+            assert False, "Expected ValueError"
+        except ValueError as e:
+            assert "already exists" in str(e)
+
+    def test_archive_no_architecture_update_ok(self, tmp_path):
+        """archive() succeeds even if architecture-update.md does not exist."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        # No architecture-update.md was created, should not raise
+        result = s.archive()
+        assert "new_path" in result

@@ -174,3 +174,88 @@ class TestTicketMoveToDone:
         # Moving again should be a no-op
         second = t.move_to_done()
         assert first == second
+
+
+class TestTicketMoveToDoneWithPlan:
+    """Test move_to_done_with_plan moves ticket and optional plan file."""
+
+    def test_move_to_done_with_plan_no_plan(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        result = t.move_to_done_with_plan()
+        assert "old_path" in result
+        assert "new_path" in result
+        assert "plan_old_path" not in result
+        assert t.path.parent.name == "done"
+
+    def test_move_to_done_with_plan_with_plan_file(self, tmp_path):
+        proj, sprint, t = _setup(tmp_path)
+        # Create a plan file alongside the ticket
+        plan_path = t.path.parent / (t.path.stem + "-plan.md")
+        plan_path.write_text("# Plan\n", encoding="utf-8")
+
+        result = t.move_to_done_with_plan()
+
+        assert "plan_old_path" in result
+        assert "plan_new_path" in result
+        assert not plan_path.exists()
+        assert Path(result["plan_new_path"]).exists()
+        assert Path(result["plan_new_path"]).parent.name == "done"
+
+    def test_move_to_done_with_plan_returns_correct_paths(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        old_path = str(t.path)
+        result = t.move_to_done_with_plan()
+        assert result["old_path"] == old_path
+        assert "done" in result["new_path"]
+
+
+class TestTicketReopen:
+    """Test Ticket.reopen() moves ticket back from done/ and resets status."""
+
+    def test_reopen_from_done(self, tmp_path):
+        _, _, t = _setup(tmp_path, status="done")
+        t.move_to_done()
+        assert t.path.parent.name == "done"
+
+        result = t.reopen()
+
+        assert result["old_status"] == "done"
+        assert result["new_status"] == "todo"
+        assert t.path.parent.name != "done"
+        assert t.status == "todo"
+
+    def test_reopen_not_in_done_resets_status(self, tmp_path):
+        _, _, t = _setup(tmp_path, status="in-progress")
+        result = t.reopen()
+
+        assert result["old_status"] == "in-progress"
+        assert result["new_status"] == "todo"
+        assert t.status == "todo"
+        # File should still be in same location
+        assert t.path.parent.name != "done"
+
+    def test_reopen_from_done_moves_plan_file(self, tmp_path):
+        _, _, t = _setup(tmp_path, status="done")
+        t.move_to_done()
+
+        # Create a plan file in done/
+        done_dir = t.path.parent
+        plan_path = done_dir / (t.path.stem + "-plan.md")
+        plan_path.write_text("# Plan\n", encoding="utf-8")
+
+        result = t.reopen()
+
+        assert "plan_old_path" in result
+        assert "plan_new_path" in result
+        assert not plan_path.exists()
+        assert Path(result["plan_new_path"]).exists()
+        assert Path(result["plan_new_path"]).parent.name != "done"
+
+    def test_reopen_result_has_required_keys(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        t.move_to_done()
+        result = t.reopen()
+        assert "old_path" in result
+        assert "new_path" in result
+        assert "old_status" in result
+        assert "new_status" in result

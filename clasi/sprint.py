@@ -366,6 +366,59 @@ class Sprint:
             )
         return True
 
+    def ticket_counts(self) -> dict:
+        """Return a count of tickets by status.
+
+        Returns a dict with keys: todo, in_progress, done.
+        Only counts tickets that have a non-empty id field.
+        """
+        counts: dict[str, int] = {"todo": 0, "in_progress": 0, "done": 0}
+        for ticket in self.list_tickets():
+            if not ticket.id:
+                continue
+            s = ticket.status
+            if s == "in-progress":
+                s = "in_progress"
+            if s in counts:
+                counts[s] += 1
+        return counts
+
+    def archive(self) -> dict:
+        """Archive this sprint by updating status to 'done' and moving to sprints/done/.
+
+        Also copies the architecture-update.md to docs/clasi/architecture/.
+
+        Returns a dict with keys: old_path, new_path.
+        Raises ValueError if the destination already exists.
+        """
+        import shutil
+
+        sprint_dir = self._path
+        project = self._project
+
+        # Update sprint status to done
+        self.sprint_doc.update_frontmatter(status="done")
+
+        # Copy architecture-update to the architecture directory
+        if self.architecture_update_md.exists():
+            arch_dir = project.clasi_dir / "architecture"
+            arch_dir.mkdir(parents=True, exist_ok=True)
+            dest = arch_dir / f"architecture-update-{self.id}.md"
+            shutil.copy2(str(self.architecture_update_md), str(dest))
+
+        # Move to done directory
+        done_dir = project.sprints_dir / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        new_path = done_dir / sprint_dir.name
+
+        if new_path.exists():
+            raise ValueError(f"Destination already exists: {new_path}")
+
+        shutil.move(str(sprint_dir), str(new_path))
+        self._path = new_path
+
+        return {"old_path": str(sprint_dir), "new_path": str(new_path)}
+
     # --- Serialization ---
 
     def to_dict(self) -> dict:
