@@ -98,8 +98,15 @@ def _handle_role_guard(payload: dict) -> None:
         if file_path == prefix or file_path.startswith(prefix):
             sys.exit(0)
 
-    # Team-lead (tier 0 or unset) can write to docs/clasi/
+    # Team-lead (tier 0 or unset) can write to docs/clasi/ but NOT sprints/
     if agent_tier in ("", "0") and file_path.startswith("docs/clasi/"):
+        if file_path.startswith("docs/clasi/sprints/"):
+            print(
+                "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
+                "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         sys.exit(0)
 
     # Sprint-planner (tier 1) can write to sprint directories

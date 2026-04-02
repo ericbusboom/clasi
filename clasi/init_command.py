@@ -74,6 +74,8 @@ You are modifying CLASI planning artifacts. Before making changes:
    or `executing` phase (`get_sprint_phase(sprint_id)`).
 3. Use CLASI MCP tools for all artifact operations — do not create
    sprint/ticket/TODO files manually.
+
+Direct edits to `docs/clasi/sprints/` are blocked for team-lead. Use MCP tools.
 """,
     "source-code.md": """\
 ---

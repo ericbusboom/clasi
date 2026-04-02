@@ -39,9 +39,9 @@ class TestRoleGuardBlocking:
     """Tests that role_guard blocks writes to non-safe paths."""
 
     def test_allows_team_lead_write_to_clasi_docs(self, tmp_path):
-        """Team-lead (tier 0/unset) can write to docs/clasi/."""
+        """Team-lead (tier 0/unset) can write to docs/clasi/ non-sprint paths."""
         result = _run_role_guard(
-            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            {"file_path": "docs/clasi/todo/my-todo.md"},
             cwd=str(tmp_path),
         )
         assert result.returncode == 0
@@ -262,3 +262,73 @@ class TestRoleGuardTierAware:
         )
         assert result.returncode == 2
         assert "programmer" in result.stderr
+
+
+class TestRoleGuardTeamLeadSprintBlock:
+    """Tests that team-lead cannot directly edit sprint artifacts."""
+
+    def test_tier_0_blocked_from_sprint_md(self, tmp_path):
+        """Tier 0 cannot directly edit a sprint.md file."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0"},
+        )
+        assert result.returncode == 2
+        assert "ROLE VIOLATION" in result.stderr
+
+    def test_tier_0_blocked_from_sprint_ticket(self, tmp_path):
+        """Tier 0 cannot directly edit a ticket file under sprints/."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/tickets/001-foo.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0"},
+        )
+        assert result.returncode == 2
+        assert "ROLE VIOLATION" in result.stderr
+
+    def test_tier_0_still_allowed_for_todo(self, tmp_path):
+        """Tier 0 can write to docs/clasi/todo/."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/todo/my-todo.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0"},
+        )
+        assert result.returncode == 0
+
+    def test_tier_0_still_allowed_for_reflections(self, tmp_path):
+        """Tier 0 can write to docs/clasi/reflections/."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/reflections/2026-04-01-foo.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0"},
+        )
+        assert result.returncode == 0
+
+    def test_tier_1_allowed_for_sprint_md(self, tmp_path):
+        """Sprint-planner (tier 1) can write to sprint artifacts."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "1"},
+        )
+        assert result.returncode == 0
+
+    def test_tier_2_allowed_for_sprint_md(self, tmp_path):
+        """Programmer (tier 2) can write to sprint artifacts."""
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "2"},
+        )
+        assert result.returncode == 0
+
+    def test_oop_bypass_allows_tier_0_sprint_write(self, tmp_path):
+        """OOP flag bypasses sprint block for tier 0."""
+        (tmp_path / ".clasi-oop").touch()
+        result = _run_role_guard(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"},
+            cwd=str(tmp_path),
+            env={"CLASI_AGENT_TIER": "0"},
+        )
+        assert result.returncode == 0
