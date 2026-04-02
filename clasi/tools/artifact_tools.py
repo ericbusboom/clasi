@@ -1037,6 +1037,15 @@ def _close_sprint_full(
             detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
+            # Commit the version bump so the working tree is clean for merge
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=str(project.root), capture_output=True, text=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"chore: bump version to {version}"],
+                cwd=str(project.root), capture_output=True, text=True,
+            )
             create_version_tag(version)
     except Exception as exc:
         import sys

@@ -762,6 +762,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0),  # git rev-parse --verify
             self._make_subprocess_result(1),  # git merge-base (not ancestor)
             self._make_subprocess_result(0),  # git checkout master
@@ -798,6 +800,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, merge check)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, delete check)
@@ -836,6 +840,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
@@ -861,6 +867,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
@@ -899,6 +907,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
