@@ -1,10 +1,11 @@
 """Tests for the Sprint class and Project sprint management."""
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch, call
 
 from clasi.artifact import Artifact
 from clasi.project import Project
-from clasi.sprint import Sprint
+from clasi.sprint import Sprint, MergeConflictError
 
 
 def _make_sprint_dir(tmp_path, sprint_id="001", title="Test Sprint", slug="test-sprint"):
@@ -103,6 +104,64 @@ class TestSprintArtifacts:
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         assert s.architecture.path == sprint_dir / "architecture-update.md"
+
+
+class TestSprintPathAccessors:
+    """Test well-known file path accessors."""
+
+    def test_sprint_md(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.sprint_md == sprint_dir / "sprint.md"
+
+    def test_usecases_md(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.usecases_md == sprint_dir / "usecases.md"
+
+    def test_architecture_update_md(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.architecture_update_md == sprint_dir / "architecture-update.md"
+
+    def test_tickets_dir(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.tickets_dir == sprint_dir / "tickets"
+
+    def test_tickets_done_dir(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.tickets_done_dir == sprint_dir / "tickets" / "done"
+
+    def test_sprint_md_returns_path(self, tmp_path):
+        """Path accessors return Path objects."""
+        from pathlib import Path
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert isinstance(s.sprint_md, Path)
+        assert isinstance(s.usecases_md, Path)
+        assert isinstance(s.architecture_update_md, Path)
+        assert isinstance(s.tickets_dir, Path)
+        assert isinstance(s.tickets_done_dir, Path)
+
+    def test_sprint_md_file_exists(self, tmp_path):
+        """sprint_md points to the actual file created by _make_sprint_dir."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.sprint_md.exists()
+
+    def test_tickets_dir_exists(self, tmp_path):
+        """tickets_dir points to the actual directory created by _make_sprint_dir."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.tickets_dir.is_dir()
+
+    def test_tickets_done_dir_exists(self, tmp_path):
+        """tickets_done_dir points to the actual done/ directory."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.tickets_done_dir.is_dir()
 
 
 class TestSprintTickets:

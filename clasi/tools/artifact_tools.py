@@ -131,9 +131,9 @@ def create_sprint(title: str) -> str:
         pass  # Graceful degradation if DB fails
 
     files = {
-        "sprint.md": str(sprint.path / "sprint.md"),
-        "usecases.md": str(sprint.path / "usecases.md"),
-        "architecture-update.md": str(sprint.path / "architecture-update.md"),
+        "sprint.md": str(sprint.sprint_md),
+        "usecases.md": str(sprint.usecases_md),
+        "architecture-update.md": str(sprint.architecture_update_md),
     }
 
     return json.dumps({
@@ -312,25 +312,25 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     sprint_dir = project.sprints_dir / f"{new_id}-{slug}"
 
     sprint_dir.mkdir(parents=True, exist_ok=True)
-    (sprint_dir / "tickets").mkdir()
-    (sprint_dir / "tickets" / "done").mkdir()
+    from clasi.sprint import Sprint as _Sprint
+    _new_sprint = _Sprint(sprint_dir, project)
+    _new_sprint.tickets_dir.mkdir()
+    _new_sprint.tickets_done_dir.mkdir()
 
     fmt = {"id": new_id, "title": title, "slug": slug}
     files = {}
-    for name, template in [
-        ("sprint.md", SPRINT_TEMPLATE),
-        ("usecases.md", SPRINT_USECASES_TEMPLATE),
+    for name, path, template in [
+        ("sprint.md", _new_sprint.sprint_md, SPRINT_TEMPLATE),
+        ("usecases.md", _new_sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
     ]:
-        path = sprint_dir / name
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
 
     # Architecture: lightweight update template (not a full copy)
-    arch_update_path = sprint_dir / "architecture-update.md"
-    arch_update_path.write_text(
+    _new_sprint.architecture_update_md.write_text(
         SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
     )
-    files["architecture-update.md"] = str(arch_update_path)
+    files["architecture-update.md"] = str(_new_sprint.architecture_update_md)
 
     # Register in state database
     try:
@@ -788,12 +788,11 @@ def _close_sprint_legacy(sprint_id: str) -> str:
                     moved_todos.append(todo_file.name)
 
     # Copy architecture-update to the architecture directory
-    arch_update = sprint_dir / "architecture-update.md"
-    if arch_update.exists():
+    if sprint.architecture_update_md.exists():
         arch_dir = project.clasi_dir / "architecture"
         arch_dir.mkdir(parents=True, exist_ok=True)
         dest = arch_dir / f"architecture-update-{sprint_id}.md"
-        shutil.copy2(str(arch_update), str(dest))
+        shutil.copy2(str(sprint.architecture_update_md), str(dest))
 
     # Move to done directory
     done_dir = project.sprints_dir / "done"
@@ -894,10 +893,8 @@ def _close_sprint_full(
             "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
         }, indent=2)
 
-    tickets_dir = sprint_dir / "tickets"
-    done_tickets_dir = tickets_dir / "done"
-    if tickets_dir.exists():
-        for ticket_file in sorted(tickets_dir.glob("*.md")):
+    if sprint.tickets_dir.exists():
+        for ticket_file in sorted(sprint.tickets_dir.glob("*.md")):
             if ticket_file.name == "done":
                 continue
             ticket = Ticket(ticket_file, sprint)
@@ -907,8 +904,8 @@ def _close_sprint_full(
                 # Also move plan file if exists
                 plan_file = ticket_file.with_suffix("").with_name(ticket_file.stem + "-plan.md")
                 if plan_file.exists():
-                    done_tickets_dir.mkdir(parents=True, exist_ok=True)
-                    plan_file.rename(done_tickets_dir / plan_file.name)
+                    sprint.tickets_done_dir.mkdir(parents=True, exist_ok=True)
+                    plan_file.rename(sprint.tickets_done_dir / plan_file.name)
                 repairs.append(f"moved ticket {ticket.id or ticket_file.stem} to done/")
             else:
                 # Ticket not done — unrepairable
@@ -1086,12 +1083,11 @@ def _close_sprint_full(
         # already verified that no in-progress TODOs remain for this sprint.
 
         # Copy architecture-update
-        arch_update = sprint_dir / "architecture-update.md"
-        if arch_update.exists():
+        if sprint.architecture_update_md.exists():
             arch_dir = project.clasi_dir / "architecture"
             arch_dir.mkdir(parents=True, exist_ok=True)
             dest = arch_dir / f"architecture-update-{sprint_id}.md"
-            shutil.copy2(str(arch_update), str(dest))
+            shutil.copy2(str(sprint.architecture_update_md), str(dest))
 
         # Move to done directory
         done_dir.mkdir(parents=True, exist_ok=True)
@@ -1154,80 +1150,35 @@ def _close_sprint_full(
 
     # ── Step 6: Git merge ──
     merged = False
-    # Check if already merged (idempotent): branch doesn't exist or is ancestor of main
-    branch_exists = subprocess.run(
-        ["git", "rev-parse", "--verify", branch_name],
-        capture_output=True, text=True,
-    ).returncode == 0
-
-    if not branch_exists:
-        # Branch already deleted/merged — skip
-        merged = True
-    else:
-        # Check if branch is already merged into main
-        is_ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", branch_name, main_branch],
-            capture_output=True, text=True,
-        ).returncode == 0
-
-        if is_ancestor:
-            merged = True
-        else:
-            # Perform the merge
-            checkout = subprocess.run(
-                ["git", "checkout", main_branch],
-                capture_output=True, text=True,
-            )
-            if checkout.returncode != 0:
-                error_msg = f"Failed to checkout {main_branch}: {checkout.stderr.strip()}"
-                if db.path.exists():
-                    db.write_recovery_state(sprint_id, "merge", [], error_msg)
-                return json.dumps({
-                    "status": "error",
-                    "error": {
-                        "step": "merge",
-                        "message": error_msg,
-                        "recovery": {
-                            "recorded": db.path.exists(),
-                            "allowed_paths": [],
-                            "instruction": f"Resolve checkout issues, then call close_sprint again.",
-                        },
-                    },
-                    "completed_steps": completed_steps,
-                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
-                }, indent=2)
-
-            merge = subprocess.run(
-                ["git", "merge", "--no-ff", branch_name],
-                capture_output=True, text=True,
-            )
-            if merge.returncode != 0:
-                # Parse conflicted files
-                conflict_result = subprocess.run(
-                    ["git", "diff", "--name-only", "--diff-filter=U"],
-                    capture_output=True, text=True,
-                )
-                conflicted = [f.strip() for f in conflict_result.stdout.strip().split("\n") if f.strip()]
-                # Abort the failed merge
-                subprocess.run(["git", "merge", "--abort"], capture_output=True)
-                error_msg = f"Merge conflict: {merge.stderr.strip()}"
-                if db.path.exists():
-                    db.write_recovery_state(sprint_id, "merge", conflicted, error_msg)
-                return json.dumps({
-                    "status": "error",
-                    "error": {
-                        "step": "merge",
-                        "message": error_msg,
-                        "recovery": {
-                            "recorded": db.path.exists(),
-                            "allowed_paths": conflicted,
-                            "instruction": "Resolve the merge conflicts in the listed files, then call close_sprint again.",
-                        },
-                    },
-                    "completed_steps": completed_steps,
-                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
-                }, indent=2)
-            merged = True
+    branch_exists = False
+    # Use a Sprint wrapper pointing to the archived location for git operations
+    archived_sprint = Sprint(new_path, project)
+    try:
+        merge_result = archived_sprint.merge_branch(main_branch)
+        branch_exists = merge_result["branch_exists"]
+        merged = merge_result["merged"]
+    except RuntimeError as e:
+        from clasi.sprint import MergeConflictError
+        error_msg = str(e)
+        conflicted: list[str] = (
+            e.conflicted_files if isinstance(e, MergeConflictError) else []
+        )
+        if db.path.exists():
+            db.write_recovery_state(sprint_id, "merge", conflicted, error_msg)
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "step": "merge",
+                "message": error_msg,
+                "recovery": {
+                    "recorded": db.path.exists(),
+                    "allowed_paths": conflicted,
+                    "instruction": "Resolve the merge conflicts in the listed files, then call close_sprint again.",
+                },
+            },
+            "completed_steps": completed_steps,
+            "remaining_steps": [s for s in all_steps if s not in completed_steps],
+        }, indent=2)
 
     completed_steps.append("merge")
 
@@ -1245,12 +1196,11 @@ def _close_sprint_full(
 
     # ── Step 8: Delete branch ──
     branch_deleted = False
-    if delete_branch_flag and branch_exists:
-        del_result = subprocess.run(
-            ["git", "branch", "-d", branch_name],
-            capture_output=True, text=True,
-        )
-        branch_deleted = del_result.returncode == 0
+    if delete_branch_flag:
+        try:
+            branch_deleted = archived_sprint.delete_branch()
+        except RuntimeError:
+            branch_deleted = False
 
     completed_steps.append("delete_branch")
 
@@ -1395,35 +1345,17 @@ def acquire_execution_lock(sprint_id: str) -> str:
         # Late branching: create the sprint branch when acquiring
         # the execution lock (not during planning).
         if not lock.get("reentrant"):
-            state = project.db.get_sprint_state(sprint_id)
-            slug = state.get("slug", "")
-            branch_name = f"sprint/{sprint_id}-{slug}" if slug else f"sprint/{sprint_id}"
-            branch_result = subprocess.run(
-                ["git", "checkout", "-b", branch_name],
-                capture_output=True,
-                text=True,
-            )
-            if branch_result.returncode != 0:
-                # Branch may already exist -- try checking it out
-                branch_result = subprocess.run(
-                    ["git", "checkout", branch_name],
-                    capture_output=True,
-                    text=True,
-                )
-                if branch_result.returncode != 0:
-                    return json.dumps({
-                        "error": (
-                            f"Failed to create/checkout branch "
-                            f"'{branch_name}': "
-                            f"{branch_result.stderr.strip()}"
-                        ),
-                        "lock": lock,
-                    }, indent=2)
+            try:
+                branch_name = sprint.create_branch()
+            except RuntimeError as e:
+                return json.dumps({
+                    "error": str(e),
+                    "lock": lock,
+                }, indent=2)
             lock["branch"] = branch_name
         else:
             # Re-entrant: look up existing branch
-            state = project.db.get_sprint_state(sprint_id)
-            lock["branch"] = state.get("branch", "")
+            lock["branch"] = sprint.branch
 
         return json.dumps(lock, indent=2)
     except ValueError as e:
@@ -2022,14 +1954,13 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
         })
 
     # Check planning docs exist and have correct status
-    planning_docs = {
-        "sprint.md": SPRINT_TEMPLATE,
-        "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "architecture-update.md": SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
-    }
+    planning_docs = [
+        ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
+        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
+        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
+    ]
 
-    for filename, template in planning_docs.items():
-        filepath = sprint_dir / filename
+    for filename, filepath, template in planning_docs:
         if not filepath.exists():
             issues.append({
                 "severity": "error",
@@ -2063,14 +1994,13 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
             })
 
     # Check tickets exist
-    tickets_dir = sprint_dir / "tickets"
-    if not tickets_dir.exists():
+    if not sprint.tickets_dir.exists():
         issues.append({
             "severity": "error",
             "check": "tickets_dir_exists",
             "message": "tickets/ directory does not exist",
             "fix": "Create tickets using create_ticket(sprint_id, title)",
-            "path": str(tickets_dir),
+            "path": str(sprint.tickets_dir),
         })
     else:
         tickets = _collect_tickets(sprint_dir)
@@ -2080,7 +2010,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
                 "check": "tickets_exist",
                 "message": "No tickets found in the sprint",
                 "fix": "Create tickets using create_ticket(sprint_id, title)",
-                "path": str(tickets_dir),
+                "path": str(sprint.tickets_dir),
             })
         else:
             for t in tickets:
@@ -2150,7 +2080,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
             "check": "tickets_exist",
             "message": "No tickets found in the sprint",
             "fix": "Sprint should have tickets before closing",
-            "path": str(sprint_dir / "tickets"),
+            "path": str(sprint.tickets_dir),
         })
 
     for t in tickets:
@@ -2174,14 +2104,13 @@ def review_sprint_pre_close(sprint_id: str) -> str:
             })
 
     # Check planning docs status and content
-    planning_docs = {
-        "sprint.md": SPRINT_TEMPLATE,
-        "usecases.md": SPRINT_USECASES_TEMPLATE,
-        "architecture-update.md": SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
-    }
+    planning_docs_pre_close = [
+        ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
+        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
+        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
+    ]
 
-    for filename, template in planning_docs.items():
-        filepath = sprint_dir / filename
+    for filename, filepath, template in planning_docs_pre_close:
         if not filepath.exists():
             issues.append({
                 "severity": "error",
@@ -2302,8 +2231,12 @@ def review_sprint_post_close(sprint_id: str) -> str:
                 })
 
         # Check planning docs
-        for filename in ["sprint.md", "usecases.md", "architecture-update.md"]:
-            filepath = sprint_dir / filename
+        post_close_docs = [
+            ("sprint.md", sprint.sprint_md),
+            ("usecases.md", sprint.usecases_md),
+            ("architecture-update.md", sprint.architecture_update_md),
+        ]
+        for filename, filepath in post_close_docs:
             if filepath.exists():
                 fm = read_frontmatter(filepath)
                 status = fm.get("status", "draft")

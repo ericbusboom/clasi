@@ -123,21 +123,22 @@ class Project:
             raise ValueError(f"Sprint directory already exists: {sprint_dir}")
 
         sprint_dir.mkdir(parents=True, exist_ok=True)
-        (sprint_dir / "tickets").mkdir()
-        (sprint_dir / "tickets" / "done").mkdir()
+        sprint = Sprint(sprint_dir, self)
+        sprint.tickets_dir.mkdir()
+        sprint.tickets_done_dir.mkdir()
 
         fmt = {"id": sprint_id, "title": title, "slug": slug}
-        (sprint_dir / "sprint.md").write_text(
+        sprint.sprint_md.write_text(
             SPRINT_TEMPLATE.format(**fmt), encoding="utf-8"
         )
-        (sprint_dir / "usecases.md").write_text(
+        sprint.usecases_md.write_text(
             SPRINT_USECASES_TEMPLATE.format(**fmt), encoding="utf-8"
         )
-        (sprint_dir / "architecture-update.md").write_text(
+        sprint.architecture_update_md.write_text(
             SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
         )
 
-        return Sprint(sprint_dir, self)
+        return sprint
 
     def _next_sprint_id(self) -> str:
         """Determine the next sprint number (NNN format)."""
