@@ -82,11 +82,24 @@ class Todo:
             self.path.rename(new_path)
             self._artifact = Artifact(new_path)
 
-    def move_to_done(self) -> None:
-        """Move to todo/done/, set status to done."""
+    def move_to_done(
+        self,
+        sprint_id: str | None = None,
+        ticket_ids: list[str] | None = None,
+    ) -> None:
+        """Move to todo/done/, set status to done.
+
+        Args:
+            sprint_id: Optional sprint ID to record in frontmatter.
+            ticket_ids: Optional list of ticket IDs to record in frontmatter.
+        """
         done_dir = self._project.todo_dir / "done"
         done_dir.mkdir(parents=True, exist_ok=True)
 
+        if sprint_id is not None:
+            self._artifact.update_frontmatter(sprint=sprint_id)
+        if ticket_ids is not None:
+            self._artifact.update_frontmatter(tickets=ticket_ids)
         self._artifact.update_frontmatter(status="done")
 
         new_path = done_dir / self.path.name

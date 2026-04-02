@@ -1499,13 +1499,7 @@ def move_todo_to_done(
         raise ValueError(f"TODO not found: {filename}")
     old_path = todo.path
 
-    # Write traceability frontmatter before moving
-    if sprint_id is not None:
-        todo._artifact.update_frontmatter(sprint=sprint_id)
-    if ticket_ids is not None:
-        todo._artifact.update_frontmatter(tickets=ticket_ids)
-
-    todo.move_to_done()
+    todo.move_to_done(sprint_id=sprint_id, ticket_ids=ticket_ids)
 
     return json.dumps({
         "old_path": str(old_path),
