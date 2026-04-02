@@ -117,6 +117,45 @@ class TestTicketSetStatus:
         assert t.content == original_content
 
 
+class TestTicketToDict:
+    """Test Ticket.to_dict() serialization."""
+
+    def test_to_dict_returns_dict(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        result = t.to_dict()
+        assert isinstance(result, dict)
+
+    def test_to_dict_has_required_keys(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        result = t.to_dict()
+        assert "id" in result
+        assert "path" in result
+        assert "title" in result
+        assert "status" in result
+
+    def test_to_dict_path_is_string(self, tmp_path):
+        """path value must be a string, not a Path object."""
+        _, _, t = _setup(tmp_path)
+        result = t.to_dict()
+        assert isinstance(result["path"], str)
+
+    def test_to_dict_correct_values(self, tmp_path):
+        _, _, t = _setup(tmp_path, title="Fix Bug", status="in-progress")
+        result = t.to_dict()
+        assert result["id"] == "001"
+        assert result["title"] == "Fix Bug"
+        assert result["status"] == "in-progress"
+        assert "001-fix-bug.md" in result["path"]
+
+    def test_to_dict_is_json_serializable(self, tmp_path):
+        """to_dict() output must be json.dumps-safe."""
+        import json
+        _, _, t = _setup(tmp_path)
+        result = t.to_dict()
+        serialized = json.dumps(result)
+        assert '"id"' in serialized
+
+
 class TestTicketMoveToDone:
     """Test move_to_done moves file."""
 

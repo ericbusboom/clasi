@@ -164,6 +164,63 @@ class TestSprintPathAccessors:
         assert s.tickets_done_dir.is_dir()
 
 
+class TestSprintToDict:
+    """Test Sprint.to_dict() serialization."""
+
+    def test_to_dict_returns_dict(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert isinstance(result, dict)
+
+    def test_to_dict_has_required_keys(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert "id" in result
+        assert "path" in result
+        assert "branch" in result
+        assert "files" in result
+        assert "phase" in result
+
+    def test_to_dict_values_are_strings(self, tmp_path):
+        """All path values must be strings, not Path objects."""
+        from pathlib import Path
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert isinstance(result["path"], str)
+        for v in result["files"].values():
+            assert isinstance(v, str)
+            assert not isinstance(v, Path)
+
+    def test_to_dict_correct_values(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert result["id"] == "001"
+        assert result["branch"] == "sprint/001-test-sprint"
+        assert result["path"] == str(sprint_dir)
+
+    def test_to_dict_files_contains_sprint_artifacts(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert "sprint.md" in result["files"]
+        assert "usecases.md" in result["files"]
+        assert "architecture-update.md" in result["files"]
+
+    def test_to_dict_is_json_serializable(self, tmp_path):
+        """to_dict() output must be json.dumps-safe."""
+        import json
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        # Should not raise
+        serialized = json.dumps(result)
+        assert '"id"' in serialized
+
+
 class TestSprintTickets:
     """Test ticket management methods."""
 

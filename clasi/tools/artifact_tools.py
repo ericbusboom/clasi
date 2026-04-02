@@ -130,19 +130,7 @@ def create_sprint(title: str) -> str:
     except Exception:
         pass  # Graceful degradation if DB fails
 
-    files = {
-        "sprint.md": str(sprint.sprint_md),
-        "usecases.md": str(sprint.usecases_md),
-        "architecture-update.md": str(sprint.architecture_update_md),
-    }
-
-    return json.dumps({
-        "id": sprint.id,
-        "path": str(sprint.path),
-        "branch": f"sprint/{sprint.id}-{sprint.slug}",
-        "files": files,
-        "phase": "planning-docs",
-    }, indent=2)
+    return json.dumps(sprint.to_dict(), indent=2)
 
 
 def _list_active_sprints() -> list[dict]:
@@ -338,14 +326,9 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     except Exception:
         pass  # Graceful degradation
 
-    return json.dumps({
-        "id": new_id,
-        "path": str(sprint_dir),
-        "branch": f"sprint/{new_id}-{slug}",
-        "files": files,
-        "phase": "planning-docs",
-        "renumbered": renumbered,
-    }, indent=2)
+    result = _new_sprint.to_dict()
+    result["renumbered"] = renumbered
+    return json.dumps(result, indent=2)
 
 
 def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
@@ -430,13 +413,9 @@ def create_ticket(
                 continue  # Skip missing TODOs gracefully
             todo_obj.move_to_in_progress(sprint_id, full_ticket_id)
 
-    content = TICKET_TEMPLATE.format(id=ticket.id, title=title)
-
-    return json.dumps({
-        "id": ticket.id,
-        "path": str(ticket.path),
-        "template_content": content,
-    }, indent=2)
+    result = ticket.to_dict()
+    result["template_content"] = TICKET_TEMPLATE.format(id=ticket.id, title=title)
+    return json.dumps(result, indent=2)
 
 
 @server.tool()

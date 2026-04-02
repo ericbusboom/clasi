@@ -75,6 +75,19 @@ class Ticket:
     def content(self) -> str:
         return self._artifact.content
 
+    def to_dict(self) -> dict:
+        """Serialize ticket to a plain dict suitable for JSON return.
+
+        All Path objects are converted to strings.
+        Returns keys: id, path, title, status.
+        """
+        return {
+            "id": self.id,
+            "path": str(self.path),
+            "title": self.title,
+            "status": self.status,
+        }
+
     def set_status(self, status: str) -> None:
         """Update status in frontmatter."""
         self._artifact.update_frontmatter(status=status)

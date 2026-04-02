@@ -366,6 +366,26 @@ class Sprint:
             )
         return True
 
+    # --- Serialization ---
+
+    def to_dict(self) -> dict:
+        """Serialize sprint to a plain dict suitable for JSON return.
+
+        All Path objects are converted to strings.
+        Returns keys: id, path, branch, files, phase.
+        """
+        return {
+            "id": self.id,
+            "path": str(self.path),
+            "branch": self.branch,
+            "files": {
+                "sprint.md": str(self.sprint_md),
+                "usecases.md": str(self.usecases_md),
+                "architecture-update.md": str(self.architecture_update_md),
+            },
+            "phase": self.phase,
+        }
+
     # --- Phase management (delegates to project.db) ---
 
     def advance_phase(self) -> dict:
