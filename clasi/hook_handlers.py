@@ -13,6 +13,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 
 def handle_hook(event: str) -> None:
@@ -136,6 +137,39 @@ def _handle_role_guard(payload: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Log directory resolution
+# ---------------------------------------------------------------------------
+
+
+def _get_log_dir() -> Optional[Path]:
+    """Return the log directory to use for the current sprint context.
+
+    Returns None if docs/clasi/log does not exist (handlers should exit 0).
+    If an execution lock is held, returns a sprint-scoped subdirectory
+    (docs/clasi/log/sprint-{sprint_id}/), creating it if needed.
+    Otherwise returns docs/clasi/log.
+    """
+    base = Path("docs/clasi/log")
+    if not base.exists():
+        return None
+
+    db_path = Path("docs/clasi/.clasi.db")
+    if db_path.exists():
+        try:
+            from clasi.state_db import get_lock_holder
+
+            lock = get_lock_holder(str(db_path))
+            if lock and lock.get("sprint_id"):
+                sprint_dir = base / f"sprint-{lock['sprint_id']}"
+                sprint_dir.mkdir(parents=True, exist_ok=True)
+                return sprint_dir
+        except Exception:
+            pass
+
+    return base
+
+
+# ---------------------------------------------------------------------------
 # Subagent lifecycle logging — SubagentStart / SubagentStop
 # ---------------------------------------------------------------------------
 
@@ -146,8 +180,8 @@ def _handle_subagent_start(payload: dict) -> None:
     Creates a log file in docs/clasi/log/ with frontmatter. The stop
     hook appends the transcript to this same file.
     """
-    log_dir = Path("docs/clasi/log")
-    if not log_dir.exists():
+    log_dir = _get_log_dir()
+    if log_dir is None:
         sys.exit(0)
 
     agent_type = payload.get("agent_type", "unknown")
@@ -191,8 +225,8 @@ def _handle_subagent_start(payload: dict) -> None:
 
 def _handle_subagent_stop(payload: dict) -> None:
     """Append transcript to the log file created by subagent-start."""
-    log_dir = Path("docs/clasi/log")
-    if not log_dir.exists():
+    log_dir = _get_log_dir()
+    if log_dir is None:
         sys.exit(0)
 
     agent_id = payload.get("agent_id", "")
@@ -290,8 +324,8 @@ def _handle_task_created(payload: dict) -> None:
     Creates a log file in docs/clasi/log/ with frontmatter and writes an
     .active/task-{task_id}.json marker so task_completed can find it.
     """
-    log_dir = Path("docs/clasi/log")
-    if not log_dir.exists():
+    log_dir = _get_log_dir()
+    if log_dir is None:
         sys.exit(0)
 
     task_id = payload.get("task_id", "")
@@ -340,8 +374,8 @@ def _handle_task_completed(payload: dict) -> None:
     Finds the .active marker, appends duration to frontmatter, extracts
     the prompt from the transcript, and appends the transcript content.
     """
-    log_dir = Path("docs/clasi/log")
-    if not log_dir.exists():
+    log_dir = _get_log_dir()
+    if log_dir is None:
         sys.exit(0)
 
     task_id = payload.get("task_id", "")

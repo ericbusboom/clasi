@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from clasi.hook_handlers import _handle_task_created, _handle_task_completed
+from clasi.hook_handlers import _handle_task_created, _handle_task_completed, _get_log_dir
+from clasi.state_db import init_db, register_sprint, acquire_lock
 
 
 # ---------------------------------------------------------------------------
@@ -260,3 +261,126 @@ class TestHandleTaskCompleted:
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, _handle_task_completed, payload)
         assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Sprint-scoped log directory tests
+# ---------------------------------------------------------------------------
+
+
+def _setup_db_with_lock(tmp_path: Path, sprint_id: str = "001") -> str:
+    """Create a state DB with a registered sprint holding the execution lock."""
+    db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, sprint_id, f"sprint-{sprint_id}")
+    acquire_lock(db_path, sprint_id)
+    return db_path
+
+
+class TestGetLogDir:
+    def test_returns_none_when_log_dir_missing(self, tmp_path):
+        """_get_log_dir returns None when docs/clasi/log does not exist."""
+        result = _run_with_cwd(tmp_path, _get_log_dir)
+        assert result is None
+
+    def test_returns_base_dir_when_no_db(self, tmp_path):
+        """_get_log_dir returns base log dir when no state DB exists."""
+        _make_log_dir(tmp_path)
+        result = _run_with_cwd(tmp_path, _get_log_dir)
+        assert result == Path("docs/clasi/log")
+
+    def test_returns_base_dir_when_no_lock(self, tmp_path):
+        """_get_log_dir returns base log dir when DB exists but no lock held."""
+        _make_log_dir(tmp_path)
+        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        init_db(db_path)
+        register_sprint(db_path, "001", "sprint-001")
+        # No lock acquired
+        result = _run_with_cwd(tmp_path, _get_log_dir)
+        assert result == Path("docs/clasi/log")
+
+    def test_returns_sprint_subdir_when_lock_held(self, tmp_path):
+        """_get_log_dir returns sprint-scoped subdir when execution lock is held."""
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="002")
+        result = _run_with_cwd(tmp_path, _get_log_dir)
+        assert result == Path("docs/clasi/log/sprint-002")
+
+    def test_creates_sprint_subdir_when_lock_held(self, tmp_path):
+        """_get_log_dir creates the sprint subdirectory on the filesystem."""
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="003")
+        _run_with_cwd(tmp_path, _get_log_dir)
+        assert (tmp_path / "docs" / "clasi" / "log" / "sprint-003").is_dir()
+
+
+class TestSprintScopedLogging:
+    def test_task_created_uses_sprint_subdir_when_lock_held(self, tmp_path):
+        """task_created writes log to sprint subdir when execution lock is held."""
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="001")
+        payload = _task_created_payload(task_id="t-sprint-001")
+
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, _handle_task_created, payload)
+        assert exc.value.code == 0
+
+        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-001"
+        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
+        assert len(log_files) == 1
+        content = log_files[0].read_text()
+        assert "task_id: t-sprint-001" in content
+
+    def test_task_created_active_marker_in_sprint_subdir(self, tmp_path):
+        """task_created places .active marker inside sprint subdir."""
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="001")
+        payload = _task_created_payload(task_id="t-marker")
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, _handle_task_created, payload)
+
+        marker = tmp_path / "docs" / "clasi" / "log" / "sprint-001" / ".active" / "task-t-marker.json"
+        assert marker.exists()
+
+    def test_task_completed_finds_log_in_sprint_subdir(self, tmp_path):
+        """task_completed appends to log in sprint subdir when lock is held."""
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="001")
+
+        # task_created sets up the log
+        create_payload = _task_created_payload(task_id="t-full")
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, _handle_task_created, create_payload)
+
+        # task_completed should find it in the same sprint subdir
+        complete_payload = _task_completed_payload(task_id="t-full")
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, _handle_task_completed, complete_payload)
+        assert exc.value.code == 0
+
+        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-001"
+        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
+        assert len(log_files) == 1
+        content = log_files[0].read_text()
+        assert "stopped_at:" in content
+        assert "duration_seconds:" in content
+
+    def test_task_created_falls_back_to_base_dir_without_lock(self, tmp_path):
+        """task_created uses base log dir when no sprint holds the lock."""
+        _make_log_dir(tmp_path)
+        # DB exists but no lock
+        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        init_db(db_path)
+        register_sprint(db_path, "001", "sprint-001")
+
+        payload = _task_created_payload(task_id="t-fallback")
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, _handle_task_created, payload)
+        assert exc.value.code == 0
+
+        base_log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
+        assert len(log_files) == 1
+        # Sprint subdir should not have been created
+        assert not (base_log_dir / "sprint-001").exists()
