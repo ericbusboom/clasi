@@ -362,3 +362,226 @@ class TestProjectSprints:
         proj, _ = _make_sprint_dir(tmp_path)
         s2 = proj.create_sprint("Second Sprint")
         assert s2.id == "002"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for git method tests
+# ---------------------------------------------------------------------------
+
+
+def _make_run_result(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
+    """Build a fake subprocess.CompletedProcess-like result."""
+    result = MagicMock()
+    result.returncode = returncode
+    result.stdout = stdout
+    result.stderr = stderr
+    return result
+
+
+class TestSprintCreateBranch:
+    """Tests for Sprint.create_branch()."""
+
+    def test_create_branch_success(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(0)
+            branch = s.create_branch()
+        assert branch == "sprint/001-test-sprint"
+        mock_run.assert_called_once_with(
+            ["git", "checkout", "-b", "sprint/001-test-sprint"],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_create_branch_already_exists_falls_back_to_checkout(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(1, stderr="already exists"),  # checkout -b fails
+                _make_run_result(0),  # checkout succeeds
+            ]
+            branch = s.create_branch()
+        assert branch == "sprint/001-test-sprint"
+        assert mock_run.call_count == 2
+
+    def test_create_branch_raises_on_failure(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(1, stderr="error A"),
+                _make_run_result(1, stderr="error B"),
+            ]
+            try:
+                s.create_branch()
+                assert False, "Expected RuntimeError"
+            except RuntimeError as e:
+                assert "sprint/001-test-sprint" in str(e)
+                assert "error B" in str(e)
+
+    def test_create_branch_raises_when_no_branch_in_frontmatter(self, tmp_path):
+        proj = Project(tmp_path)
+        sprint_dir = proj.sprints_dir / "001-no-branch"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint.md").write_text(
+            "---\nid: \"001\"\ntitle: \"No Branch\"\nstatus: planning\n---\n",
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        try:
+            s.create_branch()
+            assert False, "Expected RuntimeError"
+        except RuntimeError as e:
+            assert "no 'branch' field" in str(e)
+
+
+class TestSprintMergeBranch:
+    """Tests for Sprint.merge_branch()."""
+
+    def test_merge_branch_success(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # git rev-parse --verify (branch exists)
+                _make_run_result(1),  # git merge-base --is-ancestor (not yet merged)
+                _make_run_result(0),  # git checkout master
+                _make_run_result(0),  # git merge --no-ff
+            ]
+            result = s.merge_branch("master")
+        assert result["merged"] is True
+        assert result["already_merged"] is False
+        assert result["branch_exists"] is True
+
+    def test_merge_branch_branch_already_gone(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(1)  # rev-parse: branch gone
+            result = s.merge_branch("master")
+        assert result["merged"] is True
+        assert result["already_merged"] is True
+        assert result["branch_exists"] is False
+
+    def test_merge_branch_already_ancestor(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # rev-parse: branch exists
+                _make_run_result(0),  # merge-base: already ancestor
+            ]
+            result = s.merge_branch("master")
+        assert result["merged"] is True
+        assert result["already_merged"] is True
+        assert result["branch_exists"] is True
+
+    def test_merge_branch_conflict_raises_merge_conflict_error(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # rev-parse: branch exists
+                _make_run_result(1),  # merge-base: not ancestor
+                _make_run_result(0),  # checkout master
+                _make_run_result(1, stderr="Automatic merge failed"),  # git merge --no-ff
+                _make_run_result(0, stdout="foo.py\nbar.py\n"),  # git diff
+                _make_run_result(0),  # git merge --abort
+            ]
+            try:
+                s.merge_branch("master")
+                assert False, "Expected MergeConflictError"
+            except MergeConflictError as e:
+                assert "Merge conflict" in str(e)
+                assert "foo.py" in e.conflicted_files
+                assert "bar.py" in e.conflicted_files
+
+    def test_merge_conflict_error_is_subclass_of_runtime_error(self, tmp_path):
+        err = MergeConflictError("test", conflicted_files=["a.py"])
+        assert isinstance(err, RuntimeError)
+        assert err.conflicted_files == ["a.py"]
+
+    def test_merge_branch_checkout_failure_raises(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # rev-parse: branch exists
+                _make_run_result(1),  # merge-base: not ancestor
+                _make_run_result(1, stderr="not a git repo"),  # checkout fails
+            ]
+            try:
+                s.merge_branch("master")
+                assert False, "Expected RuntimeError"
+            except RuntimeError as e:
+                assert "Failed to checkout" in str(e)
+
+    def test_merge_branch_raises_when_no_branch_in_frontmatter(self, tmp_path):
+        proj = Project(tmp_path)
+        sprint_dir = proj.sprints_dir / "001-no-branch"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint.md").write_text(
+            "---\nid: \"001\"\ntitle: \"No Branch\"\nstatus: planning\n---\n",
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        try:
+            s.merge_branch()
+            assert False, "Expected RuntimeError"
+        except RuntimeError as e:
+            assert "no 'branch' field" in str(e)
+
+
+class TestSprintDeleteBranch:
+    """Tests for Sprint.delete_branch()."""
+
+    def test_delete_branch_success(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # rev-parse: branch exists
+                _make_run_result(0),  # git branch -d succeeds
+            ]
+            deleted = s.delete_branch()
+        assert deleted is True
+
+    def test_delete_branch_not_present(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(1)  # rev-parse: doesn't exist
+            deleted = s.delete_branch()
+        assert deleted is False
+
+    def test_delete_branch_raises_on_git_failure(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        with patch("clasi.sprint.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                _make_run_result(0),  # rev-parse: branch exists
+                _make_run_result(1, stderr="not fully merged"),  # git branch -d fails
+            ]
+            try:
+                s.delete_branch()
+                assert False, "Expected RuntimeError"
+            except RuntimeError as e:
+                assert "Failed to delete branch" in str(e)
+                assert "not fully merged" in str(e)
+
+    def test_delete_branch_raises_when_no_branch_in_frontmatter(self, tmp_path):
+        proj = Project(tmp_path)
+        sprint_dir = proj.sprints_dir / "001-no-branch"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint.md").write_text(
+            "---\nid: \"001\"\ntitle: \"No Branch\"\nstatus: planning\n---\n",
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        try:
+            s.delete_branch()
+            assert False, "Expected RuntimeError"
+        except RuntimeError as e:
+            assert "no 'branch' field" in str(e)

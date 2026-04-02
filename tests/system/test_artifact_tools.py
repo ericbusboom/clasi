@@ -705,15 +705,17 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
-        # Mock subprocess calls: pytest, git rev-parse, git merge-base,
-        # git checkout, git merge, git push, git branch -d
+        # Mock subprocess calls: pytest, git rev-parse (merge check),
+        # git merge-base, git checkout, git merge, git push,
+        # git rev-parse (delete check), git branch -d
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
-            self._make_subprocess_result(0),  # git rev-parse --verify branch
+            self._make_subprocess_result(0),  # git rev-parse --verify branch (merge check)
             self._make_subprocess_result(1),  # git merge-base --is-ancestor (not yet merged)
             self._make_subprocess_result(0),  # git checkout master
             self._make_subprocess_result(0),  # git merge --no-ff
             self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(0),  # git rev-parse --verify branch (delete check)
             self._make_subprocess_result(0),  # git branch -d
         ]
 
@@ -796,8 +798,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
-            self._make_subprocess_result(1),  # git rev-parse --verify (branch gone)
+            self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, merge check)
             self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, delete check)
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -833,8 +836,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
-            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -857,8 +861,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
-            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -894,8 +899,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
-            self._make_subprocess_result(1),  # branch doesn't exist
+            self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
