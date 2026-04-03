@@ -13,6 +13,8 @@ from clasi.hook_handlers import (
     handle_subagent_start,
     _get_log_dir,
     _get_active_tickets,
+    _render_transcript_lines,
+    _ext_to_language,
 )
 from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_agent
 
@@ -554,3 +556,141 @@ class TestSprintIdInFrontmatter:
         assert len(log_files) == 1
         content = log_files[0].read_text()
         assert 'sprint_id: ""' in content
+
+
+# ---------------------------------------------------------------------------
+# _render_transcript_lines and _ext_to_language unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestExtToLanguage:
+    def test_py_maps_to_python(self):
+        assert _ext_to_language("foo.py") == "python"
+
+    def test_toml_maps_to_toml(self):
+        assert _ext_to_language("pyproject.toml") == "toml"
+
+    def test_yaml_maps_to_yaml(self):
+        assert _ext_to_language("config.yaml") == "yaml"
+
+    def test_yml_maps_to_yaml(self):
+        assert _ext_to_language("config.yml") == "yaml"
+
+    def test_json_maps_to_json(self):
+        assert _ext_to_language("data.json") == "json"
+
+    def test_js_maps_to_javascript(self):
+        assert _ext_to_language("app.js") == "javascript"
+
+    def test_ts_maps_to_typescript(self):
+        assert _ext_to_language("app.ts") == "typescript"
+
+    def test_sh_maps_to_bash(self):
+        assert _ext_to_language("script.sh") == "bash"
+
+    def test_unknown_returns_empty_string(self):
+        assert _ext_to_language("file.xyz") == ""
+
+    def test_no_extension_returns_empty_string(self):
+        assert _ext_to_language("Makefile") == ""
+
+
+def _make_tool_use_block(name: str, input_dict: dict) -> dict:
+    return {"type": "tool_use", "name": name, "input": input_dict}
+
+
+def _make_message_with_tool_use(tool_block: dict) -> dict:
+    return {
+        "type": "assistant",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "message": {
+            "content": [tool_block],
+        },
+    }
+
+
+class TestRenderTranscriptLines:
+    def test_write_md_renders_inline_markdown(self):
+        """Write to .md file renders content as inline markdown, no fence."""
+        block = _make_tool_use_block("Write", {
+            "file_path": "docs/clasi/sprints/003/tickets/001-ticket.md",
+            "content": "# Ticket Title\n\nSome description.",
+        })
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+
+        assert "**Write**" in output
+        assert "001-ticket.md" in output
+        assert "# Ticket Title" in output
+        assert "Some description." in output
+        # Should NOT be inside a code fence for the content
+        assert "```python" not in output
+
+    def test_write_py_renders_python_fence(self):
+        """Write to .py file renders content in a python fenced block."""
+        block = _make_tool_use_block("Write", {
+            "file_path": "clasi/my_module.py",
+            "content": "def hello():\n    return 'world'",
+        })
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+
+        assert "**Write**" in output
+        assert "my_module.py" in output
+        assert "```python" in output
+        assert "def hello():" in output
+
+    def test_write_unknown_ext_renders_plain_fence(self):
+        """Write to an unknown extension renders content in a plain fenced block."""
+        block = _make_tool_use_block("Write", {
+            "file_path": "config.xyz",
+            "content": "some content here",
+        })
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+
+        assert "**Write**" in output
+        assert "config.xyz" in output
+        assert "```\n" in output  # plain fence (no language tag)
+        assert "some content here" in output
+
+    def test_edit_renders_before_and_after_blocks(self):
+        """Edit renders file_path heading, old_string in Before block, new_string in After block."""
+        block = _make_tool_use_block("Edit", {
+            "file_path": "clasi/hook_handlers.py",
+            "old_string": "def old_func():\n    pass",
+            "new_string": "def new_func():\n    return True",
+        })
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+
+        assert "**Edit**" in output
+        assert "hook_handlers.py" in output
+        assert "**Before:**" in output
+        assert "**After:**" in output
+        assert "def old_func():" in output
+        assert "def new_func():" in output
+
+    def test_other_tool_renders_json_dump(self):
+        """Non-Write/Edit tools render as JSON dump (existing behavior)."""
+        block = _make_tool_use_block("Bash", {
+            "command": "echo hello",
+        })
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+
+        assert "**Tool Use**: `Bash`" in output
+        assert "```json" in output
+        assert '"command"' in output
+
+    def test_transcript_section_header_present(self):
+        """_render_transcript_lines always includes ## Transcript."""
+        output = "\n".join(_render_transcript_lines([]))
+        assert "## Transcript" in output
+
+    def test_raw_json_block_present(self):
+        """_render_transcript_lines always includes a raw JSON code block."""
+        block = _make_tool_use_block("Bash", {"command": "ls"})
+        msg = _make_message_with_tool_use(block)
+        output = "\n".join(_render_transcript_lines([msg]))
+        assert "```json" in output

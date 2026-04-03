@@ -620,6 +620,25 @@ def handle_task_completed(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _ext_to_language(path: str) -> str:
+    """Map a file path's extension to a fenced-code-block language tag.
+
+    Returns an empty string for unknown extensions.
+    """
+    ext = Path(path).suffix.lower()
+    mapping = {
+        ".py": "python",
+        ".toml": "toml",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".json": "json",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".sh": "bash",
+    }
+    return mapping.get(ext, "")
+
+
 def _render_transcript_lines(messages: list) -> list[str]:
     """Render transcript messages as markdown followed by raw JSON.
 
@@ -675,17 +694,55 @@ def _render_transcript_lines(messages: list) -> list[str]:
                 elif block_type == "tool_use":
                     name = block.get("name", "")
                     tool_input = block.get("input", {})
-                    lines.append(f"> **Tool Use**: `{name}`")
-                    if tool_input:
-                        compact = json.dumps(tool_input, indent=2)
-                        # Truncate long tool inputs
-                        input_lines = compact.splitlines()
-                        if len(input_lines) > 15:
-                            input_lines = input_lines[:15] + ["  ..."]
-                        lines.append("> ```json")
-                        for il in input_lines:
-                            lines.append(f"> {il}")
-                        lines.append("> ```")
+                    if name == "Write":
+                        file_path = tool_input.get("file_path", "")
+                        content = tool_input.get("content", "")
+                        lines.append(f"> **Write**: `{file_path}`")
+                        lines.append("")
+                        if content:
+                            # Truncate very long content
+                            MAX_CHARS = 3000
+                            truncated = content
+                            suffix = ""
+                            if len(content) > MAX_CHARS:
+                                truncated = content[:MAX_CHARS]
+                                suffix = "\n... (truncated)"
+                            ext = Path(file_path).suffix.lower()
+                            if ext == ".md":
+                                # Render markdown inline, no code fence
+                                lines.append(truncated + suffix)
+                            else:
+                                lang = _ext_to_language(file_path)
+                                lines.append(f"```{lang}")
+                                lines.append(truncated + suffix)
+                                lines.append("```")
+                    elif name == "Edit":
+                        file_path = tool_input.get("file_path", "")
+                        old_string = tool_input.get("old_string", "")
+                        new_string = tool_input.get("new_string", "")
+                        lines.append(f"> **Edit**: `{file_path}`")
+                        lines.append("")
+                        lines.append("**Before:**")
+                        lines.append("```")
+                        lines.append(old_string)
+                        lines.append("```")
+                        lines.append("")
+                        lines.append("**After:**")
+                        lines.append("```")
+                        lines.append(new_string)
+                        lines.append("```")
+                    else:
+                        lines.append(f"> **Tool Use**: `{name}`")
+                        if tool_input:
+                            compact = json.dumps(tool_input, indent=2)
+                            # Truncate long tool inputs
+                            input_lines = compact.splitlines()
+                            if len(input_lines) > 15:
+                                input_lines = input_lines[:15] + ["  ..."]
+                            lines.append("> ```json")
+                            for il in input_lines:
+                                lines.append(f"> {il}")
+                            lines.append("> ```")
                     lines.append("")
                 elif block_type == "tool_result":
                     tool_id = block.get("tool_use_id", "")
