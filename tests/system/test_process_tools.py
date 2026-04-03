@@ -28,11 +28,10 @@ from clasi.mcp_server import content_path, set_project
 class TestListDefinitions:
     def test_lists_agents(self):
         from clasi.tools.process_tools import _list_agents_recursive
-        results = _list_agents_recursive(content_path("agents"))
+        results = _list_agents_recursive(content_path("plugin", "agents"))
         names = [r["name"] for r in results]
-        # New hierarchy names
         assert "team-lead" in names or "project-manager" in names
-        assert "code-monkey" in names or "python-expert" in names
+        assert "programmer" in names or "architect" in names
         assert all(r["description"] for r in results)
 
     def test_empty_dir(self, tmp_path):
@@ -42,12 +41,12 @@ class TestListDefinitions:
 
 class TestGetDefinition:
     def test_gets_agent(self):
-        content = _get_definition(content_path("agents"), "team-lead")
+        content = _get_definition(content_path("plugin", "agents"), "team-lead")
         assert "team-lead" in content
 
     def test_not_found(self):
         with pytest.raises(ValueError, match="not found"):
-            _get_definition(content_path("agents"), "nonexistent-agent")
+            _get_definition(content_path("plugin", "agents"), "nonexistent-agent")
 
 
 class TestMCPTools:
@@ -119,7 +118,7 @@ class TestActivityGuide:
 
     def test_implementation_guide_contains_all_sections(self):
         result = get_activity_guide("implementation")
-        assert "Agent: code-monkey" in result
+        assert "Agent: programmer" in result
         assert "Skill: execute-ticket" in result
         assert "Instruction: coding-standards" in result
         assert "Instruction: testing" in result

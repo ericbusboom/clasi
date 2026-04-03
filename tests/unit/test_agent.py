@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from clasi.agent import Agent, DomainController, MainController, TaskWorker
+from clasi.agent import Agent
 from clasi.project import Project
 
 
@@ -35,12 +35,12 @@ class TestAgentProperties:
     """Test Agent.name, tier, model, definition, contract properties."""
 
     def test_name_is_directory_name(self, project):
-        agent = project.get_agent("code-monkey")
-        assert agent.name == "code-monkey"
+        agent = project.get_agent("programmer")
+        assert agent.name == "programmer"
 
-    def test_tier_from_directory_position(self, project):
-        agent = project.get_agent("code-monkey")
-        # code-monkey is in task-workers/ -> tier 2
+    def test_tier_from_contract(self, project):
+        agent = project.get_agent("programmer")
+        # programmer contract has tier: 2
         assert agent.tier == 2
 
     def test_model_from_contract(self, project):
@@ -48,26 +48,25 @@ class TestAgentProperties:
         assert agent.model == "opus"
 
     def test_model_default_is_sonnet(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         assert agent.model == "sonnet"
 
     def test_definition_returns_agent_md_content(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         definition = agent.definition
         assert isinstance(definition, str)
         assert len(definition) > 0
         # agent.md should mention the agent's role
-        assert "code" in definition.lower() or "monkey" in definition.lower()
+        assert "programmer" in definition.lower() or "code" in definition.lower()
 
     def test_contract_returns_dict(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         contract = agent.contract
         assert isinstance(contract, dict)
         assert "name" in contract
-        assert contract["name"] == "code-monkey"
 
     def test_allowed_tools_from_contract(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         tools = agent.allowed_tools
         assert isinstance(tools, list)
         assert "Read" in tools
@@ -82,12 +81,12 @@ class TestAgentProperties:
         assert "architect" in agent_names
 
     def test_delegates_to_empty_for_task_worker(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         delegates = agent.delegates_to
         assert delegates == []
 
     def test_has_dispatch_template_true(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         assert agent.has_dispatch_template is True
 
     def test_has_dispatch_template_false(self, project):
@@ -101,32 +100,26 @@ class TestAgentProperties:
 
 
 class TestSubclasses:
-    """Test MainController, DomainController, TaskWorker subclasses."""
+    """Test agent tier values from contract.yaml."""
 
     def test_main_controller_tier_is_0(self, project):
         agent = project.get_agent("team-lead")
-        assert isinstance(agent, MainController)
+        assert isinstance(agent, Agent)
         assert agent.tier == 0
 
     def test_domain_controller_tier_is_1(self, project):
         agent = project.get_agent("sprint-planner")
-        assert isinstance(agent, DomainController)
+        assert isinstance(agent, Agent)
         assert agent.tier == 1
 
     def test_task_worker_tier_is_2(self, project):
-        agent = project.get_agent("code-monkey")
-        assert isinstance(agent, TaskWorker)
+        agent = project.get_agent("programmer")
+        assert isinstance(agent, Agent)
         assert agent.tier == 2
 
-    def test_all_domain_controllers_are_tier_1(self, project):
+    def test_all_agents_have_valid_tiers(self, project):
         for agent in project.list_agents():
-            if isinstance(agent, DomainController):
-                assert agent.tier == 1, f"{agent.name} should be tier 1"
-
-    def test_all_task_workers_are_tier_2(self, project):
-        for agent in project.list_agents():
-            if isinstance(agent, TaskWorker):
-                assert agent.tier == 2, f"{agent.name} should be tier 2"
+            assert agent.tier in {0, 1, 2}, f"{agent.name} has unexpected tier {agent.tier}"
 
 
 # ---------------------------------------------------------------------------
@@ -138,20 +131,23 @@ class TestProjectAgentManagement:
     """Test Project.get_agent and Project.list_agents."""
 
     def test_get_agent_returns_agent(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         assert isinstance(agent, Agent)
 
-    def test_get_agent_returns_correct_subclass_main_controller(self, project):
+    def test_get_agent_team_lead_is_agent(self, project):
         agent = project.get_agent("team-lead")
-        assert isinstance(agent, MainController)
+        assert isinstance(agent, Agent)
+        assert agent.tier == 0
 
-    def test_get_agent_returns_correct_subclass_domain_controller(self, project):
+    def test_get_agent_sprint_planner_is_agent(self, project):
         agent = project.get_agent("sprint-planner")
-        assert isinstance(agent, DomainController)
+        assert isinstance(agent, Agent)
+        assert agent.tier == 1
 
-    def test_get_agent_returns_correct_subclass_task_worker(self, project):
+    def test_get_agent_architect_is_agent(self, project):
         agent = project.get_agent("architect")
-        assert isinstance(agent, TaskWorker)
+        assert isinstance(agent, Agent)
+        assert agent.tier == 2
 
     def test_get_agent_raises_on_unknown(self, project):
         with pytest.raises(ValueError, match="No agent found"):
@@ -164,7 +160,7 @@ class TestProjectAgentManagement:
         names = {a.name for a in agents}
         assert "team-lead" in names
         assert "sprint-planner" in names
-        assert "code-monkey" in names
+        assert "programmer" in names
         assert "architect" in names
 
     def test_list_agents_includes_all_tiers(self, project):
@@ -172,15 +168,10 @@ class TestProjectAgentManagement:
         tiers = {a.tier for a in agents}
         assert tiers == {0, 1, 2}
 
-    def test_list_agents_has_correct_types(self, project):
+    def test_list_agents_all_are_agent_instances(self, project):
         agents = project.list_agents()
         for agent in agents:
-            if agent.tier == 0:
-                assert isinstance(agent, MainController)
-            elif agent.tier == 1:
-                assert isinstance(agent, DomainController)
-            elif agent.tier == 2:
-                assert isinstance(agent, TaskWorker)
+            assert isinstance(agent, Agent)
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +194,8 @@ class TestRenderPrompt:
         assert "sprint-planner" in rendered
         assert "001" in rendered
 
-    def test_render_code_monkey_template(self, project):
-        agent = project.get_agent("code-monkey")
+    def test_render_programmer_template(self, project):
+        agent = project.get_agent("programmer")
         rendered = agent.render_prompt(
             ticket_path="t.md",
             ticket_plan_path="tp.md",
@@ -286,7 +277,7 @@ class TestAgentDispatch:
 
     def test_successful_dispatch_returns_dict(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         mock_sdk = _make_mock_sdk(_success_query())
 
         with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
@@ -302,7 +293,7 @@ class TestAgentDispatch:
 
     def test_dispatch_logs_before_query(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         log_written = False
         query_called = False
@@ -343,7 +334,7 @@ class TestAgentDispatch:
 
     def test_dispatch_uses_contract_from_agent(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         mock_sdk = _make_mock_sdk(_success_query())
 
         with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
@@ -355,11 +346,11 @@ class TestAgentDispatch:
 
         # Verify the contract was loaded (agent has cached it)
         assert agent._contract is not None
-        assert agent._contract["name"] == "code-monkey"
+        assert agent._contract["name"] == "programmer"
 
     def test_dispatch_sdk_import_error(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         import builtins
         original_import = builtins.__import__
@@ -383,7 +374,7 @@ class TestAgentDispatch:
 
     def test_dispatch_query_exception(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         async def failing_query(**kwargs):
             raise RuntimeError("Agent crashed")
@@ -405,7 +396,7 @@ class TestAgentDispatch:
 
     def test_dispatch_validates_result(self, tmp_path):
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         mock_sdk = _make_mock_sdk(_success_query())
 
         with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
@@ -448,7 +439,7 @@ class TestAgentDispatch:
     def test_dispatch_uses_project_mcp_config(self, tmp_path):
         """Verify dispatch uses project.mcp_config_path for MCP servers."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         # Create .mcp.json so it exists
         mcp_json = tmp_path / ".mcp.json"
@@ -482,7 +473,7 @@ class TestAgentDispatch:
     def test_dispatch_post_log_written(self, tmp_path):
         """Verify post-execution log is written after query()."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         post_log_called = False
         from clasi.dispatch_log import update_dispatch_result as _orig
@@ -522,7 +513,7 @@ class TestBuildRetryPrompt:
     """Test Agent._build_retry_prompt helper method."""
 
     def test_includes_original_prompt(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         validation = {
             "status": "error",
             "errors": ["No valid JSON found in agent result text"],
@@ -532,7 +523,7 @@ class TestBuildRetryPrompt:
         assert "original prompt text" in prompt
 
     def test_includes_validation_errors(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         validation = {
             "status": "error",
             "errors": ["No valid JSON found in agent result text"],
@@ -542,7 +533,7 @@ class TestBuildRetryPrompt:
         assert "No valid JSON found" in prompt
 
     def test_includes_missing_files(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         validation = {
             "status": "invalid",
             "errors": [],
@@ -552,7 +543,7 @@ class TestBuildRetryPrompt:
         assert "docs/output.md" in prompt
 
     def test_includes_retry_section_header(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         validation = {
             "status": "error",
             "errors": ["some error"],
@@ -562,7 +553,7 @@ class TestBuildRetryPrompt:
         assert "RETRY" in prompt
 
     def test_includes_return_schema(self, project):
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
         validation = {
             "status": "error",
             "errors": ["No valid JSON found in agent result text"],
@@ -585,7 +576,7 @@ class TestAgentDispatchRetry:
     def test_retry_on_no_json_then_success(self, tmp_path):
         """Dispatch retries when first response has no JSON, succeeds on retry."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         call_count = 0
 
@@ -622,7 +613,7 @@ class TestAgentDispatchRetry:
     def test_retry_not_triggered_on_success(self, tmp_path):
         """When first response is valid, no retry is attempted."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         call_count = 0
 
@@ -650,7 +641,7 @@ class TestAgentDispatchRetry:
     def test_retry_both_fail_returns_fatal(self, tmp_path):
         """When both original and retry fail validation, returns fatal error."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         async def mock_query_always_prose(**kwargs):
             yield _make_result_message(
@@ -674,7 +665,7 @@ class TestAgentDispatchRetry:
     def test_retry_prompt_sent_on_validation_failure(self, tmp_path):
         """The retry prompt includes validation error context."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         prompts_seen = []
 
@@ -704,7 +695,7 @@ class TestAgentDispatchRetry:
     def test_retry_query_exception_falls_through(self, tmp_path):
         """If retry query raises exception, dispatch continues with original invalid result."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         call_count = 0
 
@@ -750,7 +741,7 @@ class TestDispatchRetryMockSubagent:
     def test_mock_subagent_returns_valid_after_retry(self, tmp_path):
         """dispatch() returns status=valid when mock subagent gives prose then JSON."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         mock_query, calls = make_prose_then_json_subagent(
             prose_response="I finished the task!",
@@ -776,7 +767,7 @@ class TestDispatchRetryMockSubagent:
     def test_mock_subagent_retry_result_contains_json_summary(self, tmp_path):
         """The result text from a successful retry contains the summary field."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         mock_query, _calls = make_prose_then_json_subagent(
             prose_response="Working on it...",
@@ -801,7 +792,7 @@ class TestDispatchRetryMockSubagent:
     def test_mock_subagent_retry_result_contains_log_path(self, tmp_path):
         """dispatch() always returns a log_path regardless of retry outcome."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         mock_query, _calls = make_prose_then_json_subagent(
             prose_response="prose only, no json",
@@ -827,7 +818,7 @@ class TestDispatchRetryMockSubagent:
     def test_mock_subagent_always_prose_is_fatal(self, tmp_path):
         """When mock subagent always returns prose, dispatch returns fatal error."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         # Both calls return the same prose-only response
         calls: list[int] = []
@@ -853,7 +844,7 @@ class TestDispatchRetryMockSubagent:
     def test_mock_subagent_exactly_one_retry_attempted(self, tmp_path):
         """Retry is limited to exactly one attempt; no infinite loop."""
         project = Project(tmp_path)
-        agent = project.get_agent("code-monkey")
+        agent = project.get_agent("programmer")
 
         calls: list[int] = []
 

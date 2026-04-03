@@ -11,23 +11,23 @@ import clasi.tools.artifact_tools  # noqa: F401
 
 class TestContentPath:
     def test_resolves_agents_directory(self):
-        assert content_path("agents").is_dir()
+        assert content_path("plugin", "agents").is_dir()
 
     def test_resolves_skills_directory(self):
-        assert content_path("skills").is_dir()
+        assert content_path("plugin", "skills").is_dir()
 
     def test_resolves_instructions_directory(self):
-        assert content_path("instructions").is_dir()
+        assert content_path("plugin", "instructions").is_dir()
 
     def test_resolves_nested_path(self):
-        assert content_path("instructions", "languages").is_dir()
+        assert content_path("plugin", "instructions", "languages").is_dir()
 
     def test_resolves_specific_file(self):
-        # Agent files are now in the hierarchy: agents/main-controller/team-lead/agent.md
-        assert content_path("agents", "main-controller", "team-lead", "agent.md").is_file()
+        # Agent files are now in the flat hierarchy: plugin/agents/team-lead/agent.md
+        assert content_path("plugin", "agents", "team-lead", "agent.md").is_file()
 
     def test_resolves_rules_directory(self):
-        assert content_path("rules").is_dir()
+        assert content_path("plugin", "rules").is_dir()
 
 
 class TestServer:

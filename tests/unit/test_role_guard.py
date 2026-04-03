@@ -10,6 +10,7 @@ import pytest
 _ROLE_GUARD_SCRIPT = str(
     Path(__file__).resolve().parents[2]
     / "clasi"
+    / "plugin"
     / "hooks"
     / "role_guard.py"
 )

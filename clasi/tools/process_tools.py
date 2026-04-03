@@ -60,6 +60,15 @@ def _find_agent_dir(agents_dir: Path, name: str) -> Path | None:
 def _list_all_skills(skills_dir: Path, agents_dir: Path) -> list[dict[str, str]]:
     """List skills from both global skills/ and agent subdirectories."""
     results = _list_definitions(skills_dir)
+    # Also include skills in subdirectories (SKILL.md pattern)
+    if skills_dir.exists():
+        for skill_md in sorted(skills_dir.rglob("SKILL.md")):
+            fm, _ = read_document(skill_md)
+            if fm.get("name") or fm.get("description"):
+                results.append({
+                    "name": fm.get("name", skill_md.parent.name),
+                    "description": fm.get("description", ""),
+                })
     if agents_dir.exists():
         for md_path in sorted(agents_dir.rglob("*.md")):
             if md_path.name == "agent.md":
@@ -144,9 +153,9 @@ def get_se_overview() -> str:
 
     template = _SE_OVERVIEW_TEMPLATE_PATH.read_text(encoding="utf-8")
 
-    agents = _list_definitions(content_path("agents"))
-    skills = _list_definitions(content_path("skills"))
-    instructions = _list_definitions(content_path("instructions"))
+    agents = _list_definitions(content_path("plugin", "agents"))
+    skills = _list_definitions(content_path("plugin", "skills"))
+    instructions = _list_definitions(content_path("plugin", "instructions"))
 
     agent_lines = "\n".join(
         f"- **{a['name']}**: {a['description']}" for a in agents
@@ -172,7 +181,7 @@ def list_agents() -> str:
     Walks the three-tier agent directory hierarchy to find all agent.md files.
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
-    return json.dumps(_list_agents_recursive(content_path("agents")), indent=2)
+    return json.dumps(_list_agents_recursive(content_path("plugin", "agents")), indent=2)
 
 
 #@server.tool()
@@ -184,7 +193,7 @@ def list_skills() -> str:
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
     return json.dumps(
-        _list_all_skills(content_path("skills"), content_path("agents")),
+        _list_all_skills(content_path("plugin", "skills"), content_path("plugin", "agents")),
         indent=2,
     )
 
@@ -195,7 +204,7 @@ def list_instructions() -> str:
 
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
-    return json.dumps(_list_definitions(content_path("instructions")), indent=2)
+    return json.dumps(_list_definitions(content_path("plugin", "instructions")), indent=2)
 
 
 #@server.tool()
@@ -208,10 +217,10 @@ def get_agent_definition(name: str) -> str:
     Args:
         name: The agent name (e.g., 'code-monkey', 'sprint-planner')
     """
-    agent_content = _get_definition(content_path("agents"), name)
+    agent_content = _get_definition(content_path("plugin", "agents"), name)
 
     # Try to find and append contract.yaml
-    agents_dir = content_path("agents")
+    agents_dir = content_path("plugin", "agents")
     agent_dir = _find_agent_dir(agents_dir, name)
     if agent_dir:
         contract_path = agent_dir / "contract.yaml"
@@ -237,12 +246,16 @@ def get_skill_definition(name: str) -> str:
     Args:
         name: The skill name (e.g., 'execute-ticket', 'plan-sprint')
     """
-    # Try global skills first
-    path = content_path("skills") / f"{name}.md"
+    # Try global skills: direct .md file or subdirectory SKILL.md
+    skills_dir = content_path("plugin", "skills")
+    path = skills_dir / f"{name}.md"
     if path.exists():
         return path.read_text(encoding="utf-8")
+    skill_md = skills_dir / name / "SKILL.md"
+    if skill_md.exists():
+        return skill_md.read_text(encoding="utf-8")
     # Search agent directories
-    agents_dir = content_path("agents")
+    agents_dir = content_path("plugin", "agents")
     if agents_dir.exists():
         matches = list(agents_dir.rglob(f"{name}.md"))
         if matches:
@@ -260,7 +273,7 @@ def get_instruction(name: str) -> str:
     Args:
         name: The instruction name (e.g., 'software-engineering', 'coding-standards')
     """
-    return _get_definition(content_path("instructions"), name)
+    return _get_definition(content_path("plugin", "instructions"), name)
 
 
 #@server.tool()
@@ -269,7 +282,7 @@ def list_language_instructions() -> str:
 
     Returns a JSON array of objects with 'name' and 'description' fields.
     """
-    return json.dumps(_list_definitions(content_path("instructions", "languages")), indent=2)
+    return json.dumps(_list_definitions(content_path("plugin", "instructions", "languages")), indent=2)
 
 
 #@server.tool()
@@ -279,7 +292,7 @@ def get_language_instruction(language: str) -> str:
     Args:
         language: The language name (e.g., 'python')
     """
-    return _get_definition(content_path("instructions", "languages"), language)
+    return _get_definition(content_path("plugin", "instructions", "languages"), language)
 
 
 # Activity guide configuration: maps activity names to their relevant
@@ -301,12 +314,12 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
         "instructions": ["software-engineering"],
     },
     "implementation": {
-        "agents": ["code-monkey", "technical-lead"],
+        "agents": ["programmer", "technical-lead"],
         "skills": ["execute-ticket"],
         "instructions": ["software-engineering", "coding-standards", "testing", "git-workflow"],
     },
     "testing": {
-        "agents": ["code-monkey"],
+        "agents": ["programmer"],
         "skills": ["execute-ticket"],
         "instructions": ["testing", "coding-standards"],
     },
@@ -355,7 +368,7 @@ def get_activity_guide(activity: str) -> str:
     # Agent definitions
     for agent_name in guide["agents"]:
         try:
-            content = _get_definition(content_path("agents"), agent_name)
+            content = _get_definition(content_path("plugin", "agents"), agent_name)
             sections.append(f"## Agent: {agent_name}\n\n{content}")
         except ValueError:
             sections.append(f"## Agent: {agent_name}\n\n(Agent definition not found)")
@@ -370,7 +383,7 @@ def get_activity_guide(activity: str) -> str:
 
     # Instructions
     for instr_name in guide["instructions"]:
-        content = _get_definition(content_path("instructions"), instr_name)
+        content = _get_definition(content_path("plugin", "instructions"), instr_name)
         sections.append(f"## Instruction: {instr_name}\n\n{content}")
 
     return "\n\n---\n\n".join(sections)

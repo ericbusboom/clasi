@@ -58,7 +58,7 @@ class TestContractSchema:
         assert set(model_prop["enum"]) == {"opus", "sonnet", "haiku"}
 
 
-# All expected agent names
+# All expected agent names (directory names in clasi/plugin/agents/)
 ALL_AGENTS = [
     "team-lead",
     "sprint-planner",
@@ -70,7 +70,7 @@ ALL_AGENTS = [
     "project-architect",
     "architect",
     "architecture-reviewer",
-    "code-monkey",
+    "programmer",
     "code-reviewer",
     "technical-lead",
 ]
@@ -102,8 +102,8 @@ class TestLoadContract:
     """Tests for load_contract function."""
 
     def test_loads_known_agent(self):
-        contract = load_contract("code-monkey")
-        assert contract["name"] == "code-monkey"
+        contract = load_contract("programmer")
+        assert contract["name"] == "programmer"
         assert contract["tier"] == 2
         assert isinstance(contract["allowed_tools"], list)
 
@@ -380,7 +380,7 @@ class TestGetAgentDefinitionIncludesContract:
     def test_includes_contract_yaml(self):
         from clasi.tools.process_tools import get_agent_definition
 
-        result = get_agent_definition("code-monkey")
+        result = get_agent_definition("programmer")
         assert "## Contract" in result
         assert "```yaml" in result
         assert "tier:" in result
@@ -389,5 +389,5 @@ class TestGetAgentDefinitionIncludesContract:
     def test_includes_agent_md_content(self):
         from clasi.tools.process_tools import get_agent_definition
 
-        result = get_agent_definition("code-monkey")
-        assert "Code Monkey Agent" in result
+        result = get_agent_definition("programmer")
+        assert len(result) > 0

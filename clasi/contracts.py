@@ -29,7 +29,7 @@ def _load_schema() -> dict:
 def _find_contract_path(agent_name: str) -> Path:
     """Find the contract.yaml for a named agent in the agent directory tree.
 
-    Searches the three-tier agent hierarchy under clasi/agents/
+    Searches the agent directory under clasi/plugin/agents/
     for a directory matching the agent name containing a contract.yaml file.
 
     Args:
@@ -41,7 +41,7 @@ def _find_contract_path(agent_name: str) -> Path:
     Raises:
         FileNotFoundError: If no contract.yaml is found for the agent.
     """
-    agents_dir = _CONTENT_ROOT / "agents"
+    agents_dir = _CONTENT_ROOT / "plugin" / "agents"
     if not agents_dir.exists():
         raise FileNotFoundError(
             f"Agents directory not found: {agents_dir}"

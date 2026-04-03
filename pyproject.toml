@@ -44,7 +44,7 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 [tool.coverage.run]
 branch = true
 omit = [
-    "clasi/hooks/role_guard.py",
+    "clasi/plugin/hooks/role_guard.py",
     "clasi/cli.py",
     "clasi/hook_handlers.py",
     "clasi/mcp_server.py",
