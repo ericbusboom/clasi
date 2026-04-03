@@ -444,7 +444,7 @@ class TestCreateOverview:
     def test_creates_overview(self, work_dir):
         from clasi.tools.artifact_tools import create_overview
         result = json.loads(create_overview())
-        path = work_dir / "docs" / "clasi" / "overview.md"
+        path = work_dir / "docs" / "clasi" / "design" / "overview.md"
         assert path.exists()
         content = path.read_text()
         assert "# Project Overview" in content

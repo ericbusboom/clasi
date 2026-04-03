@@ -22,7 +22,7 @@ inputs:
       description: >
         Project overview (docs/clasi/overview.md) for high-level context.
         This is a concise summary, not the full specification.
-      default: "docs/clasi/overview.md"
+      default: "docs/clasi/design/overview.md"
 
     - name: sprint-guidance
       type: file

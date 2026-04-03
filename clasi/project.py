@@ -29,6 +29,11 @@ class Project:
         return self._root / "docs" / "clasi"
 
     @property
+    def design_dir(self) -> Path:
+        """docs/clasi/design/ directory — overview, specification, usecases."""
+        return self.clasi_dir / "design"
+
+    @property
     def sprints_dir(self) -> Path:
         """docs/clasi/sprints/ directory."""
         return self.clasi_dir / "sprints"

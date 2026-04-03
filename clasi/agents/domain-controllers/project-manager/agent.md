@@ -32,7 +32,7 @@ or `usecases.md` documents yet — you are creating them for the first time.
 
 ### What You Produce
 
-Three documents in `docs/clasi/`:
+Three documents in `docs/clasi/design/`:
 
 1. **`overview.md`** -- A one-page summary of the project. This is an
    elevator pitch for agents that do not need the full specification.
@@ -49,6 +49,9 @@ Three documents in `docs/clasi/`:
    actor, preconditions, main flow, postconditions, and error flows
    where applicable.
 
+After writing `overview.md`, call the `create_overview` MCP tool. This
+step is required — do not skip it.
+
 ### Critical Rule
 
 **Do not lose information.** The overview adds context. The specification
@@ -63,7 +66,7 @@ Return a JSON object:
 {
   "status": "success",
   "summary": "Brief description of what was produced",
-  "files_created": ["docs/clasi/overview.md", "docs/clasi/specification.md", "docs/clasi/usecases.md"],
+  "files_created": ["docs/clasi/design/overview.md", "docs/clasi/design/specification.md", "docs/clasi/design/usecases.md"],
   "use_case_count": 12
 }
 ```
@@ -81,7 +84,7 @@ and at least one set of TODO assessments.
 
 ### What You Receive
 
-- The project specification (`docs/clasi/specification.md`)
+- The project specification (`docs/clasi/design/specification.md`)
 - The current architecture (`docs/clasi/architecture/architecture-{latest}.md`)
 - TODO assessment files from the project-architect
 
@@ -122,7 +125,7 @@ Return a JSON object:
 
 ## Scope
 
-- **Write scope (initiation)**: `docs/clasi/` (overview, specification, usecases)
+- **Write scope (initiation)**: `docs/clasi/design/` (overview, specification, usecases)
 - **Write scope (roadmap)**: `docs/clasi/sprints/NNN-slug/` (sprint.md files)
 - **Read scope**: Any document needed for context
 

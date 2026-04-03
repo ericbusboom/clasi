@@ -46,7 +46,7 @@ project — the project has not been initiated yet.
 1. **Process the specification.** Dispatch to the project-manager agent
    in initiation mode with the spec file path.
    - The project manager produces `overview.md`, `specification.md`, and
-     `usecases.md` in `docs/clasi/`.
+     `usecases.md` in `docs/clasi/design/`.
    - **Completion check**: The return JSON includes `status: "success"` and
      lists the created files. Verify all three files exist.
    - If any are missing or the status is not success, dispatch again with

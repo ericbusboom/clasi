@@ -48,7 +48,7 @@ document that establishes the module structure, data model, and dependencies.
 architecture document exists yet in `docs/clasi/architecture/`. This is the very
 first sprint of a new project.
 
-Given `docs/clasi/brief.md` and `docs/clasi/usecases.md`, produce the first
+Given `docs/clasi/brief.md` and `docs/clasi/design/usecases.md`, produce the first
 architecture document. Follow steps 1–7 below.
 
 ### Mode 2: Sprint Architecture Update
@@ -187,7 +187,7 @@ You operate within the software engineering process defined in
 in `instructions/architectural-quality.md`. Key artifacts:
 
 - `docs/clasi/brief.md` — Project description (input)
-- `docs/clasi/usecases.md` — Use cases (input)
+- `docs/clasi/design/usecases.md` — Use cases (input)
 - `docs/clasi/architecture/architecture-NNN.md` — Consolidated architecture
 - `docs/clasi/architecture/architecture-update-NNN.md` — Per-sprint updates (your output)
 - `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint-local update (your working copy)

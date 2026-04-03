@@ -55,7 +55,7 @@ Supporting skills used during ticket execution:
 
 ## Artifacts
 
-### 1. Project Overview (`docs/clasi/overview.md`) — Recommended
+### 1. Project Overview (`docs/clasi/design/overview.md`) — Recommended
 
 A single lightweight document created at project start. Replaces the separate
 brief, use cases, and technical plan files for new projects. Detailed planning

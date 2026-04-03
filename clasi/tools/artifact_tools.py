@@ -420,7 +420,7 @@ def create_ticket(
 
 @server.tool()
 def create_overview() -> str:
-    """Create the top-level project overview (docs/clasi/overview.md).
+    """Create the top-level project overview (docs/clasi/design/overview.md).
 
     This is the recommended way to start a new project. The overview
     replaces the separate brief, use cases, and architecture files
@@ -428,7 +428,7 @@ def create_overview() -> str:
 
     Returns an error if the file already exists.
     """
-    path = get_project().clasi_dir / "overview.md"
+    path = get_project().design_dir / "overview.md"
     if path.exists():
         raise ValueError(f"Overview already exists: {path}")
 

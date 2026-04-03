@@ -19,7 +19,7 @@ Read this file thoroughly before producing any output:
 
 ### What to produce
 
-Create these three files in `docs/clasi/`:
+Create these three files in `docs/clasi/design/`:
 
 1. **`overview.md`** -- One-page project summary. Elevator pitch for
    agents that do not need the full spec. Additive context, not a
@@ -34,6 +34,9 @@ Create these three files in `docs/clasi/`:
    ID, title, actor, preconditions, main flow, postconditions, error
    flows where applicable.
 
+After writing `overview.md`, call the `create_overview` MCP tool. This
+step is required — do not skip it.
+
 ### Critical Rule
 
 **Do not lose information.** Every detail from the stakeholder's spec
@@ -46,7 +49,7 @@ Return a JSON object:
 {
   "status": "success",
   "summary": "Brief description of what was produced",
-  "files_created": ["docs/clasi/overview.md", "docs/clasi/specification.md", "docs/clasi/usecases.md"],
+  "files_created": ["docs/clasi/design/overview.md", "docs/clasi/design/specification.md", "docs/clasi/design/usecases.md"],
   "use_case_count": 12
 }
 ```
@@ -59,7 +62,7 @@ You are grouping TODO assessments into sprint roadmaps.
 
 Read these before planning:
 
-- **Specification**: `docs/clasi/specification.md`
+- **Specification**: `docs/clasi/design/specification.md`
 {% if existing_architecture %}
 - **Architecture**: {{ existing_architecture }}
 {% endif %}
@@ -122,9 +125,9 @@ your work will be rejected.
   "status": "success",
   "summary": "Brief description of what was produced",
   "files_created": [
-    "docs/clasi/overview.md",
-    "docs/clasi/specification.md",
-    "docs/clasi/usecases.md"
+    "docs/clasi/design/overview.md",
+    "docs/clasi/design/specification.md",
+    "docs/clasi/design/usecases.md"
   ],
   "use_case_count": 12
 }

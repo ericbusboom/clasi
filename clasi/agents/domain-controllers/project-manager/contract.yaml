@@ -30,9 +30,9 @@ inputs:
 outputs:
   initiation:
     required:
-      - path: "docs/clasi/overview.md"
-      - path: "docs/clasi/specification.md"
-      - path: "docs/clasi/usecases.md"
+      - path: "docs/clasi/design/overview.md"
+      - path: "docs/clasi/design/specification.md"
+      - path: "docs/clasi/design/usecases.md"
     validates:
       - "specification.md preserves ALL stakeholder detail without summarization"
       - "overview.md is a concise one-page summary"

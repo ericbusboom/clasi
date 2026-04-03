@@ -104,7 +104,7 @@ You operate within the software engineering process defined in
 `instructions/software-engineering.md`. Key artifacts:
 
 - `docs/clasi/brief.md` — Project description
-- `docs/clasi/usecases.md` — Use cases
+- `docs/clasi/design/usecases.md` — Use cases
 - `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint architecture update
 - `docs/clasi/sprints/<sprint>/tickets/` — Active tickets and plans
 - `docs/clasi/sprints/<sprint>/tickets/done/` — Completed tickets

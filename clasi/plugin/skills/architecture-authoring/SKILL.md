@@ -15,7 +15,7 @@ architecture from scratch or a sprint update.
 Design the system architecture from scratch when no architecture document
 exists yet.
 
-Given `docs/clasi/overview.md` and `docs/clasi/usecases.md`, produce
+Given `docs/clasi/design/overview.md` and `docs/clasi/design/usecases.md`, produce
 the first architecture document following steps 1-7 below.
 
 ### Mode 2: Sprint Architecture Update

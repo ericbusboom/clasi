@@ -21,7 +21,7 @@ planning. All planning happens on main.
 ## Inputs
 
 - Stakeholder conversation describing the work to be done
-- `docs/clasi/overview.md` (must exist)
+- `docs/clasi/design/overview.md` (must exist)
 
 ## Critical Rules
 
@@ -68,7 +68,7 @@ agent via the Agent tool to fill in full planning artifacts.
    sprint-planner agent with:
    - Sprint ID and directory path
    - Sprint goals and TODO references
-   - Path to `docs/clasi/overview.md`
+   - Path to `docs/clasi/design/overview.md`
    - Path to current architecture
 
    The sprint-planner handles architecture, architecture review, and

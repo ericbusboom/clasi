@@ -16,7 +16,7 @@ stands and what should happen next.
 
 1. **Check artifacts**: Verify which SE documents exist:
    - `docs/clasi/brief.md`
-   - `docs/clasi/usecases.md`
+   - `docs/clasi/design/usecases.md`
    - `docs/clasi/architecture/` (versioned architecture documents)
 2. **Check sprints**: Scan `docs/clasi/sprints/` for active sprints and
    `docs/clasi/sprints/done/` for completed sprints.

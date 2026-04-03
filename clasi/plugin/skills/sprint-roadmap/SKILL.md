@@ -15,7 +15,7 @@ them into sprints.
 
 ## Inputs
 
-- `docs/clasi/overview.md` (must exist)
+- `docs/clasi/design/overview.md` (must exist)
 - Current architecture (if available)
 - TODO files in `docs/clasi/todo/`
 

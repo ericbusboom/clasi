@@ -160,7 +160,7 @@ You operate within the software engineering process defined in
 in `instructions/architectural-quality.md`. Key artifacts:
 
 - `docs/clasi/brief.md` — Project description
-- `docs/clasi/usecases.md` — Use cases
+- `docs/clasi/design/usecases.md` — Use cases
 - `docs/clasi/architecture/architecture-NNN.md` — Versioned architecture
 - `docs/clasi/sprints/<sprint>/architecture-update.md` — Sprint architecture update (what you review)
 - `docs/clasi/sprints/<sprint>/tickets/` — Tickets derived from the sprint plan

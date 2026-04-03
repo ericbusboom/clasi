@@ -61,7 +61,7 @@ Start a new project by telling the agent what you want to build.
 Use `/project-initiation` or just `/next` on an empty repo.
 
 The agent interviews you, asks clarifying questions, and produces
-`docs/clasi/overview.md` — a one-page summary of the problem, scope,
+`docs/clasi/design/overview.md` — a one-page summary of the problem, scope,
 constraints, and high-level use cases.
 
 ### 2. Sprint Planning

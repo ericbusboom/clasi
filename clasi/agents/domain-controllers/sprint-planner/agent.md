@@ -28,7 +28,7 @@ From team-lead:
 - **High-level goals** describing what the sprint should accomplish
 - **TODO file references** (paths or filenames) identifying the items
   to address — read these yourself to understand the details
-- **`docs/clasi/overview.md`** for project context — this is a concise
+- **`docs/clasi/design/overview.md`** for project context — this is a concise
   one-page project summary, not the full specification
 - The latest architecture version for structural context
 

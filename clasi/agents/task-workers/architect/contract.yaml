@@ -31,7 +31,7 @@ inputs:
     - name: usecases
       type: file
       description: Use cases to inform the architecture
-      default: "docs/clasi/usecases.md"
+      default: "docs/clasi/design/usecases.md"
 
 outputs:
   required:

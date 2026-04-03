@@ -27,8 +27,8 @@ update), **architecture-reviewer** (reviews plan), **technical-lead**
 ## Inputs
 
 - Stakeholder conversation describing the work to be done
-- `docs/clasi/brief.md` or `docs/clasi/overview.md` (must exist)
-- `docs/clasi/usecases.md` (must exist, or overview covers use cases)
+- `docs/clasi/brief.md` or `docs/clasi/design/overview.md` (must exist)
+- `docs/clasi/design/usecases.md` (must exist, or overview covers use cases)
 
 ## Critical Rule
 
