@@ -61,21 +61,36 @@ From team-lead (via Task description):
 
 ## Error Recovery
 
-**Test failures:**
-1. Read the error output carefully. Diagnose the root cause.
-2. Fix the code (not the test, unless the test is wrong).
-3. Re-run tests. Repeat until all pass.
-4. If two consecutive fix attempts fail, switch to systematic debugging:
-   - **Phase 1: Evidence Gathering** — collect exact error messages, stack
-     traces, reproduction steps. Do not change code.
-   - **Phase 2: Pattern Analysis** — compare working vs broken states,
-     identify what changed, narrow scope.
-   - **Phase 3: Hypothesis Testing** — form specific hypotheses, test each
-     with minimal changes, record results.
-   - **Phase 4: Root Cause Fix** — fix the root cause, not the symptom.
-     Verify with full test suite.
-5. After three failed fix attempts, stop and escalate with documentation
-   of what was tried.
+When a test fails or an implementation fails its acceptance criteria, follow
+this four-phase debugging protocol. Do not make rapid guesses.
+
+**Phase 1: Evidence Gathering** — Collect all evidence before forming any
+hypothesis. Do not change code. Read the exact error messages and stack
+traces. Reproduce the issue reliably. Identify the smallest reproduction
+case. Review recent changes (`git log`, `git diff`). Record the evidence.
+
+**Phase 2: Pattern Analysis** — Analyze evidence to understand the failure
+pattern. Still no code changes. Compare working vs broken states. Identify
+what changed since it last worked. Narrow the scope. Look for patterns:
+type error, missing import, state mutation, resource exhaustion, config
+difference.
+
+**Phase 3: Hypothesis Testing** — Form a specific hypothesis: "The failure
+occurs because X, and if I change Y, the test will pass." Design a test for
+the hypothesis before making changes. Make the minimal change to test it.
+Record the result — confirmed or refuted. If refuted, form a new hypothesis
+using the new evidence.
+
+**Phase 4: Root Cause Fix** — Once a hypothesis is confirmed, fix the root
+cause, not the symptom. Verify the fix by running the originally failing
+test. Check for regressions by running the full test suite. Review: is it
+the right fix or a workaround?
+
+**Three-Attempt Cap**: After three failed fix attempts, STOP. Revert any
+partial or broken changes. Document what was tried (hypothesis, change,
+expected result, actual result for each attempt). Escalate to team-lead
+with the original error, evidence, pattern analysis, three hypotheses and
+results, and a recommendation. Wait for guidance.
 
 ## Code Quality
 
@@ -93,3 +108,9 @@ From team-lead (via Task description):
 - You do not decide what to implement — the ticket and plan tell you.
 - You do not dispatch other agents — you are a leaf worker.
 - You do not skip tests. Every ticket gets tests unless explicitly noted.
+
+## References
+
+- Your code may be reviewed by the `code-review` skill after implementation.
+- Consider the `tdd-cycle` skill when designing well-defined, testable
+  interfaces.

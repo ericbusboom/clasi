@@ -44,6 +44,25 @@ A fully populated sprint directory containing:
 - `architecture-update.md` — focused architecture changes for this sprint
 - `tickets/` — numbered ticket files with acceptance criteria and plans
 
+## Planning Modes
+
+Before starting, determine which mode applies:
+
+**Roadmap Mode** — batch planning of multiple sprints.
+- Produces a lightweight `sprint.md` only (goals, scope, TODO references).
+- No branches created. No tickets, no architecture, no use cases yet.
+- Status: `roadmap`. Repeat for as many sprints as needed.
+- Use when the stakeholder wants to lay out work across multiple sprints.
+
+**Detail Mode** — one sprint at a time, full artifacts.
+- Produces `usecases.md`, `architecture-update.md`, and tickets.
+- Runs architecture review inline.
+- Use when a roadmap sprint is ready for execution.
+- Branches are created later via `acquire_execution_lock`, not during planning.
+
+If the sprint already has a `sprint.md` with `status: roadmap`, you are in
+Detail Mode. Otherwise, start in Roadmap Mode.
+
 ## Workflow
 
 ### Phase 1: Sprint Setup
@@ -55,33 +74,71 @@ A fully populated sprint directory containing:
 ### Phase 2: Architecture
 
 4. Read the current consolidated architecture from `docs/clasi/architecture/`.
-5. Write `architecture-update.md` describing what changes in this sprint:
-   - **What Changed**: Components, modules, dependencies, or data model
-     elements added, modified, or removed.
-   - **Why**: Motivation from sprint goals, use cases, or TODOs.
-   - **Impact on Existing Components**: New dependencies, changed interfaces.
-   - **Migration Concerns**: Data migration, backward compatibility.
-6. Include Mermaid diagrams where they clarify structure:
+5. Write `architecture-update.md` using this 7-step methodology:
+
+   **Step 1: Understand the Problem** — Read the sprint plan, use cases, and
+   current architecture. Know what changes and why before writing anything.
+
+   **Step 2: Identify Responsibilities** — List distinct responsibilities this
+   sprint introduces or changes. Group related ones. Separate those that change
+   independently.
+
+   **Step 3: Define Subsystems and Modules** — For each responsibility group,
+   name the module and state its purpose in one sentence (no "and"), its
+   boundary (what is inside and outside), and the use cases it serves.
+
+   **Step 4: Produce Diagrams** — Include required Mermaid diagrams:
    - Component/module diagram (5-12 nodes, labeled edges)
-   - Entity-relationship diagram if data model changes
+   - Entity-relationship diagram if the data model changes
    - Dependency graph if module dependencies change
+
+   **Step 5: Complete the Document** — Sections: What Changed, Why, Impact on
+   Existing Components, Migration Concerns. Stay at module level — no function
+   signatures or column schemas.
+
+   **Step 6: Document Design Rationale** — For significant decisions: Decision,
+   Context, Alternatives considered, Why this choice, Consequences.
+
+   **Step 7: Flag Open Questions** — List anything ambiguous or requiring
+   stakeholder input before implementation begins.
+
+   Quality checks: every module addresses at least one use case; no cycles in
+   the dependency graph; each module passes the cohesion test.
 
 ### Phase 3: Architecture Self-Review
 
-7. Review your own architecture update against these criteria:
-   - **Cohesion**: Each component's purpose describable in one sentence
-     without "and". Everything inside changes for the same reasons.
-   - **Coupling**: Dependencies minimal, intentional, flowing from
-     unstable toward stable components. No circular dependencies.
-   - **Boundaries**: Interfaces narrow and explicit. No shared mutable state.
-   - **Anti-patterns**: No god components, shotgun surgery, feature envy,
-     leaky abstractions, or speculative generality.
-   - **Consistency**: Sprint Changes section matches the document body.
-   - **Codebase alignment**: Proposed changes feasible given actual code state.
-8. If you find significant issues (circular deps, god components, broken
-   interfaces), fix them before proceeding. Document design rationale for
-   significant decisions.
-9. Advance to architecture-review phase (`advance_sprint_phase`).
+7. Review your own architecture update against these five categories:
+
+   **Consistency** — Does the Sprint Changes section match the document body?
+   Is the updated architecture internally consistent? Is design rationale
+   updated for changed decisions?
+
+   **Codebase Alignment** — Does the current code match the documented
+   architecture? If drift exists, does the sprint plan account for it? Are
+   proposed changes feasible given actual code state?
+
+   **Design Quality** — Cohesion: each component responsible for one concern?
+   Coupling: minimal, intentional, no circular dependencies? Boundaries: clear,
+   enforceable, narrow interfaces? Dependency direction consistent?
+
+   **Anti-Pattern Detection** — Check for: god component, shotgun surgery,
+   feature envy, shared mutable state, circular dependencies, leaky
+   abstractions, speculative generality.
+
+   **Risks** — Data migration issues, breaking changes, performance or security
+   implications, deployment sequencing concerns.
+
+8. Issue a verdict using these levels:
+   - **APPROVE**: No significant issues — proceed to ticketing.
+   - **APPROVE WITH CHANGES**: Minor issues addressable during implementation
+     (single contained anti-pattern, missing rationale for non-critical
+     decisions).
+   - **REVISE**: Significant structural issues — circular deps, god components,
+     broken interfaces, or inconsistency between Sprint Changes and document
+     body. Fix before proceeding.
+
+9. If REVISE, fix the architecture update and re-review. If APPROVE or APPROVE
+   WITH CHANGES, advance to architecture-review phase (`advance_sprint_phase`).
 10. Record the architecture review gate result (`record_gate_result`).
 
 ### Phase 4: Ticket Creation
@@ -156,3 +213,7 @@ Domain components have no outward dependencies. Infrastructure is a plugin.
 - Keep sprint scope manageable. Prefer smaller, focused sprints.
 - If a TODO cannot be addressed in the sprint scope, note it and
   inform team-lead.
+- For detailed ticket formatting and dependency verification, see the
+  `create-tickets` skill.
+- For merging architecture documents across sprints, see the
+  `consolidate-architecture` skill.
