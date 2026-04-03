@@ -156,12 +156,13 @@ class TestProjectAgentManagement:
     def test_list_agents_returns_all(self, project):
         agents = project.list_agents()
         assert isinstance(agents, list)
-        assert len(agents) > 0
+        assert len(agents) == 3
         names = {a.name for a in agents}
         assert "team-lead" in names
         assert "sprint-planner" in names
         assert "programmer" in names
-        assert "architect" in names
+        # Non-core agents are in old/ and not returned by list_agents
+        assert "architect" not in names
 
     def test_list_agents_includes_all_tiers(self, project):
         agents = project.list_agents()

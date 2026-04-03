@@ -173,6 +173,9 @@ class Project:
     def get_agent(self, name: str) -> Agent:
         """Find agent by name in the flat clasi/plugin/agents/ directory.
 
+        Also searches clasi/plugin/agents/old/ as a fallback so that
+        archived agents remain accessible by name.
+
         Raises:
             ValueError: If no agent with the given name is found.
         """
@@ -182,13 +185,18 @@ class Project:
         if not agents_dir.exists():
             raise ValueError(f"Agents directory not found: {agents_dir}")
 
+        # Check active agents first, then fall back to old/
         agent_dir = agents_dir / name
         if agent_dir.is_dir():
             return Agent(agent_dir, self)
 
+        old_agent_dir = agents_dir / "old" / name
+        if old_agent_dir.is_dir():
+            return Agent(old_agent_dir, self)
+
         # Build available list for error message
         available = sorted(
-            d.name for d in agents_dir.iterdir() if d.is_dir()
+            d.name for d in agents_dir.iterdir() if d.is_dir() and d.name != "old"
         )
         raise ValueError(
             f"No agent found with name '{name}'. "
@@ -205,7 +213,7 @@ class Project:
 
         results: list[Agent] = []
         for agent_dir in sorted(agents_dir.iterdir()):
-            if agent_dir.is_dir():
+            if agent_dir.is_dir() and agent_dir.name != "old":
                 results.append(Agent(agent_dir, self))
         return results
 

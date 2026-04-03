@@ -27,14 +27,18 @@ def _list_definitions(directory: Path) -> list[dict[str, str]]:
 
 
 def _list_agents_recursive(agents_dir: Path) -> list[dict[str, str]]:
-    """Walk the three-tier agent directory tree and list all agents.
+    """Walk the agent directory tree and list active agents.
 
-    Finds all agent.md files under agents/{tier}/{agent-name}/agent.md.
+    Finds all agent.md files directly under agents/{agent-name}/agent.md.
+    Skips the old/ subdirectory so archived agents are not listed.
     """
     results = []
     if not agents_dir.exists():
         return results
     for agent_md in sorted(agents_dir.rglob("agent.md")):
+        # Skip archived agents in the old/ subdirectory
+        if "old" in agent_md.parts:
+            continue
         fm, _ = read_document(agent_md)
         # Agent name comes from the parent directory name
         agent_name = agent_md.parent.name
