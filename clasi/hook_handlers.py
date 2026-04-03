@@ -763,7 +763,7 @@ def _render_transcript_lines(messages: list) -> list[str]:
 
     # Raw JSON
     pretty = json.dumps(messages, indent=2)
-    lines.extend(["", "```json", pretty, "```", ""])
+    lines.extend(["", "# Raw JSON Transcript", "", "```json", pretty, "```", ""])
     return lines
 
 
