@@ -58,4 +58,8 @@ Before tickets can be created, all of the following must be true:
 
 ## Tickets
 
-(To be created after sprint approval.)
+| # | Title | Depends On | Group |
+|---|-------|------------|-------|
+
+**Groups**: Tickets in the same group can execute in parallel.
+Groups execute sequentially (1 before 2, etc.).

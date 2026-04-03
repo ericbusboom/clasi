@@ -137,6 +137,12 @@ planning artifacts for one sprint at a time.
     Tickets are created in the sprint's `tickets/` directory with
     per-sprint numbering (001, 002, ...).
 
+12b. **Update sprint.md ticket table**: After all tickets are created,
+     update the `## Tickets` section in `sprint.md` with a summary table
+     listing each ticket's number, title, depends-on values, and parallel
+     execution group (Group 1 = no dependencies; Group N = depends only
+     on groups 1..N-1).
+
 13. **Acquire execution lock**: Call `acquire_execution_lock` to claim
     the lock and create the sprint branch. Then call
     `advance_sprint_phase` to move to `executing`.

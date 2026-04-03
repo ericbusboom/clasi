@@ -99,10 +99,15 @@ A fully populated sprint directory containing:
     - Implementation plan: approach, files to create/modify, testing plan,
       documentation updates
 14. Propagate TODO and GitHub issue references to ticket frontmatter.
+15. Update sprint.md's `## Tickets` section with a summary table:
+    - List each ticket's number, title, and `depends-on` values.
+    - Assign parallel execution groups: tickets with no unmet
+      dependencies share a group. Groups execute in order
+      (Group 1 before Group 2, etc.).
 
 ### Phase 5: Return
 
-15. Return the completed sprint plan to team-lead.
+16. Return the completed sprint plan to team-lead.
 
 ## Planning Decisions You Own
 
