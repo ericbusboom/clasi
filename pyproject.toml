@@ -69,6 +69,7 @@ clasi = [
     "skills/*.md",
     "instructions/*.md",
     "instructions/languages/*.md",
+    "plugin/**/*",
     "rules/*.md",
     "templates/*.md",
     "se-overview-template.md",

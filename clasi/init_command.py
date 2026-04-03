@@ -21,13 +21,8 @@ from typing import Dict
 
 import click
 
-# The plugin directory is at the repo root (sibling of clasi/).
-# In development, resolve relative to this file. When installed as a
-# package, the plugin/ directory should also be findable.
-_PLUGIN_DIR = Path(__file__).parent.parent / "plugin"
-if not _PLUGIN_DIR.exists():
-    # Fallback: check if plugin content is bundled inside the package
-    _PLUGIN_DIR = Path(__file__).parent / "plugin"
+# The plugin directory is bundled inside the clasi package.
+_PLUGIN_DIR = Path(__file__).parent / "plugin"
 
 def _detect_mcp_command(target: Path) -> dict:
     """Detect the correct MCP server command for the target project.
