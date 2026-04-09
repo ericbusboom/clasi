@@ -857,17 +857,28 @@ def handle_plan_to_todo(payload: dict) -> None:
     """
     from clasi.plan_to_todo import plan_to_todo
 
+    plan_file_str = payload.get("tool_input", {}).get("planFilePath")
+    plan_file = Path(plan_file_str) if plan_file_str else None
+
     result = plan_to_todo(
         Path.home() / ".claude" / "plans",
         Path("docs/clasi/todo"),
         hook_payload=payload,
+        plan_file=plan_file,
     )
     if result:
         print(
-            f"CLASI: Plan saved as TODO: {result}\n"
-            "This plan is now a pending TODO for future sprint planning. "
-            "Do NOT implement it now. Confirm the TODO was created and stop."
+            json.dumps({
+                "decision": "block",
+                "reason": (
+                    f"CLASI: Plan saved as TODO: {result}. "
+                    "This plan is now a pending TODO for future sprint planning. "
+                    "Do NOT implement it now. Confirm the TODO was created and stop."
+                ),
+            }),
+            file=sys.stderr,
         )
+        sys.exit(2)
     sys.exit(0)
 
 

@@ -864,18 +864,21 @@ class TestHandlePlanToTodo:
             Path.home() / ".claude" / "plans",
             Path("docs/clasi/todo"),
             hook_payload={},
+            plan_file=None,
         )
 
     def test_prints_result_path_when_todo_created(self, capsys):
-        """handle_plan_to_todo prints the created TODO path when plan_to_todo returns one."""
+        """handle_plan_to_todo writes JSON to stderr and exits 2 when plan_to_todo returns a path."""
         todo_path = Path("docs/clasi/todo/001-my-plan.md")
         with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
             mock_p2t.return_value = todo_path
             with pytest.raises(SystemExit) as exc:
                 handle_plan_to_todo({})
-        assert exc.value.code == 0
+        assert exc.value.code == 2
         captured = capsys.readouterr()
-        assert "001-my-plan.md" in captured.out
+        assert "001-my-plan.md" in captured.err
+        data = json.loads(captured.err)
+        assert data["decision"] == "block"
 
     def test_no_output_when_no_plan_file(self, capsys):
         """handle_plan_to_todo prints nothing when plan_to_todo returns None."""
@@ -886,3 +889,17 @@ class TestHandlePlanToTodo:
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == ""
+
+    def test_passes_plan_file_path_from_payload(self):
+        """handle_plan_to_todo passes planFilePath from payload as plan_file argument."""
+        payload = {"tool_input": {"planFilePath": "/tmp/my-plan.md"}}
+        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+            mock_p2t.return_value = None
+            with pytest.raises(SystemExit):
+                handle_plan_to_todo(payload)
+        mock_p2t.assert_called_once_with(
+            Path.home() / ".claude" / "plans",
+            Path("docs/clasi/todo"),
+            hook_payload=payload,
+            plan_file=Path("/tmp/my-plan.md"),
+        )

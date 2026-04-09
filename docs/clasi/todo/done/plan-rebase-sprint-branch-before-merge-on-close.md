@@ -1,8 +1,8 @@
 ---
-status: in-progress
-sprint: '005'
+status: done
+sprint: '006'
 tickets:
-- 005-003
+- '002'
 ---
 
 # Plan: Rebase sprint branch before merge on close
