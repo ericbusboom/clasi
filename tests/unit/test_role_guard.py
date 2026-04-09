@@ -333,3 +333,93 @@ class TestRoleGuardTeamLeadSprintBlock:
             env={"CLASI_AGENT_TIER": "0"},
         )
         assert result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests — call handle_role_guard() without subprocess
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardDirect:
+    """Direct unit tests for handle_role_guard().
+
+    These call the function directly (not via subprocess) to exercise the
+    logic without spawning a child process. We:
+      - chdir to a tmp_path with no DB and no .clasi-oop file
+      - patch _log_hook_event to suppress log file I/O
+      - patch os.environ to control CLASI_AGENT_TIER
+      - assert SystemExit.code for each scenario
+    """
+
+    def _call(self, payload, env_overrides=None, monkeypatch=None, tmp_path=None):
+        """Call handle_role_guard with controlled env and cwd."""
+        from clasi.hook_handlers import handle_role_guard
+        from unittest.mock import patch
+
+        # Build a clean env: strip tier/name from the real env
+        clean_env = dict(os.environ)
+        clean_env.pop("CLASI_AGENT_TIER", None)
+        clean_env.pop("CLASI_AGENT_NAME", None)
+        if env_overrides:
+            clean_env.update(env_overrides)
+
+        with patch.dict(os.environ, clean_env, clear=True), \
+             patch("clasi.hook_handlers._log_hook_event"), \
+             patch("os.getcwd", return_value=str(tmp_path)):
+            # Patch Path(".clasi-oop").exists() and Path("docs/clasi/.clasi.db").exists()
+            # by running in tmp_path so relative Path objects resolve there
+            old_cwd = os.getcwd()
+            os.chdir(tmp_path)
+            try:
+                with pytest.raises(SystemExit) as exc_info:
+                    handle_role_guard(payload)
+            finally:
+                os.chdir(old_cwd)
+        return exc_info.value.code
+
+    def test_role_guard_blocks_source_file_tier0(self, tmp_path):
+        """tier-0 (env unset, no DB) writing clasi/cli.py must be blocked (exit 2)."""
+        code = self._call({"file_path": "clasi/cli.py"}, tmp_path=tmp_path)
+        assert code == 2
+
+    def test_role_guard_blocks_toml_tier0(self, tmp_path):
+        """tier-0 writing pyproject.toml must be blocked (exit 2)."""
+        code = self._call({"file_path": "pyproject.toml"}, tmp_path=tmp_path)
+        assert code == 2
+
+    def test_role_guard_allows_docs_clasi_tier0(self, tmp_path):
+        """tier-0 writing to docs/clasi/todo/ is allowed (exit 0)."""
+        code = self._call({"file_path": "docs/clasi/todo/x.md"}, tmp_path=tmp_path)
+        assert code == 0
+
+    def test_role_guard_blocks_docs_clasi_sprints_tier0(self, tmp_path):
+        """tier-0 writing to docs/clasi/sprints/ must be blocked (exit 2)."""
+        code = self._call(
+            {"file_path": "docs/clasi/sprints/001/sprint.md"}, tmp_path=tmp_path
+        )
+        assert code == 2
+
+    def test_role_guard_allows_claude_settings_tier0(self, tmp_path):
+        """tier-0 writing to .claude/settings.json is allowed (exit 0)."""
+        code = self._call({"file_path": ".claude/settings.json"}, tmp_path=tmp_path)
+        assert code == 0
+
+    def test_role_guard_allows_claude_md_tier0(self, tmp_path):
+        """tier-0 writing to CLAUDE.md is allowed (exit 0)."""
+        code = self._call({"file_path": "CLAUDE.md"}, tmp_path=tmp_path)
+        assert code == 0
+
+    def test_role_guard_allows_tier2_source_file(self, tmp_path):
+        """tier-2 (programmer) writing clasi/cli.py is allowed (exit 0)."""
+        code = self._call(
+            {"file_path": "clasi/cli.py"},
+            env_overrides={"CLASI_AGENT_TIER": "2"},
+            tmp_path=tmp_path,
+        )
+        assert code == 0
+
+    def test_role_guard_oop_bypass(self, tmp_path):
+        """When .clasi-oop exists, any path is allowed (exit 0)."""
+        (tmp_path / ".clasi-oop").touch()
+        code = self._call({"file_path": "clasi/cli.py"}, tmp_path=tmp_path)
+        assert code == 0

@@ -93,10 +93,25 @@ def _exit_hook(
 def handle_role_guard(payload: dict) -> None:
     """Enforce directory write scopes based on agent tier.
 
-    Tier 0 (team-lead / interactive session): can write to docs/clasi/,
-    .claude/, CLAUDE.md, AGENTS.md.
-    Tier 1 (sprint-planner): can write to docs/clasi/sprints/<sprint>/.
-    Tier 2 (programmer): can write anywhere within scope_directory.
+    Allowed/blocked write matrix
+    ─────────────────────────────────────────────────────────────────────────
+    Path                          tier 0   tier 1   tier 2   OOP
+    ────────────────────────────  ──────   ──────   ──────   ───
+    .claude/**  /  CLAUDE.md      ALLOW    ALLOW    ALLOW    ALLOW
+    AGENTS.md                     ALLOW    ALLOW    ALLOW    ALLOW
+    docs/clasi/  (non-sprint)     ALLOW    ALLOW    ALLOW    ALLOW
+    docs/clasi/sprints/**         BLOCK    ALLOW    ALLOW    ALLOW
+    Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
+    (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
+    ─────────────────────────────────────────────────────────────────────────
+
+    Tier 0 = team-lead / interactive session (CLASI_AGENT_TIER unset or "0")
+    Tier 1 = sprint-planner
+    Tier 2 = programmer
+    OOP    = .clasi-oop flag file present in cwd (out-of-process bypass)
+
+    Exits with code 0 (allow) or 2 (block).  Code 1 is reserved for
+    unknown event names in the dispatcher.
     """
     tool_input = payload if payload else {}
     file_path = (
@@ -106,6 +121,7 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
+    # No path in payload — nothing to guard, allow through
     if not file_path:
         _exit_hook("role-guard", payload, 0, "no-path")
 
@@ -121,15 +137,18 @@ def handle_role_guard(payload: dict) -> None:
         except Exception:
             pass
 
-    # Programmer (tier 2) can write — that's their job
+    # Tier 2 (programmer) can write anywhere — that's their job.
+    # Checked first so programmer subagents never hit any later block.
     if agent_tier == "2":
         _exit_hook("role-guard", payload, 0, "tier-2")
 
-    # OOP bypass
+    # OOP bypass: .clasi-oop flag enables direct writes for any tier.
+    # Used for out-of-process changes reviewed manually by the team-lead.
     if Path(".clasi-oop").exists():
         _exit_hook("role-guard", payload, 0, "oop-bypass")
 
-    # Recovery state bypass
+    # Recovery state bypass: allows specific paths during sprint recovery
+    # (e.g. resolving merge conflicts) when recorded in the state DB.
     db_path = Path("docs/clasi/.clasi.db")
     if db_path.exists():
         try:
@@ -141,28 +160,41 @@ def handle_role_guard(payload: dict) -> None:
         except Exception:
             pass
 
-    # Safe prefixes for any tier
+    # Safe prefixes: always allowed for any tier (configuration / meta files).
+    # .claude/ — Claude Code settings, hooks, rules
+    # CLAUDE.md — project coding instructions
+    # AGENTS.md — agent instructions
     safe_prefixes = [".claude/", "CLAUDE.md", "AGENTS.md"]
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
 
-    # Team-lead (tier 0 or unset) can write to docs/clasi/ but NOT sprints/
+    # Team-lead (tier 0 or unset) can write to docs/clasi/ for planning
+    # artifacts (todo, reflections, log, overview, architecture) but CANNOT
+    # directly edit sprint artifacts — those must go through MCP tools.
     if agent_tier in ("", "0") and file_path.startswith("docs/clasi/"):
         if file_path.startswith("docs/clasi/sprints/"):
+            # Sprint artifacts are owned by sprint-planner (tier 1) and
+            # managed via MCP tools. Direct edits are blocked to prevent
+            # process violations (e.g. bypassing ticket status transitions).
             print(
                 "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
                 "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
                 file=sys.stderr,
             )
             _exit_hook("role-guard", payload, 2, "blk-sprint")
+        # docs/clasi/ non-sprint paths (todo/, log/, reflections/, etc.) — ALLOW
         _exit_hook("role-guard", payload, 0, "clasi-docs")
 
-    # Sprint-planner (tier 1) can write to sprint directories
+    # Sprint-planner (tier 1) can write to sprint directories they own.
+    # All other paths (source, tests, config) are blocked — dispatch to tier 2.
     if agent_tier == "1" and file_path.startswith("docs/clasi/sprints/"):
         _exit_hook("role-guard", payload, 0, "tier-1")
 
-    # Block — determine who's violating
+    # --- BLOCK ---
+    # If we reach here, the write is not permitted for this tier.
+    # tier 0 / unset: source code, tests, config, non-clasi docs → BLOCK
+    # tier 1:         source code, tests, config, non-sprint docs  → BLOCK
     agent_name = os.environ.get("CLASI_AGENT_NAME", "team-lead")
     print(
         f"CLASI ROLE VIOLATION: {agent_name} (tier {agent_tier or '0'}) "
