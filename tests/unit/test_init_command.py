@@ -262,29 +262,74 @@ class TestHooksConfig:
                 assert "hooks" in entry
                 assert isinstance(entry["hooks"], list)
 
-    def test_hooks_preserve_existing_hooks(self, target_dir):
-        """Hook installation preserves other existing hook entries."""
+    def test_hooks_overwrite_old_commands(self, target_dir):
+        """Hook installation overwrites old hook commands (e.g. python3) with new clasi commands."""
         target_dir.mkdir()
         settings_path = target_dir / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        existing = {
+        old_hooks = {
             "hooks": {
                 "PreToolUse": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": "echo pre"}]}
-                ],
+                    {
+                        "matcher": "Edit|Write|MultiEdit",
+                        "hooks": [{"type": "command", "command": "python3 role_guard.py"}],
+                    }
+                ]
             }
         }
-        settings_path.write_text(json.dumps(existing), encoding="utf-8")
+        settings_path.write_text(json.dumps(old_hooks), encoding="utf-8")
 
         run_init(str(target_dir))
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         pre_tool = data["hooks"]["PreToolUse"]
-        # Existing entry preserved
-        assert {"matcher": "", "hooks": [{"type": "command", "command": "echo pre"}]} in pre_tool
-        # CLASI role guard added
-        assert any("role_guard" in h.get("command", "")
-                    for entry in pre_tool for h in entry.get("hooks", []))
+        # Old python3 command must be gone
+        all_commands = [
+            h.get("command", "")
+            for entry in pre_tool
+            for h in entry.get("hooks", [])
+        ]
+        assert not any("python3" in cmd for cmd in all_commands)
+        # New clasi hook role-guard command is present
+        assert any("clasi hook role-guard" in cmd for cmd in all_commands)
+
+    def test_hooks_unchanged_when_already_correct(self, target_dir):
+        """Running init on a directory that already has correct hooks does not change settings.json."""
+        target_dir.mkdir()
+        # Pre-install the correct hooks
+        run_init(str(target_dir))
+        settings_path = target_dir / ".claude" / "settings.json"
+        data_before = json.loads(settings_path.read_text(encoding="utf-8"))
+
+        # Run again — hooks section should be identical (no mutation)
+        run_init(str(target_dir))
+        data_after = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert data_before["hooks"] == data_after["hooks"]
+
+    def test_hooks_preserve_permissions_key(self, target_dir):
+        """A pre-existing 'permissions' key in settings.json is preserved after run_init."""
+        target_dir.mkdir()
+        settings_path = target_dir / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {"permissions": {"allow": ["Bash(*)"]}, "other": "kept"}
+        settings_path.write_text(json.dumps(existing), encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert data["permissions"] == {"allow": ["Bash(*)"]}
+        assert data["other"] == "kept"
+        assert "hooks" in data
+
+    def test_no_py_files_copied_to_hooks_dir(self, target_dir):
+        """No .py files are copied to <target>/.claude/hooks/ during init."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        hooks_dir = target_dir / ".claude" / "hooks"
+        if hooks_dir.exists():
+            py_files = list(hooks_dir.glob("*.py"))
+            assert py_files == [], f"Unexpected .py files: {py_files}"
 
 
 class TestRules:

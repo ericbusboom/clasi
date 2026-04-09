@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '004'
+tickets:
+- '005'
 ---
 
 # Execute-sprint skill should move tickets to done after programmer completes

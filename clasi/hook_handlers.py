@@ -862,7 +862,11 @@ def handle_plan_to_todo(payload: dict) -> None:
         Path("docs/clasi/todo"),
     )
     if result:
-        print(result)
+        print(
+            f"CLASI: Plan saved as TODO: {result}\n"
+            "This plan is now a pending TODO for future sprint planning. "
+            "Do NOT implement it now. Confirm the TODO was created and stop."
+        )
     sys.exit(0)
 
 

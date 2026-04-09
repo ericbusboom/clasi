@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '004'
+tickets:
+- '004'
 ---
 
 # Role guard should block team-lead from writing source code files

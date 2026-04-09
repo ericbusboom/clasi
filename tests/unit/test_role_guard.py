@@ -7,19 +7,16 @@ import sys
 from pathlib import Path
 import pytest
 
-_ROLE_GUARD_SCRIPT = str(
-    Path(__file__).resolve().parents[2]
-    / "clasi"
-    / "plugin"
-    / "hooks"
-    / "role_guard.py"
+_ROLE_GUARD_INLINE = (
+    "from clasi.hook_handlers import read_payload, handle_role_guard; "
+    "handle_role_guard(read_payload())"
 )
 
 
 def _run_role_guard(
     tool_input: dict, cwd: str | None = None, env: dict | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run role_guard.py as a subprocess with the given tool input on stdin."""
+    """Run the role guard handler as a subprocess with the given tool input on stdin."""
     run_env = dict(os.environ)
     # Clear tier/name from parent env to avoid test pollution
     run_env.pop("CLASI_AGENT_TIER", None)
@@ -27,7 +24,7 @@ def _run_role_guard(
     if env:
         run_env.update(env)
     return subprocess.run(
-        [sys.executable, _ROLE_GUARD_SCRIPT],
+        [sys.executable, "-c", _ROLE_GUARD_INLINE],
         input=json.dumps(tool_input),
         capture_output=True,
         text=True,

@@ -15,7 +15,6 @@ and path-scoped rules.
 
 import json
 import shutil
-import stat
 from pathlib import Path
 from typing import Dict
 
@@ -303,23 +302,7 @@ def _install_plugin_content(target: Path) -> None:
                 click.echo(f"  Wrote: {rel}")
         click.echo()
 
-    # Copy hook scripts
-    plugin_hooks_dir = _PLUGIN_DIR / "hooks"
-    if plugin_hooks_dir.exists():
-        target_hooks = target / ".claude" / "hooks"
-        target_hooks.mkdir(parents=True, exist_ok=True)
-        click.echo("Hook scripts:")
-        for py_file in sorted(plugin_hooks_dir.glob("*.py")):
-            dest = target_hooks / py_file.name
-            source_content = py_file.read_text(encoding="utf-8")
-            rel = f".claude/hooks/{py_file.name}"
-            dest.write_text(source_content, encoding="utf-8")
-            # Set execute permission
-            dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            click.echo(f"  Wrote: {rel}")
-        click.echo()
-
-    # Merge hooks from plugin hooks.json into .claude/settings.json
+    # Overwrite hooks from plugin hooks.json into .claude/settings.json
     plugin_hooks = _PLUGIN_DIR / "hooks" / "hooks.json"
     if plugin_hooks.exists():
         click.echo("Hooks (from plugin):")
@@ -335,29 +318,15 @@ def _install_plugin_content(target: Path) -> None:
         else:
             settings = {}
 
-        existing_hooks = settings.setdefault("hooks", {})
-        changed = False
-
-        for event_type, entries in hooks_data.get("hooks", {}).items():
-            existing = existing_hooks.get(event_type, [])
-            for entry in entries:
-                cmd = entry.get("hooks", [{}])[0].get("command", "")
-                already = any(
-                    cmd in (h.get("command", "") for h in e.get("hooks", []))
-                    for e in existing
-                )
-                if not already:
-                    existing.append(entry)
-                    changed = True
-            existing_hooks[event_type] = existing
-
-        if changed:
+        new_hooks = hooks_data.get("hooks", {})
+        if settings.get("hooks") == new_hooks:
+            click.echo("  Unchanged: .claude/settings.json (hooks)")
+        else:
+            settings["hooks"] = new_hooks
             settings_path.write_text(
                 json.dumps(settings, indent=2) + "\n", encoding="utf-8"
             )
             click.echo("  Updated: .claude/settings.json (hooks)")
-        else:
-            click.echo("  Unchanged: .claude/settings.json (hooks)")
         click.echo()
 
 

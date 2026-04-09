@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '004'
+tickets:
+- '001'
 ---
 
 # ExitPlanMode -> CLASI TODO Integration

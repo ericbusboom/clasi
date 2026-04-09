@@ -127,7 +127,7 @@ wheels = [
 
 [[package]]
 name = "clasi"
-version = "0.20260406.2"
+version = "0.20260408.1"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
@@ -135,6 +135,8 @@ dependencies = [
     { name = "jinja2" },
     { name = "jsonschema" },
     { name = "mcp" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
     { name = "python-frontmatter" },
     { name = "pyyaml" },
 ]
@@ -152,7 +154,9 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.0" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "mcp", specifier = ">=1.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-frontmatter", specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
