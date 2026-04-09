@@ -9,11 +9,17 @@ from clasi.templates import slugify
 from clasi.todo_split import _unique_path
 
 
-def plan_to_todo(plans_dir: Path, todo_dir: Path, hook_payload: Optional[dict] = None) -> Optional[Path]:
-    """Copy the most recent plan file to the TODO directory.
+def plan_to_todo(
+    plans_dir: Path,
+    todo_dir: Path,
+    hook_payload: Optional[dict] = None,
+    plan_file: Optional[Path] = None,
+) -> Optional[Path]:
+    """Copy a plan file to the TODO directory.
 
-    Finds the newest .md in plans_dir, adds ``status: pending``
-    frontmatter, writes it to todo_dir, and deletes the original.
+    When plan_file is provided, use that file directly. Otherwise finds
+    the newest .md in plans_dir. Adds ``status: pending`` frontmatter,
+    writes it to todo_dir, and deletes the original.
 
     If hook_payload is provided (not None), a debug block with payload and
     environment context is appended to the TODO file.
@@ -21,14 +27,17 @@ def plan_to_todo(plans_dir: Path, todo_dir: Path, hook_payload: Optional[dict] =
     Returns the path of the created TODO file, or None if nothing
     was converted.
     """
-    if not plans_dir.is_dir():
-        return None
+    if plan_file is not None:
+        if not plan_file.exists():
+            return None
+    else:
+        if not plans_dir.is_dir():
+            return None
+        plan_files = sorted(plans_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        if not plan_files:
+            return None
+        plan_file = plan_files[-1]
 
-    plan_files = sorted(plans_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
-    if not plan_files:
-        return None
-
-    plan_file = plan_files[-1]
     content = plan_file.read_text(encoding="utf-8").strip()
     if not content:
         return None
