@@ -1,15 +1,15 @@
 ---
-id: "007"
-title: "Non-Python project support and MCP import reliability"
-status: planning
+id: '007'
+title: Non-Python project support and MCP import reliability
+status: done
 branch: sprint/007-non-python-project-support-and-mcp-import-reliability
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 todos:
-  - hardcoded-pytest-blocks-non-python-projects.md
-  - fix-mcp-lazy-import-failures.md
+- hardcoded-pytest-blocks-non-python-projects.md
+- fix-mcp-lazy-import-failures.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
