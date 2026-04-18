@@ -1,9 +1,9 @@
 ---
-status: in-progress
+status: done
 sprint: '007'
 tickets:
-- 007-002
-- 007-003
+- '002'
+- '003'
 ---
 
 # Hardcoded pytest in close_sprint blocks non-Python projects

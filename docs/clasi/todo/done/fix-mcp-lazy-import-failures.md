@@ -1,9 +1,8 @@
 ---
-status: in-progress
+status: done
 sprint: '007'
 tickets:
-- 007-001
-- 007-003
+- '001'
 ---
 
 # Fix MCP tool failures from stale server process (lazy imports)
