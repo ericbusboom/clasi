@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from clasi import __version__
-from clasi.frontmatter import read_document
+from clasi.frontmatter import read_document, read_frontmatter
 from clasi.mcp_server import server, content_path, get_project
 
 
@@ -444,7 +444,6 @@ def get_use_case_coverage() -> str:
             if not sprint_file.exists():
                 continue
 
-            from clasi.frontmatter import read_frontmatter
             sprint_fm = read_frontmatter(sprint_file)
             sprint_id = sprint_fm.get("id", "")
             sprint_status = sprint_fm.get("status", "unknown")
@@ -481,7 +480,22 @@ def get_version() -> str:
     """Return the installed CLASI package version.
 
     Useful for verifying which version of the MCP server is running.
+    Returns version (cached at import), metadata_version (live from
+    importlib.metadata), and source_path so staleness is detectable.
     """
+    import importlib.metadata
+    import importlib.util
+
+    try:
+        metadata_version = importlib.metadata.version("clasi")
+    except importlib.metadata.PackageNotFoundError:
+        metadata_version = "unknown"
+
+    spec = importlib.util.find_spec("clasi")
+    source_path = str(spec.origin) if spec and spec.origin else "unknown"
+
     return json.dumps({
         "version": __version__,
+        "metadata_version": metadata_version,
+        "source_path": source_path,
     }, indent=2)

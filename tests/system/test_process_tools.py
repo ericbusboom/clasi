@@ -297,3 +297,11 @@ class TestGetVersion:
         # Version should be a non-empty string
         assert isinstance(result["version"], str)
         assert len(result["version"]) > 0
+
+    def test_includes_metadata_version_and_source_path(self):
+        result = json.loads(get_version())
+        assert "metadata_version" in result
+        assert "source_path" in result
+        assert isinstance(result["metadata_version"], str)
+        assert isinstance(result["source_path"], str)
+        assert len(result["source_path"]) > 0

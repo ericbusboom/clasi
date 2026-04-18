@@ -113,6 +113,27 @@ class Clasi:
         logger.info("  python: %s", sys.executable)
         logger.info("  log_file: %s", self.project.log_dir / "mcp-server.log")
 
+        # Preflight: verify all required submodules are importable.
+        # Catches stale editable installs or version mismatches at
+        # startup rather than producing confusing per-tool errors.
+        _required = [
+            "clasi.artifact", "clasi.sprint", "clasi.ticket",
+            "clasi.todo", "clasi.frontmatter", "clasi.versioning",
+        ]
+        for _mod in _required:
+            try:
+                __import__(_mod)
+            except ImportError as e:
+                msg = (
+                    f"CLASI preflight failed: cannot import {_mod} ({e}). "
+                    "The MCP server source may be stale — restart the "
+                    "session or reinstall the package."
+                )
+                logger.error(msg)
+                print(msg, file=sys.stderr)
+                raise SystemExit(1) from e
+        logger.info("  preflight: all required submodules importable")
+
         # Import tool modules to register their tools with the server
         import clasi.tools.process_tools  # noqa: F401
         import clasi.tools.artifact_tools  # noqa: F401
