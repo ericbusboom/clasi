@@ -656,6 +656,7 @@ def close_sprint(
     main_branch: str = "master",
     push_tags: bool = True,
     delete_branch: bool = True,
+    test_command: Optional[str] = None,
 ) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
 
@@ -673,12 +674,15 @@ def close_sprint(
         main_branch: Target branch for merge (default: 'master')
         push_tags: Whether to push tags after tagging (default: True)
         delete_branch: Whether to delete the sprint branch after merge (default: True)
+        test_command: Shell command to run tests. Defaults to 'uv run pytest'.
+            Pass empty string to skip tests entirely (for non-Python projects).
 
     Returns JSON with structured result (success or error).
     """
     if branch_name is not None:
         return _close_sprint_full(
-            sprint_id, branch_name, main_branch, push_tags, delete_branch
+            sprint_id, branch_name, main_branch, push_tags, delete_branch,
+            test_command=test_command,
         )
     return _close_sprint_legacy(sprint_id)
 
@@ -765,6 +769,7 @@ def _close_sprint_full(
     main_branch: str,
     push_tags_flag: bool,
     delete_branch_flag: bool,
+    test_command: Optional[str] = None,
 ) -> str:
     """Full lifecycle close: preconditions, tests, archive, git ops."""
     project = get_project()
@@ -909,57 +914,67 @@ def _close_sprint_full(
     # ── Step 2: Run tests ──
     all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"]
 
-    try:
-        test_result = subprocess.run(
-            ["uv", "run", "pytest"],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if test_result.returncode != 0:
-            error_msg = f"Tests failed (exit code {test_result.returncode})"
-            test_output = test_result.stdout[-2000:] if test_result.stdout else ""
-            if test_result.stderr:
-                test_output += "\n" + test_result.stderr[-500:]
+    if test_command == "":
+        # Explicitly skip tests (non-Python projects, etc.)
+        repairs.append("skipped tests (test_command is empty)")
+    else:
+        # Determine the command to run
+        if test_command is not None:
+            test_cmd = test_command.split()
+        else:
+            test_cmd = ["uv", "run", "pytest"]
+
+        try:
+            test_result = subprocess.run(
+                test_cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if test_result.returncode != 0:
+                error_msg = f"Tests failed (exit code {test_result.returncode})"
+                test_output = test_result.stdout[-2000:] if test_result.stdout else ""
+                if test_result.stderr:
+                    test_output += "\n" + test_result.stderr[-500:]
+                if db.path.exists():
+                    db.write_recovery_state(
+                        sprint_id, "tests", [], error_msg,
+                    )
+                return json.dumps({
+                    "status": "error",
+                    "error": {
+                        "step": "tests",
+                        "message": error_msg,
+                        "output": test_output.strip(),
+                        "recovery": {
+                            "recorded": db.path.exists(),
+                            "allowed_paths": [],
+                            "instruction": "Fix failing tests, then call close_sprint again.",
+                        },
+                    },
+                    "completed_steps": completed_steps,
+                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
+                }, indent=2)
+        except FileNotFoundError:
+            # Test command not available — skip tests
+            repairs.append(f"skipped tests ({test_cmd[0]} not found)")
+        except subprocess.TimeoutExpired:
+            error_msg = "Test suite timed out after 300 seconds"
             if db.path.exists():
-                db.write_recovery_state(
-                    sprint_id, "tests", [], error_msg,
-                )
+                db.write_recovery_state(sprint_id, "tests", [], error_msg)
             return json.dumps({
                 "status": "error",
                 "error": {
                     "step": "tests",
                     "message": error_msg,
-                    "output": test_output.strip(),
                     "recovery": {
                         "recorded": db.path.exists(),
                         "allowed_paths": [],
-                        "instruction": "Fix failing tests, then call close_sprint again.",
+                        "instruction": "Investigate slow tests, then call close_sprint again.",
                     },
                 },
                 "completed_steps": completed_steps,
                 "remaining_steps": [s for s in all_steps if s not in completed_steps],
-            }, indent=2)
-    except FileNotFoundError:
-        # uv not available — skip tests
-        repairs.append("skipped tests (uv not found)")
-    except subprocess.TimeoutExpired:
-        error_msg = "Test suite timed out after 300 seconds"
-        if db.path.exists():
-            db.write_recovery_state(sprint_id, "tests", [], error_msg)
-        return json.dumps({
-            "status": "error",
-            "error": {
-                "step": "tests",
-                "message": error_msg,
-                "recovery": {
-                    "recorded": db.path.exists(),
-                    "allowed_paths": [],
-                    "instruction": "Investigate slow tests, then call close_sprint again.",
-                },
-            },
-            "completed_steps": completed_steps,
-            "remaining_steps": [s for s in all_steps if s not in completed_steps],
         }, indent=2)
 
     completed_steps.append("tests")

@@ -31,12 +31,18 @@ which handles the full lifecycle.
        main_branch="master",
        push_tags=True,
        delete_branch=True,
+       test_command="uv run pytest",  # or "" to skip tests
    )
    ```
 
+   The `test_command` parameter controls how tests are run:
+   - Omit or `None`: runs `uv run pytest` (default)
+   - Custom string (e.g., `"npm test"`): runs that command
+   - Empty string `""`: skips tests entirely (non-Python projects)
+
    The tool handles internally:
    - Pre-condition verification with self-repair
-   - Run `uv run pytest`
+   - Run tests (if test_command is provided)
    - Archive sprint directory to `sprints/done/`
    - Update state DB, release execution lock
    - Version bump and git tag
