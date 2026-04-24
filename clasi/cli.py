@@ -133,7 +133,7 @@ def version_bump(major, tag, push):
     Updates the source file and all sync files.
 
     With --tag, also creates a git tag.
-    With --push, checks for clean master, bumps, commits, tags, and pushes.
+    With --push, checks for clean master/main, bumps, commits, tags, and pushes.
     """
     import subprocess
 
@@ -144,8 +144,10 @@ def version_bump(major, tag, push):
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-        if branch != "master":
-            click.echo(f"Error: not on master branch (on {branch})", err=True)
+        if branch not in ("master", "main"):
+            click.echo(
+                f"Error: not on master/main branch (on {branch})", err=True
+            )
             raise SystemExit(1)
 
         status = subprocess.run(

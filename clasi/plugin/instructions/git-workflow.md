@@ -144,6 +144,24 @@ test state. This makes `git bisect` reliable and rollbacks safe.
 See the **tdd-cycle** skill for details on how commit points integrate
 with the red-green-refactor cycle.
 
+## Version Bumping
+
+After every substantive commit, run `clasi version bump` to advance the
+project version. Rationale: tools are installed editable (`pipx install -e`
+or `uv pip install -e`), so `clasi --version` is how a session tells which
+code it's actually running. If the version never changes, you can't tell
+whether your edit is live.
+
+- **After each commit**: run `clasi version bump` (no flags). This updates
+  the version source file. Commit that change too (a one-line follow-up
+  commit is fine: `chore: bump version`).
+- **When finishing a branch**: `close_sprint` bumps and tags automatically
+  at sprint close — do not bump manually immediately before it. For
+  non-sprint branches, run `clasi version bump --tag` before merging.
+- **On OOP commits direct to master**: bump after every commit.
+- **Don't batch**: one bump per commit keeps `git bisect` and "is my
+  change live?" checks honest.
+
 ## Safety Rules
 
 - **Never force-push** unless explicitly instructed by the human.

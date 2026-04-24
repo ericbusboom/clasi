@@ -310,25 +310,20 @@ def compute_next_version(major: int = 0) -> str:
     today_str = today.strftime("%Y%m%d")
     tag_pattern = build_tag_regex(parsed)
 
-    max_rev = 0
-    for tag in _get_existing_tags():
-        m = tag_pattern.match(tag.lstrip("v"))
+    def _extract_rev(candidate: str) -> int | None:
+        m = tag_pattern.match(candidate.lstrip("v"))
         if not m:
-            continue
+            return None
 
         # Check manual segments match
         manual_idx = 0
-        match = True
         for kind, _, _ in parsed:
             if kind == "manual":
                 tag_val = int(m.group(f"manual_{manual_idx}"))
                 expected = major if manual_idx == 0 else 0
                 if tag_val != expected:
-                    match = False
-                    break
+                    return None
                 manual_idx += 1
-        if not match:
-            continue
 
         # Check date segments match today
         tag_date = ""
@@ -340,10 +335,25 @@ def compute_next_version(major: int = 0) -> str:
             tag_date += m.group("day")
 
         if tag_date and tag_date != today_str[:len(tag_date)]:
-            continue
+            return None
 
         if "rev" in m.groupdict():
-            max_rev = max(max_rev, int(m.group("rev")))
+            return int(m.group("rev"))
+        return None
+
+    max_rev = 0
+    for tag in _get_existing_tags():
+        rev = _extract_rev(tag)
+        if rev is not None:
+            max_rev = max(max_rev, rev)
+
+    # Also consider the version currently in the project's version file,
+    # so consecutive bumps advance even when --tag is not used.
+    current = read_current_version()
+    if current:
+        rev = _extract_rev(current)
+        if rev is not None:
+            max_rev = max(max_rev, rev)
 
     manual_count = sum(1 for k, _, _ in parsed if k == "manual")
     values = [major] + [0] * (manual_count - 1)
@@ -405,16 +415,12 @@ def read_current_version(project_root: Path | None = None) -> str | None:
 def update_pyproject_version(version: str, pyproject_path: Path) -> None:
     """Update the version field in pyproject.toml."""
     content = pyproject_path.read_text(encoding="utf-8")
-    updated = re.sub(
-        r'^version\s*=\s*"[^"]*"',
-        f'version = "{version}"',
-        content,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    if updated == content:
+    pattern = re.compile(r'^version\s*=\s*"[^"]*"', re.MULTILINE)
+    if not pattern.search(content):
         raise ValueError(f"Could not find version field in {pyproject_path}")
-    pyproject_path.write_text(updated, encoding="utf-8")
+    updated = pattern.sub(f'version = "{version}"', content, count=1)
+    if updated != content:
+        pyproject_path.write_text(updated, encoding="utf-8")
 
 
 def update_package_json_version(version: str, package_path: Path) -> None:

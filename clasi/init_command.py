@@ -106,6 +106,13 @@ Before committing, verify:
 1. All tests pass (run the project's test suite).
 2. If on a sprint branch, the sprint has an execution lock.
 3. Commit message references the ticket ID if working on a ticket.
+
+After committing substantive changes, run `clasi version bump` to
+advance the version, then commit that change (`chore: bump version`).
+Tools are installed editable, so the version is how sessions tell
+which code is live — bump per commit, not just at sprint close.
+Skip the manual bump right before `close_sprint` (it bumps + tags).
+
 See `instructions/git-workflow` for full rules.
 """,
 }
@@ -203,7 +210,7 @@ def _create_rules(target: Path) -> bool:
     return changed
 
 
-_CLAUDE_MD_CONTENT = """\
+_CLAUDE_MD_BODY = """\
 # CLASI Software Engineering Process
 
 This project uses the CLASI SE process. Your role and workflow are
@@ -211,6 +218,10 @@ defined in `.claude/agents/team-lead/agent.md` — read it at session start.
 
 Available skills: run `/se` for a list.
 """
+
+_CLAUDE_MD_CONTENT = (
+    f"{_AGENTS_SECTION_START}\n{_CLAUDE_MD_BODY}{_AGENTS_SECTION_END}\n"
+)
 
 
 def _write_claude_md(target: Path) -> bool:
@@ -225,20 +236,38 @@ def _write_claude_md(target: Path) -> bool:
     if claude_md.exists():
         content = claude_md.read_text(encoding="utf-8")
 
-        # Replace old CLASI:START/END block if present
+        # Replace fenced CLASI:START/END block if present
         if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
             start_idx = content.index(_AGENTS_SECTION_START)
             end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
             new_content = content[:start_idx] + _CLAUDE_MD_CONTENT.strip() + content[end_idx:]
             if new_content != content:
                 claude_md.write_text(new_content, encoding="utf-8")
-                click.echo("  Updated: CLAUDE.md (replaced old CLASI section)")
+                click.echo("  Updated: CLAUDE.md (replaced CLASI section)")
                 return True
             click.echo("  Unchanged: CLAUDE.md")
             return False
 
-        # Check if our new content is already there
-        if "CLASI SE process" in content and "team-lead/agent.md" in content:
+        # Migrate fence-less CLASI section (written by older clasi init
+        # versions that dropped the markers) by replacing the heading
+        # block with the fenced template.
+        heading = "# CLASI Software Engineering Process"
+        if heading in content and "team-lead/agent.md" in content:
+            start_idx = content.index(heading)
+            # Find the end of the legacy block: next top-level heading or EOF.
+            search_from = start_idx + len(heading)
+            next_heading_idx = content.find("\n# ", search_from)
+            end_idx = len(content) if next_heading_idx == -1 else next_heading_idx + 1
+            new_content = (
+                content[:start_idx]
+                + _CLAUDE_MD_CONTENT.strip()
+                + "\n"
+                + content[end_idx:]
+            )
+            if new_content != content:
+                claude_md.write_text(new_content, encoding="utf-8")
+                click.echo("  Updated: CLAUDE.md (added CLASI section markers)")
+                return True
             click.echo("  Unchanged: CLAUDE.md")
             return False
 

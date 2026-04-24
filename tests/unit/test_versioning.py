@@ -266,6 +266,19 @@ class TestComputeNextVersion:
         result = compute_next_version(major=1)
         assert result == "1.0.0"
 
+    @patch("clasi.versioning.load_version_format", return_value="X+.YYYYMMDD.R+")
+    @patch("clasi.versioning.read_current_version", return_value="0.20260210.4")
+    @patch("clasi.versioning._get_existing_tags")
+    @patch("clasi.versioning.date", _mock_today(2026, 2, 10))
+    def test_advances_past_current_version_when_no_tag(
+        self, mock_tags, _mock_current, _mock_fmt
+    ):
+        # Simulates two consecutive `clasi version bump` (no --tag) calls:
+        # the first wrote 0.20260210.4 to pyproject.toml but created no tag,
+        # so without reading the file we would recompute 0.20260210.4 again.
+        mock_tags.return_value = []
+        assert compute_next_version() == "0.20260210.5"
+
 
 class TestDetectVersionFile:
     def test_detect_pyproject(self, tmp_path):
@@ -310,6 +323,14 @@ class TestUpdatePyprojectVersion:
 
         with pytest.raises(ValueError, match="Could not find version"):
             update_pyproject_version("0.20260210.1", pyproject)
+
+    def test_noop_when_version_already_matches(self, tmp_path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "test"\nversion = "0.20260210.1"\n')
+
+        update_pyproject_version("0.20260210.1", pyproject)
+
+        assert 'version = "0.20260210.1"' in pyproject.read_text()
 
 
 class TestUpdatePackageJsonVersion:
