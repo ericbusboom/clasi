@@ -3,6 +3,7 @@ CLI entry point for CLASI.
 
 Subcommands:
     clasi init [target]             — Initialize a repo for CLASI
+    clasi install [target]          — Synonym for clasi init
     clasi mcp                       — Run the MCP server (stdio)
     clasi tool plan-to-todo         — Convert plan file to TODO
     clasi version                   — Show the current project version
@@ -24,16 +25,25 @@ def cli():
 @cli.command()
 @click.argument("target", default=".", type=click.Path(exists=True))
 @click.option("--plugin", is_flag=True, help="Install as a Claude Code plugin instead of project-local .claude/ content.")
-def init(target, plugin):
+@click.option("--claude", "install_claude", is_flag=True, default=False,
+              help="Install Claude platform integration.")
+@click.option("--codex", "install_codex", is_flag=True, default=False,
+              help="Install Codex platform integration.")
+def init(target, plugin, install_claude, install_codex):
     """Initialize a repository for the CLASI SE process.
 
-    By default, copies skills, agents, and hooks into the project's
-    .claude/ directory (project-local mode). With --plugin, registers
-    the CLASI plugin with Claude Code (plugin mode).
+    By default (no --claude or --codex flag), installs Claude-only artifacts
+    for backward compatibility. With --claude and/or --codex, installs the
+    selected platform(s). With --plugin, registers the CLASI plugin with
+    Claude Code (plugin mode).
     """
     from clasi.init_command import run_init
 
-    run_init(target, plugin_mode=plugin)
+    run_init(target, plugin_mode=plugin, claude=install_claude, codex=install_codex)
+
+
+# Register 'install' as a synonym for 'init' — same callback, same options.
+cli.add_command(init, name="install")
 
 
 @cli.group()

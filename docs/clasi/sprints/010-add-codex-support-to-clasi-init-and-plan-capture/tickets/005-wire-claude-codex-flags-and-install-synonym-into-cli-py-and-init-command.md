@@ -1,7 +1,7 @@
 ---
 id: "005"
 title: "Wire --claude / --codex flags and install synonym into cli.py and init_command"
-status: todo
+status: done
 use-cases:
   - SUC-001
   - SUC-002
@@ -30,17 +30,17 @@ user-facing CLI. After this ticket, `clasi init --codex` and `clasi install --cl
 
 ## Acceptance Criteria
 
-- [ ] `clasi init --claude` installs Claude artifacts only (no Codex artifacts created).
-- [ ] `clasi init --codex` installs Codex artifacts only (no Claude artifacts created,
+- [x] `clasi init --claude` installs Claude artifacts only (no Codex artifacts created).
+- [x] `clasi init --codex` installs Codex artifacts only (no Claude artifacts created,
       except shared scaffolding: TODO dirs, log dir, `.mcp.json`).
-- [ ] `clasi init --claude --codex` installs both.
-- [ ] `clasi init` with no flag in non-interactive mode defaults to Claude only
+- [x] `clasi init --claude --codex` installs both.
+- [x] `clasi init` with no flag in non-interactive mode defaults to Claude only
       (backward compat).
-- [ ] `clasi install` is recognized by the CLI and behaves identically to `clasi init`
+- [x] `clasi install` is recognized by the CLI and behaves identically to `clasi init`
       with the same flags.
-- [ ] `clasi install --codex`, `clasi install --claude`, `clasi install --claude --codex`
+- [x] `clasi install --codex`, `clasi install --claude`, `clasi install --claude --codex`
       all work.
-- [ ] Tests in `tests/unit/test_cli_init.py` (new or extended) verify the above
+- [x] Tests in `tests/unit/test_cli_init.py` (new or extended) verify the above
       flag combinations produce the correct file sets in a `tmp_path`.
 
 ## Implementation Plan

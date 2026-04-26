@@ -81,7 +81,7 @@ def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
 def run_init(
     target: str,
     plugin_mode: bool = False,
-    claude: bool = True,
+    claude: bool = False,
     codex: bool = False,
 ) -> None:
     """Initialize a repository for the CLASI SE process.
@@ -90,13 +90,21 @@ def run_init(
     from the plugin/ directory into .claude/. In plugin mode, registers
     the CLASI plugin with Claude Code.
 
+    When neither *claude* nor *codex* is True (the non-interactive default),
+    the function defaults to Claude-only for backward compatibility.
+
     Args:
         target: Path to the target project root (string; resolved internally).
         plugin_mode: If True, run in plugin mode instead of project-local mode.
-        claude: If True (default), run the Claude platform installer.
-        codex: If True, run the Codex platform installer (no-op in this release).
+        claude: If True, run the Claude platform installer.
+        codex: If True, run the Codex platform installer.
     """
     from clasi.platforms.claude import install as claude_install
+    from clasi.platforms.codex import install as codex_install
+
+    # Non-interactive default: if neither flag was set, default to Claude only.
+    if not claude and not codex:
+        claude = True
 
     target_path = Path(target).resolve()
     mode_label = "plugin" if plugin_mode else "project-local"
@@ -112,14 +120,14 @@ def run_init(
         click.echo(f"  claude --plugin-dir {_PLUGIN_DIR}")
         click.echo("  Or: /plugin install clasi (from marketplace)")
         click.echo()
-    elif claude:
-        # Project-local mode: delegate all Claude-specific steps to the platform module.
-        claude_install(target_path, mcp_config)
+    else:
+        if claude:
+            # Project-local mode: delegate all Claude-specific steps to the platform module.
+            claude_install(target_path, mcp_config)
 
-    # Codex platform install (no-op in this release; reserved for ticket 004).
-    # if codex:
-    #     from clasi.platforms.codex import install as codex_install
-    #     codex_install(target_path)
+        if codex:
+            # Codex platform install.
+            codex_install(target_path, mcp_config)
 
     # Configure MCP server in .mcp.json at project root (shared setup).
     click.echo("MCP server configuration:")
