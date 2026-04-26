@@ -1,7 +1,7 @@
 ---
 id: "008"
 title: "Extend plan_to_todo.py with plan_to_todo_from_text and content hash dedup"
-status: todo
+status: done
 use-cases:
   - SUC-010
   - SUC-011
@@ -29,8 +29,8 @@ This ticket can run in parallel with tickets 002, 003, and 004 since it only mod
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plan_to_todo.py` exports `plan_to_todo_from_text` and `_content_hash`.
-- [ ] `plan_to_todo_from_text(text, todo_dir)`:
+- [x] `clasi/plan_to_todo.py` exports `plan_to_todo_from_text` and `_content_hash`.
+- [x] `plan_to_todo_from_text(text, todo_dir)`:
   - Extracts title from first `# Heading` in `text` (or uses `"untitled-plan"` slug).
   - Computes `source_hash = _content_hash(text)`.
   - Scans `todo_dir` (and `todo_dir/in-progress/`) for any existing `.md` file whose
@@ -46,10 +46,10 @@ This ticket can run in parallel with tickets 002, 003, and 004 since it only mod
     <text>
     ```
   - Returns the path of the created file.
-- [ ] `_content_hash("")` returns the SHA-256 of an empty string (no error).
-- [ ] `plan_to_todo_from_text("", todo_dir)` returns `None` (empty text is a no-op).
-- [ ] Existing `plan_to_todo()` function and its tests are unchanged and still pass.
-- [ ] Tests in `tests/unit/test_plan_to_todo.py` (extended) cover:
+- [x] `_content_hash("")` returns the SHA-256 of an empty string (no error).
+- [x] `plan_to_todo_from_text("", todo_dir)` returns `None` (empty text is a no-op).
+- [x] Existing `plan_to_todo()` function and its tests are unchanged and still pass.
+- [x] Tests in `tests/unit/test_plan_to_todo.py` (extended) cover:
   - `test_from_text_creates_todo`: plan text with a heading creates the expected file.
   - `test_from_text_empty_is_noop`: empty text returns `None`.
   - `test_from_text_dedup`: calling twice with the same text returns `None` on second call.
