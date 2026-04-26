@@ -19,7 +19,6 @@ calls with no flag default to Claude-only (backward compatible).
 """
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -34,23 +33,20 @@ from clasi.platforms.claude import RULES  # noqa: E402,F401
 
 
 def _detect_mcp_command(target: Path) -> dict:
-    """Detect the correct MCP server command for the target project.
+    """Return the MCP server command written into MCP config files.
 
-    Uses 'uv run clasi mcp' only when a pyproject.toml declares a
-    [project] table (the minimum uv needs to set up an environment).
-    A pyproject.toml that only carries tool config (e.g. [tool.black])
-    will make 'uv run' abort with "No `project` table found", so in
-    that case fall back to bare 'clasi mcp'.
+    Always uses the bare `clasi mcp` command. After `pip install clasi`
+    (or any other install method that places `clasi` on PATH), this is
+    the right invocation for both end users and CI. The previous
+    `uv run clasi mcp` form was only useful when CLASI was being
+    developed locally and broke for any project that didn't have uv or
+    didn't have a [project] table in pyproject.toml. Projects that
+    actually want `uv run` can edit their MCP config by hand.
+
+    The *target* parameter is retained for API compatibility but is not
+    consulted.
     """
-    for candidate in (target / "pyproject.toml", Path.cwd() / "pyproject.toml"):
-        if not candidate.exists():
-            continue
-        try:
-            text = candidate.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if re.search(r"(?m)^\[project\]\s*$", text):
-            return {"command": "uv", "args": ["run", "clasi", "mcp"]}
+    del target
     return {"command": "clasi", "args": ["mcp"]}
 
 

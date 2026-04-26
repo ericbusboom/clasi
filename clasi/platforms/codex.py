@@ -32,21 +32,12 @@ import tomli_w
 _PLUGIN_DIR = Path(__file__).parent.parent / "plugin"
 
 # ---------------------------------------------------------------------------
-# Marker constants (shared pattern with claude.py)
+# CLASI section content (shared template via clasi.platforms._markers)
 # ---------------------------------------------------------------------------
 
-_AGENTS_SECTION_START = "<!-- CLASI:START -->"
-_AGENTS_SECTION_END = "<!-- CLASI:END -->"
-
-_AGENTS_MD_BODY = """\
-# CLASI Software Engineering Process
-
-This project uses the CLASI SE process. Skills are in `.agents/skills/se/SKILL.md`.
-Read that file at session start for the full list of available commands.
-"""
-
-_AGENTS_MD_CONTENT = (
-    f"{_AGENTS_SECTION_START}\n{_AGENTS_MD_BODY}{_AGENTS_SECTION_END}\n"
+_CODEX_ENTRY_POINT = (
+    "Skills are in `.agents/skills/` — start with the `se` skill at "
+    "`.agents/skills/se/SKILL.md`."
 )
 
 # ---------------------------------------------------------------------------
@@ -62,41 +53,10 @@ _CLASI_STOP_HOOK = {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
 
 
 def _write_agents_md(target: Path) -> None:
-    """Write or update AGENTS.md with the CLASI marker block.
+    """Write or update AGENTS.md with the CLASI marker block."""
+    from clasi.platforms._markers import write_section
 
-    If AGENTS.md already exists, updates the CLASI:START/END block if present,
-    or appends the block if not. User content outside the block is preserved.
-    If AGENTS.md does not exist, creates it with the CLASI block.
-    """
-    agents_md = target / "AGENTS.md"
-
-    if agents_md.exists():
-        content = agents_md.read_text(encoding="utf-8")
-
-        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
-            start_idx = content.index(_AGENTS_SECTION_START)
-            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            new_content = (
-                content[:start_idx]
-                + _AGENTS_MD_CONTENT.strip()
-                + content[end_idx:]
-            )
-            if new_content != content:
-                agents_md.write_text(new_content, encoding="utf-8")
-                click.echo("  Updated: AGENTS.md (replaced CLASI section)")
-            else:
-                click.echo("  Unchanged: AGENTS.md")
-            return
-
-        # Append the CLASI block
-        if not content.endswith("\n"):
-            content += "\n"
-        content += "\n" + _AGENTS_MD_CONTENT
-        agents_md.write_text(content, encoding="utf-8")
-        click.echo("  Updated: AGENTS.md (appended CLASI section)")
-    else:
-        agents_md.write_text(_AGENTS_MD_CONTENT, encoding="utf-8")
-        click.echo("  Created: AGENTS.md")
+    write_section(target / "AGENTS.md", entry_point=_CODEX_ENTRY_POINT)
 
 
 # ---------------------------------------------------------------------------
@@ -166,17 +126,32 @@ def _write_codex_hooks(target: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _install_skill(target: Path) -> None:
-    """Copy the SE skill from the bundled plugin to .agents/skills/se/SKILL.md."""
-    source = _PLUGIN_DIR / "skills" / "se" / "SKILL.md"
-    if not source.exists():
-        click.echo("  Warning: plugin/skills/se/SKILL.md not found, skipping")
+def _install_skills(target: Path) -> None:
+    """Copy every bundled skill into .agents/skills/<name>/SKILL.md.
+
+    Mirrors the Claude installer, which copies every skill in plugin/skills/
+    to .claude/skills/. Codex needs the full skill set for the SE process
+    to function; installing only the `se` skill is not enough.
+    """
+    plugin_skills = _PLUGIN_DIR / "skills"
+    if not plugin_skills.exists():
+        click.echo("  Warning: plugin/skills/ not found, skipping")
         return
 
-    dest = target / ".agents" / "skills" / "se" / "SKILL.md"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    click.echo("  Wrote: .agents/skills/se/SKILL.md")
+    target_skills = target / ".agents" / "skills"
+    for skill_dir in sorted(plugin_skills.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        source_skill_md = skill_dir / "SKILL.md"
+        if not source_skill_md.exists():
+            continue
+        dest_dir = target_skills / skill_dir.name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_skill_md = dest_dir / "SKILL.md"
+        dest_skill_md.write_text(
+            source_skill_md.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        click.echo(f"  Wrote: .agents/skills/{skill_dir.name}/SKILL.md")
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +189,7 @@ def install(target: Path, mcp_config: dict) -> None:
     click.echo()
 
     click.echo("Codex skills:")
-    _install_skill(target)
+    _install_skills(target)
     click.echo()
 
 
@@ -242,25 +217,8 @@ def uninstall(target: Path) -> None:
     click.echo()
 
     # --- AGENTS.md ---
-    agents_md = target / "AGENTS.md"
-    if agents_md.exists():
-        content = agents_md.read_text(encoding="utf-8")
-        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
-            start_idx = content.index(_AGENTS_SECTION_START)
-            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            before = content[:start_idx].rstrip("\n")
-            after = content[end_idx:]
-            new_content = before + ("\n" if after.strip() else "") + after
-            if new_content.strip():
-                agents_md.write_text(new_content, encoding="utf-8")
-                click.echo("  Removed: AGENTS.md (CLASI section)")
-            else:
-                agents_md.unlink()
-                click.echo("  Deleted: AGENTS.md (was only CLASI content)")
-        else:
-            click.echo("  Unchanged: AGENTS.md (no CLASI section found)")
-    else:
-        click.echo("  Skipped: AGENTS.md (not found)")
+    from clasi.platforms._markers import strip_section
+    strip_section(target / "AGENTS.md")
 
     # --- .codex/config.toml ---
     config_path = target / ".codex" / "config.toml"
@@ -319,18 +277,33 @@ def uninstall(target: Path) -> None:
     else:
         click.echo("  Skipped: .codex/hooks.json (not found)")
 
-    # --- .agents/skills/se/SKILL.md ---
-    skill_file = target / ".agents" / "skills" / "se" / "SKILL.md"
-    skill_dir = skill_file.parent
-    if skill_file.exists():
-        skill_file.unlink()
-        click.echo("  Deleted: .agents/skills/se/SKILL.md")
-        # Remove the directory if now empty
-        if skill_dir.exists() and not any(skill_dir.iterdir()):
-            skill_dir.rmdir()
-            click.echo("  Deleted: .agents/skills/se/ (empty)")
+    # --- .agents/skills/ ---
+    skills_dir = target / ".agents" / "skills"
+    if skills_dir.exists() and _PLUGIN_DIR.exists():
+        plugin_skills = _PLUGIN_DIR / "skills"
+        if plugin_skills.exists():
+            for skill_dir in plugin_skills.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                target_skill = skills_dir / skill_dir.name
+                if target_skill.exists():
+                    skill_md = target_skill / "SKILL.md"
+                    if skill_md.exists():
+                        skill_md.unlink()
+                    if not any(target_skill.iterdir()):
+                        target_skill.rmdir()
+                    click.echo(f"  Removed: .agents/skills/{skill_dir.name}/")
+        # Remove .agents/skills/ if now empty
+        if skills_dir.exists() and not any(skills_dir.iterdir()):
+            skills_dir.rmdir()
+            click.echo("  Removed: .agents/skills/ (empty)")
+        # Remove .agents/ if now empty
+        agents_root = target / ".agents"
+        if agents_root.exists() and not any(agents_root.iterdir()):
+            agents_root.rmdir()
+            click.echo("  Removed: .agents/ (empty)")
     else:
-        click.echo("  Skipped: .agents/skills/se/SKILL.md (not found)")
+        click.echo("  Skipped: .agents/skills/ (not found)")
 
     click.echo()
     click.echo("Done! Codex platform integration removed.")

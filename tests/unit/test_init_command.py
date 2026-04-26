@@ -235,29 +235,19 @@ class TestRunInit:
         cmd = _detect_mcp_command(target)
         assert cmd == {"command": "clasi", "args": ["mcp"]}
 
-    def test_detect_mcp_command_pyproject_with_project_table(
+    def test_detect_mcp_command_always_uses_clasi(
         self, tmp_path, monkeypatch
     ):
-        monkeypatch.chdir(tmp_path)
-        target = tmp_path / "target"
-        target.mkdir()
-        (target / "pyproject.toml").write_text(
-            '[project]\nname = "x"\nversion = "0.1"\n', encoding="utf-8"
-        )
-        cmd = _detect_mcp_command(target)
-        assert cmd == {"command": "uv", "args": ["run", "clasi", "mcp"]}
-
-    def test_detect_mcp_command_pyproject_tool_only(
-        self, tmp_path, monkeypatch
-    ):
-        """A pyproject.toml with only tool config (no [project] table) must
-        not trigger 'uv run' — uv would abort with "No `project` table found".
+        """`clasi mcp` is the canonical invocation regardless of pyproject.toml
+        contents. The previous `uv run` heuristic was dev-only and broke for
+        end-user installs without uv. Projects that want `uv run` can edit
+        their MCP config by hand.
         """
         monkeypatch.chdir(tmp_path)
         target = tmp_path / "target"
         target.mkdir()
         (target / "pyproject.toml").write_text(
-            '[tool.black]\nline-length = 100\n', encoding="utf-8"
+            '[project]\nname = "x"\nversion = "0.1"\n', encoding="utf-8"
         )
         cmd = _detect_mcp_command(target)
         assert cmd == {"command": "clasi", "args": ["mcp"]}
@@ -543,7 +533,11 @@ class TestPlatformsClaude:
         assert data_a["permissions"]["allow"] == data_b["permissions"]["allow"]
 
     def test_uninstall_removes_clasi_section_from_claude_md(self, tmp_path):
-        """uninstall() strips the CLASI:START/END block from CLAUDE.md."""
+        """uninstall() strips the CLASI:START/END block from CLAUDE.md.
+
+        When CLAUDE.md held only the CLASI block, the file is removed
+        entirely (matches the AGENTS.md behavior in the Codex installer).
+        """
         target = tmp_path / "repo"
         target.mkdir()
         mcp_config = _detect_mcp_command(target)
@@ -554,9 +548,34 @@ class TestPlatformsClaude:
 
         claude_uninstall(target)
 
+        # File should be gone (CLASI was its only content), or if it still
+        # exists it must contain no CLASI markers.
+        if claude_md.exists():
+            content = claude_md.read_text(encoding="utf-8")
+            assert "<!-- CLASI:START -->" not in content
+            assert "<!-- CLASI:END -->" not in content
+
+    def test_uninstall_preserves_user_content_in_claude_md(self, tmp_path):
+        """User content outside the CLASI block survives uninstall."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+
+        claude_md = target / "CLAUDE.md"
+        existing = claude_md.read_text(encoding="utf-8")
+        claude_md.write_text(
+            "# My Project\n\nHand-written notes.\n\n" + existing,
+            encoding="utf-8",
+        )
+
+        claude_uninstall(target)
+
+        assert claude_md.exists()
         content = claude_md.read_text(encoding="utf-8")
+        assert "# My Project" in content
+        assert "Hand-written notes." in content
         assert "<!-- CLASI:START -->" not in content
-        assert "<!-- CLASI:END -->" not in content
 
     def test_uninstall_removes_rule_files(self, tmp_path):
         """uninstall() deletes CLASI-managed rule files."""

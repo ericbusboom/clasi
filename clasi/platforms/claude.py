@@ -116,82 +116,21 @@ See `instructions/git-workflow` for full rules.
 # CLAUDE.md helpers
 # ---------------------------------------------------------------------------
 
-# Marker used to find/replace the CLASI section in CLAUDE.md.
-_AGENTS_SECTION_START = "<!-- CLASI:START -->"
-_AGENTS_SECTION_END = "<!-- CLASI:END -->"
-
-_CLAUDE_MD_BODY = """\
-# CLASI Software Engineering Process
-
-This project uses the CLASI SE process. Your role and workflow are
-defined in `.claude/agents/team-lead/agent.md` — read it at session start.
-
-Available skills: run `/se` for a list.
-"""
-
-_CLAUDE_MD_CONTENT = (
-    f"{_AGENTS_SECTION_START}\n{_CLAUDE_MD_BODY}{_AGENTS_SECTION_END}\n"
+_CLAUDE_ENTRY_POINT = (
+    "Your role and workflow are defined in "
+    "`.claude/agents/team-lead/agent.md` — read it at session start."
 )
 
 
 def _write_claude_md(target: Path) -> bool:
-    """Write a minimal CLAUDE.md that points to the team-lead agent definition.
+    """Write or update CLAUDE.md with the CLASI section."""
+    from clasi.platforms._markers import write_section
 
-    If CLAUDE.md already exists, appends the CLASI section (or updates it
-    if the old CLASI:START/END markers are present). If it doesn't exist,
-    creates it.
-    """
-    claude_md = target / "CLAUDE.md"
-
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
-
-        # Replace fenced CLASI:START/END block if present
-        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
-            start_idx = content.index(_AGENTS_SECTION_START)
-            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            new_content = content[:start_idx] + _CLAUDE_MD_CONTENT.strip() + content[end_idx:]
-            if new_content != content:
-                claude_md.write_text(new_content, encoding="utf-8")
-                click.echo("  Updated: CLAUDE.md (replaced CLASI section)")
-                return True
-            click.echo("  Unchanged: CLAUDE.md")
-            return False
-
-        # Migrate fence-less CLASI section (written by older clasi init
-        # versions that dropped the markers) by replacing the heading
-        # block with the fenced template.
-        heading = "# CLASI Software Engineering Process"
-        if heading in content and "team-lead/agent.md" in content:
-            start_idx = content.index(heading)
-            # Find the end of the legacy block: next top-level heading or EOF.
-            search_from = start_idx + len(heading)
-            next_heading_idx = content.find("\n# ", search_from)
-            end_idx = len(content) if next_heading_idx == -1 else next_heading_idx + 1
-            new_content = (
-                content[:start_idx]
-                + _CLAUDE_MD_CONTENT.strip()
-                + "\n"
-                + content[end_idx:]
-            )
-            if new_content != content:
-                claude_md.write_text(new_content, encoding="utf-8")
-                click.echo("  Updated: CLAUDE.md (added CLASI section markers)")
-                return True
-            click.echo("  Unchanged: CLAUDE.md")
-            return False
-
-        # Append
-        if not content.endswith("\n"):
-            content += "\n"
-        content += "\n" + _CLAUDE_MD_CONTENT
-        claude_md.write_text(content, encoding="utf-8")
-        click.echo("  Updated: CLAUDE.md (appended CLASI section)")
-        return True
-    else:
-        claude_md.write_text(_CLAUDE_MD_CONTENT, encoding="utf-8")
-        click.echo("  Created: CLAUDE.md")
-        return True
+    return write_section(
+        target / "CLAUDE.md",
+        entry_point=_CLAUDE_ENTRY_POINT,
+        legacy_match_substr="team-lead/agent.md",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -399,22 +338,8 @@ def uninstall(target: Path) -> None:
     click.echo()
 
     # --- CLAUDE.md ---
-    claude_md = target / "CLAUDE.md"
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
-        if _AGENTS_SECTION_START in content and _AGENTS_SECTION_END in content:
-            start_idx = content.index(_AGENTS_SECTION_START)
-            end_idx = content.index(_AGENTS_SECTION_END) + len(_AGENTS_SECTION_END)
-            # Remove the block (and any leading newline before it)
-            before = content[:start_idx].rstrip("\n")
-            after = content[end_idx:]
-            new_content = before + ("\n" if after.strip() else "") + after
-            claude_md.write_text(new_content, encoding="utf-8")
-            click.echo("  Removed: CLAUDE.md (CLASI section)")
-        else:
-            click.echo("  Unchanged: CLAUDE.md (no CLASI section found)")
-    else:
-        click.echo("  Skipped: CLAUDE.md (not found)")
+    from clasi.platforms._markers import strip_section
+    strip_section(target / "CLAUDE.md")
 
     # --- .claude/skills/ ---
     skills_dir = target / ".claude" / "skills"
