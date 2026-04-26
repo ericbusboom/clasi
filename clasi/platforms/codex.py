@@ -42,9 +42,31 @@ _CODEX_ENTRY_POINT = (
 
 # ---------------------------------------------------------------------------
 # CLASI Stop hook entry
+#
+# Codex hooks.json schema (https://developers.openai.com/codex/hooks):
+#   The Stop array contains wrapper objects. Each wrapper has a "hooks" list
+#   of handler objects with type, command (shell string), and timeout.
+#
+# Known limitation (openai/codex#17532):
+#   Repo-local .codex/hooks.json may not fire in interactive Codex sessions.
+#   Only ~/.codex/hooks.json is reliably loaded. Until Codex resolves this,
+#   users must manually copy .codex/hooks.json to ~/.codex/hooks.json for
+#   the Stop hook to fire. See docs/README.md for the workaround.
+#   Installing to ~/.codex/ is out of scope for `clasi install --codex`.
 # ---------------------------------------------------------------------------
 
-_CLASI_STOP_HOOK = {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
+# Old flat format (wrong — kept only for backward-compat removal detection).
+_CLASI_STOP_HOOK_OLD = {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
+
+# New wrapper format matching the Codex hooks specification.
+_CLASI_STOP_HOOK_WRAPPER = {
+    "hooks": [
+        {"type": "command", "command": "clasi hook codex-plan-to-todo", "timeout": 30}
+    ]
+}
+
+# Command string used to identify the CLASI handler in the nested hooks list.
+_CLASI_HOOK_COMMAND = "clasi hook codex-plan-to-todo"
 
 
 # ---------------------------------------------------------------------------
@@ -93,11 +115,28 @@ def _write_codex_config(target: Path, mcp_config: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_clasi_wrapper_entry(entry: object) -> bool:
+    """Return True if *entry* is a CLASI Stop hook wrapper (new format)."""
+    if not isinstance(entry, dict):
+        return False
+    inner = entry.get("hooks", [])
+    if not isinstance(inner, list) or not inner:
+        return False
+    return inner[0].get("command") == _CLASI_HOOK_COMMAND
+
+
 def _write_codex_hooks(target: Path) -> None:
     """Write or merge .codex/hooks.json with the CLASI Stop hook entry.
 
     Reads existing JSON if present, merges the CLASI Stop hook entry, and
     writes back. Avoids duplicating the entry if already present.
+
+    Backward compatibility: if the Stop list contains an old flat-format
+    entry ``{"command": "clasi", "args": [...]}`` it is removed and replaced
+    with the new wrapper format (see _CLASI_STOP_HOOK_WRAPPER).
+
+    Schema source: https://developers.openai.com/codex/hooks
+    Firing limitation: see module-level comment on openai/codex#17532.
     """
     hooks_path = target / ".codex" / "hooks.json"
     hooks_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,9 +152,13 @@ def _write_codex_hooks(target: Path) -> None:
     hooks = data.setdefault("hooks", {})
     stop_list = hooks.setdefault("Stop", [])
 
-    # Add the CLASI entry only if not already present
-    if _CLASI_STOP_HOOK not in stop_list:
-        stop_list.append(_CLASI_STOP_HOOK)
+    # Remove old flat-format entry if present (backward compat migration).
+    if _CLASI_STOP_HOOK_OLD in stop_list:
+        stop_list.remove(_CLASI_STOP_HOOK_OLD)
+
+    # Add the new wrapper entry only if not already present.
+    if not any(_is_clasi_wrapper_entry(e) for e in stop_list):
+        stop_list.append(_CLASI_STOP_HOOK_WRAPPER)
 
     hooks_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     click.echo("  Wrote: .codex/hooks.json")
@@ -258,8 +301,14 @@ def uninstall(target: Path) -> None:
             data = {}
         hooks = data.get("hooks", {})
         stop_list = hooks.get("Stop", [])
-        if _CLASI_STOP_HOOK in stop_list:
-            stop_list.remove(_CLASI_STOP_HOOK)
+        # Remove both old flat-format and new wrapper-format CLASI entries.
+        before_len = len(stop_list)
+        stop_list[:] = [
+            e for e in stop_list
+            if e != _CLASI_STOP_HOOK_OLD and not _is_clasi_wrapper_entry(e)
+        ]
+        removed = len(stop_list) < before_len
+        if removed:
             if not stop_list:
                 del hooks["Stop"]
             if not hooks:

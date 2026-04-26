@@ -12,7 +12,13 @@ try:
 except ImportError:
     import tomli as tomllib  # type: ignore[no-redef]
 
-from clasi.platforms.codex import install, uninstall
+from clasi.platforms.codex import (
+    _CLASI_HOOK_COMMAND,
+    _CLASI_STOP_HOOK_OLD,
+    _CLASI_STOP_HOOK_WRAPPER,
+    install,
+    uninstall,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -60,12 +66,17 @@ def test_codex_install_creates_all_artifacts(project: Path) -> None:
     assert data["mcp_servers"]["clasi"]["command"] == "clasi"
     assert data["codex_hooks"] is True
 
-    # 3. .codex/hooks.json
+    # 3. .codex/hooks.json — new wrapper format
     hooks_path = project / ".codex" / "hooks.json"
     assert hooks_path.exists(), ".codex/hooks.json should be created"
     hooks_data = json.loads(hooks_path.read_text(encoding="utf-8"))
     stop_list = hooks_data["hooks"]["Stop"]
-    assert {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]} in stop_list
+    # Wrapper entry must be present; old flat entry must be absent.
+    assert _CLASI_STOP_HOOK_WRAPPER in stop_list
+    assert _CLASI_STOP_HOOK_OLD not in stop_list
+    # "args" key must not appear in any handler within our wrapper.
+    for handler in _CLASI_STOP_HOOK_WRAPPER["hooks"]:
+        assert "args" not in handler
 
     # 4. .agents/skills/se/SKILL.md
     skill = project / ".agents" / "skills" / "se" / "SKILL.md"
@@ -96,15 +107,14 @@ def test_codex_install_idempotent(project: Path) -> None:
     assert len([k for k in data.get("mcp_servers", {}) if k == "clasi"]) == 1
     assert data["codex_hooks"] is True
 
-    # .codex/hooks.json: Stop list contains exactly one CLASI entry
+    # .codex/hooks.json: Stop list contains exactly one CLASI wrapper entry
     hooks_path = project / ".codex" / "hooks.json"
     hooks_data = json.loads(hooks_path.read_text(encoding="utf-8"))
     stop_list = hooks_data["hooks"]["Stop"]
-    clasi_entries = [
-        e for e in stop_list
-        if e == {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
-    ]
+    clasi_entries = [e for e in stop_list if e == _CLASI_STOP_HOOK_WRAPPER]
     assert len(clasi_entries) == 1
+    # Old flat format must not appear at all.
+    assert _CLASI_STOP_HOOK_OLD not in stop_list
 
     # .agents/skills/se/SKILL.md: still exists and is a regular file
     skill = project / ".agents" / "skills" / "se" / "SKILL.md"
@@ -199,10 +209,12 @@ def test_codex_uninstall_preserves_other_stop_hooks(project: Path) -> None:
     """uninstall() leaves non-CLASI Stop hook entries in .codex/hooks.json intact."""
     install(project, _MCP_CONFIG)
 
-    # Add a user-defined Stop hook entry
+    # Add a user-defined Stop hook entry (in wrapper format, like a real user entry).
     hooks_path = project / ".codex" / "hooks.json"
     data = json.loads(hooks_path.read_text(encoding="utf-8"))
-    data["hooks"]["Stop"].append({"command": "my-tool", "args": ["--check"]})
+    data["hooks"]["Stop"].append(
+        {"hooks": [{"type": "command", "command": "my-tool --check", "timeout": 10}]}
+    )
     hooks_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     uninstall(project)
@@ -210,12 +222,15 @@ def test_codex_uninstall_preserves_other_stop_hooks(project: Path) -> None:
     assert hooks_path.exists(), "hooks.json should survive when other hooks present"
     remaining = json.loads(hooks_path.read_text(encoding="utf-8"))
     stop_list = remaining.get("hooks", {}).get("Stop", [])
-    clasi_entries = [
-        e for e in stop_list
-        if e == {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
-    ]
+    # CLASI wrapper entry must be gone.
+    clasi_entries = [e for e in stop_list if e == _CLASI_STOP_HOOK_WRAPPER]
     assert len(clasi_entries) == 0
-    user_entries = [e for e in stop_list if e.get("command") == "my-tool"]
+    # User entry must remain.
+    user_entries = [
+        e for e in stop_list
+        if isinstance(e, dict)
+        and any(h.get("command") == "my-tool --check" for h in e.get("hooks", []))
+    ]
     assert len(user_entries) == 1
 
 
@@ -249,3 +264,114 @@ def test_codex_uninstall_partial_only_skill(project: Path) -> None:
     skill.write_text("# Skill\n", encoding="utf-8")
     uninstall(project)
     assert not skill.exists()
+
+
+# ---------------------------------------------------------------------------
+# test_clasi_stop_hook_exact_spec_shape — round-trip parse asserts exact spec
+# ---------------------------------------------------------------------------
+
+
+def test_clasi_stop_hook_exact_spec_shape(project: Path) -> None:
+    """install() writes hooks.json with the exact Codex spec wrapper structure.
+
+    Round-trips through json.dumps / json.loads and asserts the precise shape:
+    {
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {"type": "command",
+                         "command": "clasi hook codex-plan-to-todo",
+                         "timeout": 30}
+                    ]
+                }
+            ]
+        }
+    }
+    """
+    install(project, _MCP_CONFIG)
+
+    hooks_path = project / ".codex" / "hooks.json"
+    raw = hooks_path.read_text(encoding="utf-8")
+    data = json.loads(raw)  # round-trip through JSON parser
+
+    stop_list = data["hooks"]["Stop"]
+    assert len(stop_list) == 1, "Stop list should have exactly one CLASI entry"
+
+    wrapper = stop_list[0]
+    assert isinstance(wrapper, dict), "Stop entry must be a dict (wrapper object)"
+    assert set(wrapper.keys()) == {"hooks"}, "Wrapper must have only a 'hooks' key"
+
+    inner_hooks = wrapper["hooks"]
+    assert isinstance(inner_hooks, list), "'hooks' value must be a list"
+    assert len(inner_hooks) == 1, "Inner hooks list must have exactly one handler"
+
+    handler = inner_hooks[0]
+    assert handler["type"] == "command", "handler type must be 'command'"
+    assert handler["command"] == "clasi hook codex-plan-to-todo"
+    assert handler["timeout"] == 30
+    assert "args" not in handler, "'args' key must not appear in handler"
+
+
+# ---------------------------------------------------------------------------
+# test_codex_install_replaces_old_flat_format — backward-compat migration
+# ---------------------------------------------------------------------------
+
+
+def test_codex_install_replaces_old_flat_format(project: Path) -> None:
+    """install() replaces an existing old flat-format entry, not duplicate it."""
+    # Seed hooks.json with the old wrong schema.
+    hooks_path = project / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    old_data = {
+        "hooks": {
+            "Stop": [
+                {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
+            ]
+        }
+    }
+    hooks_path.write_text(json.dumps(old_data, indent=2) + "\n", encoding="utf-8")
+
+    install(project, _MCP_CONFIG)
+
+    data = json.loads(hooks_path.read_text(encoding="utf-8"))
+    stop_list = data["hooks"]["Stop"]
+
+    # Old flat entry must be gone.
+    assert _CLASI_STOP_HOOK_OLD not in stop_list, "Old flat entry must be removed"
+    # New wrapper entry must appear exactly once.
+    clasi_entries = [e for e in stop_list if e == _CLASI_STOP_HOOK_WRAPPER]
+    assert len(clasi_entries) == 1, "New wrapper entry must appear exactly once"
+
+
+# ---------------------------------------------------------------------------
+# test_codex_uninstall_removes_new_format_entry
+# ---------------------------------------------------------------------------
+
+
+def test_codex_uninstall_removes_new_format_entry(project: Path) -> None:
+    """uninstall() removes the new wrapper-format entry from hooks.json."""
+    install(project, _MCP_CONFIG)
+    uninstall(project)
+
+    hooks_path = project / ".codex" / "hooks.json"
+    # File should be deleted since hooks.json contained only CLASI content.
+    assert not hooks_path.exists(), "hooks.json should be deleted (was only CLASI content)"
+
+
+def test_codex_uninstall_handles_old_format_gracefully(project: Path) -> None:
+    """uninstall() removes old flat-format entries without error."""
+    hooks_path = project / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    old_data = {
+        "hooks": {
+            "Stop": [
+                {"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}
+            ]
+        }
+    }
+    hooks_path.write_text(json.dumps(old_data, indent=2) + "\n", encoding="utf-8")
+
+    # Should not raise; old flat entry should be removed.
+    uninstall(project)
+    assert not hooks_path.exists(), "hooks.json should be deleted after old entry removed"

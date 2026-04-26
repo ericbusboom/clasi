@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Fix .codex/hooks.json schema and verify firing behavior
-status: todo
+status: done
 use-cases:
   - SUC-003
 depends-on: []
@@ -27,20 +27,20 @@ sessions (GitHub issue openai/codex#17532).
 
 ## Acceptance Criteria
 
-- [ ] `_CLASI_STOP_HOOK` (or the replacement constant/structure) produces the following
+- [x] `_CLASI_STOP_HOOK` (or the replacement constant/structure) produces the following
       exact JSON shape when serialized:
       ```json
       { "hooks": { "Stop": [ { "hooks": [ { "type": "command",
         "command": "clasi hook codex-plan-to-todo", "timeout": 30 } ] } ] } }
       ```
-- [ ] `"args"` key is absent from every hook handler entry in the written file.
-- [ ] Re-running `clasi install --codex` on a project that already has the old flat-format
+- [x] `"args"` key is absent from every hook handler entry in the written file.
+- [x] Re-running `clasi install --codex` on a project that already has the old flat-format
       entry replaces it (not duplicates it).
-- [ ] `clasi uninstall --codex` removes the new-format wrapper entry; it does not error on
+- [x] `clasi uninstall --codex` removes the new-format wrapper entry; it does not error on
       a file that contains the old format.
-- [ ] Unit test in `tests/unit/test_platform_codex.py` round-trips the emitted JSON through
+- [x] Unit test in `tests/unit/test_platform_codex.py` round-trips the emitted JSON through
       `json.loads` and asserts the exact structure.
-- [ ] A code comment or docstring in `codex.py` documents the repo-local firing limitation
+- [x] A code comment or docstring in `codex.py` documents the repo-local firing limitation
       (openai/codex#17532) and the manual workaround (copy to `~/.codex/hooks.json`).
 
 ## Implementation Plan
