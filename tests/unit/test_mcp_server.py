@@ -53,7 +53,6 @@ class TestToolRegistration:
         "create_sprint",
         "insert_sprint",
         "create_ticket",
-        "create_overview",
         "list_sprints",
         "list_tickets",
         "get_sprint_status",
@@ -102,7 +101,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 30
+        assert len(registered) == 29
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

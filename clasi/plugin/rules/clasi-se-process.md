@@ -36,7 +36,6 @@ SE process:
 
 | Tool | Description |
 |------|-------------|
-| `create_overview()` | Create project overview document |
 | `create_sprint(title)` | Create a new sprint directory |
 | `create_ticket(sprint_id, title)` | Create a ticket in a sprint |
 | `list_sprints(status?)` | List sprints |

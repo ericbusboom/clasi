@@ -23,14 +23,12 @@ written specification. There are no existing `overview.md`,
 1. **Dispatch to the sprint-planner agent** via the Agent tool with:
    - The specification file path
    - Instruction to write all three documents to `docs/clasi/design/`
-   - Instruction to call the `create_overview` MCP tool after writing
-     `overview.md`
 
    The sprint-planner agent writes all three documents. Do not write
    them yourself.
 
 2. **Await completion.** The sprint-planner returns when all three
-   documents are written and `create_overview` has been called.
+   documents are written.
 
 3. **Report the result** to the stakeholder — confirm the files
    created and any key decisions made.

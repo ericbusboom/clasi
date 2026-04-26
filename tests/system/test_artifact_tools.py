@@ -440,24 +440,6 @@ class TestInsertSprint:
         assert (sprints / "005-delta").is_dir()
 
 
-class TestCreateOverview:
-    def test_creates_overview(self, work_dir):
-        from clasi.tools.artifact_tools import create_overview
-        result = json.loads(create_overview())
-        path = work_dir / "docs" / "clasi" / "design" / "overview.md"
-        assert path.exists()
-        content = path.read_text()
-        assert "# Project Overview" in content
-        assert "## Problem Statement" in content
-        assert "## Sprint Roadmap" in content
-
-    def test_rejects_duplicate(self, work_dir):
-        from clasi.tools.artifact_tools import create_overview
-        create_overview()
-        with pytest.raises(ValueError, match="already exists"):
-            create_overview()
-
-
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
     """Advance a sprint all the way to executing phase."""
     db_path = work_dir / "docs" / "clasi" / ".clasi.db"

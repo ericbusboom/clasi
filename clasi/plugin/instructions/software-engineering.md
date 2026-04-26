@@ -102,7 +102,8 @@ top-level files remain valid:
 - **Technical Plan** (`docs/clasi/technical-plan.md`) — Architecture, tech stack,
   component design, data model, APIs, deployment, security.
 
-New projects should use `create_overview` instead of the three separate tools.
+New projects should use the single `docs/clasi/design/overview.md` instead
+of the three separate top-level files.
 
 ### Diagrams in Architecture Documents
 

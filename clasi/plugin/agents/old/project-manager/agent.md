@@ -49,9 +49,6 @@ Three documents in `docs/clasi/design/`:
    actor, preconditions, main flow, postconditions, and error flows
    where applicable.
 
-After writing `overview.md`, call the `create_overview` MCP tool. This
-step is required — do not skip it.
-
 ### Critical Rule
 
 **Do not lose information.** The overview adds context. The specification

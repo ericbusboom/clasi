@@ -29,7 +29,6 @@ from clasi.templates import (
     SPRINT_USECASES_TEMPLATE,
     SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
-    OVERVIEW_TEMPLATE,
 )
 from clasi.ticket import Ticket
 from clasi.todo import Todo
@@ -425,26 +424,6 @@ def create_ticket(
     result = ticket.to_dict()
     result["template_content"] = TICKET_TEMPLATE.format(id=ticket.id, title=title)
     return json.dumps(result, indent=2)
-
-
-@server.tool()
-def create_overview() -> str:
-    """Create the top-level project overview (docs/clasi/design/overview.md).
-
-    This is the recommended way to start a new project. The overview
-    replaces the separate brief, use cases, and architecture files
-    with a single lightweight document. Detailed planning lives in sprints.
-
-    Returns an error if the file already exists.
-    """
-    path = get_project().design_dir / "overview.md"
-    if path.exists():
-        raise ValueError(f"Overview already exists: {path}")
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(OVERVIEW_TEMPLATE, encoding="utf-8")
-
-    return json.dumps({"path": str(path)}, indent=2)
 
 
 # --- Query tools (ticket 009) ---
