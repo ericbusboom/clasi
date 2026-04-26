@@ -55,6 +55,28 @@ class Ticket:
         val = self.frontmatter.get("todo", "")
         return val if val else None
 
+    def completes_todo_for(self, filename: str) -> bool:
+        """Return whether moving this ticket to done should archive a linked TODO.
+
+        Reads the ``completes_todo`` frontmatter field and resolves it for the
+        given TODO filename.
+
+        Resolution rules:
+        - Absent or ``True`` (scalar): return ``True`` (default — archive the TODO).
+        - ``False`` (scalar): return ``False`` (suppress archival for all linked TODOs).
+        - Mapping ``{filename: bool, ...}``: look up ``filename``; default ``True``
+          if the key is absent.
+        - Any other unexpected type: return ``True`` (safe default).
+        """
+        val = self.frontmatter.get("completes_todo")
+        if val is None or val is True:
+            return True
+        if val is False:
+            return False
+        if isinstance(val, dict):
+            return bool(val.get(filename, True))
+        return True  # fallback for unexpected types
+
     @property
     def use_cases(self) -> list[str]:
         """From frontmatter 'use-cases' field."""

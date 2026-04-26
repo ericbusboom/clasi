@@ -259,3 +259,78 @@ class TestTicketReopen:
         assert "new_path" in result
         assert "old_status" in result
         assert "new_status" in result
+
+
+def _make_ticket_with_completes_todo(tmp_path, completes_todo_yaml: str) -> Ticket:
+    """Create a ticket with an explicit completes_todo frontmatter line."""
+    proj = Project(tmp_path)
+    sprint_dir = proj.sprints_dir / "001-test-sprint"
+    sprint_dir.mkdir(parents=True, exist_ok=True)
+    tickets_dir = sprint_dir / "tickets"
+    tickets_dir.mkdir(exist_ok=True)
+    (tickets_dir / "done").mkdir(exist_ok=True)
+
+    (sprint_dir / "sprint.md").write_text(
+        '---\nid: "001"\ntitle: "Test Sprint"\nstatus: active\n'
+        "branch: sprint/001-test-sprint\n---\n# Sprint 001\n",
+        encoding="utf-8",
+    )
+
+    ticket_path = tickets_dir / "001-fix-bug.md"
+    ticket_path.write_text(
+        f'---\nid: "001"\ntitle: "Fix Bug"\nstatus: todo\n'
+        f"use-cases: []\ndepends-on: []\ntodo: \"\"\n"
+        f"{completes_todo_yaml}"
+        f"---\n# Fix Bug\n\n## Description\n\nSome work.\n",
+        encoding="utf-8",
+    )
+
+    sprint = Sprint(sprint_dir, proj)
+    return Ticket(ticket_path, sprint)
+
+
+class TestCompletesTodoFor:
+    """Tests for Ticket.completes_todo_for()."""
+
+    def test_absent_field_returns_true(self, tmp_path):
+        """No completes_todo field → default True (backward-compatible)."""
+        _, _, t = _setup(tmp_path)
+        assert t.completes_todo_for("some-todo.md") is True
+
+    def test_scalar_true_returns_true(self, tmp_path):
+        """completes_todo: true → True."""
+        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: true\n")
+        assert t.completes_todo_for("some-todo.md") is True
+
+    def test_scalar_false_returns_false(self, tmp_path):
+        """completes_todo: false → False."""
+        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: false\n")
+        assert t.completes_todo_for("some-todo.md") is False
+
+    def test_scalar_false_applies_to_any_filename(self, tmp_path):
+        """completes_todo: false suppresses all filenames uniformly."""
+        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: false\n")
+        assert t.completes_todo_for("alpha.md") is False
+        assert t.completes_todo_for("beta.md") is False
+
+    def test_map_explicit_false(self, tmp_path):
+        """Map with filename → false returns False for that filename."""
+        t = _make_ticket_with_completes_todo(
+            tmp_path, "completes_todo:\n  umbrella.md: false\n"
+        )
+        assert t.completes_todo_for("umbrella.md") is False
+
+    def test_map_absent_key_defaults_to_true(self, tmp_path):
+        """Map without the queried filename defaults to True."""
+        t = _make_ticket_with_completes_todo(
+            tmp_path, "completes_todo:\n  umbrella.md: false\n"
+        )
+        # A different filename not in the map → True
+        assert t.completes_todo_for("single-sprint.md") is True
+
+    def test_map_explicit_true(self, tmp_path):
+        """Map with filename → true returns True."""
+        t = _make_ticket_with_completes_todo(
+            tmp_path, "completes_todo:\n  my-todo.md: true\n"
+        )
+        assert t.completes_todo_for("my-todo.md") is True

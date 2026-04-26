@@ -95,6 +95,28 @@ def _is_ticket_done(ticket_ref: str) -> bool:
         return False
 
 
+def _any_ticket_suppresses_todo(ticket_refs: list[str], todo_filename: str) -> bool:
+    """Return True if any referencing ticket has completes_todo: false for the given TODO.
+
+    Iterates over all ticket references (as 'sprint_id-ticket_id' strings) and
+    calls ``Ticket.completes_todo_for(todo_filename)`` on each one that can be
+    loaded.  If any ticket returns ``False``, archival should be suppressed.
+
+    Returns False (do not suppress) if no tickets can be loaded or all return True.
+    """
+    for ticket_ref in ticket_refs:
+        parts = ticket_ref.split("-", 1)
+        if len(parts) != 2:
+            continue
+        sprint_id, ticket_id = parts
+        try:
+            sprint = get_project().get_sprint(sprint_id)
+            ticket = sprint.get_ticket(ticket_id)
+        except ValueError:
+            continue
+        if not ticket.completes_todo_for(todo_filename):
+            return True
+    return False
 
 
 # --- Create tools (ticket 008) ---
@@ -585,8 +607,11 @@ def move_ticket_to_done(path: str) -> str:
             # Check if ALL referencing tickets are done
             all_done = all(_is_ticket_done(ref_ticket_id) for ref_ticket_id in ref_tickets)
             if all_done and ref_tickets:
-                todo.move_to_done()
-                completed_todos.append(todo_filename)
+                # Check if any referencing ticket suppresses archival for this TODO
+                any_suppressed = _any_ticket_suppresses_todo(ref_tickets, todo_filename)
+                if not any_suppressed:
+                    todo.move_to_done()
+                    completed_todos.append(todo_filename)
         if completed_todos:
             result["completed_todos"] = completed_todos
 
