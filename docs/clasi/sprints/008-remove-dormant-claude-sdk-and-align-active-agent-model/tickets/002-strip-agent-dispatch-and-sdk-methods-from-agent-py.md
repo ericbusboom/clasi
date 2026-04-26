@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Strip Agent.dispatch() and SDK methods from agent.py"
-status: todo
+status: done
 use-cases: ["SUC-002"]
 depends-on: ["001"]
 github-issue: ""
@@ -27,13 +27,13 @@ with a concise description of the module's remaining purpose.
 
 ## Acceptance Criteria
 
-- [ ] `Agent.dispatch()` method is removed from `clasi/agent.py`.
-- [ ] `Agent._build_role_guard_hooks()` method is removed.
-- [ ] `Agent._build_retry_prompt()` method is removed.
-- [ ] No import of `claude_agent_sdk` remains anywhere in `agent.py` (including lazy/conditional imports inside removed methods).
-- [ ] The module-level docstring is updated to describe the content-loading purpose only.
-- [ ] `render_prompt()`, `definition`, `contract`, `tier`, `model`, and all other read-only properties continue to function correctly.
-- [ ] `uv run pytest tests/unit/test_agent.py -k "not sdk and not dispatch and not role_guard and not retry"` passes.
+- [x] `Agent.dispatch()` method is removed from `clasi/agent.py`.
+- [x] `Agent._build_role_guard_hooks()` method is removed.
+- [x] `Agent._build_retry_prompt()` method is removed.
+- [x] No import of `claude_agent_sdk` remains anywhere in `agent.py` (including lazy/conditional imports inside removed methods).
+- [x] The module-level docstring is updated to describe the content-loading purpose only.
+- [x] `render_prompt()`, `definition`, `contract`, `tier`, `model`, and all other read-only properties continue to function correctly.
+- [x] `uv run pytest tests/unit/test_agent.py -k "not sdk and not dispatch and not role_guard and not retry"` passes.
 
 ## Implementation Plan
 
