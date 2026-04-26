@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook codex-plan-to-todo",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

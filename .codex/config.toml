@@ -1,0 +1,7 @@
+codex_hooks = true
+
+[mcp_servers.clasi]
+command = "clasi"
+args = [
+    "mcp",
+]
