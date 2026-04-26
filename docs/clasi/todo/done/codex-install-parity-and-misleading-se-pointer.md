@@ -1,13 +1,13 @@
 ---
-status: in-progress
+status: done
 sprint: '011'
 tickets:
-- 011-002
-- 011-003
-- 011-004
-- 011-005
-- 011-006
-- 011-007
+- '002'
+- '003'
+- '004'
+- '005'
+- '006'
+- '007'
 ---
 
 # Codex installer correctness pass — fix hooks schema, add sub-agents, drop misleading `/se` pointer

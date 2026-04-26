@@ -1,13 +1,8 @@
 ---
-status: in-progress
+status: done
 sprint: '011'
 tickets:
-- 011-001
-- 011-003
-- 011-004
-- 011-005
-- 011-006
-- 011-007
+- '001'
 ---
 
 # `close_sprint` fails at the rebase/merge step on its own dirty `.clasi.db` write

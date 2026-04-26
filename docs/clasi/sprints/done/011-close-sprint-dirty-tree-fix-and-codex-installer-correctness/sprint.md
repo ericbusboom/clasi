@@ -1,20 +1,20 @@
 ---
-id: "011"
-title: "close_sprint dirty-tree fix and Codex installer correctness"
-status: planning
+id: '011'
+title: close_sprint dirty-tree fix and Codex installer correctness
+status: done
 branch: sprint/011-close-sprint-dirty-tree-fix-and-codex-installer-correctness
 todos:
-  - close-sprint-rebase-fails-on-dirty-clasi-db.md
-  - codex-install-parity-and-misleading-se-pointer.md
+- close-sprint-rebase-fails-on-dirty-clasi-db.md
+- codex-install-parity-and-misleading-se-pointer.md
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
-  - SUC-005
-  - SUC-006
-  - SUC-007
-  - SUC-008
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
+- SUC-008
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
