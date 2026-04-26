@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Update ticket template and SE instruction to document completes_todo field"
-status: todo
+status: done
 use-cases:
   - SUC-005
 depends-on:
@@ -21,11 +21,11 @@ This ticket is independent of 002 (no runtime dependency) but is sequenced after
 
 ## Acceptance Criteria
 
-- [ ] `clasi/templates/ticket.md` YAML frontmatter block includes `completes_todo` with a comment explaining its purpose and default
-- [ ] The template comment makes clear that `true` is the default and that `false` suppresses TODO archival when the ticket is moved to done
-- [ ] `clasi/plugin/instructions/software-engineering.md` documents the `completes_todo` field in the ticket frontmatter reference section (or adds one if absent)
-- [ ] The instruction text explains: the field, its three forms (absent/scalar/map), the default, and when to use `false` (multi-sprint umbrella TODOs)
-- [ ] No other template or instruction files require changes
+- [x] `clasi/templates/ticket.md` YAML frontmatter block includes `completes_todo` with a comment explaining its purpose and default
+- [x] The template comment makes clear that `true` is the default and that `false` suppresses TODO archival when the ticket is moved to done
+- [x] `clasi/plugin/instructions/software-engineering.md` documents the `completes_todo` field in the ticket frontmatter reference section (or adds one if absent)
+- [x] The instruction text explains: the field, its three forms (absent/scalar/map), the default, and when to use `false` (multi-sprint umbrella TODOs)
+- [x] No other template or instruction files require changes
 
 ## Implementation Plan
 
