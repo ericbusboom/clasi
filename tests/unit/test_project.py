@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from clasi.project import Project
 
 
@@ -59,3 +61,23 @@ class TestProject:
         db1 = proj.db
         db2 = proj.db
         assert db1 is db2
+
+
+class TestGetAgent:
+    """Test Project.get_agent() fallback removal."""
+
+    def test_get_agent_architect_raises_value_error(self, tmp_path):
+        """architect lives in old/ and must not be returned by get_agent."""
+        proj = Project(tmp_path)
+        with pytest.raises(ValueError):
+            proj.get_agent("architect")
+
+    def test_get_agent_error_message_lists_active_agents(self, tmp_path):
+        """ValueError for an unknown agent names the active agents."""
+        proj = Project(tmp_path)
+        with pytest.raises(ValueError) as exc_info:
+            proj.get_agent("architect")
+        msg = str(exc_info.value)
+        assert "programmer" in msg
+        assert "sprint-planner" in msg
+        assert "team-lead" in msg

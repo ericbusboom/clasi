@@ -1,7 +1,7 @@
 ---
 id: "004"
 title: "Remove Project.get_agent() fallback into agents/old/"
-status: todo
+status: done
 use-cases: ["SUC-003"]
 depends-on: []
 github-issue: ""
@@ -25,11 +25,11 @@ The `old/` directory itself stays on disk as an archive. Only the runtime fallba
 
 ## Acceptance Criteria
 
-- [ ] `Project.get_agent()` does not search `clasi/plugin/agents/old/` — the `old_agent_dir` lookup block (project.py lines 193-195) is removed.
-- [ ] `list_agents()` continues to exclude `old/` (already done via `d.name != "old"` filter; verify no change needed).
-- [ ] Calling `project.get_agent("architect")` raises `ValueError`.
-- [ ] The `ValueError` message lists the active agents (`programmer`, `sprint-planner`, `team-lead`).
-- [ ] `uv run pytest tests/unit/test_project.py` passes.
+- [x] `Project.get_agent()` does not search `clasi/plugin/agents/old/` — the `old_agent_dir` lookup block (project.py lines 193-195) is removed.
+- [x] `list_agents()` continues to exclude `old/` (already done via `d.name != "old"` filter; verify no change needed).
+- [x] Calling `project.get_agent("architect")` raises `ValueError`.
+- [x] The `ValueError` message lists the active agents (`programmer`, `sprint-planner`, `team-lead`).
+- [x] `uv run pytest tests/unit/test_project.py` passes.
 
 ## Implementation Plan
 

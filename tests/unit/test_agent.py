@@ -144,10 +144,10 @@ class TestProjectAgentManagement:
         assert isinstance(agent, Agent)
         assert agent.tier == 1
 
-    def test_get_agent_architect_is_agent(self, project):
-        agent = project.get_agent("architect")
-        assert isinstance(agent, Agent)
-        assert agent.tier == 2
+    def test_get_agent_architect_raises_value_error(self, project):
+        """architect is in old/ and must not be accessible via get_agent."""
+        with pytest.raises(ValueError, match="architect"):
+            project.get_agent("architect")
 
     def test_get_agent_raises_on_unknown(self, project):
         with pytest.raises(ValueError, match="No agent found"):
