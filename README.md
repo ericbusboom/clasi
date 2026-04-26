@@ -1,7 +1,7 @@
 # CLASI
 
-An MCP server that gives Claude Code (and GitHub Copilot) a structured
-software engineering process. It provides agents, skills, and instructions
+An MCP server that gives Claude Code a structured software engineering
+process. It provides agents, skills, and instructions
 that guide an AI assistant through the full lifecycle of a project: from
 requirements through architecture, sprint planning, implementation, and
 release.
@@ -44,9 +44,8 @@ This creates:
 | `.claude/skills/*/SKILL.md` | Slash-command stubs (`/next`, `/todo`, `/status`, `/project-initiation`) |
 | `.claude/settings.local.json` | MCP permission allowlist |
 | `.mcp.json` | MCP server configuration pointing to `clasi mcp` |
-| `.github/copilot/instructions/` | Mirror of the SE process rule for GitHub Copilot |
 
-After init, open the project in Claude Code or VS Code with Copilot.
+After init, open the project in Claude Code.
 The MCP server starts automatically when the AI connects.
 
 ## Typical Workflow
@@ -102,12 +101,13 @@ complete.
 
 ## How It Works
 
-CLASI is an MCP (Model Context Protocol) server. When Claude Code or
-Copilot connects, the server exposes tools that the AI calls to read
-process definitions and manage artifacts:
+CLASI is an MCP (Model Context Protocol) server. When Claude Code
+connects, the server exposes tools that the AI calls to read process
+definitions and manage artifacts:
 
-- **Agents** — role definitions (architect, technical lead, code reviewer, etc.)
-  that shape the AI's behavior for specific tasks
+- **Agents** — role definitions (`team-lead`, `sprint-planner`, `programmer`)
+  that shape the AI's behavior for specific tasks. See `docs/design/overview.md`
+  for the full agent architecture.
 - **Skills** — step-by-step workflows (plan a sprint, execute a ticket, close
   a sprint) that the AI follows
 - **Instructions** — coding standards, git workflow rules, and testing

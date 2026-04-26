@@ -1,7 +1,7 @@
 ---
 id: "007"
 title: "Update README to remove Copilot references and old agent architecture description"
-status: todo
+status: done
 use-cases: ["SUC-004"]
 depends-on: ["005"]
 github-issue: ""
@@ -28,11 +28,11 @@ todo: ""
 
 ## Acceptance Criteria
 
-- [ ] README opening description no longer mentions GitHub Copilot as a supported tool.
-- [ ] The `.github/copilot/instructions/` row is removed from any setup table.
-- [ ] No Mermaid diagram or prose in README names old agent roles as active agents.
-- [ ] README accurately describes CLASI with `team-lead`, `sprint-planner`, and `programmer`, or defers to `docs/design/overview.md` for architecture detail.
-- [ ] `uv run pytest` passes after the README-only change.
+- [x] README opening description no longer mentions GitHub Copilot as a supported tool.
+- [x] The `.github/copilot/instructions/` row is removed from any setup table.
+- [x] No Mermaid diagram or prose in README names old agent roles as active agents.
+- [x] README accurately describes CLASI with `team-lead`, `sprint-planner`, and `programmer`, or defers to `docs/design/overview.md` for architecture detail.
+- [x] `uv run pytest` passes after the README-only change.
 
 ## Implementation Plan
 
