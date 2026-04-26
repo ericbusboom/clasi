@@ -10,6 +10,7 @@ from clasi.init_command import (
     _detect_mcp_command,
     _PLUGIN_DIR,
 )
+from clasi.platforms.claude import install as claude_install, uninstall as claude_uninstall
 
 
 @pytest.fixture
@@ -477,3 +478,132 @@ class TestRules:
 
         actual = stale.read_text(encoding="utf-8")
         assert actual == RULES["clasi-artifacts.md"]
+
+
+class TestPlatformsClaude:
+    """Integration tests for clasi.platforms.claude install/uninstall."""
+
+    def test_install_produces_same_file_set_as_run_init(self, tmp_path):
+        """claude.install() produces the same Claude-specific artifacts as run_init().
+
+        run_init() also creates .mcp.json and docs/ directories (shared setup).
+        This test verifies only the Claude-owned subset of files is created by install().
+        """
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+
+        # Skills, agents, rules — same as run_init
+        assert (target / ".claude" / "skills" / "se" / "SKILL.md").exists()
+        assert (target / ".claude" / "agents" / "programmer" / "agent.md").exists()
+        for filename in RULES:
+            assert (target / ".claude" / "rules" / filename).exists()
+
+        # settings.local.json permission
+        data = json.loads(
+            (target / ".claude" / "settings.local.json").read_text(encoding="utf-8")
+        )
+        assert "mcp__clasi__*" in data["permissions"]["allow"]
+
+        # CLAUDE.md written
+        assert (target / "CLAUDE.md").exists()
+        assert "CLASI Software Engineering Process" in (
+            target / "CLAUDE.md"
+        ).read_text(encoding="utf-8")
+
+    def test_run_init_delegates_to_claude_install(self, tmp_path):
+        """run_init() and standalone claude_install() produce the same Claude artifacts.
+
+        Compare the two approaches on fresh directories: all Claude-managed
+        files must be byte-identical.
+        """
+        target_a = tmp_path / "a"
+        target_a.mkdir()
+        run_init(str(target_a))
+
+        target_b = tmp_path / "b"
+        target_b.mkdir()
+        mcp_config = _detect_mcp_command(target_b)
+        claude_install(target_b, mcp_config)
+
+        # Compare rule files
+        for filename in RULES:
+            content_a = (target_a / ".claude" / "rules" / filename).read_text(encoding="utf-8")
+            content_b = (target_b / ".claude" / "rules" / filename).read_text(encoding="utf-8")
+            assert content_a == content_b, f"Rule {filename} differs"
+
+        # Compare settings.local.json
+        data_a = json.loads(
+            (target_a / ".claude" / "settings.local.json").read_text(encoding="utf-8")
+        )
+        data_b = json.loads(
+            (target_b / ".claude" / "settings.local.json").read_text(encoding="utf-8")
+        )
+        assert data_a["permissions"]["allow"] == data_b["permissions"]["allow"]
+
+    def test_uninstall_removes_clasi_section_from_claude_md(self, tmp_path):
+        """uninstall() strips the CLASI:START/END block from CLAUDE.md."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+
+        claude_md = target / "CLAUDE.md"
+        assert "<!-- CLASI:START -->" in claude_md.read_text(encoding="utf-8")
+
+        claude_uninstall(target)
+
+        content = claude_md.read_text(encoding="utf-8")
+        assert "<!-- CLASI:START -->" not in content
+        assert "<!-- CLASI:END -->" not in content
+
+    def test_uninstall_removes_rule_files(self, tmp_path):
+        """uninstall() deletes CLASI-managed rule files."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+        claude_uninstall(target)
+
+        rules_dir = target / ".claude" / "rules"
+        for filename in RULES:
+            assert not (rules_dir / filename).exists(), f"Rule {filename} not removed"
+
+    def test_uninstall_preserves_custom_rule_files(self, tmp_path):
+        """uninstall() does not delete user-added rule files."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+
+        custom = target / ".claude" / "rules" / "my-team-rule.md"
+        custom.write_text("---\npaths:\n  - \"**\"\n---\nCustom rule.\n", encoding="utf-8")
+
+        claude_uninstall(target)
+
+        assert custom.exists(), "Custom rule was incorrectly removed"
+
+    def test_uninstall_removes_mcp_permission(self, tmp_path):
+        """uninstall() removes mcp__clasi__* from settings.local.json."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+        claude_uninstall(target)
+
+        settings_local = target / ".claude" / "settings.local.json"
+        if settings_local.exists():
+            data = json.loads(settings_local.read_text(encoding="utf-8"))
+            allow = data.get("permissions", {}).get("allow", [])
+            assert "mcp__clasi__*" not in allow
+
+    def test_uninstall_idempotent(self, tmp_path):
+        """Running uninstall twice does not raise errors."""
+        target = tmp_path / "repo"
+        target.mkdir()
+        mcp_config = _detect_mcp_command(target)
+        claude_install(target, mcp_config)
+        claude_uninstall(target)
+        # Second call should not raise
+        claude_uninstall(target)

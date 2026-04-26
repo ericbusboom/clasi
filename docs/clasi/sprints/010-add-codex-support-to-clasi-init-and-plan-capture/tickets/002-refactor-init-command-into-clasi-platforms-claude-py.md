@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Refactor init_command into clasi/platforms/claude.py"
-status: todo
+status: done
 use-cases:
   - SUC-001
   - SUC-002
@@ -34,20 +34,20 @@ After this ticket:
 
 ## Acceptance Criteria
 
-- [ ] `clasi/platforms/__init__.py` exists (may be empty).
-- [ ] `clasi/platforms/claude.py` contains `install(target: Path, mcp_config: dict) -> None`
+- [x] `clasi/platforms/__init__.py` exists (may be empty).
+- [x] `clasi/platforms/claude.py` contains `install(target: Path, mcp_config: dict) -> None`
       and `uninstall(target: Path) -> None`.
-- [ ] `install` contains the logic for: `_write_claude_md`, `_install_plugin_content`,
+- [x] `install` contains the logic for: `_write_claude_md`, `_install_plugin_content`,
       `_update_settings_json`, `_create_rules`, and settings.json hook update.
-- [ ] `uninstall` removes the CLASI marker block from `CLAUDE.md`, CLASI-managed
+- [x] `uninstall` removes the CLASI marker block from `CLAUDE.md`, CLASI-managed
       `.claude/skills/`, `.claude/agents/`, `.claude/rules/`, CLASI hook entries in
       `.claude/settings.json`, and the CLASI MCP permission from `.claude/settings.local.json`.
-- [ ] `clasi/init_command.py` calls `clasi.platforms.claude.install(target_path, mcp_config)`
+- [x] `clasi/init_command.py` calls `clasi.platforms.claude.install(target_path, mcp_config)`
       for the Claude path. Shared steps (MCP detection, TODO dirs, log dir) remain in
       `init_command.py`.
-- [ ] All existing `tests/unit/test_init_command.py` tests pass without modification to
+- [x] All existing `tests/unit/test_init_command.py` tests pass without modification to
       the tests themselves.
-- [ ] No new behavior is introduced — this is refactor only.
+- [x] No new behavior is introduced — this is refactor only.
 
 ## Implementation Plan
 
