@@ -1,6 +1,7 @@
 """Unit tests for TODO management MCP tools."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,6 +39,14 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
     advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
+
+
+def _advance_to_executing(work_dir, sprint_id: str) -> None:
+    """Advance a sprint all the way to executing phase."""
+    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    _advance_to_ticketing(work_dir, sprint_id)
+    acquire_lock(str(db_path), sprint_id)
+    advance_phase(str(db_path), sprint_id)  # ticketing → executing
 
 
 class TestListTodos:
@@ -337,6 +346,128 @@ class TestCloseSprintTodoHandling:
         # Unlinked should still be in active dir
         assert (todo / "unlinked.md").exists()
         assert not (todo / "done" / "unlinked.md").exists()
+
+    def test_close_sprint_allows_deferred_todo(self, work_dir):
+        """Legacy path: in-progress TODO with completes_todo: false does not block close.
+
+        A ticket in the sprint has completes_todo: false for the TODO, so the
+        TODO is intentionally deferred (it spans future sprints). The sprint
+        should close without reporting the TODO as unresolved.
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        todo = work_dir / "docs" / "clasi" / "todo"
+        todo.mkdir(parents=True, exist_ok=True)
+        (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
+
+        result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
+        ticket_path = result["path"]
+
+        # Mark ticket as done but set completes_todo: false — deferred pattern
+        fm = read_frontmatter(ticket_path)
+        fm["status"] = "done"
+        fm["completes_todo"] = False
+        write_frontmatter(ticket_path, fm)
+
+        # Close sprint — TODO is still in-progress but deferred, so no error
+        result = json.loads(close_sprint("001"))
+        assert "unresolved_todos" not in result
+        # TODO must still be in in-progress/ (not archived)
+        assert (todo / "in-progress" / "umbrella.md").exists()
+
+    def test_close_sprint_blocks_unresolved_todo(self, work_dir):
+        """Legacy path: in-progress TODO with no completes_todo: false is an error.
+
+        All tickets referencing the TODO have completes_todo: true (default).
+        The TODO should have been archived but was not — the sprint close must
+        report it as unresolved.
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        todo = work_dir / "docs" / "clasi" / "todo"
+        todo.mkdir(parents=True, exist_ok=True)
+        (todo / "unresolved.md").write_text("---\nstatus: pending\n---\n\n# Unresolved\n")
+
+        result = json.loads(create_ticket("001", "Task", todo="unresolved.md"))
+        ticket_path = result["path"]
+
+        # Mark ticket done but do NOT set completes_todo: false — default (true)
+        fm = read_frontmatter(ticket_path)
+        fm["status"] = "done"
+        write_frontmatter(ticket_path, fm)
+        # Do NOT call move_ticket_to_done so the TODO stays in in-progress/
+
+        result = json.loads(close_sprint("001"))
+        assert "unresolved_todos" in result
+        assert "unresolved.md" in result["unresolved_todos"]
+
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.1")
+    @patch("subprocess.run")
+    def test_close_sprint_full_allows_deferred_todo(
+        self, mock_run, mock_ver, mock_tag, work_dir
+    ):
+        """Full lifecycle path (_close_sprint_full): deferred TODO does not block precondition.
+
+        A ticket has completes_todo: false. The precondition check (step 1b)
+        should skip the TODO and let close_sprint proceed past the precondition
+        step. With mocked subprocess, the sprint closes successfully.
+        """
+        from clasi.tools.artifact_tools import move_ticket_to_done, update_ticket_status
+
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+
+        todo = work_dir / "docs" / "clasi" / "todo"
+        todo.mkdir(parents=True, exist_ok=True)
+        (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
+
+        result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
+        ticket_path = result["path"]
+
+        # Set completes_todo: false before moving ticket to done
+        fm = read_frontmatter(ticket_path)
+        fm["completes_todo"] = False
+        write_frontmatter(ticket_path, fm)
+
+        update_ticket_status(ticket_path, "done")
+        move_ticket_to_done(ticket_path)
+
+        # TODO must still be in in-progress/ (suppressed by completes_todo: false)
+        assert (todo / "in-progress" / "umbrella.md").exists()
+
+        # Mock subprocess calls for the full lifecycle
+        def _ok(returncode=0, stdout="", stderr=""):
+            r = MagicMock()
+            r.returncode = returncode
+            r.stdout = stdout
+            r.stderr = stderr
+            return r
+
+        mock_run.side_effect = [
+            _ok(0, "all tests passed"),  # pytest
+            _ok(0),  # git rev-parse --verify branch (merge check)
+            _ok(1),  # git merge-base --is-ancestor (not yet merged)
+            _ok(0),  # git checkout master
+            _ok(0),  # git merge --no-ff
+            _ok(0),  # git push --tags
+            _ok(0),  # git rev-parse --verify branch (delete check)
+            _ok(0),  # git branch -d
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        # Must succeed — precondition step must not have blocked on the deferred TODO
+        assert result.get("status") == "success", (
+            f"Expected success but got: {result}"
+        )
+        # A precondition error would have "step": "precondition" in the error block;
+        # success confirms the deferred TODO did not trigger a precondition failure
+        assert "error" not in result
 
 
 class TestMoveTicketToDoneCompletesTodoGuard:

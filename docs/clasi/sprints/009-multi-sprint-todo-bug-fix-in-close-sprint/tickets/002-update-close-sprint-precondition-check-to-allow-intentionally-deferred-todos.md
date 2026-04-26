@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Update close_sprint precondition check to allow intentionally deferred TODOs"
-status: todo
+status: done
 use-cases:
   - SUC-002
 depends-on:
@@ -23,11 +23,11 @@ This ticket depends on 009-001 because it calls `Ticket.completes_todo_for`.
 
 ## Acceptance Criteria
 
-- [ ] `_close_sprint_full` step 1b does not raise an error for an in-progress TODO when at least one ticket in the sprint has `completes_todo: false` for that TODO filename
-- [ ] `_close_sprint_full` step 1b still raises an error for an in-progress TODO when all linked tickets in the sprint have `completes_todo: true` (or absent) — i.e., the TODO should have been archived but was not
-- [ ] `_close_sprint_legacy` receives the same guard (parallel code path)
-- [ ] The repair path (step 1b self-repair: `todo.status in ("done", "complete", "completed")`) is unaffected — TODOs that are already marked done are still moved
-- [ ] TODOs not referenced by any ticket in the sprint are unaffected
+- [x] `_close_sprint_full` step 1b does not raise an error for an in-progress TODO when at least one ticket in the sprint has `completes_todo: false` for that TODO filename
+- [x] `_close_sprint_full` step 1b still raises an error for an in-progress TODO when all linked tickets in the sprint have `completes_todo: true` (or absent) — i.e., the TODO should have been archived but was not
+- [x] `_close_sprint_legacy` receives the same guard (parallel code path)
+- [x] The repair path (step 1b self-repair: `todo.status in ("done", "complete", "completed")`) is unaffected — TODOs that are already marked done are still moved
+- [x] TODOs not referenced by any ticket in the sprint are unaffected
 
 ## Implementation Plan
 
