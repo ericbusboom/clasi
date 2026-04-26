@@ -1,7 +1,7 @@
 ---
 id: "004"
 title: "Add clasi/platforms/codex.py — Codex installer and uninstaller"
-status: todo
+status: done
 use-cases:
   - SUC-003
   - SUC-004
@@ -39,27 +39,27 @@ Depends on ticket 001 (tomli/tomli-w) and ticket 002 (platforms package exists).
 
 ## Acceptance Criteria
 
-- [ ] `clasi/platforms/codex.py` defines `install(target: Path, mcp_config: dict) -> None`.
-- [ ] `install` creates or updates `AGENTS.md` with a CLASI marker block
+- [x] `clasi/platforms/codex.py` defines `install(target: Path, mcp_config: dict) -> None`.
+- [x] `install` creates or updates `AGENTS.md` with a CLASI marker block
       (`<!-- CLASI:START -->` / `<!-- CLASI:END -->`).
-- [ ] `install` writes `.codex/config.toml` with `[mcp_servers.clasi]` using the
+- [x] `install` writes `.codex/config.toml` with `[mcp_servers.clasi]` using the
       provided `mcp_config` dict (same detection result as Claude path).
-- [ ] `install` writes `.codex/hooks.json` with a `Stop` hook entry:
+- [x] `install` writes `.codex/hooks.json` with a `Stop` hook entry:
       `{"command": "clasi", "args": ["hook", "codex-plan-to-todo"]}`.
-- [ ] `install` writes `.agents/skills/se/SKILL.md` sourced from the bundled plugin
+- [x] `install` writes `.agents/skills/se/SKILL.md` sourced from the bundled plugin
       skills content (same file served to Claude's `.claude/skills/se/SKILL.md`).
-- [ ] Re-running `install` is idempotent: CLASI section in `AGENTS.md` is updated, not
+- [x] Re-running `install` is idempotent: CLASI section in `AGENTS.md` is updated, not
       duplicated; TOML and JSON entries are merged, not duplicated.
-- [ ] `clasi/platforms/codex.py` defines `uninstall(target: Path) -> None`.
-- [ ] `uninstall` removes the CLASI marker block from `AGENTS.md` (preserves rest).
-- [ ] `uninstall` removes the `clasi` key from `[mcp_servers]` in `.codex/config.toml`
+- [x] `clasi/platforms/codex.py` defines `uninstall(target: Path) -> None`.
+- [x] `uninstall` removes the CLASI marker block from `AGENTS.md` (preserves rest).
+- [x] `uninstall` removes the `clasi` key from `[mcp_servers]` in `.codex/config.toml`
       and the `codex_hooks` key if present; leaves other keys intact.
-- [ ] `uninstall` removes the CLASI Stop hook entry from `.codex/hooks.json`; leaves
+- [x] `uninstall` removes the CLASI Stop hook entry from `.codex/hooks.json`; leaves
       other entries intact.
-- [ ] `uninstall` removes `.agents/skills/se/SKILL.md`; leaves `.agents/skills/`
+- [x] `uninstall` removes `.agents/skills/se/SKILL.md`; leaves `.agents/skills/`
       subtrees it did not create.
-- [ ] TOML read/write uses the `tomllib`/`tomli` shim and `tomli_w` (from ticket 001).
-- [ ] Tests in `tests/unit/test_platform_codex.py` cover install, idempotency, uninstall,
+- [x] TOML read/write uses the `tomllib`/`tomli` shim and `tomli_w` (from ticket 001).
+- [x] Tests in `tests/unit/test_platform_codex.py` cover install, idempotency, uninstall,
       and partial uninstall (user content preserved).
 
 ## Implementation Plan
