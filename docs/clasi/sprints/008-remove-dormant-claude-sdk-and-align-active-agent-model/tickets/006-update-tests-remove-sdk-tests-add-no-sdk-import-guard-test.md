@@ -1,7 +1,7 @@
 ---
 id: "006"
 title: "Update tests: remove SDK tests, add no-SDK import guard test"
-status: todo
+status: done
 use-cases: ["SUC-001", "SUC-002", "SUC-003", "SUC-004"]
 depends-on: ["001", "002", "003", "004"]
 github-issue: ""
@@ -32,14 +32,14 @@ New tests to add:
 
 ## Acceptance Criteria
 
-- [ ] `tests/unit/test_dispatch_tools.py` is deleted.
-- [ ] `tests/unit/test_role_guard.py` is deleted.
-- [ ] All test methods in `test_agent.py` that use `patch.dict(sys.modules, {"claude_agent_sdk": ...})` are removed.
-- [ ] Remaining `test_agent.py` tests (read-only property tests) pass.
-- [ ] `tests/unit/test_no_sdk_import.py` exists with parametrized tests for `clasi.agent`, `clasi.project`, `clasi.tools.artifact_tools`, `clasi.tools.process_tools`.
-- [ ] The no-SDK guard test passes: none of those modules import `claude_agent_sdk`.
-- [ ] A content-check test asserts active plugin files contain none of the old delegation agent names.
-- [ ] `uv run pytest` passes with no ignore flags.
+- [x] `tests/unit/test_dispatch_tools.py` is deleted.
+- [x] `tests/unit/test_role_guard.py` is deleted.
+- [x] All test methods in `test_agent.py` that use `patch.dict(sys.modules, {"claude_agent_sdk": ...})` are removed.
+- [x] Remaining `test_agent.py` tests (read-only property tests) pass.
+- [x] `tests/unit/test_no_sdk_import.py` exists with parametrized tests for `clasi.agent`, `clasi.project`, `clasi.tools.artifact_tools`, `clasi.tools.process_tools`.
+- [x] The no-SDK guard test passes: none of those modules import `claude_agent_sdk`.
+- [x] A content-check test asserts active plugin files contain none of the old delegation agent names.
+- [x] `uv run pytest` passes with no ignore flags.
 
 ## Implementation Plan
 

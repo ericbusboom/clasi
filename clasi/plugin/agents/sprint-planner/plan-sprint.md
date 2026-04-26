@@ -20,9 +20,8 @@ planning. All planning happens on main.
 
 ## Agent Used
 
-**sprint-planner** (orchestrates), **architect** (produces architecture
-update), **architecture-reviewer** (reviews plan), **technical-lead**
-(creates tickets)
+**sprint-planner** (orchestrates all phases inline — architecture,
+review, and ticket creation)
 
 ## Inputs
 
@@ -133,9 +132,8 @@ planning artifacts for one sprint at a time.
 11. **Advance to ticketing**: If stakeholder approved, call
     `advance_sprint_phase` to move to `ticketing`.
 
-12. **Create tickets**: Delegate to the technical-lead to create tickets.
-    Tickets are created in the sprint's `tickets/` directory with
-    per-sprint numbering (001, 002, ...).
+12. **Create tickets**: Create tickets inline. Tickets are created in
+    the sprint's `tickets/` directory with per-sprint numbering (001, 002, ...).
 
 12b. **Update sprint.md ticket table**: After all tickets are created,
      update the `## Tickets` section in `sprint.md` with a summary table

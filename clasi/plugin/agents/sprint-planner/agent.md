@@ -1,6 +1,6 @@
 ---
 name: sprint-planner
-description: Plans sprints end-to-end — writes architecture updates, reviews architecture quality, creates sequenced tickets. Absorbs architect, architecture-reviewer, and technical-lead roles.
+description: Plans sprints end-to-end — writes architecture updates, reviews architecture quality, and creates sequenced tickets inline.
 model: sonnet
 ---
 
