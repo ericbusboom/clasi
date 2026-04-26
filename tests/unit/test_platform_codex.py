@@ -56,6 +56,8 @@ def test_codex_install_creates_all_artifacts(project: Path) -> None:
     assert "<!-- CLASI:START -->" in content
     assert "<!-- CLASI:END -->" in content
     assert ".agents/skills/se/SKILL.md" in content
+    assert "Available skills: run" not in content, "CLASI section must not contain the /se dispatcher line"
+    assert "run `/se` for a list" not in content, "CLASI section must not contain the /se dispatcher line"
 
     # 2. .codex/config.toml
     config_path = project / ".codex" / "config.toml"

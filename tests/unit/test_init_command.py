@@ -30,6 +30,17 @@ class TestRunInit:
         assert "description:" in content
         assert "/se" in content
 
+    def test_clasi_section_does_not_contain_se_dispatcher_line(self, target_dir):
+        """CLASI section written to CLAUDE.md must not contain the /se dispatcher line."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        claude_md = target_dir / "CLAUDE.md"
+        assert claude_md.exists()
+        content = claude_md.read_text(encoding="utf-8")
+        assert "Available skills: run" not in content
+        assert "run `/se` for a list" not in content
+
     def test_creates_all_plugin_skills(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))

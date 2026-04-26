@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Drop misleading /se line from CLASI section template
-status: todo
+status: done
 use-cases:
   - SUC-006
 depends-on: []
@@ -29,13 +29,13 @@ Remove the line. The CLASI section's entry-point sentence is sufficient.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/templates/clasi-section.md` does not contain the text
+- [x] `clasi/templates/clasi-section.md` does not contain the text
       `"Available skills: run"` or `"/se"`.
-- [ ] Unit test in `tests/unit/test_init_command.py` (or a test of the rendered template
+- [x] Unit test in `tests/unit/test_init_command.py` (or a test of the rendered template
       output) asserts that the CLASI section does not contain the `/se` substring.
-- [ ] Unit test in `tests/unit/test_platform_codex.py` asserts the same for the Codex
+- [x] Unit test in `tests/unit/test_platform_codex.py` asserts the same for the Codex
       AGENTS.md CLASI section output.
-- [ ] All existing tests pass after the change.
+- [x] All existing tests pass after the change.
 
 ## Implementation Plan
 
