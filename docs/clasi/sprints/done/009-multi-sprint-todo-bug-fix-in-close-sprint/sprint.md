@@ -1,9 +1,14 @@
 ---
-id: "009"
-title: "Multi-Sprint TODO Bug Fix in close_sprint"
-status: roadmap
+id: 009
+title: Multi-Sprint TODO Bug Fix in close_sprint
+status: done
 branch: sprint/009-multi-sprint-todo-bug-fix-in-close-sprint
-use-cases: []
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -42,6 +47,12 @@ Sprint 009 is a self-contained bug fix with no dependency on sprint 008 or 010. 
 
 | # | Title | Depends On | Group |
 |---|-------|------------|-------|
+| 001 | Add `completes_todo_for` method to `Ticket` and update `move_ticket_to_done` archival logic | — | 1 |
+| 002 | Update `close_sprint` precondition check to allow intentionally deferred TODOs | 009-001 | 2 |
+| 003 | Update ticket template and SE instruction to document `completes_todo` field | 009-001 | 2 |
 
 **Groups**: Tickets in the same group can execute in parallel.
 Groups execute sequentially (1 before 2, etc.).
+
+- **Group 1**: Ticket 001 — foundational implementation (`Ticket.completes_todo_for` + `move_ticket_to_done`). No dependencies.
+- **Group 2**: Tickets 002 and 003 in parallel. Ticket 002 uses `completes_todo_for` from 001. Ticket 003 documents the field from 001. Both can execute simultaneously once 001 is done.

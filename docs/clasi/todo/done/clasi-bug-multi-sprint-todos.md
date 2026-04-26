@@ -1,3 +1,9 @@
+---
+status: done
+sprint: 009
+tickets:
+- 009-001
+---
 # Bug: `close_sprint` auto-moves linked TODOs to `done/` even when the TODO spans multiple sprints
 
 **CLASI version:** 0.20260410.1 (server) / 0.20260418.1 (CLI)
