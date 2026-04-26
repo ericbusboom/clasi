@@ -1,7 +1,7 @@
 ---
 id: "001"
 title: "Add tomli and tomli-w dependencies"
-status: todo
+status: done
 use-cases:
   - SUC-012
 depends-on: []
@@ -24,11 +24,11 @@ All code that uses TOML is in ticket 004.
 
 ## Acceptance Criteria
 
-- [ ] `pyproject.toml` includes `tomli-w>=1.0` as an unconditional runtime dependency.
-- [ ] `pyproject.toml` includes `tomli>=2.0; python_version < "3.11"` as a conditional
+- [x] `pyproject.toml` includes `tomli-w>=1.0` as an unconditional runtime dependency.
+- [x] `pyproject.toml` includes `tomli>=2.0; python_version < "3.11"` as a conditional
       runtime dependency.
-- [ ] `uv sync` (or `pip install -e .`) resolves without errors.
-- [ ] A new test `tests/unit/test_toml_compat.py` verifies:
+- [x] `uv sync` (or `pip install -e .`) resolves without errors.
+- [x] A new test `tests/unit/test_toml_compat.py` verifies:
   - The TOML import shim (`try: import tomllib except ImportError: import tomli as tomllib`)
     imports without error.
   - A small dict written with `tomli_w.dumps()` and read back with `tomllib.loads()`
