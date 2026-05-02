@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "release-bot": {
+      "command": "echo",
+      "args": ["release-bot mcp stub"]
+    }
+  }
+}

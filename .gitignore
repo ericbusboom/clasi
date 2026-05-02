@@ -57,6 +57,7 @@ tmp/
 *.log
 tests/e2e/project/
 tests/e2e/repro_project/
+tests/asr/project/
 
 docs/clasi/log/
 CLAUDE.md
