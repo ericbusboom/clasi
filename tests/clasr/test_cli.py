@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from clasr import __version__
 from clasr.cli import main
 
 
@@ -103,6 +104,17 @@ def test_instructions_via_subprocess() -> None:
     )
     assert result.returncode == 0
     assert len(result.stdout) > 0
+
+
+def test_version_via_subprocess() -> None:
+    """Verify --version works end-to-end through the installed entry point."""
+    result = subprocess.run(
+        [sys.executable, "-m", "clasr.cli", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == f"clasr {__version__}"
 
 
 # ---------------------------------------------------------------------------

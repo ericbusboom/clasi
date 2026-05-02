@@ -1,9 +1,10 @@
 """clasr CLI entry point.
 
 Provides:
-  clasr --instructions        Print bundled instructions and exit.
-  clasr install               Install asr/ to target platforms.
-  clasr uninstall             Uninstall a provider from target platforms.
+    clasr --instructions        Print bundled instructions and exit.
+    clasr --version             Print the installed clasr version and exit.
+    clasr install               Install asr/ to target platforms.
+    clasr uninstall             Uninstall a provider from target platforms.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ import argparse
 import importlib.resources
 import sys
 from pathlib import Path
+
+from clasr import __version__
 
 
 def _print_instructions() -> None:
@@ -118,6 +121,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         default=False,
         help="Print bundled usage instructions and exit.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Print the installed clasr version and exit.",
     )
 
     subparsers = parser.add_subparsers(dest="command", metavar="command")

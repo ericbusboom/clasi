@@ -82,6 +82,7 @@ uninstall-all:
     -clasr uninstall --provider {{provider1}} --target {{project}} --claude --codex --copilot
     -clasr uninstall --provider {{provider2}} --target {{project}} --claude --codex
 
+
 # Full multi-provider demo: install both, inspect, selective uninstall, cleanup.
 demo: install-first install-second tree show-agents show-claude-md show-merged-settings show-manifests
     @echo
@@ -98,14 +99,9 @@ demo: install-first install-second tree show-agents show-claude-md show-merged-s
     @echo "--- .claude/settings.json (only '{{provider1}}' keys remain) ---"
     @cat {{project}}/.claude/settings.json | python3 -m json.tool
     @echo
-    @echo "============================================================"
-    @echo "=== Cleaning up the rest ==="
-    @echo "============================================================"
-    @just uninstall-all
-    @echo
-    @echo "=== Target should be empty after final uninstall ==="
-    @find {{project}} \( -type f -o -type l \) | sort
-    @rm -rf {{project}}
+    @echo "just uninstall-all to cleanup, then rm -rf project"
+
+
 
 # Single-provider demo (install provider1, inspect, uninstall, confirm clean).
 demo-single: install-first tree show-agents
