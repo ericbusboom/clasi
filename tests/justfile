@@ -1,0 +1,79 @@
+set shell := ["bash", "-uc"]
+
+# Path to the example asr/ source directory, relative to this justfile.
+asr := "example_asr"
+
+# Throwaway target directory the demo installs into.
+target := "/tmp/clasr-demo"
+
+# Provider name used by the demo.
+provider := "example"
+
+# Default recipe: list available recipes.
+default:
+    @just --list
+
+# Wipe and recreate the demo target directory.
+clean-target:
+    rm -rf {{target}}
+    mkdir -p {{target}}
+
+# Install all three platforms into the demo target.
+install: clean-target
+    clasr install \
+        --source {{asr}} \
+        --provider {{provider}} \
+        --target {{target}} \
+        --claude --codex --copilot
+
+# Show every file and symlink under the demo target.
+tree:
+    @echo "=== Files under {{target}} ==="
+    @find {{target}} \( -type f -o -type l \) | sort
+
+# Print the rendered AGENTS.md so you can see the marker block.
+show-agents:
+    @echo "=== {{target}}/AGENTS.md ==="
+    @cat {{target}}/AGENTS.md
+
+# Print one rendered agent file per platform to compare frontmatter projection.
+show-rendered:
+    @echo "=== .claude/agents/reviewer.md ==="
+    @cat {{target}}/.claude/agents/reviewer.md
+    @echo
+    @echo "=== .codex/agents/reviewer.md ==="
+    @cat {{target}}/.codex/agents/reviewer.md
+    @echo
+    @echo "=== .github/agents/reviewer.agent.md ==="
+    @cat {{target}}/.github/agents/reviewer.agent.md
+
+# Print the manifests written by clasr (one per platform).
+show-manifests:
+    @echo "=== Claude manifest ==="
+    @cat {{target}}/.claude/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+    @echo
+    @echo "=== Codex manifest ==="
+    @cat {{target}}/.codex/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+    @echo
+    @echo "=== Copilot manifest ==="
+    @cat {{target}}/.github/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+
+# Uninstall the demo provider from all three platforms.
+uninstall:
+    clasr uninstall --provider {{provider}} --target {{target}} --claude --codex --copilot
+
+# Full demo: install, inspect, uninstall, confirm clean.
+demo: install tree show-agents show-rendered show-manifests
+    @echo
+    @echo "=== Uninstalling ==="
+    @just uninstall
+    @echo
+    @echo "=== Target should be empty after uninstall ==="
+    @find {{target}} \( -type f -o -type l \) | sort
+    @rm -rf {{target}}
+    @echo
+    @echo "(Multi-tenant coexistence is exercised by tests/clasr/test_multi_tenant.py.)"
+
+# Print the bundled clasr instructions.
+instructions:
+    clasr --instructions
