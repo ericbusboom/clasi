@@ -1,13 +1,23 @@
 set shell := ["bash", "-uc"]
 
-# Path to the example asr/ source directory, relative to this justfile.
-asr := "example_asr"
-
 # Throwaway target directory the demo installs into.
 target := "/tmp/clasr-demo"
 
-# Provider name used by the demo.
-provider := "example"
+# The single canonical example asr/ source in this repo.
+asr := "example_asr"
+
+# Two provider names to demo multi-tenant coexistence.
+provider1 := "example"
+provider2 := "release"
+
+# Synthetic second source dir built on the fly. It ships a different
+# AGENTS.md (so the marker block clearly differs) and a settings.json
+# with non-overlapping top-level keys (so JSON-merge uninstall works
+# cleanly per-provider). It deliberately ships NO skills, agents,
+# rules, or commands, because those would collide with provider1's
+# files at the same paths — a real multi-tenant scenario uses two
+# providers shipping different content.
+synthetic_asr := "/tmp/clasr-demo-second-source"
 
 # Default recipe: list available recipes.
 default:
@@ -18,61 +28,113 @@ clean-target:
     rm -rf {{target}}
     mkdir -p {{target}}
 
-# Install all three platforms into the demo target.
-install: clean-target
+# Build the synthetic second-provider asr/ in /tmp.
+build-second-source:
+    rm -rf {{synthetic_asr}}
+    mkdir -p {{synthetic_asr}}/claude
+    @echo '# Provider release' > {{synthetic_asr}}/AGENTS.md
+    @echo '' >> {{synthetic_asr}}/AGENTS.md
+    @echo 'A second provider sharing the target with `example`. This' >> {{synthetic_asr}}/AGENTS.md
+    @echo "block coexists with example's block via named markers." >> {{synthetic_asr}}/AGENTS.md
+    @echo '{"mcpServers": {"release-bot": {"command": "echo"}}}' \
+        > {{synthetic_asr}}/claude/settings.json
+
+# Install the example provider into the demo target (all three platforms).
+install-first: clean-target
+    @echo "=== Installing first provider: '{{provider1}}' from {{asr}}/ ==="
     clasr install \
         --source {{asr}} \
-        --provider {{provider}} \
+        --provider {{provider1}} \
         --target {{target}} \
         --claude --codex --copilot
+
+# Install the second provider on top of the first (Claude only, multi-tenant share).
+install-second: build-second-source
+    @echo
+    @echo "=== Installing second provider: '{{provider2}}' from synthetic source ==="
+    @echo "(same target dir; both providers must coexist via named blocks + JSON merge)"
+    clasr install \
+        --source {{synthetic_asr}} \
+        --provider {{provider2}} \
+        --target {{target}} \
+        --claude
 
 # Show every file and symlink under the demo target.
 tree:
     @echo "=== Files under {{target}} ==="
     @find {{target}} \( -type f -o -type l \) | sort
 
-# Print the rendered AGENTS.md so you can see the marker block.
+# Print AGENTS.md so you can see BOTH marker blocks coexisting.
 show-agents:
-    @echo "=== {{target}}/AGENTS.md ==="
+    @echo "=== {{target}}/AGENTS.md (should contain both providers' blocks) ==="
     @cat {{target}}/AGENTS.md
 
-# Print one rendered agent file per platform to compare frontmatter projection.
-show-rendered:
-    @echo "=== .claude/agents/reviewer.md ==="
-    @cat {{target}}/.claude/agents/reviewer.md
-    @echo
-    @echo "=== .codex/agents/reviewer.md ==="
-    @cat {{target}}/.codex/agents/reviewer.md
-    @echo
-    @echo "=== .github/agents/reviewer.agent.md ==="
-    @cat {{target}}/.github/agents/reviewer.agent.md
+# Print CLAUDE.md so you can see BOTH marker blocks coexisting.
+show-claude-md:
+    @echo "=== {{target}}/CLAUDE.md (should contain both providers' blocks) ==="
+    @cat {{target}}/CLAUDE.md
 
-# Print the manifests written by clasr (one per platform).
+# Print the merged settings.json so you can see keys from both providers.
+show-merged-settings:
+    @echo "=== {{target}}/.claude/settings.json (merged) ==="
+    @cat {{target}}/.claude/settings.json | python3 -m json.tool
+
+# List the per-provider manifests.
 show-manifests:
-    @echo "=== Claude manifest ==="
-    @cat {{target}}/.claude/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+    @echo "=== Claude manifests (one per provider) ==="
+    @ls -1 {{target}}/.claude/.clasr-manifest/
     @echo
-    @echo "=== Codex manifest ==="
-    @cat {{target}}/.codex/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+    @echo "--- {{provider1}}.json ---"
+    @cat {{target}}/.claude/.clasr-manifest/{{provider1}}.json | python3 -m json.tool
     @echo
-    @echo "=== Copilot manifest ==="
-    @cat {{target}}/.github/.clasr-manifest/{{provider}}.json | python3 -m json.tool
+    @echo "--- {{provider2}}.json ---"
+    @cat {{target}}/.claude/.clasr-manifest/{{provider2}}.json | python3 -m json.tool
 
-# Uninstall the demo provider from all three platforms.
-uninstall:
-    clasr uninstall --provider {{provider}} --target {{target}} --claude --codex --copilot
+# Uninstall the SECOND provider only — first provider's files must remain.
+uninstall-second:
+    @echo "=== Uninstalling only '{{provider2}}' ==="
+    clasr uninstall --provider {{provider2}} --target {{target}} --claude
 
-# Full demo: install, inspect, uninstall, confirm clean.
-demo: install tree show-agents show-rendered show-manifests
+# Uninstall everything.
+uninstall-all:
+    -clasr uninstall --provider {{provider1}} --target {{target}} --claude --codex --copilot
+    -clasr uninstall --provider {{provider2}} --target {{target}} --claude
+
+# Full multi-tenant demo: two providers, one target, JSON merge, selective uninstall.
+demo: install-first install-second tree show-agents show-claude-md show-merged-settings show-manifests
     @echo
-    @echo "=== Uninstalling ==="
-    @just uninstall
+    @echo "============================================================"
+    @echo "=== Selective uninstall — remove '{{provider2}}' only ==="
+    @echo "============================================================"
+    @just uninstall-second
     @echo
-    @echo "=== Target should be empty after uninstall ==="
+    @echo "=== After selective uninstall: '{{provider1}}' should still be intact ==="
+    @echo
+    @echo "--- AGENTS.md (only '{{provider1}}' block remains) ---"
+    @cat {{target}}/AGENTS.md
+    @echo
+    @echo "--- .claude/settings.json (only '{{provider1}}' keys remain) ---"
+    @cat {{target}}/.claude/settings.json | python3 -m json.tool
+    @echo
+    @echo "============================================================"
+    @echo "=== Cleaning up the rest ==="
+    @echo "============================================================"
+    @just uninstall-all
+    @rm -rf {{synthetic_asr}}
+    @echo
+    @echo "=== Target should be empty after final uninstall ==="
     @find {{target}} \( -type f -o -type l \) | sort
     @rm -rf {{target}}
+
+# Single-provider demo (install, inspect, uninstall, confirm clean).
+demo-single: install-first tree show-agents
     @echo
-    @echo "(Multi-tenant coexistence is exercised by tests/clasr/test_multi_tenant.py.)"
+    @echo "=== Uninstalling '{{provider1}}' ==="
+    @clasr uninstall --provider {{provider1}} --target {{target}} --claude --codex --copilot
+    @echo
+    @echo "=== Target should be empty ==="
+    @find {{target}} \( -type f -o -type l \) | sort
+    @rm -rf {{target}}
 
 # Print the bundled clasr instructions.
 instructions:
