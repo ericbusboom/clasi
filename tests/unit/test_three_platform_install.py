@@ -139,12 +139,12 @@ def test_three_platform_install_end_to_end(tmp_path: Path) -> None:
         for d in plugin_skills.iterdir()
         if d.is_dir() and (d / "SKILL.md").exists()
     )
-    assert len(expected_skills) == 26, (
-        f"Expected 26 bundled skills, found {len(expected_skills)}"
+    assert len(expected_skills) == 25, (
+        f"Expected 25 bundled skills, found {len(expected_skills)}"
     )
 
     # ------------------------------------------------------------------
-    # Canonical .agents/skills/<n>/SKILL.md — all 26 exist
+    # Canonical .agents/skills/<n>/SKILL.md — all 25 exist
     # ------------------------------------------------------------------
     for skill_name in expected_skills:
         canonical = tmp_path / ".agents" / "skills" / skill_name / "SKILL.md"

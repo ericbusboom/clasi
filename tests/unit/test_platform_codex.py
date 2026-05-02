@@ -765,7 +765,7 @@ def test_codex_install_end_to_end(tmp_path: Path) -> None:
     )
 
     # ------------------------------------------------------------------
-    # .agents/skills/<name>/SKILL.md (26 skills) — all present with frontmatter
+    # .agents/skills/<name>/SKILL.md (25 skills) — all present with frontmatter
     # ------------------------------------------------------------------
     from clasi.platforms.codex import _PLUGIN_DIR
 
@@ -774,8 +774,8 @@ def test_codex_install_end_to_end(tmp_path: Path) -> None:
         d.name for d in sorted(plugin_skills.iterdir())
         if d.is_dir() and (d / "SKILL.md").exists()
     ]
-    assert len(expected_skills) == 26, (
-        f"Expected 26 skills in plugin, found {len(expected_skills)}"
+    assert len(expected_skills) == 25, (
+        f"Expected 25 skills in plugin, found {len(expected_skills)}"
     )
     for skill_name in expected_skills:
         skill_path = tmp_path / ".agents" / "skills" / skill_name / "SKILL.md"

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Disable parallel ticket execution and worktrees — mandate serial-only

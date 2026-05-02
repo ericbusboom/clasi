@@ -58,8 +58,7 @@ Before tickets can be created, all of the following must be true:
 
 ## Tickets
 
-| # | Title | Depends On | Group |
-|---|-------|------------|-------|
+| # | Title | Depends On |
+|---|-------|------------|
 
-**Groups**: Tickets in the same group can execute in parallel.
-Groups execute sequentially (1 before 2, etc.).
+Tickets execute serially in the order listed.

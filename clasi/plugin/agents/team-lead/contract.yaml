@@ -46,8 +46,8 @@ delegates_to:
   - agent: programmer
     when: >
       A sprint is fully planned and ready for execution. Dispatched
-      per ticket in dependency order, or via execute-sprint skill
-      for parallel execution.
+      one programmer at a time per ticket in dependency order, via
+      the execute-sprint skill.
 
 allowed_tools:
   - Read
