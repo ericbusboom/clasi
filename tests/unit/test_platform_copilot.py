@@ -152,7 +152,7 @@ def test_install_global_instructions_mcp_required_body(tmp_path: Path) -> None:
     copilot._install_global_instructions(tmp_path)
     content = (tmp_path / ".github" / "copilot-instructions.md").read_text(encoding="utf-8")
     # Check a representative fragment from MCP_REQUIRED_BODY
-    assert "Call `get_version()` to verify the MCP server is running" in content
+    assert "`get_version()` to verify the MCP server is running" in content
 
 
 def test_install_global_instructions_git_commits_body(tmp_path: Path) -> None:

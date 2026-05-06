@@ -15,11 +15,19 @@ other CLASI modules.  Leaf node in the dependency graph.
 MCP_REQUIRED_BODY = """\
 This project uses the CLASI MCP server. Before doing ANY work:
 
-1. Call `get_version()` to verify the MCP server is running.
-2. If the call fails, STOP. Do not proceed. Tell the stakeholder:
+1. **Check for the OOP override first.** If the file `docs/clasi/oop`
+   exists in the project root, ignore CLASI entirely for this session:
+   skip MCP verification, skip all CLASI process gates (sprints,
+   tickets, TODOs, artifact rules), and proceed with the user's
+   request as you would in any non-CLASI repo. Do not call
+   `get_version()` or any other CLASI MCP tool. The stakeholder has
+   explicitly opted out for this checkout.
+2. Otherwise, call `get_version()` to verify the MCP server is running.
+3. If the call fails, STOP. Do not proceed. Tell the stakeholder:
    "The CLASI MCP server is not available. Check .mcp.json and
-   restart the session."
-3. Do NOT create sprint directories, tickets, TODOs, or planning
+   restart the session, or create `docs/clasi/oop` to bypass CLASI
+   for this session."
+4. Do NOT create sprint directories, tickets, TODOs, or planning
    artifacts manually. Do NOT improvise workarounds. All SE process
    operations require the MCP server.
 """
@@ -27,11 +35,13 @@ This project uses the CLASI MCP server. Before doing ANY work:
 CLASI_ARTIFACTS_BODY = """\
 You are modifying CLASI planning artifacts. Before making changes:
 
-1. Confirm you have an active sprint (`list_sprints(status="active")`),
+1. If `docs/clasi/oop` exists, the stakeholder has opted out of CLASI
+   for this session. Skip these gates entirely and proceed.
+2. Confirm you have an active sprint (`list_sprints(status="active")`),
    or the stakeholder said "out of process" / "direct change".
-2. If creating or modifying tickets, the sprint must be in `ticketing`
+3. If creating or modifying tickets, the sprint must be in `ticketing`
    or `executing` phase (`get_sprint_phase(sprint_id)`).
-3. Use CLASI MCP tools for all artifact operations — do not create
+4. Use CLASI MCP tools for all artifact operations — do not create
    sprint/ticket/TODO files manually.
 
 Direct edits to `docs/clasi/sprints/` are blocked for team-lead. Use MCP tools.
@@ -40,16 +50,21 @@ Direct edits to `docs/clasi/sprints/` are blocked for team-lead. Use MCP tools.
 SOURCE_CODE_BODY = """\
 You are modifying source code or tests. Before writing code:
 
-1. You must have a ticket in `in-progress` status, or the stakeholder
+1. If `docs/clasi/oop` exists, the stakeholder has opted out of CLASI
+   for this session. Skip these gates entirely and proceed.
+2. You must have a ticket in `in-progress` status, or the stakeholder
    said "out of process".
-2. If you have a ticket, follow the execute-ticket skill — call
+3. If you have a ticket, follow the execute-ticket skill — call
    `get_skill_definition("execute-ticket")` if unsure of the steps.
-3. Run the project's test suite after changes.
+4. Run the project's test suite after changes.
 """
 
 TODO_DIR_BODY = """\
 Use the CLASI `todo` skill or `move_todo_to_done` MCP tool for TODO
 operations. Do not use the generic TodoWrite tool for CLASI TODOs.
+
+Exception: if `docs/clasi/oop` exists, the stakeholder has opted out
+of CLASI for this session. Use whatever TODO mechanism you prefer.
 """
 
 GIT_COMMITS_BODY = """\

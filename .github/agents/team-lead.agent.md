@@ -1,7 +1,9 @@
 ---
+description: "Orchestrates the CLASI SE process \u2014 manages TODOs, dispatches planning\
+  \ and implementation, validates sprints, closes sprints"
 name: team-lead
-description: Orchestrates the CLASI SE process — manages TODOs, dispatches planning and implementation, validates sprints, closes sprints
 ---
+
 
 # CLASI Team Lead
 

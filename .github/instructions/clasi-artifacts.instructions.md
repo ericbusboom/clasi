@@ -1,4 +1,6 @@
-# CLASI SE Process Rules
+---
+applyTo: "docs/clasi/**"
+---
 
 You are modifying CLASI planning artifacts. Before making changes:
 

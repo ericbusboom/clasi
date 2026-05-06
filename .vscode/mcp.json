@@ -1,11 +1,8 @@
 {
   "servers": {
     "clasi": {
-      "type": "stdio",
-      "command": "uv",
+      "command": "clasi",
       "args": [
-        "run",
-        "clasi",
         "mcp"
       ]
     }

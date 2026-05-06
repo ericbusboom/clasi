@@ -1,102 +1,91 @@
 ---
 name: execute-sprint
-description: Executes sprint tickets by creating Tasks for a team of programmer agents working in parallel worktrees
+description: Executes sprint tickets serially — dispatches one programmer agent per ticket in dependency order
 ---
 
 # Execute Sprint Skill
 
 This skill executes all tickets in an active sprint. The team-lead
-creates Tasks from tickets and spawns programmer teammates who work
-in parallel using git worktrees.
+dispatches one programmer agent per ticket, in dependency order, one
+at a time. All work happens directly on the sprint branch.
+
+This skill is **strictly serial**. There is no parallel mode and no
+worktree usage. Re-enabling parallel/worktree execution is a future
+project; see
+`docs/clasi/todo/define-proper-worktree-process-for-parallel-ticket-execution.md`.
 
 ## Inputs
 
 - Active sprint with tickets in `todo` status
 - Execution lock acquired (`acquire_execution_lock`)
-- Sprint branch exists
+- Sprint branch exists and is checked out
 
 ## Process
 
 ### 1. Read Tickets
 
 Read all tickets from the sprint's `tickets/` directory. Parse
-frontmatter for status, dependencies, and ordering.
+frontmatter for `status`, `depends-on`, and `id`.
 
 ### 2. Order by Dependencies
 
-Build a dependency graph from `depends-on` fields. Identify which
-tickets can execute immediately (no unmet dependencies) and which
-must wait.
+Build a dependency graph from `depends-on` fields and produce a flat,
+topologically-sorted list of tickets. Tie-breaks by ticket id ascending.
 
-### 3. Create Tasks
+There are no execution groups. Tickets run one at a time.
 
-For each ticket, create a Task with:
-- **Title**: Ticket title
-- **Description**: Include:
-  - Path to the ticket file
-  - Path to the ticket plan (if separate)
-  - Sprint ID and ticket ID
-  - `scope_directory` for write constraints
-  - Relevant architecture sections
-  - Any dependency notes
+### 3. Dispatch Programmer Agents Serially
 
-Set Task dependencies matching ticket dependencies so programmers
-can only claim unblocked tickets.
+For each ticket in dependency order:
 
-### 4. Spawn Programmer Teammates
+1. Verify the ticket is `todo` and all of its `depends-on` tickets are
+   `done`. If not, stop and report the inconsistency.
+2. Update the ticket status to `in-progress` via
+   `update_ticket_status(path, "in-progress")`.
+3. Invoke the programmer agent via the Agent tool with:
+   - Path to the ticket file
+   - Path to the ticket plan (if separate)
+   - Sprint ID and ticket ID
+   - Sprint branch name (the agent works on this branch directly)
+   - Relevant architecture sections
+4. Wait for the programmer agent to complete before moving on.
+5. Verify `status: done` is set in the ticket's frontmatter.
+6. Call `move_ticket_to_done(ticket_path)` where `ticket_path` is the
+   relative path: `docs/clasi/sprints/NNN-slug/tickets/NNN-slug.md`.
+   This is a team-lead responsibility — the programmer sets the
+   frontmatter; the team-lead moves the file.
+7. Continue with the next ticket.
 
-Spawn programmer teammates using the `programmer` agent definition.
-Each programmer:
-- Claims a task
-- Gets an isolated worktree branching off the sprint branch
-  (e.g., `sprint/NNN-slug/ticket-001`)
-- Reads the ticket file and plan from the task description
-- Implements the ticket in their worktree
-- Runs tests in their worktree
-- Marks the task complete
+**Do not** invoke a second programmer agent until the first has
+returned. Do not create git worktrees. Do not branch off the sprint
+branch.
 
-The `TaskCompleted` hook validates completion:
-- Tests pass in the worktree
-- Acceptance criteria are met
-- Ticket frontmatter is updated to `done`
-- Worktree branch merges back to sprint branch
+### 4. Handle Failures
 
-### 5. Monitor Progress
+If a programmer agent fails, escalate to the stakeholder. Do not skip
+the ticket and continue — the dependency chain assumes each prior
+ticket is complete.
 
-Monitor the task list for completion. Handle failures:
-- If a programmer's task is blocked by merge conflicts, the
-  `TaskCompleted` hook rejects and the programmer resolves conflicts
-  in their worktree, re-runs tests, and retries.
-- If a programmer fails after repeated attempts, escalate to the
-  stakeholder.
+If a programmer agent leaves a ticket in `in-progress` (e.g. because
+tests failed and the agent reported back without marking it done):
+fix the issue in-process or with a follow-up programmer dispatch on
+the same ticket. Either way, the ticket must end at `done` before
+moving to the next one.
 
-After each programmer Task completes successfully:
-1. Verify `status: done` is set in the ticket's frontmatter.
-2. Call `move_ticket_to_done(ticket_path)` where `ticket_path` is the relative
-   path: `docs/clasi/sprints/NNN-slug/tickets/NNN-slug.md`.
-   This is a team-lead responsibility — the programmer sets the frontmatter;
-   the team-lead moves the file.
-3. Continue monitoring remaining tasks.
+**Ticket completion is mandatory.** When a programmer completes a
+ticket, its status must be set to `done` and `move_ticket_to_done`
+called. There is no valid reason to leave a completed ticket in an
+incomplete state. If the stakeholder says "leave it open", that means
+leave the sprint open — the ticket itself must still be marked done.
 
-**Ticket completion is mandatory.** When a programmer completes a ticket,
-its status must be set to `done` and `move_ticket_to_done` called.
-There is no valid reason to leave a completed ticket in an incomplete
-state. If the stakeholder says "leave it open", that means leave the
-sprint open — the ticket itself must still be marked done.
+### 5. Close Sprint
 
-### 6. Close Sprint
+After all tickets are `done`:
 
-After all tasks complete:
-1. Verify all tickets have `status: done`
-2. Run the full test suite on the sprint branch
-3. Present sprint summary to stakeholder
-4. Invoke the `close-sprint` skill
-
-## Fallback: Serial Execution
-
-If agent teams are not available, fall back to serial execution:
-for each ticket in dependency order, invoke the programmer agent
-via the Agent tool (one at a time, no worktrees needed).
+1. Verify all tickets have `status: done`.
+2. Run the full test suite on the sprint branch.
+3. Present sprint summary to stakeholder.
+4. Invoke the `close-sprint` skill.
 
 ## Output
 
