@@ -41,22 +41,18 @@ def check_drift(target: Path) -> List[str]:
     """
     mismatches: List[str] = []
 
-    # ---- AGENTS.md <-> CLAUDE.md ----------------------------------------
-    canonical_agents = target / "AGENTS.md"
-    alias_claude_md = target / "CLAUDE.md"
-    if canonical_agents.exists() and alias_claude_md.exists():
-        if alias_claude_md.is_symlink():
-            resolved = alias_claude_md.resolve()
-            expected = canonical_agents.resolve()
-            if resolved != expected:
+    # ---- AGENTS.md and CLAUDE.md ----------------------------------------
+    # Both files are independent regular files that each carry the CLASI
+    # marker block. They are NOT required to be byte-identical (CLAUDE.md
+    # may contain other tools' marker blocks too). Drift is reported only
+    # if a file exists but is missing its CLASI block.
+    for label, path in (("AGENTS.md", target / "AGENTS.md"),
+                        ("CLAUDE.md", target / "CLAUDE.md")):
+        if path.exists():
+            content = path.read_text(encoding="utf-8")
+            if "<!-- CLASI:START -->" not in content:
                 mismatches.append(
-                    f"CLAUDE.md symlink resolves to {resolved}, expected {expected}"
-                )
-        else:
-            # Regular file copy — content must match
-            if alias_claude_md.read_bytes() != canonical_agents.read_bytes():
-                mismatches.append(
-                    "CLAUDE.md content does not match AGENTS.md (drift detected)"
+                    f"{label} exists but is missing the CLASI marker block"
                 )
 
     # ---- .agents/skills/<n>/SKILL.md <-> .claude/skills/<n>/SKILL.md -----
@@ -184,14 +180,18 @@ def test_three_platform_install_end_to_end(tmp_path: Path) -> None:
         )
 
     # ------------------------------------------------------------------
-    # CLAUDE.md — symlink to AGENTS.md
+    # CLAUDE.md — regular file with the CLASI marker block (no longer
+    # a symlink; both files hold their own copy of the block so CLASI
+    # coexists cleanly with other tools' marker blocks in CLAUDE.md).
     # ------------------------------------------------------------------
     claude_md = tmp_path / "CLAUDE.md"
     agents_md = tmp_path / "AGENTS.md"
-    assert claude_md.is_symlink(), "CLAUDE.md must be a symlink"
-    assert claude_md.resolve() == agents_md.resolve(), (
-        "CLAUDE.md must resolve to AGENTS.md"
+    assert claude_md.exists() and not claude_md.is_symlink(), (
+        "CLAUDE.md must be a regular file"
     )
+    claude_content = claude_md.read_text(encoding="utf-8")
+    assert "<!-- CLASI:START -->" in claude_content
+    assert "<!-- CLASI:END -->" in claude_content
 
     # ------------------------------------------------------------------
     # AGENTS.md — exists, parses, contains CLASI marker block
@@ -346,23 +346,24 @@ def test_drift_verifier_clean_install(tmp_path: Path) -> None:
     )
 
 
-def test_drift_verifier_detects_claude_md_mismatch(tmp_path: Path) -> None:
-    """check_drift() must detect when CLAUDE.md content diverges from AGENTS.md."""
+def test_drift_verifier_detects_missing_claude_md_block(tmp_path: Path) -> None:
+    """check_drift() must report when CLAUDE.md exists but lacks the CLASI block.
+
+    Under the new model, CLAUDE.md and AGENTS.md are independent regular
+    files; they don't need to be byte-identical (CLAUDE.md may carry other
+    tools' marker blocks too). The only drift condition is a CLAUDE.md
+    that exists without the CLASI block.
+    """
     run_init(str(tmp_path), claude=True, codex=True, copilot=True)
 
-    # Convert CLAUDE.md from symlink to a regular file with altered content
+    # Wipe the CLASI block out of CLAUDE.md (simulating someone removing
+    # the block by hand without uninstalling).
     claude_md = tmp_path / "CLAUDE.md"
-    agents_md = tmp_path / "AGENTS.md"
-
-    # Read canonical content, remove the symlink, write a modified copy
-    original_content = agents_md.read_bytes()
-    claude_md.unlink()  # remove symlink
-    claude_md.write_bytes(original_content + b"\n\n# Extra drift content\n")
+    claude_md.write_text(
+        "# Just user content, no CLASI block.\n", encoding="utf-8"
+    )
 
     mismatches = check_drift(tmp_path)
-    assert len(mismatches) >= 1, (
-        "check_drift() must report at least one mismatch when CLAUDE.md content diverges"
-    )
     assert any("CLAUDE.md" in m for m in mismatches), (
         f"Mismatch message must mention CLAUDE.md, got: {mismatches}"
     )

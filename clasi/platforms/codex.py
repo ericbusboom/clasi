@@ -454,6 +454,12 @@ def install(
     _install_rules(target)
     click.echo()
 
+    from clasi.platforms._markers import write_version_stamp
+    click.echo("Version stamps:")
+    write_version_stamp(target, ".codex")
+    write_version_stamp(target, ".agents")
+    click.echo()
+
 
 def uninstall(target: Path, copy: bool = False) -> None:
     """Remove the Codex platform integration from *target*.

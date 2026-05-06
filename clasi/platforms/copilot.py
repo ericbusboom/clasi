@@ -455,6 +455,12 @@ def install(
     _print_cloud_mcp_notice(mcp_config)
     click.echo()
 
+    from clasi.platforms._markers import write_version_stamp
+    click.echo("Version stamps:")
+    write_version_stamp(target, ".github")
+    write_version_stamp(target, ".agents")
+    click.echo()
+
 
 def uninstall(target: Path, copy: bool = False) -> None:
     """Remove the GitHub Copilot platform integration from *target*.

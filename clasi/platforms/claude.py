@@ -76,50 +76,44 @@ _CLAUDE_ENTRY_POINT = (
 
 
 def _write_claude_md(target: Path, copy: bool = False) -> bool:
-    """Write AGENTS.md with the CLASI section and create CLAUDE.md as an alias.
+    """Write the CLASI marker block into both AGENTS.md and CLAUDE.md.
 
-    AGENTS.md becomes the authoritative project-instructions file.
-    CLAUDE.md is a symlink (or copy when *copy* is True) pointing at AGENTS.md.
+    Both files are regular files holding their own copy of the CLASI
+    block, written via the marker-block writer. This makes CLASI a
+    well-behaved tenant alongside other tools (e.g. rundbat) that
+    already manage their own named blocks in CLAUDE.md.
 
-    Conflict guard:
-      - If CLAUDE.md already exists as a regular file (not a symlink to AGENTS.md)
-        and its content differs from AGENTS.md, install is aborted with an error
-        message and this function returns False.
-      - If the content matches, the regular file is replaced by the alias.
+    The previous symlink-based model (CLAUDE.md → AGENTS.md) is
+    retired: it failed when CLAUDE.md was already a regular file owned
+    by another tool, and it required a `--migrate` flag to escape.
 
-    Returns True if AGENTS.md was written/updated, False on conflict abort.
+    The `copy` parameter is accepted for interface symmetry with the
+    legacy installer call sites but is no longer meaningful for this
+    function (no symlinking happens here). Skill aliases under
+    `.claude/skills/` are still symlinked-or-copied; that path is
+    handled by `_install_plugin_content`.
+
+    Returns True if either file was written/updated, False if both
+    were already up to date.
     """
     from clasi.platforms._markers import write_section
 
     agents_md = target / "AGENTS.md"
     claude_md = target / "CLAUDE.md"
 
-    # 1. Write/update AGENTS.md
-    write_section(
+    agents_changed = write_section(
         agents_md,
         entry_point=_CLAUDE_ENTRY_POINT,
         legacy_match_substr="team-lead/agent.md",
     )
+    claude_changed = write_section(
+        claude_md,
+        entry_point=_CLAUDE_ENTRY_POINT,
+        legacy_match_substr="team-lead/agent.md",
+    )
+    return agents_changed or claude_changed
 
-    # 2. Conflict guard: existing regular file that is not already our alias
-    if claude_md.exists() and not claude_md.is_symlink():
-        if claude_md.read_bytes() != agents_md.read_bytes():
-            click.echo(
-                "  Error: CLAUDE.md exists with different content. "
-                "Use --migrate to convert."
-            )
-            return False
-        # Content matches — remove so link_or_copy can replace it
-        claude_md.unlink()
 
-    # 3. Create alias (or replace stale symlink pointing elsewhere)
-    if claude_md.is_symlink():
-        claude_md.unlink()
-
-    result = _links.link_or_copy(agents_md, claude_md, copy=copy)
-    verb = "Symlinked" if result == "symlink" else "Copied"
-    click.echo(f"  {verb}: CLAUDE.md -> AGENTS.md")
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +447,14 @@ def install(
     # Install path-scoped rules in .claude/rules/
     click.echo("Path-scoped rules:")
     _create_rules(target)
+    click.echo()
+
+    # Drop a version stamp in each installed directory so it's obvious
+    # which clasi release wrote the contents.
+    from clasi.platforms._markers import write_version_stamp
+    click.echo("Version stamps:")
+    write_version_stamp(target, ".claude")
+    write_version_stamp(target, ".agents")
     click.echo()
 
 

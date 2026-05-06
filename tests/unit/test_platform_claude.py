@@ -390,62 +390,31 @@ class TestMigrateSummary:
 
 
 class TestMigrateClaudeMd:
-    def test_migrate_converts_claude_md_regular_file_to_symlink(
-        self, tmp_path: Path
-    ) -> None:
-        """install(migrate=True) converts a matching CLAUDE.md regular file to symlink."""
-        from clasi.platforms._markers import write_section
-        from clasi.platforms.claude import _CLAUDE_ENTRY_POINT
+    """The CLAUDE.md symlink-migration path was retired. CLAUDE.md is now
+    a regular file managed by the marker-block writer, so install(migrate=True)
+    has no special behavior for it — the block is written/replaced/appended
+    the same way the non-migrate path does. The remaining test confirms
+    that legacy callers passing migrate=True still get a sensible install."""
 
-        # Write AGENTS.md and create a legacy direct-copy CLAUDE.md
-        agents_md = tmp_path / "AGENTS.md"
-        write_section(agents_md, entry_point=_CLAUDE_ENTRY_POINT,
-                      legacy_match_substr="team-lead/agent.md")
+    def test_migrate_flag_still_installs_block(self, tmp_path: Path) -> None:
+        """install(migrate=True) still produces a valid CLAUDE.md with the CLASI block."""
+        # Pre-existing legacy direct-copy CLAUDE.md (e.g. content matched
+        # AGENTS.md from an old install). New installer just appends/replaces
+        # the block via marker-block semantics.
         claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_bytes(agents_md.read_bytes())
+        claude_md.write_text(
+            "# CLASI Software Engineering Process\n\n"
+            "Old content from a pre-marker-block install.\n",
+            encoding="utf-8",
+        )
+
+        claude_mod.install(tmp_path, mcp_config={}, migrate=True)
+
+        new_content = claude_md.read_text(encoding="utf-8")
+        assert "CLASI:START" in new_content
+        assert "CLASI:END" in new_content
+        # File is still a regular file (no symlink retroactively created).
         assert not claude_md.is_symlink()
-
-        claude_mod.install(tmp_path, mcp_config={}, migrate=True)
-
-        assert claude_md.is_symlink(), "migrate=True must convert matching CLAUDE.md to symlink"
-        assert claude_md.resolve() == agents_md.resolve()
-
-    def test_migrate_claude_md_conflict_leaves_file_unchanged(
-        self, tmp_path: Path
-    ) -> None:
-        """install(migrate=True) leaves CLAUDE.md with different content unchanged."""
-        claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_text("# User authored content — do not touch\n", encoding="utf-8")
-        original_content = claude_md.read_bytes()
-
-        claude_mod.install(tmp_path, mcp_config={}, migrate=True)
-
-        assert claude_md.read_bytes() == original_content
-        assert not claude_md.is_symlink()
-
-    def test_migrate_claude_md_already_symlink_no_error(
-        self, tmp_path: Path, capsys
-    ) -> None:
-        """install(migrate=True) when CLAUDE.md is already a symlink is silent."""
-        # First install creates the symlink
-        claude_mod.install(tmp_path, mcp_config={})
-        claude_md = tmp_path / "CLAUDE.md"
-        assert claude_md.is_symlink()
-
-        # Migrate pass: already-symlink is silently skipped
-        capsys.readouterr()  # clear buffer
-        claude_mod.install(tmp_path, mcp_config={}, migrate=True)
-        captured = capsys.readouterr()
-        # No "Migrated: CLAUDE.md" in the migration section
-        lines = captured.out.split("\n")
-        in_migration_pass = False
-        for line in lines:
-            if "Migration pass:" in line:
-                in_migration_pass = True
-            if "Migration complete:" in line:
-                in_migration_pass = False
-            if in_migration_pass and "Migrated: CLAUDE.md" in line:
-                pytest.fail("Already-symlink CLAUDE.md should not show Migrated message")
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +451,10 @@ class TestIdempotency:
 
 
 class TestClaudeMdSymlink:
-    """CLAUDE.md is a symlink (or copy) pointing at AGENTS.md."""
+    """CLAUDE.md and AGENTS.md are both regular files, each holding the
+    CLASI marker block. The previous symlink model was retired so CLASI
+    can coexist with other tools (e.g. rundbat) that write their own
+    named blocks into CLAUDE.md."""
 
     def test_agents_md_created_by_install(self, tmp_path: Path) -> None:
         """install() writes AGENTS.md with the CLASI marker block."""
@@ -491,21 +463,13 @@ class TestClaudeMdSymlink:
         assert agents_md.exists(), "AGENTS.md must be created by install"
         assert "CLASI:START" in agents_md.read_text(encoding="utf-8")
 
-    def test_claude_md_is_symlink_by_default(self, tmp_path: Path) -> None:
-        """Default install: CLAUDE.md is a symlink pointing at AGENTS.md."""
+    def test_claude_md_is_regular_file_with_block(self, tmp_path: Path) -> None:
+        """Default install: CLAUDE.md is a regular file containing the CLASI block."""
         claude_mod.install(tmp_path, mcp_config={})
         claude_md = tmp_path / "CLAUDE.md"
-        assert claude_md.is_symlink(), "CLAUDE.md must be a symlink"
-        assert claude_md.resolve() == (tmp_path / "AGENTS.md").resolve()
-
-    def test_claude_md_is_regular_file_in_copy_mode(self, tmp_path: Path) -> None:
-        """install(copy=True): CLAUDE.md is a regular file with AGENTS.md content."""
-        claude_mod.install(tmp_path, mcp_config={}, copy=True)
-        claude_md = tmp_path / "CLAUDE.md"
-        agents_md = tmp_path / "AGENTS.md"
         assert claude_md.exists()
-        assert not claude_md.is_symlink(), "CLAUDE.md must be a regular file in copy mode"
-        assert claude_md.read_bytes() == agents_md.read_bytes()
+        assert not claude_md.is_symlink(), "CLAUDE.md is no longer a symlink"
+        assert "CLASI:START" in claude_md.read_text(encoding="utf-8")
 
     def test_both_files_exist_claude_only_install(self, tmp_path: Path) -> None:
         """clasi init --claude (no codex): both AGENTS.md and CLAUDE.md exist."""
@@ -513,47 +477,43 @@ class TestClaudeMdSymlink:
         assert (tmp_path / "AGENTS.md").exists()
         assert (tmp_path / "CLAUDE.md").exists()
 
-    def test_matching_regular_file_replaced_by_symlink(self, tmp_path: Path) -> None:
-        """If CLAUDE.md exists as a regular file with matching AGENTS.md content,
-        re-running install converts it to a symlink."""
-        # First install — creates symlink
-        claude_mod.install(tmp_path, mcp_config={})
-        agents_md = tmp_path / "AGENTS.md"
+    def test_existing_claude_md_with_other_content_preserved(
+        self, tmp_path: Path
+    ) -> None:
+        """If CLAUDE.md already exists with non-CLASI content, install adds
+        the CLASI block via marker-block append; the existing content stays."""
         claude_md = tmp_path / "CLAUDE.md"
-
-        # Simulate legacy state: replace symlink with a regular file copy
-        claude_md.unlink()
-        claude_md.write_bytes(agents_md.read_bytes())
-        assert not claude_md.is_symlink()
-
-        # Re-install — should convert to symlink
-        claude_mod.install(tmp_path, mcp_config={})
-        assert claude_md.is_symlink(), "Matching regular file must be converted to symlink"
-        assert claude_md.resolve() == agents_md.resolve()
-
-    def test_conflict_aborts_and_preserves_claude_md(self, tmp_path: Path) -> None:
-        """If CLAUDE.md is a regular file with different content, install is aborted."""
-        claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_text("# User authored content\n", encoding="utf-8")
-        original_content = claude_md.read_bytes()
-
-        claude_mod.install(tmp_path, mcp_config={})
-
-        # CLAUDE.md must be unchanged (not overwritten)
-        assert claude_md.read_bytes() == original_content, (
-            "Conflicting CLAUDE.md must not be overwritten"
+        original = (
+            "<!-- RUNDBAT:START -->\n"
+            "# rundbat\n"
+            "rundbat-specific content here.\n"
+            "<!-- RUNDBAT:END -->\n"
         )
-        assert not claude_md.is_symlink(), "Conflicting CLAUDE.md must remain a regular file"
+        claude_md.write_text(original, encoding="utf-8")
 
-    def test_install_twice_symlink_idempotent(self, tmp_path: Path) -> None:
-        """Running install twice keeps CLAUDE.md as a symlink to AGENTS.md."""
-        claude_mod.install(tmp_path, mcp_config={})
         claude_mod.install(tmp_path, mcp_config={})
 
-        claude_md = tmp_path / "CLAUDE.md"
-        agents_md = tmp_path / "AGENTS.md"
-        assert claude_md.is_symlink()
-        assert claude_md.resolve() == agents_md.resolve()
+        new_content = claude_md.read_text(encoding="utf-8")
+        # Existing block survives.
+        assert "RUNDBAT:START" in new_content
+        assert "rundbat-specific content here." in new_content
+        # CLASI block was appended.
+        assert "CLASI:START" in new_content
+        assert "CLASI:END" in new_content
+
+    def test_install_twice_idempotent(self, tmp_path: Path) -> None:
+        """Running install twice leaves CLAUDE.md and AGENTS.md unchanged
+        on the second pass (the marker block is replaced in place, not duplicated)."""
+        claude_mod.install(tmp_path, mcp_config={})
+        first = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+        claude_mod.install(tmp_path, mcp_config={})
+        second = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+        assert first == second
+        # Block appears exactly once.
+        assert second.count("CLASI:START") == 1
+        assert second.count("CLASI:END") == 1
 
 
 class TestClaudeMdUninstall:

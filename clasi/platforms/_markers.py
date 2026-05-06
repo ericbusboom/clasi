@@ -34,14 +34,42 @@ MARKER_START = "<!-- CLASI:START -->"
 MARKER_END = "<!-- CLASI:END -->"
 
 
-def render_section(entry_point: str) -> str:
+def _current_version() -> str:
+    """Return the installed clasi version, falling back to 'unknown'."""
+    try:
+        from clasi import __version__
+        return __version__
+    except Exception:
+        return "unknown"
+
+
+def write_version_stamp(target: Path, subdir: str) -> None:
+    """Write the installed clasi version to <target>/<subdir>/.clasi-version.
+
+    A single-line file (version + newline) so a reader can tell which
+    clasi release populated this directory. Each platform installer
+    calls this for the directories it owns (e.g. .claude, .codex).
+    """
+    dest = target / subdir / ".clasi-version"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    version = _current_version()
+    dest.write_text(f"{version}\n", encoding="utf-8")
+    click.echo(f"  Wrote: {subdir}/.clasi-version ({version})")
+
+
+def render_section(entry_point: str, version: Optional[str] = None) -> str:
     """Render the CLASI section content (including markers) for a platform.
 
     `entry_point` is the platform-specific sentence that tells the agent
     where to start reading (e.g. the Claude team-lead agent file, or the
     Codex SE skill file).
+
+    `version` is embedded in the rendered block so readers can tell which
+    clasi release wrote it. Defaults to the installed clasi version.
     """
-    body = CLASI_SECTION_TEMPLATE.format(entry_point=entry_point)
+    if version is None:
+        version = _current_version()
+    body = CLASI_SECTION_TEMPLATE.format(entry_point=entry_point, version=version)
     return f"{MARKER_START}\n{body}{MARKER_END}\n"
 
 

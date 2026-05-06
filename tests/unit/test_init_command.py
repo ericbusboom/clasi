@@ -593,8 +593,12 @@ class TestPlatformsClaude:
             assert "<!-- CLASI:START -->" not in content
             assert "<!-- CLASI:END -->" not in content
 
-    def test_uninstall_removes_claude_md_symlink(self, tmp_path):
-        """uninstall() removes the CLAUDE.md symlink; AGENTS.md content is stripped."""
+    def test_uninstall_strips_claude_md_block(self, tmp_path):
+        """uninstall() strips the CLASI block from CLAUDE.md and AGENTS.md.
+
+        CLAUDE.md is no longer a symlink — both files are regular files
+        with their own copy of the marker block. Uninstall strips the
+        block from each; the file is deleted if it becomes empty."""
         target = tmp_path / "repo"
         target.mkdir()
         mcp_config = _detect_mcp_command(target)
@@ -602,16 +606,18 @@ class TestPlatformsClaude:
 
         claude_md = target / "CLAUDE.md"
         agents_md = target / "AGENTS.md"
-        # After install, CLAUDE.md must be a symlink
-        assert claude_md.is_symlink(), "CLAUDE.md must be a symlink after install"
+        assert claude_md.exists() and not claude_md.is_symlink(), (
+            "CLAUDE.md must be a regular file after install"
+        )
 
         claude_uninstall(target)
 
-        # CLAUDE.md (the symlink) must be gone
-        assert not claude_md.exists(), "CLAUDE.md symlink must be removed by uninstall"
-        # AGENTS.md CLASI block must be stripped (no Codex installed)
-        if agents_md.exists():
-            assert "<!-- CLASI:START -->" not in agents_md.read_text(encoding="utf-8")
+        # Both files: either gone (block was the only content) or block stripped.
+        for f in (claude_md, agents_md):
+            if f.exists():
+                content = f.read_text(encoding="utf-8")
+                assert "<!-- CLASI:START -->" not in content
+                assert "<!-- CLASI:END -->" not in content
 
     def test_uninstall_removes_rule_files(self, tmp_path):
         """uninstall() deletes CLASI-managed rule files."""
