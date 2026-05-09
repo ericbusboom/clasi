@@ -856,7 +856,7 @@ class TestHandleCommitCheck:
 class TestHandlePlanToTodo:
     def test_calls_plan_to_todo_with_standard_dirs(self, tmp_path):
         """handle_plan_to_todo calls plan_to_todo with home/.claude/plans and docs/clasi/todo."""
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
                 handle_plan_to_todo({})
@@ -870,7 +870,7 @@ class TestHandlePlanToTodo:
     def test_prints_result_path_when_todo_created(self, capsys):
         """handle_plan_to_todo writes JSON to stderr and exits 2 when plan_to_todo returns a path."""
         todo_path = Path("docs/clasi/todo/001-my-plan.md")
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = todo_path
             with pytest.raises(SystemExit) as exc:
                 handle_plan_to_todo({})
@@ -882,7 +882,7 @@ class TestHandlePlanToTodo:
 
     def test_no_output_when_no_plan_file(self, capsys):
         """handle_plan_to_todo prints nothing when plan_to_todo returns None."""
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
                 handle_plan_to_todo({})
@@ -893,7 +893,7 @@ class TestHandlePlanToTodo:
     def test_passes_plan_file_path_from_payload(self):
         """handle_plan_to_todo passes planFilePath from payload as plan_file argument."""
         payload = {"tool_input": {"planFilePath": "/tmp/my-plan.md"}}
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit):
                 handle_plan_to_todo(payload)

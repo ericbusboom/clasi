@@ -861,7 +861,7 @@ def handle_codex_plan_to_todo(payload: dict) -> None:
     """
     import re
 
-    from clasi.plan_to_todo import plan_to_todo_from_text
+    from clasi.plan_to_issue import plan_to_issue_from_text
 
     message = payload.get("last_assistant_message", "")
     match = re.search(r"<proposed_plan>(.*?)</proposed_plan>", message, re.DOTALL)
@@ -870,7 +870,7 @@ def handle_codex_plan_to_todo(payload: dict) -> None:
 
     plan_text = match.group(1).strip()
     todo_dir = Path("docs/clasi/todo")
-    result = plan_to_todo_from_text(plan_text, todo_dir)
+    result = plan_to_issue_from_text(plan_text, todo_dir)
     if result:
         print(f"CLASI: Codex plan saved as TODO: {result}")
     sys.exit(0)
@@ -882,12 +882,12 @@ def handle_plan_to_todo(payload: dict) -> None:
     Calls plan_to_todo() with the standard directories and prints the
     path of the created TODO file if one was created.
     """
-    from clasi.plan_to_todo import plan_to_todo
+    from clasi.plan_to_issue import plan_to_issue
 
     plan_file_str = payload.get("tool_input", {}).get("planFilePath")
     plan_file = Path(plan_file_str) if plan_file_str else None
 
-    result = plan_to_todo(
+    result = plan_to_issue(
         Path.home() / ".claude" / "plans",
         Path("docs/clasi/todo"),
         plan_file=plan_file,

@@ -110,10 +110,10 @@ def tool_plan_to_todo(plans_dir, todo_dir):
     """
     from pathlib import Path
 
-    from clasi.plan_to_todo import plan_to_todo
+    from clasi.plan_to_issue import plan_to_issue
 
     plans = Path(plans_dir) if plans_dir else Path.home() / ".claude" / "plans"
-    result = plan_to_todo(plans, Path(todo_dir))
+    result = plan_to_issue(plans, Path(todo_dir))
     if result:
         click.echo(f"CLASI: Plan saved as TODO: {result}")
     else:

@@ -1,11 +1,11 @@
 ---
 id: '004'
 title: Rename `clasi/plan_to_todo.py` to `clasi/plan_to_issue.py` and update all callers
-status: open
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "003"
+- '003'
 github-issue: ''
 todo: rename-clasi-todos-to-issues.md
 completes_todo: false
@@ -22,12 +22,12 @@ Update all callers in `clasi/cli.py` and `clasi/hook_handlers.py`.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plan_to_issue.py` exists; `clasi/plan_to_todo.py` is deleted
-- [ ] Functions renamed: `plan_to_issue`, `plan_to_issue_from_text`
-- [ ] `clasi/cli.py` imports from `plan_to_issue` and calls renamed functions
-- [ ] `clasi/hook_handlers.py` imports from `plan_to_issue` and calls renamed functions
-- [ ] `tests/unit/test_plan_to_todo.py` renamed to `tests/unit/test_plan_to_issue.py`
-- [ ] Full test suite passes
+- [x] `clasi/plan_to_issue.py` exists; `clasi/plan_to_todo.py` is deleted
+- [x] Functions renamed: `plan_to_issue`, `plan_to_issue_from_text`
+- [x] `clasi/cli.py` imports from `plan_to_issue` and calls renamed functions
+- [x] `clasi/hook_handlers.py` imports from `plan_to_issue` and calls renamed functions
+- [x] `tests/unit/test_plan_to_todo.py` renamed to `tests/unit/test_plan_to_issue.py`
+- [x] Full test suite passes
 
 ## Implementation Plan
 
