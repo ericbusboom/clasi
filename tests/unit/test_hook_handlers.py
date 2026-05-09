@@ -146,7 +146,7 @@ class TestHandleTaskCreated:
         assert Path(record["log_file"]).name == log_files[0].name
 
     def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_created exits 0 gracefully if docs/clasi/log does not exist."""
+        """task_created exits 0 gracefully if .clasi/log does not exist."""
         payload = _task_created_payload()
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_task_created, payload)
@@ -265,7 +265,7 @@ class TestHandleTaskCompleted:
         assert "The initial prompt text." in content
 
     def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_completed exits 0 gracefully if docs/clasi/log does not exist."""
+        """task_completed exits 0 gracefully if .clasi/log does not exist."""
         payload = _task_completed_payload()
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_task_completed, payload)
@@ -296,7 +296,7 @@ def _setup_db_with_lock(tmp_path: Path, sprint_id: str = "001") -> str:
 
 class TestGetLogDir:
     def test_returns_none_when_log_dir_missing(self, tmp_path):
-        """_get_log_dir returns None when docs/clasi/log does not exist."""
+        """_get_log_dir returns None when .clasi/log does not exist."""
         result = _run_with_cwd(tmp_path, _get_log_dir)
         assert result is None
 
@@ -432,7 +432,7 @@ class TestGetActiveTickets:
         assert result == []
 
     def test_returns_empty_when_no_sprints_dir(self, tmp_path):
-        """_get_active_tickets returns empty list when docs/clasi/sprints does not exist."""
+        """_get_active_tickets returns empty list when .clasi/sprints does not exist."""
         result = _run_with_cwd(tmp_path, _get_active_tickets, "001")
         assert result == []
 
@@ -619,7 +619,7 @@ class TestRenderTranscriptLines:
     def test_write_md_renders_inline_markdown(self):
         """Write to .md file renders content as inline markdown, no fence."""
         block = _make_tool_use_block("Write", {
-            "file_path": "docs/clasi/sprints/003/tickets/001-ticket.md",
+            "file_path": ".clasi/sprints/003/tickets/001-ticket.md",
             "content": "# Ticket Title\n\nSome description.",
         })
         msg = _make_message_with_tool_use(block)
@@ -762,6 +762,15 @@ class TestHandleHook:
             mock_handler.side_effect = SystemExit(0)
             with pytest.raises(SystemExit):
                 handle_hook("mcp-guard")
+            mock_handler.assert_called_once_with({})
+
+    def test_routes_plan_to_issue(self):
+        """handle_hook('plan-to-issue') calls handle_plan_to_issue."""
+        with patch("clasi.hook_handlers.handle_plan_to_issue") as mock_handler, \
+             patch("clasi.hook_handlers.read_payload", return_value={}):
+            mock_handler.side_effect = SystemExit(0)
+            with pytest.raises(SystemExit):
+                handle_hook("plan-to-issue")
             mock_handler.assert_called_once_with({})
 
     def test_routes_plan_to_todo(self):
@@ -1000,7 +1009,16 @@ class TestHandleCodexPlanToTodo:
 
 
 class TestHandleHookCodexPlanToTodo:
-    """Test that handle_hook routes codex-plan-to-todo to handle_codex_plan_to_issue."""
+    """Test that handle_hook routes codex-plan-to-issue and its backward-compat alias."""
+
+    def test_routes_codex_plan_to_issue(self):
+        """handle_hook('codex-plan-to-issue') calls handle_codex_plan_to_issue."""
+        with patch("clasi.hook_handlers.handle_codex_plan_to_issue") as mock_handler, \
+             patch("clasi.hook_handlers.read_payload", return_value={}):
+            mock_handler.side_effect = SystemExit(0)
+            with pytest.raises(SystemExit):
+                handle_hook("codex-plan-to-issue")
+            mock_handler.assert_called_once_with({})
 
     def test_routes_codex_plan_to_todo(self):
         """handle_hook('codex-plan-to-todo') calls handle_codex_plan_to_issue (backward-compat alias)."""

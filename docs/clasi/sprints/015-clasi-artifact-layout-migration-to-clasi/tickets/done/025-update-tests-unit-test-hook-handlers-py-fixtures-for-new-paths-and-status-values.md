@@ -1,7 +1,7 @@
 ---
 id: "025"
 title: "Update tests/unit/test_hook_handlers.py fixtures for new paths and status values"
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -25,11 +25,11 @@ Also update any `status: todo` fixture values to `status: open`, and any
 
 ## Acceptance Criteria
 
-- [ ] No `docs/clasi` string literals in `test_hook_handlers.py`
-- [ ] No `status: todo` fixture values (use `status: open`)
-- [ ] Hook key references use new names
-- [ ] All tests in `test_hook_handlers.py` pass
-- [ ] `uv run pytest tests/unit/test_hook_handlers.py` — green
+- [x] No `docs/clasi` string literals in `test_hook_handlers.py`
+- [x] No `status: todo` fixture values (use `status: open`)
+- [x] Hook key references use new names
+- [x] All tests in `test_hook_handlers.py` pass
+- [x] `uv run pytest tests/unit/test_hook_handlers.py` — green
 
 ## Implementation Plan
 
