@@ -26,7 +26,7 @@ def _make_sprint_dir(tmp_path, sprint_id="001", title="Test Sprint", slug="test-
     return proj, sprint_dir
 
 
-def _add_ticket(sprint_dir, ticket_id="001", title="Fix Bug", status="todo", done=False):
+def _add_ticket(sprint_dir, ticket_id="001", title="Fix Bug", status="open", done=False):
     """Create a ticket file in the sprint."""
     subdir = sprint_dir / "tickets" / ("done" if done else "")
     subdir.mkdir(parents=True, exist_ok=True)
@@ -277,7 +277,7 @@ class TestSprintTickets:
         t = s.create_ticket("New Feature")
         assert t.id == "001"
         assert t.title == "New Feature"
-        assert t.status == "todo"
+        assert t.status == "open"
         assert t.path.exists()
 
     def test_create_ticket_increments_id(self, tmp_path):
@@ -757,26 +757,26 @@ class TestSprintTicketCounts:
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts == {"todo": 0, "in_progress": 0, "done": 0}
+        assert counts == {"open": 0, "in_progress": 0, "done": 0}
 
     def test_ticket_counts_with_todo_tickets(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
-        _add_ticket(sprint_dir, "001", "First", status="todo")
-        _add_ticket(sprint_dir, "002", "Second", status="todo")
+        _add_ticket(sprint_dir, "001", "First", status="open")
+        _add_ticket(sprint_dir, "002", "Second", status="open")
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts["todo"] == 2
+        assert counts["open"] == 2
         assert counts["in_progress"] == 0
         assert counts["done"] == 0
 
     def test_ticket_counts_mixed_statuses(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
-        _add_ticket(sprint_dir, "001", "Todo", status="todo")
+        _add_ticket(sprint_dir, "001", "Open", status="open")
         _add_ticket(sprint_dir, "002", "In Progress", status="in-progress")
         _add_ticket(sprint_dir, "003", "Done", status="done", done=True)
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts["todo"] == 1
+        assert counts["open"] == 1
         assert counts["in_progress"] == 1
         assert counts["done"] == 1
 

@@ -512,7 +512,7 @@ def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) 
 
     Args:
         sprint_id: Optional sprint ID to filter by
-        status: Optional status filter (todo, in-progress, done)
+        status: Optional status filter (open, in-progress, done)
 
     Returns JSON array of {id, title, status, sprint_id, path}.
     """
@@ -549,7 +549,7 @@ def get_sprint_status(sprint_id: str) -> str:
     Args:
         sprint_id: The sprint ID (e.g., '001')
 
-    Returns JSON with {id, title, status, branch, tickets: {todo, in_progress, done}}.
+    Returns JSON with {id, title, status, branch, tickets: {open, in_progress, done}}.
     """
     sprint = get_project().get_sprint(sprint_id)
 
@@ -571,11 +571,11 @@ def update_ticket_status(path: str, status: str) -> str:
 
     Args:
         path: Path to the ticket file
-        status: New status (todo, in-progress, done)
+        status: New status (open, in-progress, done)
 
     Returns JSON with {path, old_status, new_status}.
     """
-    valid_statuses = {"todo", "in-progress", "done"}
+    valid_statuses = {"open", "in-progress", "done"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
 
@@ -656,8 +656,8 @@ def reopen_ticket(path: str) -> str:
     """Reopen a completed ticket by moving it from done/ back to the sprint's tickets/ directory.
 
     Behaviour:
-    - If the ticket is in tickets/done/, move it back to tickets/ and reset status to "todo".
-    - If the ticket exists but is NOT in done/, just reset status to "todo".
+    - If the ticket is in tickets/done/, move it back to tickets/ and reset status to "open".
+    - If the ticket exists but is NOT in done/, just reset status to "open".
     - If the ticket file doesn't exist anywhere, raise an error.
 
     Also moves the plan file back if one exists in done/.
@@ -1879,7 +1879,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     """Validate sprint state before execution begins.
 
     Checks that planning docs are complete, not template placeholders,
-    and tickets exist in todo status.
+    and tickets exist in open status.
 
     Args:
         sprint_id: The sprint ID (e.g., '015')
@@ -1978,7 +1978,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
             })
         else:
             for t in tickets:
-                if t["status"] not in ("todo", "in-progress"):
+                if t["status"] not in ("open", "in-progress"):
                     issues.append({
                         "severity": "warning",
                         "check": "ticket_status_pre_execution",

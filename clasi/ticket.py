@@ -35,7 +35,7 @@ class Ticket:
     @property
     def status(self) -> str:
         """From frontmatter 'status' field."""
-        return self.frontmatter.get("status", "todo")
+        return self.frontmatter.get("status", "open")
 
     @status.setter
     def status(self, value: str) -> None:
@@ -160,7 +160,7 @@ class Ticket:
         return result
 
     def reopen(self) -> dict:
-        """Reopen this ticket by moving it from done/ back to tickets/ and resetting status to 'todo'.
+        """Reopen this ticket by moving it from done/ back to tickets/ and resetting status to 'open'.
 
         If the ticket is in tickets/done/, moves it back to tickets/.
         If the ticket exists but is not in done/, just resets the status.
@@ -192,13 +192,13 @@ class Ticket:
 
             # Update frontmatter on the moved file
             self._artifact = Artifact(new_path)
-            self._artifact.update_frontmatter(status="todo")
+            self._artifact.update_frontmatter(status="open")
         else:
             # Ticket exists but not in done/ — just reset status
             new_path = old_path
-            self._artifact.update_frontmatter(status="todo")
+            self._artifact.update_frontmatter(status="open")
             result = {"old_path": str(old_path), "new_path": str(new_path)}
 
         result["old_status"] = old_status
-        result["new_status"] = "todo"
+        result["new_status"] = "open"
         return result

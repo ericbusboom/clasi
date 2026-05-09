@@ -7,7 +7,7 @@ from clasi.sprint import Sprint
 from clasi.ticket import Ticket
 
 
-def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="todo",
+def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
            depends_on=None, todo="", use_cases=None):
     """Create a project + sprint + ticket for testing."""
     proj = Project(tmp_path)
@@ -59,7 +59,7 @@ class TestTicketProperties:
 
     def test_default_status(self, tmp_path):
         _, _, t = _setup(tmp_path)
-        assert t.status == "todo"
+        assert t.status == "open"
 
     def test_depends_on_empty(self, tmp_path):
         _, _, t = _setup(tmp_path)
@@ -105,8 +105,8 @@ class TestTicketSetStatus:
     """Test set_status updates frontmatter."""
 
     def test_set_status(self, tmp_path):
-        _, _, t = _setup(tmp_path, status="todo")
-        assert t.status == "todo"
+        _, _, t = _setup(tmp_path, status="open")
+        assert t.status == "open"
         t.set_status("in-progress")
         assert t.status == "in-progress"
 
@@ -220,17 +220,17 @@ class TestTicketReopen:
         result = t.reopen()
 
         assert result["old_status"] == "done"
-        assert result["new_status"] == "todo"
+        assert result["new_status"] == "open"
         assert t.path.parent.name != "done"
-        assert t.status == "todo"
+        assert t.status == "open"
 
     def test_reopen_not_in_done_resets_status(self, tmp_path):
         _, _, t = _setup(tmp_path, status="in-progress")
         result = t.reopen()
 
         assert result["old_status"] == "in-progress"
-        assert result["new_status"] == "todo"
-        assert t.status == "todo"
+        assert result["new_status"] == "open"
+        assert t.status == "open"
         # File should still be in same location
         assert t.path.parent.name != "done"
 
@@ -278,7 +278,7 @@ def _make_ticket_with_completes_todo(tmp_path, completes_todo_yaml: str) -> Tick
 
     ticket_path = tickets_dir / "001-fix-bug.md"
     ticket_path.write_text(
-        f'---\nid: "001"\ntitle: "Fix Bug"\nstatus: todo\n'
+        f'---\nid: "001"\ntitle: "Fix Bug"\nstatus: open\n'
         f"use-cases: []\ndepends-on: []\ntodo: \"\"\n"
         f"{completes_todo_yaml}"
         f"---\n# Fix Bug\n\n## Description\n\nSome work.\n",

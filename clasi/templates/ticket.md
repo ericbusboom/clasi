@@ -1,7 +1,7 @@
 ---
 id: "{id}"
 title: "{title}"
-status: todo
+status: open
 use-cases: []
 depends-on: []
 github-issue: ""

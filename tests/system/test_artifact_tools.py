@@ -243,8 +243,8 @@ class TestListTickets:
     def test_filter_by_status(self, work_dir):
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
-        create_ticket("001", "Todo Task")
-        result = json.loads(list_tickets(status="todo"))
+        create_ticket("001", "Open Task")
+        result = json.loads(list_tickets(status="open"))
         assert len(result) == 1
         result = json.loads(list_tickets(status="done"))
         assert len(result) == 0
@@ -259,7 +259,7 @@ class TestGetSprintStatus:
         result = json.loads(get_sprint_status("001"))
         assert result["id"] == "001"
         assert result["status"] == "planning"
-        assert result["tickets"]["todo"] == 2
+        assert result["tickets"]["open"] == 2
         assert result["tickets"]["done"] == 0
 
     def test_not_found(self, work_dir):
@@ -273,7 +273,7 @@ class TestUpdateTicketStatus:
         _advance_to_ticketing(work_dir, "001")
         ticket = json.loads(create_ticket("001", "Task"))
         result = json.loads(update_ticket_status(ticket["path"], "in-progress"))
-        assert result["old_status"] == "todo"
+        assert result["old_status"] == "open"
         assert result["new_status"] == "in-progress"
         fm = read_frontmatter(ticket["path"])
         assert fm["status"] == "in-progress"
@@ -592,12 +592,12 @@ class TestReopenTicket:
 
         result = json.loads(reopen_ticket(ticket["path"]))
         assert result["old_status"] == "done"
-        assert result["new_status"] == "todo"
+        assert result["new_status"] == "open"
         assert Path(result["old_path"]).parent.name == "done"
         assert Path(result["new_path"]).parent.name == "tickets"
         assert Path(result["new_path"]).exists()
         fm = read_frontmatter(result["new_path"])
-        assert fm["status"] == "todo"
+        assert fm["status"] == "open"
 
     def test_reopens_with_plan_file(self, work_dir):
         """Plan file in done/ is moved back alongside the ticket."""
@@ -614,7 +614,7 @@ class TestReopenTicket:
         assert "done" not in result["plan_new_path"]
 
     def test_reopens_already_active_ticket(self, work_dir):
-        """Ticket not in done/ just gets status reset to todo."""
+        """Ticket not in done/ just gets status reset to open."""
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
         ticket = json.loads(create_ticket("001", "Task"))
@@ -622,10 +622,10 @@ class TestReopenTicket:
 
         result = json.loads(reopen_ticket(ticket["path"]))
         assert result["old_status"] == "in-progress"
-        assert result["new_status"] == "todo"
+        assert result["new_status"] == "open"
         assert result["old_path"] == result["new_path"]
         fm = read_frontmatter(result["new_path"])
-        assert fm["status"] == "todo"
+        assert fm["status"] == "open"
 
     def test_ticket_not_found_raises_error(self, work_dir):
         """Nonexistent ticket raises ValueError."""
@@ -642,7 +642,7 @@ class TestReopenTicket:
 
         result = json.loads(reopen_ticket(ticket["path"]))
         fm = read_frontmatter(result["new_path"])
-        assert fm["status"] == "todo"
+        assert fm["status"] == "open"
         assert fm["title"] == "Important Task"
         assert fm["id"] == "001"
 
