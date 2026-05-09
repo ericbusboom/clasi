@@ -2,11 +2,11 @@
 id: '002'
 title: Rename ticket frontmatter fields `todo:` to `issue:` and `completes_todo:`
   to `completes_issue:`
-status: todo
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "001"
+- '001'
 github-issue: ''
 todo: rename-clasi-todos-to-issues.md
 completes_todo: false
@@ -26,13 +26,13 @@ status value must be correct before touching other template fields.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/templates/ticket.md`: `todo: ""` field renamed to `issue: ""`
-- [ ] `clasi/templates/ticket.md`: `completes_todo:` renamed to `completes_issue:` (with updated comment)
-- [ ] `clasi/ticket.py`: `todo_ref` property renamed to `issue_ref`; reads `issue:` frontmatter key
-- [ ] `clasi/ticket.py`: `completes_todo_for(filename)` renamed to `completes_issue_for(filename)`
-- [ ] `clasi/tools/artifact_tools.py`: all reads of `todo:` / `completes_todo:` frontmatter keys updated
-- [ ] `clasi/sprint.py`: `create_ticket` template population updated
-- [ ] Full test suite passes
+- [x] `clasi/templates/ticket.md`: `todo: ""` field renamed to `issue: ""`
+- [x] `clasi/templates/ticket.md`: `completes_todo:` renamed to `completes_issue:` (with updated comment)
+- [x] `clasi/ticket.py`: `todo_ref` property renamed to `issue_ref`; reads `issue:` frontmatter key
+- [x] `clasi/ticket.py`: `completes_todo_for(filename)` renamed to `completes_issue_for(filename)`
+- [x] `clasi/tools/artifact_tools.py`: all reads of `todo:` / `completes_todo:` frontmatter keys updated
+- [x] `clasi/sprint.py`: `create_ticket` template population updated
+- [x] Full test suite passes
 
 ## Implementation Plan
 

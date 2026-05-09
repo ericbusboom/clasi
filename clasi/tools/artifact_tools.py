@@ -96,10 +96,10 @@ def _is_ticket_done(ticket_ref: str) -> bool:
 
 
 def _any_ticket_suppresses_todo(ticket_refs: list[str], todo_filename: str) -> bool:
-    """Return True if any referencing ticket has completes_todo: false for the given TODO.
+    """Return True if any referencing ticket has completes_issue: false for the given issue.
 
     Iterates over all ticket references (as 'sprint_id-ticket_id' strings) and
-    calls ``Ticket.completes_todo_for(todo_filename)`` on each one that can be
+    calls ``Ticket.completes_issue_for(todo_filename)`` on each one that can be
     loaded.  If any ticket returns ``False``, archival should be suppressed.
 
     Returns False (do not suppress) if no tickets can be loaded or all return True.
@@ -114,40 +114,40 @@ def _any_ticket_suppresses_todo(ticket_refs: list[str], todo_filename: str) -> b
             ticket = sprint.get_ticket(ticket_id)
         except ValueError:
             continue
-        if not ticket.completes_todo_for(todo_filename):
+        if not ticket.completes_issue_for(todo_filename):
             return True
     return False
 
 
 def _todo_is_deferred(sprint: Sprint, todo_filename: str) -> bool:
-    """Return True if a TODO is intentionally deferred by a ticket in this sprint.
+    """Return True if an issue is intentionally deferred by a ticket in this sprint.
 
-    A TODO is considered deferred when at least one ticket in ``sprint`` that
-    lists ``todo_filename`` in its ``todo`` frontmatter field has
-    ``completes_todo: false`` for that filename.
+    An issue is considered deferred when at least one ticket in ``sprint`` that
+    lists ``todo_filename`` in its ``issue`` frontmatter field has
+    ``completes_issue: false`` for that filename.
 
     This is used by the close_sprint precondition check: if every ticket that
-    references the TODO has ``completes_todo: true`` (or absent), the TODO
+    references the issue has ``completes_issue: true`` (or absent), the issue
     should have been archived and its in-progress state is an error.  But if
-    any ticket deliberately set ``completes_todo: false``, the TODO is expected
+    any ticket deliberately set ``completes_issue: false``, the issue is expected
     to remain in-progress for future sprints, and the precondition should allow
     the sprint to close.
 
-    Returns False (not deferred) if no tickets in the sprint reference the TODO,
-    or if all referencing tickets have ``completes_todo: true`` (default).
+    Returns False (not deferred) if no tickets in the sprint reference the issue,
+    or if all referencing tickets have ``completes_issue: true`` (default).
     """
     for location in [sprint.tickets_dir, sprint.tickets_done_dir]:
         if not location.exists():
             continue
         for ticket_file in sorted(location.glob("*.md")):
             ticket = Ticket(ticket_file, sprint)
-            todo_ref = ticket.todo_ref
-            if todo_ref is None:
+            issue_ref = ticket.issue_ref
+            if issue_ref is None:
                 continue
-            linked = [todo_ref] if isinstance(todo_ref, str) else list(todo_ref)
+            linked = [issue_ref] if isinstance(issue_ref, str) else list(issue_ref)
             if todo_filename not in linked:
                 continue
-            if not ticket.completes_todo_for(todo_filename):
+            if not ticket.completes_issue_for(todo_filename):
                 return True
     return False
 
@@ -462,9 +462,9 @@ def create_ticket(
 
     ticket = sprint.create_ticket(title, todo=todo_arg)
 
-    # If multiple TODOs, set the todo field to a list
+    # If multiple issues, set the issue field to a list
     if todo_list and len(todo_list) > 1:
-        ticket._artifact.update_frontmatter(todo=todo_list)
+        ticket._artifact.update_frontmatter(issue=todo_list)
 
     # Update each referenced TODO file and move to in-progress
     if todo_list:
@@ -623,8 +623,8 @@ def move_ticket_to_done(path: str) -> str:
     # Move the ticket and its plan file
     result = ticket.move_to_done_with_plan()
 
-    # Check if this ticket references any TODOs and trigger completion
-    todo_refs = ticket.todo_ref
+    # Check if this ticket references any issues and trigger completion
+    todo_refs = ticket.issue_ref
     if todo_refs is not None:
         todo_list = [todo_refs] if isinstance(todo_refs, str) else list(todo_refs)
         completed_todos: list[str] = []
@@ -886,8 +886,8 @@ def _close_sprint_full(
                 else:
                     # TODO still in-progress — check if intentionally deferred
                     if _todo_is_deferred(sprint, todo_file.name):
-                        # At least one ticket in this sprint has completes_todo: false
-                        # for this TODO — it spans future sprints; allow close to proceed
+                        # At least one ticket in this sprint has completes_issue: false
+                        # for this issue — it spans future sprints; allow close to proceed
                         continue
                     # TODO is unresolved and not deferred — unrepairable
                     error_msg = f"TODO {todo_file.name} is still in-progress for sprint {sprint_id}"

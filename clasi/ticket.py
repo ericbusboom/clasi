@@ -50,25 +50,25 @@ class Ticket:
         return list(val) if val else []
 
     @property
-    def todo_ref(self) -> str | None:
-        """From frontmatter 'todo' field."""
-        val = self.frontmatter.get("todo", "")
+    def issue_ref(self) -> str | None:
+        """From frontmatter 'issue' field."""
+        val = self.frontmatter.get("issue", "")
         return val if val else None
 
-    def completes_todo_for(self, filename: str) -> bool:
-        """Return whether moving this ticket to done should archive a linked TODO.
+    def completes_issue_for(self, filename: str) -> bool:
+        """Return whether moving this ticket to done should archive a linked issue.
 
-        Reads the ``completes_todo`` frontmatter field and resolves it for the
-        given TODO filename.
+        Reads the ``completes_issue`` frontmatter field and resolves it for the
+        given issue filename.
 
         Resolution rules:
-        - Absent or ``True`` (scalar): return ``True`` (default — archive the TODO).
-        - ``False`` (scalar): return ``False`` (suppress archival for all linked TODOs).
+        - Absent or ``True`` (scalar): return ``True`` (default — archive the issue).
+        - ``False`` (scalar): return ``False`` (suppress archival for all linked issues).
         - Mapping ``{filename: bool, ...}``: look up ``filename``; default ``True``
           if the key is absent.
         - Any other unexpected type: return ``True`` (safe default).
         """
-        val = self.frontmatter.get("completes_todo")
+        val = self.frontmatter.get("completes_issue")
         if val is None or val is True:
             return True
         if val is False:

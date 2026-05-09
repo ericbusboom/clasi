@@ -8,7 +8,7 @@ from clasi.ticket import Ticket
 
 
 def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
-           depends_on=None, todo="", use_cases=None):
+           depends_on=None, issue="", use_cases=None):
     """Create a project + sprint + ticket for testing."""
     proj = Project(tmp_path)
     sprint_dir = proj.sprints_dir / "001-test-sprint"
@@ -29,10 +29,10 @@ def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
     ticket_path = tickets_dir / f"{ticket_id}-{slug}.md"
     deps_str = str(deps)
     ucs_str = str(ucs)
-    todo_val = f'"{todo}"' if todo else '""'
+    issue_val = f'"{issue}"' if issue else '""'
     ticket_path.write_text(
         f"---\nid: \"{ticket_id}\"\ntitle: \"{title}\"\nstatus: {status}\n"
-        f"use-cases: {ucs_str}\ndepends-on: {deps_str}\ntodo: {todo_val}\n---\n"
+        f"use-cases: {ucs_str}\ndepends-on: {deps_str}\nissue: {issue_val}\n---\n"
         f"# {title}\n\n## Description\n\nSome work.\n",
         encoding="utf-8",
     )
@@ -69,13 +69,13 @@ class TestTicketProperties:
         _, _, t = _setup(tmp_path, depends_on=["001", "002"])
         assert t.depends_on == ["001", "002"]
 
-    def test_todo_ref_empty(self, tmp_path):
+    def test_issue_ref_empty(self, tmp_path):
         _, _, t = _setup(tmp_path)
-        assert t.todo_ref is None
+        assert t.issue_ref is None
 
-    def test_todo_ref_set(self, tmp_path):
-        _, _, t = _setup(tmp_path, todo="my-idea.md")
-        assert t.todo_ref == "my-idea.md"
+    def test_issue_ref_set(self, tmp_path):
+        _, _, t = _setup(tmp_path, issue="my-idea.md")
+        assert t.issue_ref == "my-idea.md"
 
     def test_use_cases(self, tmp_path):
         _, _, t = _setup(tmp_path, use_cases=["UC-1", "UC-2"])
@@ -261,8 +261,8 @@ class TestTicketReopen:
         assert "new_status" in result
 
 
-def _make_ticket_with_completes_todo(tmp_path, completes_todo_yaml: str) -> Ticket:
-    """Create a ticket with an explicit completes_todo frontmatter line."""
+def _make_ticket_with_completes_issue(tmp_path, completes_issue_yaml: str) -> Ticket:
+    """Create a ticket with an explicit completes_issue frontmatter line."""
     proj = Project(tmp_path)
     sprint_dir = proj.sprints_dir / "001-test-sprint"
     sprint_dir.mkdir(parents=True, exist_ok=True)
@@ -279,8 +279,8 @@ def _make_ticket_with_completes_todo(tmp_path, completes_todo_yaml: str) -> Tick
     ticket_path = tickets_dir / "001-fix-bug.md"
     ticket_path.write_text(
         f'---\nid: "001"\ntitle: "Fix Bug"\nstatus: open\n'
-        f"use-cases: []\ndepends-on: []\ntodo: \"\"\n"
-        f"{completes_todo_yaml}"
+        f'use-cases: []\ndepends-on: []\nissue: ""\n'
+        f"{completes_issue_yaml}"
         f"---\n# Fix Bug\n\n## Description\n\nSome work.\n",
         encoding="utf-8",
     )
@@ -289,48 +289,48 @@ def _make_ticket_with_completes_todo(tmp_path, completes_todo_yaml: str) -> Tick
     return Ticket(ticket_path, sprint)
 
 
-class TestCompletesTodoFor:
-    """Tests for Ticket.completes_todo_for()."""
+class TestCompletesIssueFor:
+    """Tests for Ticket.completes_issue_for()."""
 
     def test_absent_field_returns_true(self, tmp_path):
-        """No completes_todo field → default True (backward-compatible)."""
+        """No completes_issue field → default True (backward-compatible)."""
         _, _, t = _setup(tmp_path)
-        assert t.completes_todo_for("some-todo.md") is True
+        assert t.completes_issue_for("some-todo.md") is True
 
     def test_scalar_true_returns_true(self, tmp_path):
-        """completes_todo: true → True."""
-        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: true\n")
-        assert t.completes_todo_for("some-todo.md") is True
+        """completes_issue: true → True."""
+        t = _make_ticket_with_completes_issue(tmp_path, "completes_issue: true\n")
+        assert t.completes_issue_for("some-todo.md") is True
 
     def test_scalar_false_returns_false(self, tmp_path):
-        """completes_todo: false → False."""
-        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: false\n")
-        assert t.completes_todo_for("some-todo.md") is False
+        """completes_issue: false → False."""
+        t = _make_ticket_with_completes_issue(tmp_path, "completes_issue: false\n")
+        assert t.completes_issue_for("some-todo.md") is False
 
     def test_scalar_false_applies_to_any_filename(self, tmp_path):
-        """completes_todo: false suppresses all filenames uniformly."""
-        t = _make_ticket_with_completes_todo(tmp_path, "completes_todo: false\n")
-        assert t.completes_todo_for("alpha.md") is False
-        assert t.completes_todo_for("beta.md") is False
+        """completes_issue: false suppresses all filenames uniformly."""
+        t = _make_ticket_with_completes_issue(tmp_path, "completes_issue: false\n")
+        assert t.completes_issue_for("alpha.md") is False
+        assert t.completes_issue_for("beta.md") is False
 
     def test_map_explicit_false(self, tmp_path):
         """Map with filename → false returns False for that filename."""
-        t = _make_ticket_with_completes_todo(
-            tmp_path, "completes_todo:\n  umbrella.md: false\n"
+        t = _make_ticket_with_completes_issue(
+            tmp_path, "completes_issue:\n  umbrella.md: false\n"
         )
-        assert t.completes_todo_for("umbrella.md") is False
+        assert t.completes_issue_for("umbrella.md") is False
 
     def test_map_absent_key_defaults_to_true(self, tmp_path):
         """Map without the queried filename defaults to True."""
-        t = _make_ticket_with_completes_todo(
-            tmp_path, "completes_todo:\n  umbrella.md: false\n"
+        t = _make_ticket_with_completes_issue(
+            tmp_path, "completes_issue:\n  umbrella.md: false\n"
         )
         # A different filename not in the map → True
-        assert t.completes_todo_for("single-sprint.md") is True
+        assert t.completes_issue_for("single-sprint.md") is True
 
     def test_map_explicit_true(self, tmp_path):
         """Map with filename → true returns True."""
-        t = _make_ticket_with_completes_todo(
-            tmp_path, "completes_todo:\n  my-todo.md: true\n"
+        t = _make_ticket_with_completes_issue(
+            tmp_path, "completes_issue:\n  my-todo.md: true\n"
         )
-        assert t.completes_todo_for("my-todo.md") is True
+        assert t.completes_issue_for("my-todo.md") is True

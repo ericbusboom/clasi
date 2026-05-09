@@ -193,7 +193,7 @@ class TestCreateTicketWithTodo:
         result = json.loads(create_ticket("001", "Implement Idea", todo="my-idea.md"))
         from pathlib import Path
         ticket_fm = read_frontmatter(result["path"])
-        assert ticket_fm["todo"] == "my-idea.md"
+        assert ticket_fm["issue"] == "my-idea.md"
 
     def test_updates_todo_frontmatter_on_create(self, work_dir):
         todo = self._setup_sprint(work_dir)
@@ -217,7 +217,7 @@ class TestCreateTicketWithTodo:
         )
         from pathlib import Path
         ticket_fm = read_frontmatter(result["path"])
-        assert ticket_fm["todo"] == ["idea-a.md", "idea-b.md"]
+        assert ticket_fm["issue"] == ["idea-a.md", "idea-b.md"]
 
         # Both TODOs should be in in-progress/
         fm_a = read_frontmatter(todo / "in-progress" / "idea-a.md")
@@ -348,9 +348,9 @@ class TestCloseSprintTodoHandling:
         assert not (todo / "done" / "unlinked.md").exists()
 
     def test_close_sprint_allows_deferred_todo(self, work_dir):
-        """Legacy path: in-progress TODO with completes_todo: false does not block close.
+        """Legacy path: in-progress TODO with completes_issue: false does not block close.
 
-        A ticket in the sprint has completes_todo: false for the TODO, so the
+        A ticket in the sprint has completes_issue: false for the TODO, so the
         TODO is intentionally deferred (it spans future sprints). The sprint
         should close without reporting the TODO as unresolved.
         """
@@ -364,10 +364,10 @@ class TestCloseSprintTodoHandling:
         result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
         ticket_path = result["path"]
 
-        # Mark ticket as done but set completes_todo: false — deferred pattern
+        # Mark ticket as done but set completes_issue: false — deferred pattern
         fm = read_frontmatter(ticket_path)
         fm["status"] = "done"
-        fm["completes_todo"] = False
+        fm["completes_issue"] = False
         write_frontmatter(ticket_path, fm)
 
         # Close sprint — TODO is still in-progress but deferred, so no error
@@ -377,9 +377,9 @@ class TestCloseSprintTodoHandling:
         assert (todo / "in-progress" / "umbrella.md").exists()
 
     def test_close_sprint_blocks_unresolved_todo(self, work_dir):
-        """Legacy path: in-progress TODO with no completes_todo: false is an error.
+        """Legacy path: in-progress TODO with no completes_issue: false is an error.
 
-        All tickets referencing the TODO have completes_todo: true (default).
+        All tickets referencing the TODO have completes_issue: true (default).
         The TODO should have been archived but was not — the sprint close must
         report it as unresolved.
         """
@@ -393,7 +393,7 @@ class TestCloseSprintTodoHandling:
         result = json.loads(create_ticket("001", "Task", todo="unresolved.md"))
         ticket_path = result["path"]
 
-        # Mark ticket done but do NOT set completes_todo: false — default (true)
+        # Mark ticket done but do NOT set completes_issue: false — default (true)
         fm = read_frontmatter(ticket_path)
         fm["status"] = "done"
         write_frontmatter(ticket_path, fm)
@@ -411,7 +411,7 @@ class TestCloseSprintTodoHandling:
     ):
         """Full lifecycle path (_close_sprint_full): deferred TODO does not block precondition.
 
-        A ticket has completes_todo: false. The precondition check (step 1b)
+        A ticket has completes_issue: false. The precondition check (step 1b)
         should skip the TODO and let close_sprint proceed past the precondition
         step. With mocked subprocess, the sprint closes successfully.
         """
@@ -430,15 +430,15 @@ class TestCloseSprintTodoHandling:
         result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
         ticket_path = result["path"]
 
-        # Set completes_todo: false before moving ticket to done
+        # Set completes_issue: false before moving ticket to done
         fm = read_frontmatter(ticket_path)
-        fm["completes_todo"] = False
+        fm["completes_issue"] = False
         write_frontmatter(ticket_path, fm)
 
         update_ticket_status(ticket_path, "done")
         move_ticket_to_done(ticket_path)
 
-        # TODO must still be in in-progress/ (suppressed by completes_todo: false)
+        # TODO must still be in in-progress/ (suppressed by completes_issue: false)
         assert (todo / "in-progress" / "umbrella.md").exists()
 
         # Mock subprocess calls for the full lifecycle
@@ -472,7 +472,7 @@ class TestCloseSprintTodoHandling:
 
 
 class TestMoveTicketToDoneCompletesTodoGuard:
-    """Tests for move_ticket_to_done respecting completes_todo_for."""
+    """Tests for move_ticket_to_done respecting completes_issue_for."""
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
@@ -507,7 +507,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         return todo, ticket_path
 
     def test_archives_single_sprint_todo_by_default(self, work_dir):
-        """Existing behavior: no completes_todo field → TODO is archived."""
+        """Existing behavior: no completes_issue field → TODO is archived."""
         from clasi.tools.artifact_tools import move_ticket_to_done
 
         todo, ticket_path = self._setup_sprint_with_todo(work_dir, "my-idea.md")
@@ -520,14 +520,14 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         assert not (todo / "in-progress" / "my-idea.md").exists()
 
     def test_does_not_archive_when_completes_todo_scalar_false(self, work_dir):
-        """completes_todo: false on the ticket → TODO is NOT archived."""
+        """completes_issue: false on the ticket → TODO is NOT archived."""
         from clasi.tools.artifact_tools import move_ticket_to_done
 
         todo, ticket_path = self._setup_sprint_with_todo(work_dir, "umbrella.md")
 
-        # Add completes_todo: false to the ticket frontmatter
+        # Add completes_issue: false to the ticket frontmatter
         fm = read_frontmatter(ticket_path)
-        fm["completes_todo"] = False
+        fm["completes_issue"] = False
         write_frontmatter(ticket_path, fm)
 
         result = json.loads(move_ticket_to_done(ticket_path))
@@ -538,10 +538,10 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         assert not (todo / "done" / "umbrella.md").exists()
 
     def test_does_not_archive_when_any_ref_ticket_has_false(self, work_dir):
-        """If any referencing ticket has completes_todo: false, TODO is NOT archived.
+        """If any referencing ticket has completes_issue: false, TODO is NOT archived.
 
         Scenario: two tickets reference the same TODO; ticket 001 has
-        completes_todo: false, ticket 002 has none (defaults to True).
+        completes_issue: false, ticket 002 has none (defaults to True).
         After both are done, moving ticket 002 to done must not archive the TODO.
         """
         from clasi.tools.artifact_tools import move_ticket_to_done
@@ -561,14 +561,14 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         r2 = json.loads(create_ticket("001", "Part Two", todo="umbrella.md"))
         ticket2_path = r2["path"]
 
-        # Mark ticket 001 as done and give it completes_todo: false
+        # Mark ticket 001 as done and give it completes_issue: false
         fm1 = read_frontmatter(ticket1_path)
         fm1["status"] = "done"
-        fm1["completes_todo"] = False
+        fm1["completes_issue"] = False
         write_frontmatter(ticket1_path, fm1)
         move_ticket_to_done(ticket1_path)
 
-        # Now mark ticket 002 as done (no completes_todo flag)
+        # Now mark ticket 002 as done (no completes_issue flag)
         fm2 = read_frontmatter(ticket2_path)
         fm2["status"] = "done"
         write_frontmatter(ticket2_path, fm2)
@@ -586,7 +586,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         todo, ticket_path = self._setup_sprint_with_todo(work_dir, "umbrella.md")
 
         fm = read_frontmatter(ticket_path)
-        fm["completes_todo"] = False
+        fm["completes_issue"] = False
         write_frontmatter(ticket_path, fm)
 
         result = json.loads(move_ticket_to_done(ticket_path))

@@ -172,7 +172,7 @@ class TestCreateTicket:
 
         result = json.loads(create_ticket("001", "Auto Linked"))
         ticket_fm = read_frontmatter(result["path"])
-        assert ticket_fm["todo"] == ["idea-a.md", "idea-b.md"]
+        assert ticket_fm["issue"] == ["idea-a.md", "idea-b.md"]
 
     def test_explicit_todo_not_overridden_by_sprint_todos(self, work_dir):
         """Explicit todo param takes priority over sprint.md todos."""
@@ -187,7 +187,7 @@ class TestCreateTicket:
 
         result = json.loads(create_ticket("001", "Explicit", todo="explicit.md"))
         ticket_fm = read_frontmatter(result["path"])
-        assert ticket_fm["todo"] == "explicit.md"
+        assert ticket_fm["issue"] == "explicit.md"
 
     def test_no_todos_field_no_auto_link(self, work_dir):
         """When sprint.md has no todos field, no auto-linking happens."""

@@ -202,7 +202,7 @@ class Sprint:
 
         if todo is not None:
             fm = read_frontmatter(path)
-            fm["todo"] = todo
+            fm["issue"] = todo
             Artifact(path).write(fm, Artifact(path).content)
 
         return Ticket(path, self)
