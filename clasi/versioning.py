@@ -1,6 +1,6 @@
 """Versioning utilities for the CLASI project.
 
-Supports configurable version formats via docs/clasi/settings.yaml.
+Supports configurable version formats via .clasi/settings.yaml.
 
 Default format: X+.YYYYMMDD.R+
 
@@ -216,7 +216,7 @@ def _load_settings(project_root: Path | None = None) -> dict:
 
 
 def load_version_format(project_root: Path | None = None) -> str:
-    """Load the version format from docs/clasi/settings.yaml.
+    """Load the version format from .clasi/settings.yaml.
 
     Falls back to DEFAULT_FORMAT if the file or key doesn't exist.
     """
@@ -224,7 +224,7 @@ def load_version_format(project_root: Path | None = None) -> str:
 
 
 def load_version_trigger(project_root: Path | None = None) -> str:
-    """Load the version trigger from docs/clasi/settings.yaml.
+    """Load the version trigger from .clasi/settings.yaml.
 
     Returns one of: 'manual', 'every_sprint', 'every_change'.
     Falls back to DEFAULT_TRIGGER ('every_change') if not set.

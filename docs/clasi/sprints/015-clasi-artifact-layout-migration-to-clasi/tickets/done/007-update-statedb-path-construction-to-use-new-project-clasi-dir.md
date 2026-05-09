@@ -1,11 +1,11 @@
 ---
 id: '007'
 title: Update `StateDB` path construction to use new `Project.clasi_dir`
-status: open
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "006"
+- '006'
 github-issue: ''
 todo: move-clasi-artifact-root-from-docs-clasi-to-dot-clasi.md
 completes_todo: false
@@ -25,10 +25,10 @@ Also update any docstrings in `clasi/versioning.py` that reference `docs/clasi/s
 
 ## Acceptance Criteria
 
-- [ ] `Project.db` returns `<root>/.clasi/.clasi.db` (verified by test or inspection)
-- [ ] `clasi/state_db.py` and `clasi/state_db_class.py` have no hardcoded `docs/clasi/` strings
-- [ ] `clasi/versioning.py` docstrings updated if they reference old path
-- [ ] Full test suite passes
+- [x] `Project.db` returns `<root>/.clasi/.clasi.db` (verified by test or inspection)
+- [x] `clasi/state_db.py` and `clasi/state_db_class.py` have no hardcoded `docs/clasi/` strings
+- [x] `clasi/versioning.py` docstrings updated if they reference old path
+- [x] Full test suite passes
 
 ## Implementation Plan
 
