@@ -2,7 +2,7 @@
 id: 018
 title: Add `Sprint.issues_dir` property and `Sprint.list_issues()` method; verify
   `Sprint.archive()` carries issues
-status: open
+status: done
 use-cases:
   - SUC-002
 depends-on:
@@ -28,11 +28,11 @@ if `archive()` moves the entire sprint dir; confirm and add a test assertion.
 
 ## Acceptance Criteria
 
-- [ ] `Sprint.issues_dir` property returns `<sprint_path>/issues`
-- [ ] `Sprint.list_issues()` returns `Issue` objects for all files in `issues/`
-- [ ] Test: archive a sprint that has an `issues/` subdir; verify the issues dir is
+- [x] `Sprint.issues_dir` property returns `<sprint_path>/issues`
+- [x] `Sprint.list_issues()` returns `Issue` objects for all files in `issues/`
+- [x] Test: archive a sprint that has an `issues/` subdir; verify the issues dir is
   in `done/<sprint>/issues/` after archive
-- [ ] Full test suite passes
+- [x] Full test suite passes
 
 ## Implementation Plan
 

@@ -140,6 +140,11 @@ class Sprint:
         """Path to the tickets/done/ directory."""
         return self._path / "tickets" / "done"
 
+    @property
+    def issues_dir(self) -> Path:
+        """Path to the issues/ directory within this sprint."""
+        return self._path / "issues"
+
     # --- Ticket management ---
 
     def list_tickets(self, status: str | None = None) -> list[Ticket]:
@@ -159,6 +164,22 @@ class Sprint:
                 results.append(Ticket(f, self))
 
         return results
+
+    def list_issues(self) -> list:
+        """List Issue objects from this sprint's issues/ directory.
+
+        Returns Issue objects for all *.md files found in ``self.issues_dir``.
+        Returns an empty list if the directory does not exist.
+        """
+        from clasi.issue import Issue
+
+        if not self.issues_dir.exists():
+            return []
+
+        return [
+            Issue(f, self._project)
+            for f in sorted(self.issues_dir.glob("*.md"))
+        ]
 
     def get_ticket(self, ticket_id: str) -> Ticket:
         """Get a ticket by its ID."""
