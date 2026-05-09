@@ -730,12 +730,10 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     sprint = project.get_sprint(sprint_id)
 
     # Check in-progress TODOs — they should already be resolved individually.
-    # Look in both the sprint-scoped issues dir and the legacy global in-progress dir.
+    # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
     unresolved_todos: list[str] = []
     sprint_issues_dir = sprint.path / "issues"
-    todo_directory = project.issues_dir
-    in_progress_dirs = [sprint_issues_dir, todo_directory / "in-progress"]
-    for in_progress_todo_dir in in_progress_dirs:
+    for in_progress_todo_dir in [sprint_issues_dir]:
         if not in_progress_todo_dir.exists():
             continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
@@ -749,10 +747,11 @@ def _close_sprint_legacy(sprint_id: str) -> str:
                     if not _todo_is_deferred(sprint, todo_file.name):
                         unresolved_todos.append(todo_file.name)
 
-    # Also check legacy pending TODOs tagged with this sprint
+    # Check pending pool issues tagged with this sprint
+    pending_dir = project.issues_dir
     moved_todos: list[str] = []
-    if todo_directory.exists():
-        for todo_file in sorted(todo_directory.glob("*.md")):
+    if pending_dir.exists():
+        for todo_file in sorted(pending_dir.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
@@ -877,11 +876,9 @@ def _close_sprint_full(
                 }, indent=2)
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
-    # Look in both the sprint-scoped issues dir and the legacy global in-progress dir.
-    todo_directory = project.issues_dir
+    # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
     sprint_issues_dir_full = sprint.path / "issues"
-    in_progress_dirs_full = [sprint_issues_dir_full, todo_directory / "in-progress"]
-    for in_progress_todo_dir in in_progress_dirs_full:
+    for in_progress_todo_dir in [sprint_issues_dir_full]:
         if not in_progress_todo_dir.exists():
             continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
@@ -918,9 +915,10 @@ def _close_sprint_full(
                         "completed_steps": [],
                         "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                     }, indent=2)
-    # Also check pending TODOs in todo/ that are tagged with this sprint (legacy)
-    if todo_directory.exists():
-        for todo_file in sorted(todo_directory.glob("*.md")):
+    # Also check pending pool issues that are tagged with this sprint
+    pending_pool = project.issues_dir
+    if pending_pool.exists():
+        for todo_file in sorted(pending_pool.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):

@@ -865,7 +865,7 @@ class TestHandlePlanToTodo:
         assert exc.value.code == 0
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/todo")
+        assert str(args[1]).endswith(".clasi/issues")
         assert kwargs.get("plan_file") is None
 
     def test_prints_result_path_when_todo_created(self, capsys):
@@ -900,7 +900,7 @@ class TestHandlePlanToTodo:
                 handle_plan_to_issue(payload)
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/todo")
+        assert str(args[1]).endswith(".clasi/issues")
         assert kwargs.get("plan_file") == Path("/tmp/my-plan.md")
 
 
@@ -931,7 +931,7 @@ class TestHandleCodexPlanToTodo:
 
     def test_with_plan_creates_todo_exits_0(self, tmp_path, capsys):
         """<proposed_plan> present: one TODO file created, exits 0."""
-        (tmp_path / ".clasi" / "todo").mkdir(parents=True)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -939,7 +939,7 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / ".clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "issues"
         todo_files = list(todo_dir.glob("*.md"))
         assert len(todo_files) == 1
         content = todo_files[0].read_text()
@@ -961,7 +961,7 @@ class TestHandleCodexPlanToTodo:
 
     def test_dedup_second_call_creates_no_file(self, tmp_path):
         """Duplicate plan (same content hash): second call creates no file."""
-        (tmp_path / ".clasi" / "todo").mkdir(parents=True)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -970,7 +970,7 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / ".clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "issues"
         files_after_first = list(todo_dir.glob("*.md"))
         assert len(files_after_first) == 1
 

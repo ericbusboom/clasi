@@ -2,7 +2,7 @@
 id: 019
 title: '`Project.list_issues()`: scan only `.clasi/issues/` pending pool (no subdirectory
   scanning)'
-status: open
+status: done
 use-cases:
   - SUC-002
 depends-on:
@@ -28,11 +28,11 @@ then every sprint's `<sprint>/issues/<filename>` (active sprints). Remove search
 
 ## Acceptance Criteria
 
-- [ ] `Project.list_issues()` returns only pending pool issues (`.clasi/issues/*.md`)
-- [ ] `Project.get_issue(filename)` finds pending issues and sprint-scoped issues
-- [ ] No scan of `in-progress/` or `done/` subdirectory (those don't exist)
-- [ ] Tests verify: pending issue is found; sprint-scoped issue is found via sprint
-- [ ] Full test suite passes
+- [x] `Project.list_issues()` returns only pending pool issues (`.clasi/issues/*.md`)
+- [x] `Project.get_issue(filename)` finds pending issues and sprint-scoped issues
+- [x] No scan of `in-progress/` or `done/` subdirectory (those don't exist)
+- [x] Tests verify: pending issue is found; sprint-scoped issue is found via sprint
+- [x] Full test suite passes
 
 ## Implementation Plan
 

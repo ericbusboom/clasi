@@ -258,12 +258,14 @@ class TestProjectListIssues:
         issues = proj.list_issues()
         assert len(issues) == 2
 
-    def test_list_issues_includes_in_progress(self, tmp_path):
+    def test_list_issues_pending_pool_only(self, tmp_path):
+        """list_issues() returns only files in the pending pool top-level dir."""
         proj = Project(tmp_path)
         proj.issues_dir.mkdir(parents=True)
         (proj.issues_dir / "pending.md").write_text(
             "---\nstatus: pending\n---\n# Pending\n", encoding="utf-8"
         )
+        # A file in a subdirectory should NOT be included
         ip_dir = proj.issues_dir / "in-progress"
         ip_dir.mkdir()
         (ip_dir / "active.md").write_text(
@@ -271,7 +273,8 @@ class TestProjectListIssues:
             encoding="utf-8",
         )
         issues = proj.list_issues()
-        assert len(issues) == 2
+        assert len(issues) == 1
+        assert issues[0].path.name == "pending.md"
 
     def test_list_issues_excludes_done(self, tmp_path):
         proj = Project(tmp_path)
@@ -292,9 +295,16 @@ class TestProjectListIssues:
         t = proj.get_issue("idea.md")
         assert t.title == "My Idea"
 
-    def test_get_issue_in_progress(self, tmp_path):
-        proj, _ = _make_issue(tmp_path, filename="wip.md",
-                               status="in-progress", sprint="001")
+    def test_get_issue_finds_sprint_scoped_issue(self, tmp_path):
+        """get_issue finds issues in <sprint>/issues/ directories."""
+        proj = Project(tmp_path)
+        sprint_dir = _make_sprint(proj, "001")
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "wip.md").write_text(
+            "---\nstatus: in-progress\nsprint: \"001\"\n---\n# WIP\n",
+            encoding="utf-8",
+        )
         t = proj.get_issue("wip.md")
         assert t.status == "in-progress"
 

@@ -60,10 +60,10 @@ def _sprint_issues_dir(work_dir, sprint_id: str = "001") -> "Path":
 
 
 def _setup_sprint_with_todo(work_dir, todo_content="---\nstatus: pending\n---\n\n# My Idea\n"):
-    """Create a sprint in ticketing phase with a TODO file."""
+    """Create a sprint in ticketing phase with a TODO file in the pending pool."""
     create_sprint("Test Sprint")
     _advance_to_ticketing(work_dir, "001")
-    todo = work_dir / ".clasi" / "todo"
+    todo = work_dir / ".clasi" / "issues"
     todo.mkdir(parents=True, exist_ok=True)
     (todo / "my-idea.md").write_text(todo_content)
     return todo
@@ -208,45 +208,33 @@ class TestMoveTicketToDoneTriggersCompletion:
         assert "completed_todos" not in move_result
 
 
-class TestListTodosIncludesInProgress:
-    """list_todos should scan both pending and in-progress directories."""
+class TestListTodosPendingPool:
+    """list_todos returns only the pending pool (.clasi/issues/*.md)."""
 
-    def test_lists_pending_and_in_progress(self, work_dir):
-        todo = work_dir / ".clasi" / "todo"
+    def test_lists_pending_issues(self, work_dir):
+        """list_todos returns pending issues from the pending pool."""
+        todo = work_dir / ".clasi" / "issues"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "pending.md").write_text("---\nstatus: pending\n---\n\n# Pending\n")
-        in_progress = todo / "in-progress"
-        in_progress.mkdir()
-        (in_progress / "active.md").write_text(
-            "---\nstatus: in-progress\nsprint: '001'\ntickets:\n  - '001-001'\n---\n\n# Active\n"
-        )
 
         result = json.loads(list_todos())
-        assert len(result) == 2
+        assert len(result) == 1
 
         pending = next(r for r in result if r["filename"] == "pending.md")
-        active = next(r for r in result if r["filename"] == "active.md")
-
         assert pending["status"] == "pending"
-        assert active["status"] == "in-progress"
-        assert active["sprint"] == "001"
-        assert active["tickets"] == ["001-001"]
 
     def test_excludes_done(self, work_dir):
-        todo = work_dir / ".clasi" / "todo"
+        """list_todos excludes files in subdirectories (done/, in-progress/)."""
+        todo = work_dir / ".clasi" / "issues"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "active.md").write_text("# Active\n")
         done = todo / "done"
         done.mkdir()
         (done / "finished.md").write_text("# Finished\n")
-        in_progress = todo / "in-progress"
-        in_progress.mkdir()
-        (in_progress / "working.md").write_text("---\nstatus: in-progress\n---\n\n# Working\n")
 
         result = json.loads(list_todos())
         filenames = [r["filename"] for r in result]
         assert "active.md" in filenames
-        assert "working.md" in filenames
         assert "finished.md" not in filenames
 
 
