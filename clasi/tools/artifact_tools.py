@@ -1091,7 +1091,7 @@ def _close_sprint_full(
     completed_steps.append("version_bump")
 
     # ── Step 5b: Commit .clasi.db if still dirty after version_bump ──
-    db_file = project.root / "docs" / "clasi" / ".clasi.db"
+    db_file = project.clasi_dir / ".clasi.db"
     if db_file.exists():
         status_result = subprocess.run(
             ["git", "status", "--porcelain", str(db_file)],

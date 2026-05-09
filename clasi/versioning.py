@@ -189,14 +189,19 @@ VALID_TRIGGERS = ("manual", "every_sprint", "every_change")
 
 
 def _load_settings(project_root: Path | None = None) -> dict:
-    """Load docs/clasi/settings.yaml as a dict.
+    """Load .clasi/settings.yaml as a dict.
+
+    Falls back to the legacy docs/clasi/settings.yaml location for
+    repos that have not yet migrated the artifact root.
 
     Returns an empty dict if the file doesn't exist or can't be parsed.
     """
     if project_root is None:
         project_root = Path.cwd()
 
-    settings_path = project_root / "docs" / "clasi" / "settings.yaml"
+    settings_path = project_root / ".clasi" / "settings.yaml"
+    if not settings_path.exists():
+        settings_path = project_root / "docs" / "clasi" / "settings.yaml"
     if not settings_path.exists():
         settings_path = project_root / "docs" / "plans" / "settings.yaml"
     if not settings_path.exists():

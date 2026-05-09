@@ -25,32 +25,32 @@ class Project:
 
     @property
     def clasi_dir(self) -> Path:
-        """docs/clasi/ directory."""
-        return self._root / "docs" / "clasi"
+        """.clasi/ directory — root for all CLASI artifacts."""
+        return self._root / ".clasi"
 
     @property
     def design_dir(self) -> Path:
-        """docs/clasi/design/ directory — overview, specification, usecases."""
-        return self.clasi_dir / "design"
+        """docs/design/ directory — overview, specification, usecases."""
+        return self._root / "docs" / "design"
 
     @property
     def sprints_dir(self) -> Path:
-        """docs/clasi/sprints/ directory."""
+        """.clasi/sprints/ directory."""
         return self.clasi_dir / "sprints"
 
     @property
     def issues_dir(self) -> Path:
-        """docs/clasi/todo/ directory."""
+        """.clasi/todo/ directory."""
         return self.clasi_dir / "todo"
 
     @property
     def log_dir(self) -> Path:
-        """docs/clasi/log/ directory."""
+        """.clasi/log/ directory."""
         return self.clasi_dir / "log"
 
     @property
     def architecture_dir(self) -> Path:
-        """docs/clasi/architecture/ directory."""
+        """.clasi/architecture/ directory."""
         return self.clasi_dir / "architecture"
 
     @property

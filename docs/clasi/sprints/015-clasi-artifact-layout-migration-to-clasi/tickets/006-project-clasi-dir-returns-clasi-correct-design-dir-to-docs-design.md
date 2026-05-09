@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: '`Project.clasi_dir` returns `.clasi/`; correct `design_dir` to `docs/design/`'
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -26,12 +26,12 @@ in the source repo). It becomes `self._root / "docs" / "design"`.
 
 ## Acceptance Criteria
 
-- [ ] `Project.clasi_dir` returns `<root>/.clasi`
-- [ ] `Project.design_dir` returns `<root>/docs/design`
-- [ ] `Project.sprints_dir`, `issues_dir`, `log_dir`, `architecture_dir`, `db` all
+- [x] `Project.clasi_dir` returns `<root>/.clasi`
+- [x] `Project.design_dir` returns `<root>/docs/design`
+- [x] `Project.sprints_dir`, `issues_dir`, `log_dir`, `architecture_dir`, `db` all
   inherit the new root automatically (verify by inspection or test)
-- [ ] `Project.docstrings` updated to reference `.clasi/`
-- [ ] Full test suite passes (tests using `tmp_path / "docs" / "clasi"` must be updated
+- [x] `Project.docstrings` updated to reference `.clasi/`
+- [x] Full test suite passes (tests using `tmp_path / "docs" / "clasi"` must be updated
   to `tmp_path / ".clasi"` — see test update tickets 025-027)
 
 Note: test fixture updates are deferred to tickets 025-027. This ticket may

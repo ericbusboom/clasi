@@ -26,7 +26,7 @@ from clasi.state_db import (
 
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
@@ -37,7 +37,7 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through to executing phase."""
     _advance_to_ticketing(work_dir, sprint_id)
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)  # ticketing -> executing
     acquire_lock(db_path, sprint_id)
 
@@ -53,7 +53,7 @@ def _setup_sprint_with_todo(work_dir, todo_content="---\nstatus: pending\n---\n\
     """Create a sprint in ticketing phase with a TODO file."""
     create_sprint("Test Sprint")
     _advance_to_ticketing(work_dir, "001")
-    todo = work_dir / "docs" / "clasi" / "todo"
+    todo = work_dir / ".clasi" / "todo"
     todo.mkdir(parents=True, exist_ok=True)
     (todo / "my-idea.md").write_text(todo_content)
     return todo
@@ -194,7 +194,7 @@ class TestListTodosIncludesInProgress:
     """list_todos should scan both pending and in-progress directories."""
 
     def test_lists_pending_and_in_progress(self, work_dir):
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "pending.md").write_text("---\nstatus: pending\n---\n\n# Pending\n")
         in_progress = todo / "in-progress"
@@ -215,7 +215,7 @@ class TestListTodosIncludesInProgress:
         assert active["tickets"] == ["001-001"]
 
     def test_excludes_done(self, work_dir):
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "active.md").write_text("# Active\n")
         done = todo / "done"

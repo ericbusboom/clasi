@@ -26,14 +26,14 @@ def todo_dir(tmp_path, monkeypatch):
     """Set up a temporary working directory with docs/clasi/todo/."""
     monkeypatch.chdir(tmp_path)
     set_project(tmp_path)
-    todo = tmp_path / "docs" / "clasi" / "todo"
+    todo = tmp_path / ".clasi" / "todo"
     todo.mkdir(parents=True)
     return todo
 
 
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase for testing."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
@@ -43,7 +43,7 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
     """Advance a sprint all the way to executing phase."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     _advance_to_ticketing(work_dir, sprint_id)
     acquire_lock(str(db_path), sprint_id)
     advance_phase(str(db_path), sprint_id)  # ticketing → executing
@@ -182,7 +182,7 @@ class TestCreateTicketWithTodo:
         create_sprint("Test Sprint")
         _advance_to_ticketing(work_dir, "001")
         # Create a TODO file
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         return todo
 
@@ -275,7 +275,7 @@ class TestCloseSprintTodoHandling:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
@@ -300,7 +300,7 @@ class TestCloseSprintTodoHandling:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
 
@@ -323,7 +323,7 @@ class TestCloseSprintTodoHandling:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "linked.md").write_text("---\nstatus: pending\n---\n\n# Linked\n")
         (todo / "unlinked.md").write_text(
@@ -357,7 +357,7 @@ class TestCloseSprintTodoHandling:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 
@@ -386,7 +386,7 @@ class TestCloseSprintTodoHandling:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "unresolved.md").write_text("---\nstatus: pending\n---\n\n# Unresolved\n")
 
@@ -423,7 +423,7 @@ class TestCloseSprintTodoHandling:
             '[project]\nname = "test"\nversion = "0.0.0"\n'
         )
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 
@@ -490,7 +490,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         create_sprint("Test Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / todo_filename).write_text(
             f"---\nstatus: pending\n---\n\n# My Idea\n"
@@ -549,7 +549,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         create_sprint("Test Sprint")
         _advance_to_ticketing(work_dir, "001")
 
-        todo = work_dir / "docs" / "clasi" / "todo"
+        todo = work_dir / ".clasi" / "todo"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 

@@ -42,7 +42,7 @@ def work_dir(tmp_path, monkeypatch):
 
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase for testing."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)  # planning-docs → architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review → stakeholder-review
@@ -53,7 +53,7 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 class TestCreateSprint:
     def test_creates_directory_structure(self, work_dir):
         result = json.loads(create_sprint("Test Sprint"))
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         assert sprint_dir.is_dir()
         assert (sprint_dir / "sprint.md").exists()
         assert not (sprint_dir / "brief.md").exists()
@@ -77,7 +77,7 @@ class TestCreateSprint:
 
     def test_sprint_template_has_merged_sections(self, work_dir):
         create_sprint("My Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-my-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-my-sprint"
         content = (sprint_dir / "sprint.md").read_text()
         assert "## Problem" in content
         assert "## Solution" in content
@@ -89,7 +89,7 @@ class TestCreateSprintArchitectureUpdate:
     def test_creates_architecture_update_template(self, work_dir):
         """create_sprint generates a lightweight architecture-update template."""
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         arch = sprint_dir / "architecture-update.md"
         assert arch.exists()
         content = arch.read_text(encoding="utf-8")
@@ -100,7 +100,7 @@ class TestCreateSprintArchitectureUpdate:
 
     def test_does_not_copy_previous_architecture(self, work_dir):
         """create_sprint no longer copies the full architecture."""
-        arch_dir = work_dir / "docs" / "clasi" / "architecture"
+        arch_dir = work_dir / ".clasi" / "architecture"
         arch_dir.mkdir(parents=True)
         (arch_dir / "architecture-015.md").write_text(
             "---\nstatus: approved\n---\n\n# Architecture\n\nExisting arch.\n",
@@ -108,7 +108,7 @@ class TestCreateSprintArchitectureUpdate:
         )
 
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         # Should NOT have architecture.md (old behavior)
         assert not (sprint_dir / "architecture.md").exists()
         # Should have architecture-update.md (new behavior)
@@ -117,7 +117,7 @@ class TestCreateSprintArchitectureUpdate:
     def test_architecture_update_includes_sprint_id(self, work_dir):
         """architecture-update template includes the sprint ID."""
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         content = (sprint_dir / "architecture-update.md").read_text(encoding="utf-8")
         assert "001" in content
 
@@ -164,7 +164,7 @@ class TestCreateTicket:
         _advance_to_ticketing(work_dir, "001")
         # Add todos field to sprint.md frontmatter
         sprint_md = (
-            work_dir / "docs" / "clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+            work_dir / ".clasi" / "sprints" / "001-my-sprint" / "sprint.md"
         )
         fm = read_frontmatter(sprint_md)
         fm["todos"] = ["idea-a.md", "idea-b.md"]
@@ -179,7 +179,7 @@ class TestCreateTicket:
         create_sprint("My Sprint")
         _advance_to_ticketing(work_dir, "001")
         sprint_md = (
-            work_dir / "docs" / "clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+            work_dir / ".clasi" / "sprints" / "001-my-sprint" / "sprint.md"
         )
         fm = read_frontmatter(sprint_md)
         fm["todos"] = ["idea-a.md", "idea-b.md"]
@@ -342,7 +342,7 @@ class TestInsertSprint:
         assert result["renumbered"][1]["new_id"] == "004"
 
         # Verify directories exist with correct names
-        sprints = work_dir / "docs" / "clasi" / "sprints"
+        sprints = work_dir / ".clasi" / "sprints"
         assert (sprints / "001-alpha").is_dir()
         assert (sprints / "002-urgent-fix").is_dir()
         assert (sprints / "003-beta").is_dir()
@@ -357,7 +357,7 @@ class TestInsertSprint:
         insert_sprint("001", "Inserted")
 
         # Beta was 002, now should be 003
-        sprints = work_dir / "docs" / "clasi" / "sprints"
+        sprints = work_dir / ".clasi" / "sprints"
         fm = read_frontmatter(sprints / "003-beta" / "sprint.md")
         assert fm["id"] == "003"
         assert fm["branch"] == "sprint/003-beta"
@@ -367,7 +367,7 @@ class TestInsertSprint:
         create_sprint("Beta")
         insert_sprint("001", "Inserted")
 
-        sprints = work_dir / "docs" / "clasi" / "sprints"
+        sprints = work_dir / ".clasi" / "sprints"
         content = (sprints / "003-beta" / "sprint.md").read_text(encoding="utf-8")
         assert "Sprint 003" in content
         assert "Sprint 002" not in content
@@ -380,7 +380,7 @@ class TestInsertSprint:
         assert result["id"] == "003"
         assert result["renumbered"] == []
 
-        sprints = work_dir / "docs" / "clasi" / "sprints"
+        sprints = work_dir / ".clasi" / "sprints"
         assert (sprints / "003-final").is_dir()
 
     def test_refuses_renumbering_active_sprint(self, work_dir):
@@ -432,7 +432,7 @@ class TestInsertSprint:
         assert result["id"] == "002"
         assert len(result["renumbered"]) == 3
 
-        sprints = work_dir / "docs" / "clasi" / "sprints"
+        sprints = work_dir / ".clasi" / "sprints"
         assert (sprints / "001-alpha").is_dir()
         assert (sprints / "002-urgent").is_dir()
         assert (sprints / "003-beta").is_dir()
@@ -442,7 +442,7 @@ class TestInsertSprint:
 
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
     """Advance a sprint all the way to executing phase."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     _advance_to_ticketing(work_dir, sprint_id)
     acquire_lock(str(db_path), sprint_id)
     advance_phase(str(db_path), sprint_id)  # ticketing → executing
@@ -462,7 +462,7 @@ class TestCloseSprintEdgeCases:
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
         close_sprint("001")
-        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        db_path = work_dir / ".clasi" / ".clasi.db"
         state = get_sprint_state(str(db_path), "001")
         assert state["phase"] == "done"
 
@@ -470,7 +470,7 @@ class TestCloseSprintEdgeCases:
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
         close_sprint("001")
-        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        db_path = work_dir / ".clasi" / ".clasi.db"
         state = get_sprint_state(str(db_path), "001")
         assert state["lock"] is None
 
@@ -497,7 +497,7 @@ class TestCloseSprintEdgeCases:
     def test_close_copies_architecture_update(self, work_dir):
         """close_sprint copies architecture-update.md to architecture dir."""
         create_sprint("Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-sprint"
         # Write content to the architecture-update file
         arch_update = sprint_dir / "architecture-update.md"
         arch_update.write_text(
@@ -505,7 +505,7 @@ class TestCloseSprintEdgeCases:
             encoding="utf-8",
         )
         close_sprint("001")
-        arch_dir = work_dir / "docs" / "clasi" / "architecture"
+        arch_dir = work_dir / ".clasi" / "architecture"
         dest = arch_dir / "architecture-update-001.md"
         assert dest.exists()
         content = dest.read_text(encoding="utf-8")
@@ -515,7 +515,7 @@ class TestCloseSprintEdgeCases:
         """close_sprint works even if no architecture-update.md exists."""
         create_sprint("Sprint")
         # Remove the architecture-update file
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-sprint"
         arch_update = sprint_dir / "architecture-update.md"
         if arch_update.exists():
             arch_update.unlink()
@@ -528,7 +528,7 @@ class TestCloseSprintEdgeCases:
 
     def test_close_destination_already_exists(self, work_dir):
         create_sprint("Sprint")
-        done_dir = work_dir / "docs" / "clasi" / "sprints" / "done"
+        done_dir = work_dir / ".clasi" / "sprints" / "done"
         done_dir.mkdir(parents=True)
         (done_dir / "001-sprint").mkdir()
         with pytest.raises(ValueError, match="already exists"):
@@ -769,7 +769,7 @@ class TestCloseSprintFull:
         assert "archive" in result["completed_steps"]
 
         # Verify recovery state was written
-        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        db_path = work_dir / ".clasi" / ".clasi.db"
         recovery = get_recovery_state(db_path)
         assert recovery is not None
         assert recovery["step"] == "merge"
@@ -895,7 +895,7 @@ class TestCloseSprintFull:
         move_ticket_to_done(ticket["path"])
 
         # Pre-write a recovery state
-        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        db_path = work_dir / ".clasi" / ".clasi.db"
         write_recovery_state(str(db_path), "001", "tests", [], "old failure")
 
         mock_run.side_effect = [
@@ -930,7 +930,7 @@ class TestCloseSprintLockAndDbGuard:
     def test_dirty_db_guard_commits_when_versioning_disabled(self, mock_run, work_dir):
         """Guard stages and commits .clasi.db when dirty and versioning is manual."""
         # Disable versioning so no version bump subprocess calls happen
-        settings_dir = work_dir / "docs" / "clasi"
+        settings_dir = work_dir / ".clasi"
         settings_dir.mkdir(parents=True, exist_ok=True)
         (settings_dir / "settings.yaml").write_text("version_trigger: manual\n")
 
@@ -960,7 +960,7 @@ class TestCloseSprintLockAndDbGuard:
 
         # Verify that git add and git commit were called with the .clasi.db path
         calls = mock_run.call_args_list
-        db_path_str = str(work_dir / "docs" / "clasi" / ".clasi.db")
+        db_path_str = str(work_dir / ".clasi" / ".clasi.db")
         add_calls = [c for c in calls if c.args[0][:2] == ["git", "add"] and db_path_str in c.args[0]]
         commit_calls = [c for c in calls if c.args[0][:3] == ["git", "commit", "-m"] and "chore: update .clasi.db" in c.args[0]]
         assert len(add_calls) == 1, "Expected one git add .clasi.db call"
@@ -1001,7 +1001,7 @@ class TestCloseSprintLockAndDbGuard:
 
         # Verify no git add .clasi.db or "chore: update .clasi.db" commit was made
         calls = mock_run.call_args_list
-        db_path_str = str(work_dir / "docs" / "clasi" / ".clasi.db")
+        db_path_str = str(work_dir / ".clasi" / ".clasi.db")
         db_add_calls = [c for c in calls if c.args[0][:2] == ["git", "add"] and db_path_str in c.args[0]]
         db_commit_calls = [c for c in calls if c.args[0][:3] == ["git", "commit", "-m"] and "chore: update .clasi.db" in c.args[0]]
         assert len(db_add_calls) == 0, "Guard should not run git add .clasi.db when tree is clean"
@@ -1011,7 +1011,7 @@ class TestCloseSprintLockAndDbGuard:
     def test_lock_released_after_merge_failure(self, mock_run, work_dir):
         """Execution lock is released in finally block even when merge raises RuntimeError."""
         # Disable versioning for a simpler call sequence
-        settings_dir = work_dir / "docs" / "clasi"
+        settings_dir = work_dir / ".clasi"
         settings_dir.mkdir(parents=True, exist_ok=True)
         (settings_dir / "settings.yaml").write_text("version_trigger: manual\n")
 
@@ -1021,7 +1021,7 @@ class TestCloseSprintLockAndDbGuard:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
-        db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+        db_path = work_dir / ".clasi" / ".clasi.db"
 
         # Verify lock is held before close_sprint (lock is a dict when held, None when not)
         state_before = get_sprint_state(str(db_path), "001")
@@ -1052,7 +1052,7 @@ class TestCloseSprintLockAndDbGuard:
     def test_db_guard_skipped_when_not_on_sprint_branch(self, mock_run, work_dir):
         """Guard does not commit .clasi.db when HEAD is not the sprint branch."""
         # Disable versioning for a simpler call sequence
-        settings_dir = work_dir / "docs" / "clasi"
+        settings_dir = work_dir / ".clasi"
         settings_dir.mkdir(parents=True, exist_ok=True)
         (settings_dir / "settings.yaml").write_text("version_trigger: manual\n")
 
@@ -1078,6 +1078,6 @@ class TestCloseSprintLockAndDbGuard:
 
         # Verify no targeted .clasi.db commit was made
         calls = mock_run.call_args_list
-        db_path_str = str(work_dir / "docs" / "clasi" / ".clasi.db")
+        db_path_str = str(work_dir / ".clasi" / ".clasi.db")
         db_commit_calls = [c for c in calls if c.args[0][:3] == ["git", "commit", "-m"] and "chore: update .clasi.db" in c.args[0]]
         assert len(db_commit_calls) == 0, "Guard must not commit when not on sprint branch"

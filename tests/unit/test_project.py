@@ -17,23 +17,27 @@ class TestProject:
 
     def test_clasi_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.clasi_dir == tmp_path / "docs" / "clasi"
+        assert proj.clasi_dir == tmp_path / ".clasi"
+
+    def test_design_dir(self, tmp_path):
+        proj = Project(tmp_path)
+        assert proj.design_dir == tmp_path / "docs" / "design"
 
     def test_sprints_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.sprints_dir == tmp_path / "docs" / "clasi" / "sprints"
+        assert proj.sprints_dir == tmp_path / ".clasi" / "sprints"
 
     def test_issues_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.issues_dir == tmp_path / "docs" / "clasi" / "todo"
+        assert proj.issues_dir == tmp_path / ".clasi" / "todo"
 
     def test_log_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.log_dir == tmp_path / "docs" / "clasi" / "log"
+        assert proj.log_dir == tmp_path / ".clasi" / "log"
 
     def test_architecture_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.architecture_dir == tmp_path / "docs" / "clasi" / "architecture"
+        assert proj.architecture_dir == tmp_path / ".clasi" / "architecture"
 
     def test_mcp_config_path(self, tmp_path):
         proj = Project(tmp_path)
