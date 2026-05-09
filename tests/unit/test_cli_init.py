@@ -38,8 +38,8 @@ def _has_codex_artifacts(target):
 def _has_shared_artifacts(target):
     """True when shared scaffolding is present."""
     return (
-        (target / "docs" / "clasi" / "todo").exists()
-        and (target / "docs" / "clasi" / "log").exists()
+        (target / ".clasi" / "issues").exists()
+        and (target / ".clasi" / "log").exists()
         and (target / ".mcp.json").exists()
     )
 

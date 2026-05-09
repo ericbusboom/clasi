@@ -192,26 +192,33 @@ def run_init(
     _update_mcp_json(target_path / ".mcp.json", target_path)
     click.echo()
 
-    # Create TODO directories (shared setup).
-    click.echo("TODO directories:")
-    todo_dir = target_path / "docs" / "clasi" / "todo"
-    todo_in_progress = todo_dir / "in-progress"
-    todo_done = todo_dir / "done"
-    for d in [todo_dir, todo_in_progress, todo_done]:
-        d.mkdir(parents=True, exist_ok=True)
-        gitkeep = d / ".gitkeep"
-        if not gitkeep.exists() and not any(d.iterdir()):
-            gitkeep.touch()
-    click.echo("  Created: docs/clasi/todo/ (with in-progress/ and done/)")
+    # Create .clasi/ directory structure (shared setup).
+    click.echo(".clasi/ directories:")
+    clasi_dir = target_path / ".clasi"
 
-    # Create log directory with .gitignore (shared setup).
-    click.echo()
-    click.echo("Log directory:")
-    log_dir = target_path / "docs" / "clasi" / "log"
+    # Issues directory: pending pool only — no in-progress/ or done/ subdirs.
+    issues_dir = clasi_dir / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+    gitkeep = issues_dir / ".gitkeep"
+    if not gitkeep.exists() and not any(issues_dir.iterdir()):
+        gitkeep.touch()
+    click.echo("  Created: .clasi/issues/ (pending pool)")
+
+    # Other standard .clasi/ subdirectories.
+    for subdir_name in ("sprints", "architecture", "reflections"):
+        subdir = clasi_dir / subdir_name
+        subdir.mkdir(parents=True, exist_ok=True)
+        gk = subdir / ".gitkeep"
+        if not gk.exists() and not any(subdir.iterdir()):
+            gk.touch()
+    click.echo("  Created: .clasi/sprints/, .clasi/architecture/, .clasi/reflections/")
+
+    # Log directory with .gitignore.
+    log_dir = clasi_dir / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_gitignore = log_dir / ".gitignore"
     log_gitignore.write_text("# Ignore all log files\n*\n!.gitignore\n", encoding="utf-8")
-    click.echo("  Created: docs/clasi/log/ (with .gitignore)")
+    click.echo("  Created: .clasi/log/ (with .gitignore)")
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")

@@ -213,20 +213,39 @@ class TestRunInit:
         assert "Custom content." in content
         assert "CLASI:START" in content
 
-    def test_creates_todo_directories(self, target_dir):
+    def test_creates_issues_directory_pending_pool_only(self, target_dir):
+        """clasi init creates .clasi/issues/ (pending pool) with no subdirs."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        todo_dir = target_dir / "docs" / "clasi" / "todo"
-        assert todo_dir.exists()
-        assert (todo_dir / "in-progress").exists()
-        assert (todo_dir / "done").exists()
+        issues_dir = target_dir / ".clasi" / "issues"
+        assert issues_dir.exists()
+        # No in-progress/ or done/ subdirectories at root issues level
+        assert not (issues_dir / "in-progress").exists()
+        assert not (issues_dir / "done").exists()
+
+    def test_does_not_create_docs_clasi_todo(self, target_dir):
+        """clasi init must not create docs/clasi/todo/ or any docs/clasi/ dirs."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        docs_clasi = target_dir / "docs" / "clasi"
+        assert not docs_clasi.exists()
+
+    def test_creates_clasi_subdirectories(self, target_dir):
+        """clasi init creates .clasi/sprints/, .clasi/architecture/, .clasi/reflections/."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        clasi_dir = target_dir / ".clasi"
+        for subdir in ("sprints", "architecture", "reflections"):
+            assert (clasi_dir / subdir).exists(), f".clasi/{subdir}/ not created"
 
     def test_creates_log_directory_with_gitignore(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        log_dir = target_dir / "docs" / "clasi" / "log"
+        log_dir = target_dir / ".clasi" / "log"
         assert log_dir.exists()
 
         gitignore = log_dir / ".gitignore"
@@ -240,7 +259,7 @@ class TestRunInit:
         run_init(str(target_dir))
         run_init(str(target_dir))
 
-        gitignore = target_dir / "docs" / "clasi" / "log" / ".gitignore"
+        gitignore = target_dir / ".clasi" / "log" / ".gitignore"
         assert gitignore.exists()
         content = gitignore.read_text(encoding="utf-8")
         assert "*" in content
