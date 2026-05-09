@@ -23,9 +23,9 @@ class TestProject:
         proj = Project(tmp_path)
         assert proj.sprints_dir == tmp_path / "docs" / "clasi" / "sprints"
 
-    def test_todo_dir(self, tmp_path):
+    def test_issues_dir(self, tmp_path):
         proj = Project(tmp_path)
-        assert proj.todo_dir == tmp_path / "docs" / "clasi" / "todo"
+        assert proj.issues_dir == tmp_path / "docs" / "clasi" / "todo"
 
     def test_log_dir(self, tmp_path):
         proj = Project(tmp_path)

@@ -39,7 +39,7 @@ class Project:
         return self.clasi_dir / "sprints"
 
     @property
-    def todo_dir(self) -> Path:
+    def issues_dir(self) -> Path:
         """docs/clasi/todo/ directory."""
         return self.clasi_dir / "todo"
 
@@ -212,25 +212,25 @@ class Project:
                 results.append(Agent(agent_dir, self))
         return results
 
-    # --- Todo management ---
+    # --- Issue management ---
 
-    def get_todo(self, filename: str) -> Issue:
+    def get_issue(self, filename: str) -> Issue:
         """Get an issue by its filename."""
         from clasi.issue import Issue
 
         # Check pending (top-level), in-progress, and done
-        for subdir in [self.todo_dir, self.todo_dir / "in-progress", self.todo_dir / "done"]:
+        for subdir in [self.issues_dir, self.issues_dir / "in-progress", self.issues_dir / "done"]:
             path = subdir / filename
             if path.exists():
                 return Issue(path, self)
         raise ValueError(f"TODO '{filename}' not found")
 
-    def list_todos(self) -> list[Issue]:
+    def list_issues(self) -> list[Issue]:
         """List all active issues (pending and in-progress, not done)."""
         from clasi.issue import Issue
 
         results: list[Issue] = []
-        for subdir in [self.todo_dir, self.todo_dir / "in-progress"]:
+        for subdir in [self.issues_dir, self.issues_dir / "in-progress"]:
             if not subdir.exists():
                 continue
             for f in sorted(subdir.glob("*.md")):

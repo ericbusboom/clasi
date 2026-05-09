@@ -66,7 +66,7 @@ class Issue:
 
     def move_to_in_progress(self, sprint_id: str, ticket_id: str) -> None:
         """Move to todo/in-progress/, update frontmatter."""
-        in_progress_dir = self._project.todo_dir / "in-progress"
+        in_progress_dir = self._project.issues_dir / "in-progress"
         in_progress_dir.mkdir(parents=True, exist_ok=True)
 
         # Update frontmatter
@@ -93,7 +93,7 @@ class Issue:
             sprint_id: Optional sprint ID to record in frontmatter.
             ticket_ids: Optional list of ticket IDs to record in frontmatter.
         """
-        done_dir = self._project.todo_dir / "done"
+        done_dir = self._project.issues_dir / "done"
         done_dir.mkdir(parents=True, exist_ok=True)
 
         if sprint_id is not None:

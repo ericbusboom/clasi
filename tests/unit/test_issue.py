@@ -12,11 +12,11 @@ def _make_issue(tmp_path, filename="my-idea.md", title="My Idea",
     proj = Project(tmp_path)
 
     if status == "in-progress":
-        todo_dir = proj.todo_dir / "in-progress"
+        todo_dir = proj.issues_dir / "in-progress"
     elif status == "done":
-        todo_dir = proj.todo_dir / "done"
+        todo_dir = proj.issues_dir / "done"
     else:
-        todo_dir = proj.todo_dir
+        todo_dir = proj.issues_dir
     todo_dir.mkdir(parents=True, exist_ok=True)
 
     fm_lines = [f"status: {status}"]
@@ -47,8 +47,8 @@ class TestIssueProperties:
 
     def test_title_fallback_to_stem(self, tmp_path):
         proj = Project(tmp_path)
-        proj.todo_dir.mkdir(parents=True)
-        path = proj.todo_dir / "no-heading.md"
+        proj.issues_dir.mkdir(parents=True)
+        path = proj.issues_dir / "no-heading.md"
         path.write_text("---\nstatus: pending\n---\nNo heading here.\n", encoding="utf-8")
         t = Issue(path, proj)
         assert t.title == "no-heading"
@@ -113,14 +113,14 @@ class TestIssueMoveToInProgress:
         proj, t = _make_issue(tmp_path, status="pending")
         old_dir = t.path.parent
         t.move_to_in_progress("001", "001-001")
-        assert t.path.parent == proj.todo_dir / "in-progress"
+        assert t.path.parent == proj.issues_dir / "in-progress"
         assert t.path.exists()
 
     def test_move_already_in_progress(self, tmp_path):
         proj, t = _make_issue(tmp_path, status="in-progress", sprint="001")
         # Should not raise, just update
         t.move_to_in_progress("001", "001-002")
-        assert t.path.parent == proj.todo_dir / "in-progress"
+        assert t.path.parent == proj.issues_dir / "in-progress"
         assert "001-002" in t.tickets
 
 
@@ -131,14 +131,14 @@ class TestIssueMoveToDone:
         proj, t = _make_issue(tmp_path, status="pending")
         t.move_to_done()
         assert t.status == "done"
-        assert t.path.parent == proj.todo_dir / "done"
+        assert t.path.parent == proj.issues_dir / "done"
         assert t.path.exists()
 
     def test_move_to_done_from_in_progress(self, tmp_path):
         proj, t = _make_issue(tmp_path, status="in-progress", sprint="001")
         t.move_to_done()
         assert t.status == "done"
-        assert t.path.parent == proj.todo_dir / "done"
+        assert t.path.parent == proj.issues_dir / "done"
 
 
 class TestIssueAddTicketRef:
@@ -162,62 +162,62 @@ class TestIssueAddTicketRef:
         assert t.tickets == ["001-001", "001-002"]
 
 
-class TestProjectListTodos:
-    """Test Project.list_todos and get_todo."""
+class TestProjectListIssues:
+    """Test Project.list_issues and get_issue."""
 
-    def test_list_todos_pending(self, tmp_path):
+    def test_list_issues_pending(self, tmp_path):
         proj, _ = _make_issue(tmp_path, filename="a.md", status="pending")
         # Add another
-        path2 = proj.todo_dir / "b.md"
+        path2 = proj.issues_dir / "b.md"
         path2.write_text("---\nstatus: pending\n---\n# B\n", encoding="utf-8")
-        todos = proj.list_todos()
-        assert len(todos) == 2
+        issues = proj.list_issues()
+        assert len(issues) == 2
 
-    def test_list_todos_includes_in_progress(self, tmp_path):
+    def test_list_issues_includes_in_progress(self, tmp_path):
         proj = Project(tmp_path)
-        proj.todo_dir.mkdir(parents=True)
-        (proj.todo_dir / "pending.md").write_text(
+        proj.issues_dir.mkdir(parents=True)
+        (proj.issues_dir / "pending.md").write_text(
             "---\nstatus: pending\n---\n# Pending\n", encoding="utf-8"
         )
-        ip_dir = proj.todo_dir / "in-progress"
+        ip_dir = proj.issues_dir / "in-progress"
         ip_dir.mkdir()
         (ip_dir / "active.md").write_text(
             "---\nstatus: in-progress\nsprint: \"001\"\n---\n# Active\n",
             encoding="utf-8",
         )
-        todos = proj.list_todos()
-        assert len(todos) == 2
+        issues = proj.list_issues()
+        assert len(issues) == 2
 
-    def test_list_todos_excludes_done(self, tmp_path):
+    def test_list_issues_excludes_done(self, tmp_path):
         proj = Project(tmp_path)
-        proj.todo_dir.mkdir(parents=True)
-        (proj.todo_dir / "pending.md").write_text(
+        proj.issues_dir.mkdir(parents=True)
+        (proj.issues_dir / "pending.md").write_text(
             "---\nstatus: pending\n---\n# Pending\n", encoding="utf-8"
         )
-        done_dir = proj.todo_dir / "done"
+        done_dir = proj.issues_dir / "done"
         done_dir.mkdir()
         (done_dir / "finished.md").write_text(
             "---\nstatus: done\n---\n# Finished\n", encoding="utf-8"
         )
-        todos = proj.list_todos()
-        assert len(todos) == 1
+        issues = proj.list_issues()
+        assert len(issues) == 1
 
-    def test_get_todo(self, tmp_path):
+    def test_get_issue(self, tmp_path):
         proj, _ = _make_issue(tmp_path, filename="idea.md", title="My Idea")
-        t = proj.get_todo("idea.md")
+        t = proj.get_issue("idea.md")
         assert t.title == "My Idea"
 
-    def test_get_todo_in_progress(self, tmp_path):
+    def test_get_issue_in_progress(self, tmp_path):
         proj, _ = _make_issue(tmp_path, filename="wip.md",
                                status="in-progress", sprint="001")
-        t = proj.get_todo("wip.md")
+        t = proj.get_issue("wip.md")
         assert t.status == "in-progress"
 
-    def test_get_todo_not_found(self, tmp_path):
+    def test_get_issue_not_found(self, tmp_path):
         proj = Project(tmp_path)
-        proj.todo_dir.mkdir(parents=True)
+        proj.issues_dir.mkdir(parents=True)
         try:
-            proj.get_todo("nonexistent.md")
+            proj.get_issue("nonexistent.md")
             assert False, "Should have raised ValueError"
         except ValueError:
             pass

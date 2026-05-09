@@ -471,7 +471,7 @@ def create_ticket(
         full_ticket_id = f"{sprint_id}-{ticket.id}"
         for todo_filename in todo_list:
             try:
-                todo_obj = project.get_todo(todo_filename)
+                todo_obj = project.get_issue(todo_filename)
             except ValueError:
                 continue  # Skip missing TODOs gracefully
             todo_obj.move_to_in_progress(sprint_id, full_ticket_id)
@@ -630,7 +630,7 @@ def move_ticket_to_done(path: str) -> str:
         completed_todos: list[str] = []
         for todo_filename in todo_list:
             try:
-                todo = project.get_todo(todo_filename)
+                todo = project.get_issue(todo_filename)
             except ValueError:
                 continue
             # Only process in-progress TODOs
@@ -731,7 +731,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
 
     # Check in-progress TODOs — they should already be resolved individually
     unresolved_todos: list[str] = []
-    todo_directory = project.todo_dir
+    todo_directory = project.issues_dir
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
@@ -873,7 +873,7 @@ def _close_sprint_full(
                 }, indent=2)
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved
-    todo_directory = project.todo_dir
+    todo_directory = project.issues_dir
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
@@ -1372,7 +1372,7 @@ def list_todos() -> str:
     project = get_project()
     results = []
 
-    for todo in project.list_todos():
+    for todo in project.list_issues():
         entry: dict = {"filename": todo.path.name, "title": todo.title}
         entry["status"] = todo.status
         if todo.status == "in-progress":
@@ -1402,7 +1402,7 @@ def move_todo_to_done(
     """
     project = get_project()
     try:
-        todo = project.get_todo(filename)
+        todo = project.get_issue(filename)
     except ValueError:
         raise ValueError(f"TODO not found: {filename}")
     old_path = todo.path

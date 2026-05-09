@@ -2,12 +2,12 @@
 id: '005'
 title: 'Update `Project` methods: `get_todo` to `get_issue`, `list_todos` to `list_issues`,
   `todo_dir` to `issues_dir`'
-status: open
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
+- SUC-001
+- SUC-002
 depends-on:
-  - "003"
+- '003'
 github-issue: ''
 todo: rename-clasi-todos-to-issues.md
 completes_todo: false
@@ -24,13 +24,13 @@ the actual path value changes in ticket 006 when `clasi_dir` is updated.
 
 ## Acceptance Criteria
 
-- [ ] `Project.todo_dir` property renamed to `Project.issues_dir`
-- [ ] `Project.get_todo(filename)` renamed to `Project.get_issue(filename)`
-- [ ] `Project.list_todos()` renamed to `Project.list_issues()`
-- [ ] All callers of these methods updated across the codebase
+- [x] `Project.todo_dir` property renamed to `Project.issues_dir`
+- [x] `Project.get_todo(filename)` renamed to `Project.get_issue(filename)`
+- [x] `Project.list_todos()` renamed to `Project.list_issues()`
+- [x] All callers of these methods updated across the codebase
   (`hook_handlers.py`, `artifact_tools.py`, `sprint.py`, `cli.py`, `init_command.py`)
-- [ ] TYPE_CHECKING imports updated to use `Issue` not `Todo`
-- [ ] Full test suite passes
+- [x] TYPE_CHECKING imports updated to use `Issue` not `Todo`
+- [x] Full test suite passes
 
 ## Implementation Plan
 
