@@ -127,7 +127,7 @@ wheels = [
 
 [[package]]
 name = "clasi"
-version = "0.20260508.15"
+version = "0.20260508.18"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
