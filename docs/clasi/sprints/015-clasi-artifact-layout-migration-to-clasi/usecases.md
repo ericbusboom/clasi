@@ -1,6 +1,6 @@
 ---
-status: draft
-sprint: "015"
+status: done
+sprint: '015'
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
