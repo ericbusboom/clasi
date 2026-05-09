@@ -1,12 +1,30 @@
 # CLASI SE Process Overview
 
+## Issues vs Tickets
+
+Two distinct concepts govern how work is tracked:
+
+- An **issue** is a proposed change to the system — an idea, bug report,
+  enhancement request, or task captured before sprint planning. Issues live
+  in `.clasi/issues/`. They are the raw material that sprint planning draws
+  from. A single issue may spawn one or more tickets, or be deferred
+  indefinitely.
+
+- A **ticket** is a concrete implementation step within a sprint. Tickets
+  live in `.clasi/sprints/<sprint-id>/tickets/`. A ticket is derived from
+  (and often closes) an issue, but it is scoped to what can be done in a
+  single sprint and carries acceptance criteria, a plan, and a status that
+  the SE process enforces.
+
+In short: issues propose; tickets implement.
+
 ## Process Stages
 
 1. **Project Initiation**: Process written spec into project documents
    - Agent: `project-manager` (initiation mode) → overview.md, specification.md, usecases.md
-2. **TODO Assessment**: Assess TODOs against codebase for impact analysis
+2. **Issue Assessment**: Assess issues against codebase for impact analysis
    - Agent: `project-architect` → difficulty estimates, dependencies
-3. **Roadmap Planning**: Group assessed TODOs into sprint roadmap
+3. **Roadmap Planning**: Group assessed issues into sprint roadmap
    - Agent: `project-manager` (roadmap mode) → lightweight sprint.md files
 4. **Sprint Detail Planning**: Full planning for the next sprint to execute
    - Skill: `plan-sprint` | Agent: `sprint-planner` → usecases, architecture, tickets

@@ -1,22 +1,22 @@
 ---
 name: issue
-description: Create an issue file from user input and place it in docs/clasi/todo/
+description: Create an issue file from user input and place it in .clasi/issues/
 ---
 
 # Issue Skill
 
 This skill captures an idea or task as an issue file in the project's
-TODO directory.
+issues directory.
 
 ## Process
 
 1. Take the user's input (everything after `/issue` or `/se issue`).
-2. Create a markdown file in `docs/clasi/todo/` with:
+2. Create a markdown file in `.clasi/issues/` with:
    - YAML frontmatter: `status: pending`
    - A `# ` heading summarizing the idea
    - A description section expanding on the idea
 3. Filename: slugified version of the heading (e.g., `my-idea.md`).
-4. If `docs/clasi/todo/` doesn't exist, create it.
+4. If `.clasi/issues/` doesn't exist, create it.
 
 ## Output
 

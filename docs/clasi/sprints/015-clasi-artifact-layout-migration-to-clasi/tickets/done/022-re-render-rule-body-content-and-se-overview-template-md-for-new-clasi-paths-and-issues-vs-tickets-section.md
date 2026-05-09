@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: "Re-render rule body content and se-overview-template for new .clasi/ paths and Issues vs Tickets section"
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -27,11 +27,11 @@ Update prose-level content that agents and developers read:
 
 ## Acceptance Criteria
 
-- [ ] `se-overview-template.md` has a clearly-headed "Issues vs Tickets" section
-- [ ] Body prose in `se-overview-template.md` references `.clasi/` not `docs/clasi/`
-- [ ] `software-engineering.md` (if present) updated similarly
-- [ ] No `docs/clasi` prose references in any template file (outside done-sprint archives)
-- [ ] Full test suite passes
+- [x] `se-overview-template.md` has a clearly-headed "Issues vs Tickets" section
+- [x] Body prose in `se-overview-template.md` references `.clasi/` not `docs/clasi/`
+- [x] `software-engineering.md` (if present) updated similarly
+- [x] No `docs/clasi` prose references in any template file (outside done-sprint archives)
+- [x] Full test suite passes
 
 ## Implementation Plan
 
