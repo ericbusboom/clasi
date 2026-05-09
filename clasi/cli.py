@@ -5,6 +5,7 @@ Subcommands:
     clasi init [target]             — Initialize a repo for CLASI
     clasi install [target]          — Synonym for clasi init
     clasi uninstall [target]        — Remove CLASI platform integration files
+    clasi migrate [target]          — One-shot docs/clasi/ → .clasi/ migration
     clasi mcp                       — Run the MCP server (stdio)
     clasi tool plan-to-issue        — Convert plan file to issue
     clasi version                   — Show the current project version
@@ -198,6 +199,24 @@ def version_bump(major, tag, push):
 
         create_version_tag(result["version"])
         click.echo(f"Tagged:  v{result['version']}")
+
+
+@cli.command()
+@click.argument("target", default=".", type=click.Path(exists=True))
+def migrate(target):
+    """Migrate a project from docs/clasi/ to .clasi/.
+
+    Moves docs/clasi/ to .clasi/ (using git mv when inside a git repo),
+    updates .gitignore, and re-runs clasi install to refresh rule files
+    and agent prompts.
+
+    Guards:
+      - Exits with an error if .clasi/ already exists (already migrated).
+      - Exits with an error if an execution lock is held.
+    """
+    from clasi.migrate_command import run_migrate
+
+    run_migrate(target)
 
 
 @cli.command()

@@ -1,7 +1,7 @@
 ---
 id: '021'
 title: "Add clasi migrate subcommand for one-shot docs/clasi/ to .clasi/ migration"
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -31,14 +31,14 @@ Behavior:
 
 ## Acceptance Criteria
 
-- [ ] `clasi migrate` runs successfully on a project with `docs/clasi/`
-- [ ] After migration, `.clasi/` exists and `docs/clasi/` is gone
-- [ ] `.gitignore` has `.clasi/log/` (not `docs/clasi/log/`)
-- [ ] Guard: if `.clasi/` already exists, exits with a clear error
-- [ ] Guard: if an execution lock is held, exits with a clear error
-- [ ] Works for non-git projects (falls back to `shutil.move`)
-- [ ] Unit tests for `migrate_command.py` cover both git and non-git paths
-- [ ] Full test suite passes
+- [x] `clasi migrate` runs successfully on a project with `docs/clasi/`
+- [x] After migration, `.clasi/` exists and `docs/clasi/` is gone
+- [x] `.gitignore` has `.clasi/log/` (not `docs/clasi/log/`)
+- [x] Guard: if `.clasi/` already exists, exits with a clear error
+- [x] Guard: if an execution lock is held, exits with a clear error
+- [x] Works for non-git projects (falls back to `shutil.move`)
+- [x] Unit tests for `migrate_command.py` cover both git and non-git paths
+- [x] Full test suite passes
 
 ## Implementation Plan
 
