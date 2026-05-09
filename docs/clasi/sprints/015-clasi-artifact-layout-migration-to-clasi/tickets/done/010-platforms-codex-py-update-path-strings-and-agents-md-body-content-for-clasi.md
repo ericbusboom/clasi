@@ -1,7 +1,7 @@
 ---
 id: '010'
 title: '`platforms/codex.py`: update path strings and AGENTS.md body content for `.clasi/`'
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -27,12 +27,12 @@ Update `clasi/platforms/codex.py` to replace all `docs/clasi/` path references i
 
 ## Acceptance Criteria
 
-- [ ] No `docs/clasi` string literals remain in `codex.py`
-- [ ] Nested AGENTS.md files installed at `.clasi/AGENTS.md` and `.clasi/issues/AGENTS.md`
-- [ ] `_build_todo_dir_content` renamed to `_build_issues_dir_content`
-- [ ] Body text in these functions updated to reference `.clasi/` paths
-- [ ] `tests/unit/test_platform_codex.py` assertions updated (full in ticket 026)
-- [ ] Full test suite passes
+- [x] No `docs/clasi` string literals remain in `codex.py`
+- [x] Nested AGENTS.md files installed at `.clasi/AGENTS.md` and `.clasi/issues/AGENTS.md`
+- [x] `_build_todo_dir_content` renamed to `_build_issues_dir_content`
+- [x] Body text in these functions updated to reference `.clasi/` paths
+- [x] `tests/unit/test_platform_codex.py` assertions updated (full in ticket 026)
+- [x] Full test suite passes
 
 ## Implementation Plan
 

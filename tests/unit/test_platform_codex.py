@@ -18,8 +18,8 @@ from clasi.platforms.codex import (
     _CLASI_SRC_RULES,
     _CLASI_STOP_HOOK_OLD,
     _CLASI_STOP_HOOK_WRAPPER,
-    _build_docs_clasi_content,
-    _build_todo_dir_content,
+    _build_clasi_dir_content,
+    _build_issues_dir_content,
     install,
     uninstall,
 )
@@ -518,24 +518,24 @@ def test_uninstall_agents_preserves_user_files(project: Path) -> None:
 
 
 def test_install_rules_creates_agents_md_files(project: Path) -> None:
-    """install() creates docs/clasi/AGENTS.md and clasi/AGENTS.md with correct content.
+    """install() creates .clasi/AGENTS.md and clasi/AGENTS.md with correct content.
 
     Verifies:
     - Both files exist after install.
-    - docs/clasi/AGENTS.md contains SE process content (MCP server mention).
+    - .clasi/AGENTS.md contains SE process content (MCP server mention).
     - clasi/AGENTS.md contains source-code rule content (ticket status mention).
     - Neither file contains Claude-Code-specific metadata (YAML frontmatter).
     """
     install(project, _MCP_CONFIG)
 
-    docs_clasi_md = project / "docs" / "clasi" / "AGENTS.md"
-    assert docs_clasi_md.exists(), "docs/clasi/AGENTS.md should exist after install"
-    docs_content = docs_clasi_md.read_text(encoding="utf-8")
-    assert "MCP" in docs_content, "docs/clasi/AGENTS.md must mention MCP server"
-    assert "CLASI MCP" in docs_content, "docs/clasi/AGENTS.md must reference CLASI MCP tools"
+    dot_clasi_md = project / ".clasi" / "AGENTS.md"
+    assert dot_clasi_md.exists(), ".clasi/AGENTS.md should exist after install"
+    docs_content = dot_clasi_md.read_text(encoding="utf-8")
+    assert "MCP" in docs_content, ".clasi/AGENTS.md must mention MCP server"
+    assert "CLASI MCP" in docs_content, ".clasi/AGENTS.md must reference CLASI MCP tools"
     # No YAML frontmatter (Claude-specific metadata).
     assert not docs_content.startswith("---"), (
-        "docs/clasi/AGENTS.md must not start with YAML frontmatter"
+        ".clasi/AGENTS.md must not start with YAML frontmatter"
     )
 
     clasi_src_md = project / "clasi" / "AGENTS.md"
@@ -549,7 +549,7 @@ def test_install_rules_creates_agents_md_files(project: Path) -> None:
     )
 
     # Content must match the builder output exactly.
-    assert docs_content == _build_docs_clasi_content()
+    assert docs_content == _build_clasi_dir_content()
     assert src_content == _CLASI_SRC_RULES
 
 
@@ -557,24 +557,24 @@ def test_uninstall_rules_removes_files(project: Path) -> None:
     """install then uninstall removes both nested AGENTS.md rule files."""
     install(project, _MCP_CONFIG)
 
-    docs_clasi_md = project / "docs" / "clasi" / "AGENTS.md"
+    dot_clasi_md = project / ".clasi" / "AGENTS.md"
     clasi_src_md = project / "clasi" / "AGENTS.md"
 
     # Confirm files exist before uninstall.
-    assert docs_clasi_md.exists()
+    assert dot_clasi_md.exists()
     assert clasi_src_md.exists()
 
     uninstall(project)
 
-    assert not docs_clasi_md.exists(), (
-        "docs/clasi/AGENTS.md must be removed by uninstall"
+    assert not dot_clasi_md.exists(), (
+        ".clasi/AGENTS.md must be removed by uninstall"
     )
     assert not clasi_src_md.exists(), "clasi/AGENTS.md must be removed by uninstall"
 
 
 def test_uninstall_rules_no_error_if_missing(project: Path) -> None:
     """uninstall() on a directory with no nested rule files raises no errors."""
-    # Neither docs/clasi/AGENTS.md nor clasi/AGENTS.md exists — must not raise.
+    # Neither .clasi/AGENTS.md nor clasi/AGENTS.md exists — must not raise.
     uninstall(project)
 
 
@@ -745,13 +745,13 @@ def test_codex_install_end_to_end(tmp_path: Path) -> None:
     )
 
     # ------------------------------------------------------------------
-    # docs/clasi/AGENTS.md — MCP content present
+    # .clasi/AGENTS.md — MCP content present
     # ------------------------------------------------------------------
-    docs_clasi_path = tmp_path / "docs" / "clasi" / "AGENTS.md"
-    assert docs_clasi_path.exists(), "docs/clasi/AGENTS.md must exist after install"
-    docs_rules = docs_clasi_path.read_text(encoding="utf-8")
+    dot_clasi_path = tmp_path / ".clasi" / "AGENTS.md"
+    assert dot_clasi_path.exists(), ".clasi/AGENTS.md must exist after install"
+    docs_rules = dot_clasi_path.read_text(encoding="utf-8")
     assert "MCP" in docs_rules or "clasi" in docs_rules.lower(), (
-        "docs/clasi/AGENTS.md must contain MCP or CLASI MCP reference"
+        ".clasi/AGENTS.md must contain MCP or CLASI MCP reference"
     )
 
     # ------------------------------------------------------------------
@@ -805,15 +805,15 @@ def test_codex_install_end_to_end(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ticket 007: full clasi-artifacts content + docs/clasi/todo/AGENTS.md
+# Ticket 007: full clasi-artifacts content + .clasi/issues/AGENTS.md
 # ---------------------------------------------------------------------------
 
 
 def test_docs_clasi_agents_md_has_full_clasi_artifacts_content(tmp_path: Path) -> None:
-    """docs/clasi/AGENTS.md must contain the active-sprint check and phase check."""
+    """.clasi/AGENTS.md must contain the active-sprint check and phase check."""
     install(tmp_path, _MCP_CONFIG)
 
-    content = (tmp_path / "docs" / "clasi" / "AGENTS.md").read_text(encoding="utf-8")
+    content = (tmp_path / ".clasi" / "AGENTS.md").read_text(encoding="utf-8")
     # The full clasi-artifacts rule includes these concepts.
     assert "active sprint" in content.lower() or "list_sprints" in content
     assert "phase" in content.lower() or "ticketing" in content.lower()
@@ -821,21 +821,21 @@ def test_docs_clasi_agents_md_has_full_clasi_artifacts_content(tmp_path: Path) -
 
 
 def test_docs_clasi_todo_agents_md_created(tmp_path: Path) -> None:
-    """docs/clasi/todo/AGENTS.md must be written by codex install."""
+    """.clasi/issues/AGENTS.md must be written by codex install."""
     install(tmp_path, _MCP_CONFIG)
 
-    todo_agents = tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md"
-    assert todo_agents.exists(), "docs/clasi/todo/AGENTS.md must exist after install"
-    content = todo_agents.read_text(encoding="utf-8")
+    issues_agents = tmp_path / ".clasi" / "issues" / "AGENTS.md"
+    assert issues_agents.exists(), ".clasi/issues/AGENTS.md must exist after install"
+    content = issues_agents.read_text(encoding="utf-8")
     assert "todo" in content.lower() or "move_todo_to_done" in content
 
 
 def test_docs_clasi_todo_agents_md_removed_on_uninstall(tmp_path: Path) -> None:
-    """docs/clasi/todo/AGENTS.md must be removed on uninstall."""
+    """.clasi/issues/AGENTS.md must be removed on uninstall."""
     install(tmp_path, _MCP_CONFIG)
     uninstall(tmp_path)
-    assert not (tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md").exists(), (
-        "docs/clasi/todo/AGENTS.md must be removed by uninstall"
+    assert not (tmp_path / ".clasi" / "issues" / "AGENTS.md").exists(), (
+        ".clasi/issues/AGENTS.md must be removed by uninstall"
     )
 
 
@@ -881,31 +881,31 @@ def test_codex_install_full_agents_md_footprint(tmp_path: Path) -> None:
         "root AGENTS.md: git-commits rule content (commit / git) must be present"
     )
 
-    # --- docs/clasi/AGENTS.md: full clasi-artifacts content ---
-    docs_clasi_agents = tmp_path / "docs" / "clasi" / "AGENTS.md"
-    assert docs_clasi_agents.exists(), "docs/clasi/AGENTS.md must exist after codex install"
-    docs_content = docs_clasi_agents.read_text(encoding="utf-8")
+    # --- .clasi/AGENTS.md: full clasi-artifacts content ---
+    dot_clasi_agents = tmp_path / ".clasi" / "AGENTS.md"
+    assert dot_clasi_agents.exists(), ".clasi/AGENTS.md must exist after codex install"
+    docs_content = dot_clasi_agents.read_text(encoding="utf-8")
 
     # Active-sprint check.
     assert "list_sprints" in docs_content or "active sprint" in docs_content.lower(), (
-        "docs/clasi/AGENTS.md: must contain active-sprint check (list_sprints or 'active sprint')"
+        ".clasi/AGENTS.md: must contain active-sprint check (list_sprints or 'active sprint')"
     )
     # Phase check.
     assert "phase" in docs_content.lower() or "ticketing" in docs_content.lower(), (
-        "docs/clasi/AGENTS.md: must contain phase check ('phase' or 'ticketing')"
+        ".clasi/AGENTS.md: must contain phase check ('phase' or 'ticketing')"
     )
     # MCP-tools-only instruction.
     assert "MCP" in docs_content or "mcp" in docs_content.lower(), (
-        "docs/clasi/AGENTS.md: must contain MCP tools instruction"
+        ".clasi/AGENTS.md: must contain MCP tools instruction"
     )
 
-    # --- docs/clasi/todo/AGENTS.md: todo-dir content ---
-    todo_agents = tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md"
-    assert todo_agents.exists(), "docs/clasi/todo/AGENTS.md must exist after codex install"
-    todo_content = todo_agents.read_text(encoding="utf-8")
+    # --- .clasi/issues/AGENTS.md: issues-dir content ---
+    issues_agents = tmp_path / ".clasi" / "issues" / "AGENTS.md"
+    assert issues_agents.exists(), ".clasi/issues/AGENTS.md must exist after codex install"
+    todo_content = issues_agents.read_text(encoding="utf-8")
 
     assert "move_todo_to_done" in todo_content or "todo" in todo_content.lower(), (
-        "docs/clasi/todo/AGENTS.md: must contain todo-dir rule content"
+        ".clasi/issues/AGENTS.md: must contain issues-dir rule content"
     )
 
     # --- clasi/AGENTS.md: source-code content ---
@@ -926,11 +926,11 @@ def test_codex_uninstall_removes_all_agents_md_files(tmp_path: Path) -> None:
     uninstall(tmp_path)
 
     # Nested files must be gone.
-    assert not (tmp_path / "docs" / "clasi" / "AGENTS.md").exists(), (
-        "docs/clasi/AGENTS.md must be removed by uninstall"
+    assert not (tmp_path / ".clasi" / "AGENTS.md").exists(), (
+        ".clasi/AGENTS.md must be removed by uninstall"
     )
-    assert not (tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md").exists(), (
-        "docs/clasi/todo/AGENTS.md must be removed by uninstall"
+    assert not (tmp_path / ".clasi" / "issues" / "AGENTS.md").exists(), (
+        ".clasi/issues/AGENTS.md must be removed by uninstall"
     )
     assert not (tmp_path / "clasi" / "AGENTS.md").exists(), (
         "clasi/AGENTS.md must be removed by uninstall"
@@ -970,12 +970,12 @@ def test_codex_install_round_trip_no_duplication(tmp_path: Path) -> None:
         "root AGENTS.md: CLASI block end must not be duplicated after re-install"
     )
 
-    # All four nested AGENTS.md files must exist after re-install.
-    assert (tmp_path / "docs" / "clasi" / "AGENTS.md").exists(), (
-        "docs/clasi/AGENTS.md must exist after re-install"
+    # All nested AGENTS.md files must exist after re-install.
+    assert (tmp_path / ".clasi" / "AGENTS.md").exists(), (
+        ".clasi/AGENTS.md must exist after re-install"
     )
-    assert (tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md").exists(), (
-        "docs/clasi/todo/AGENTS.md must exist after re-install"
+    assert (tmp_path / ".clasi" / "issues" / "AGENTS.md").exists(), (
+        ".clasi/issues/AGENTS.md must exist after re-install"
     )
     assert (tmp_path / "clasi" / "AGENTS.md").exists(), (
         "clasi/AGENTS.md must exist after re-install"
