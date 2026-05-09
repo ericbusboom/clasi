@@ -15,7 +15,7 @@ other CLASI modules.  Leaf node in the dependency graph.
 MCP_REQUIRED_BODY = """\
 This project uses the CLASI MCP server. Before doing ANY work:
 
-1. **Check for the OOP override first.** If the file `docs/clasi/oop`
+1. **Check for the OOP override first.** If the file `.clasi/oop`
    exists in the project root, ignore CLASI entirely for this session:
    skip MCP verification, skip all CLASI process gates (sprints,
    tickets, TODOs, artifact rules), and proceed with the user's
@@ -25,7 +25,7 @@ This project uses the CLASI MCP server. Before doing ANY work:
 2. Otherwise, call `get_version()` to verify the MCP server is running.
 3. If the call fails, STOP. Do not proceed. Tell the stakeholder:
    "The CLASI MCP server is not available. Check .mcp.json and
-   restart the session, or create `docs/clasi/oop` to bypass CLASI
+   restart the session, or create `.clasi/oop` to bypass CLASI
    for this session."
 4. Do NOT create sprint directories, tickets, TODOs, or planning
    artifacts manually. Do NOT improvise workarounds. All SE process
@@ -35,7 +35,7 @@ This project uses the CLASI MCP server. Before doing ANY work:
 CLASI_ARTIFACTS_BODY = """\
 You are modifying CLASI planning artifacts. Before making changes:
 
-1. If `docs/clasi/oop` exists, the stakeholder has opted out of CLASI
+1. If `.clasi/oop` exists, the stakeholder has opted out of CLASI
    for this session. Skip these gates entirely and proceed.
 2. Confirm you have an active sprint (`list_sprints(status="active")`),
    or the stakeholder said "out of process" / "direct change".
@@ -44,13 +44,13 @@ You are modifying CLASI planning artifacts. Before making changes:
 4. Use CLASI MCP tools for all artifact operations — do not create
    sprint/ticket/TODO files manually.
 
-Direct edits to `docs/clasi/sprints/` are blocked for team-lead. Use MCP tools.
+Direct edits to `.clasi/sprints/` are blocked for team-lead. Use MCP tools.
 """
 
 SOURCE_CODE_BODY = """\
 You are modifying source code or tests. Before writing code:
 
-1. If `docs/clasi/oop` exists, the stakeholder has opted out of CLASI
+1. If `.clasi/oop` exists, the stakeholder has opted out of CLASI
    for this session. Skip these gates entirely and proceed.
 2. You must have a ticket in `in-progress` status, or the stakeholder
    said "out of process".
@@ -63,7 +63,7 @@ TODO_DIR_BODY = """\
 Use the CLASI `todo` skill or `move_todo_to_done` MCP tool for TODO
 operations. Do not use the generic TodoWrite tool for CLASI TODOs.
 
-Exception: if `docs/clasi/oop` exists, the stakeholder has opted out
+Exception: if `.clasi/oop` exists, the stakeholder has opted out
 of CLASI for this session. Use whatever TODO mechanism you prefer.
 """
 

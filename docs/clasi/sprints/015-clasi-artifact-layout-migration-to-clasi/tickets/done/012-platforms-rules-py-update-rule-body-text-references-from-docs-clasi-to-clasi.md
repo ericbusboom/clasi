@@ -2,7 +2,7 @@
 id: '012'
 title: '`platforms/_rules.py`: update rule body text references from `docs/clasi/`
   to `.clasi/`'
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -26,11 +26,11 @@ Also update the `.gitignore` template if it lives in `_rules.py` or a sibling fi
 
 ## Acceptance Criteria
 
-- [ ] Rule body text: `docs/clasi/oop` → `.clasi/oop`
-- [ ] Rule body text: `docs/clasi/sprints/` → `.clasi/sprints/`
-- [ ] `.gitignore` template updated: `docs/clasi/log/` → `.clasi/log/`
-- [ ] No `docs/clasi` prose references remain in `_rules.py`
-- [ ] Full test suite passes
+- [x] Rule body text: `docs/clasi/oop` → `.clasi/oop`
+- [x] Rule body text: `docs/clasi/sprints/` → `.clasi/sprints/`
+- [x] `.gitignore` template updated: `docs/clasi/log/` → `.clasi/log/`
+- [x] No `docs/clasi` prose references remain in `_rules.py`
+- [x] Full test suite passes
 
 ## Implementation Plan
 
