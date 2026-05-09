@@ -205,8 +205,8 @@ def _uninstall_global_instructions(target: Path) -> None:
 # content without adding value.  Only the three genuinely path-scoped rules
 # are emitted here.
 _PATH_RULES: list[tuple[str, str, str]] = [
-    ("clasi-artifacts.instructions.md", "docs/clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", "docs/clasi/todo/**", TODO_DIR_BODY),
+    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
     ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
 ]
 

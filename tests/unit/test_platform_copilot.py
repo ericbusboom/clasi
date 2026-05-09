@@ -283,8 +283,8 @@ def test_install_calls_print_cloud_mcp_notice(tmp_path: Path, capsys: pytest.Cap
 
 # Map of expected filename -> (applyTo glob, rule body constant)
 _EXPECTED_PATH_RULES = [
-    ("clasi-artifacts.instructions.md", "docs/clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", "docs/clasi/todo/**", TODO_DIR_BODY),
+    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
     ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
 ]
 

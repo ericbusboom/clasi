@@ -1,11 +1,11 @@
 ---
 id: '011'
 title: '`platforms/copilot.py`: update instruction path globs for `.clasi/` and `.clasi/issues/`'
-status: open
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "006"
+- '006'
 github-issue: ''
 todo: move-clasi-artifact-root-from-docs-clasi-to-dot-clasi.md
 completes_todo: false
@@ -23,11 +23,11 @@ Update `clasi/platforms/copilot.py` to replace all `docs/clasi/` path references
 
 ## Acceptance Criteria
 
-- [ ] `"docs/clasi/**"` changed to `".clasi/**"` in all path-rule tuples
-- [ ] `"docs/clasi/todo/**"` changed to `".clasi/issues/**"`
-- [ ] No `docs/clasi` string literals remain in `copilot.py`
-- [ ] `tests/unit/test_platform_copilot.py` assertions updated (full in ticket 026)
-- [ ] Full test suite passes
+- [x] `"docs/clasi/**"` changed to `".clasi/**"` in all path-rule tuples
+- [x] `"docs/clasi/todo/**"` changed to `".clasi/issues/**"`
+- [x] No `docs/clasi` string literals remain in `copilot.py`
+- [x] `tests/unit/test_platform_copilot.py` assertions updated (full in ticket 026)
+- [x] Full test suite passes
 
 ## Implementation Plan
 
