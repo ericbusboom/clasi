@@ -53,7 +53,7 @@ for future work, but not execute now.
 Two paths based on the stakeholder's intent:
 
 1. **Quick capture** — The stakeholder gives a direct statement of
-   what to do. Invoke the `todo` skill to create a TODO file.
+   what to do. Invoke the `issue` skill to create an issue file.
    Example: "Add rate limiting to the API"
 
 2. **Discussed planning** — The stakeholder wants to explore and
@@ -76,7 +76,7 @@ Take TODOs through the full SE lifecycle — plan, execute, close.
 through the SE process, and there is no open sprint.
 
 1. **Capture TODOs.** If the stakeholder provides raw ideas, invoke the
-   `todo` skill. For GitHub issues, invoke `gh-import`.
+   `issue` skill. For GitHub issues, invoke `gh-import`.
 2. **Create the sprint.** Call `create_sprint(title=<title>)`.
 3. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
    tool with: sprint ID, directory, TODO references, goals, and path to

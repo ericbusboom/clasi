@@ -48,7 +48,7 @@ class TestRunInit:
 
         skills_dir = target_dir / ".claude" / "skills"
         # Check a representative set of skills exist
-        for name in ["se", "plan-sprint", "execute-sprint", "todo",
+        for name in ["se", "plan-sprint", "execute-sprint", "issue",
                       "oop", "code-review", "systematic-debugging"]:
             skill = skills_dir / name / "SKILL.md"
             assert skill.exists(), f"Skill {name} not created"

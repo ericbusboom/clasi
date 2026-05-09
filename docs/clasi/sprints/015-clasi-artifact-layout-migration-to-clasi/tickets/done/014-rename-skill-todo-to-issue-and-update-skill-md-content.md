@@ -1,7 +1,7 @@
 ---
 id: '014'
 title: Rename skill `/todo` to `/issue` and update SKILL.md content
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -22,12 +22,12 @@ Update any platform installer or init command that references the old skill dire
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/skills/issue/` exists; `clasi/plugin/skills/todo/` is deleted
-- [ ] `SKILL.md` has `name: issue` and updated description
-- [ ] Any platform installer reference to `skills/todo` updated to `skills/issue`
-- [ ] `init_command.py` reference updated if it copies the skill
-- [ ] `clasi install` installs the skill as `/issue` not `/todo`
-- [ ] Full test suite passes
+- [x] `clasi/plugin/skills/issue/` exists; `clasi/plugin/skills/todo/` is deleted
+- [x] `SKILL.md` has `name: issue` and updated description
+- [x] Any platform installer reference to `skills/todo` updated to `skills/issue`
+- [x] `init_command.py` reference updated if it copies the skill
+- [x] `clasi install` installs the skill as `/issue` not `/todo`
+- [x] Full test suite passes
 
 ## Implementation Plan
 

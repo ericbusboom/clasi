@@ -4,10 +4,10 @@ Installs the CLASI SE process into a target repository. Supports two modes:
 
 - **Project-local mode** (default): Copies skills, agents, and hook config
   from the bundled plugin/ directory into the project's .claude/ directory.
-  Skills are unnamespaced (/plan-sprint, /se, /todo).
+  Skills are unnamespaced (/plan-sprint, /se, /issue).
 
 - **Plugin mode** (--plugin): Registers the CLASI plugin with Claude Code.
-  Skills are namespaced (/clasi:plan-sprint, /clasi:se, /clasi:todo).
+  Skills are namespaced (/clasi:plan-sprint, /clasi:se, /clasi:issue).
 
 Both modes also configure MCP server, permissions, TODO directories,
 and path-scoped rules.

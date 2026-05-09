@@ -60,7 +60,7 @@ You are modifying source code or tests. Before writing code:
 """
 
 TODO_DIR_BODY = """\
-Use the CLASI `todo` skill or `move_todo_to_done` MCP tool for TODO
+Use the CLASI `issue` skill or `move_todo_to_done` MCP tool for TODO
 operations. Do not use the generic TodoWrite tool for CLASI TODOs.
 
 Exception: if `.clasi/oop` exists, the stakeholder has opted out
