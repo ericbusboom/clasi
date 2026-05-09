@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: '`Project.clasi_dir` returns `.clasi/`; correct `design_dir` to `docs/design/`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

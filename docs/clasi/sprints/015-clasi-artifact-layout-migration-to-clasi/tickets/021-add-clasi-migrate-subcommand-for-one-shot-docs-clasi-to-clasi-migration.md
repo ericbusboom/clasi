@@ -1,7 +1,7 @@
 ---
 id: '021'
 title: "Add clasi migrate subcommand for one-shot docs/clasi/ to .clasi/ migration"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

@@ -1,7 +1,7 @@
 ---
 id: "024"
 title: "Update agent prompt files in clasi/plugin/agents/ for new paths and issue terminology"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

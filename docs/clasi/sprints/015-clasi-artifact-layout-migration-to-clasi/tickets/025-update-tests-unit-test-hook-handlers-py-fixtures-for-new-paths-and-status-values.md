@@ -1,7 +1,7 @@
 ---
 id: "025"
 title: "Update tests/unit/test_hook_handlers.py fixtures for new paths and status values"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

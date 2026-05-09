@@ -2,7 +2,7 @@
 id: 019
 title: '`Project.list_issues()`: scan only `.clasi/issues/` pending pool (no subdirectory
   scanning)'
-status: todo
+status: open
 use-cases:
   - SUC-002
 depends-on:

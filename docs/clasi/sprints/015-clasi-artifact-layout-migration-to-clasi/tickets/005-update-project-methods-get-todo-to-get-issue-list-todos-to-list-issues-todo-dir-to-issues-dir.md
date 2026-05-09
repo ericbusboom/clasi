@@ -2,7 +2,7 @@
 id: '005'
 title: 'Update `Project` methods: `get_todo` to `get_issue`, `list_todos` to `list_issues`,
   `todo_dir` to `issues_dir`'
-status: todo
+status: open
 use-cases:
   - SUC-001
   - SUC-002

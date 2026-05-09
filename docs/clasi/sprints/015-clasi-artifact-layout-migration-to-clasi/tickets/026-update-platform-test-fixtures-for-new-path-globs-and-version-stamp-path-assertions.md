@@ -1,7 +1,7 @@
 ---
 id: "026"
 title: "Update platform test fixtures for new path globs and version stamp path assertions"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

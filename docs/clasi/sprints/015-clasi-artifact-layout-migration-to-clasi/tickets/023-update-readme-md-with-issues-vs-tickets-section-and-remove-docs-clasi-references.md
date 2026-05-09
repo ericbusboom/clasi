@@ -1,7 +1,7 @@
 ---
 id: "023"
 title: "Update README.md with Issues vs Tickets section and remove docs/clasi/ references"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

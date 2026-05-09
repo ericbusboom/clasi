@@ -1,7 +1,7 @@
 ---
 id: '010'
 title: '`platforms/codex.py`: update path strings and AGENTS.md body content for `.clasi/`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

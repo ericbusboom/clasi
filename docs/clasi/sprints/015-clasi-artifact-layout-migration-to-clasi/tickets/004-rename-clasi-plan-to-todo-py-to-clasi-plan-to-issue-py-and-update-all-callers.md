@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Rename `clasi/plan_to_todo.py` to `clasi/plan_to_issue.py` and update all callers
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

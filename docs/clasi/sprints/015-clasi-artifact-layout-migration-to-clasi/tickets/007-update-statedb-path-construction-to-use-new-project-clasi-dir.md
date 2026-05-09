@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Update `StateDB` path construction to use new `Project.clasi_dir`
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

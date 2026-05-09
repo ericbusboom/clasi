@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Rename `clasi/todo.py` to `clasi/issue.py` and class `Todo` to `Issue`
-status: todo
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -23,13 +23,13 @@ tickets 016-019.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/issue.py` exists with class `Issue` (was `Todo`)
-- [ ] `clasi/todo.py` is deleted
-- [ ] All imports updated: `from clasi.todo import Todo` becomes `from clasi.issue import Issue`
-- [ ] Callers in `clasi/project.py`, `clasi/sprint.py`, `clasi/hook_handlers.py`,
+- [x] `clasi/issue.py` exists with class `Issue` (was `Todo`)
+- [x] `clasi/todo.py` is deleted
+- [x] All imports updated: `from clasi.todo import Todo` becomes `from clasi.issue import Issue`
+- [x] Callers in `clasi/project.py`, `clasi/sprint.py`, `clasi/hook_handlers.py`,
   `clasi/tools/artifact_tools.py`, `clasi/cli.py`, `clasi/init_command.py` updated
-- [ ] `tests/unit/test_todo.py` renamed to `tests/unit/test_issue.py` with class/import updates
-- [ ] Full test suite passes
+- [x] `tests/unit/test_todo.py` renamed to `tests/unit/test_issue.py` with class/import updates
+- [x] Full test suite passes
 
 ## Implementation Plan
 

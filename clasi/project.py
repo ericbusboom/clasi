@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from clasi.agent import Agent
     from clasi.sprint import Sprint
     from clasi.state_db_class import StateDB
-    from clasi.todo import Todo
+    from clasi.issue import Issue
 
 
 class Project:
@@ -214,25 +214,25 @@ class Project:
 
     # --- Todo management ---
 
-    def get_todo(self, filename: str) -> Todo:
-        """Get a TODO by its filename."""
-        from clasi.todo import Todo
+    def get_todo(self, filename: str) -> Issue:
+        """Get an issue by its filename."""
+        from clasi.issue import Issue
 
         # Check pending (top-level), in-progress, and done
         for subdir in [self.todo_dir, self.todo_dir / "in-progress", self.todo_dir / "done"]:
             path = subdir / filename
             if path.exists():
-                return Todo(path, self)
+                return Issue(path, self)
         raise ValueError(f"TODO '{filename}' not found")
 
-    def list_todos(self) -> list[Todo]:
-        """List all active TODOs (pending and in-progress, not done)."""
-        from clasi.todo import Todo
+    def list_todos(self) -> list[Issue]:
+        """List all active issues (pending and in-progress, not done)."""
+        from clasi.issue import Issue
 
-        results: list[Todo] = []
+        results: list[Issue] = []
         for subdir in [self.todo_dir, self.todo_dir / "in-progress"]:
             if not subdir.exists():
                 continue
             for f in sorted(subdir.glob("*.md")):
-                results.append(Todo(f, self))
+                results.append(Issue(f, self))
         return results

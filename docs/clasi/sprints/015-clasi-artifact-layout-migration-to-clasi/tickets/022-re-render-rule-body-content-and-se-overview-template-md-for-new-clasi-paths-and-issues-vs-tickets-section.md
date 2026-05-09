@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: "Re-render rule body content and se-overview-template for new .clasi/ paths and Issues vs Tickets section"
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

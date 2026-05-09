@@ -1,7 +1,7 @@
 ---
 id: "027"
 title: "Rename and update remaining unit tests; add sprint-scoped issue lifecycle integration tests"
-status: todo
+status: open
 use-cases:
   - SUC-001
   - SUC-002

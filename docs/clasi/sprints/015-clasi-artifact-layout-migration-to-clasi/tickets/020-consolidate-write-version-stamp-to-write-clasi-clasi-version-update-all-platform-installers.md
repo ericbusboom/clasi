@@ -2,7 +2,7 @@
 id: '020'
 title: Consolidate `write_version_stamp` to write `.clasi/clasi-version`; update all
   platform installers
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

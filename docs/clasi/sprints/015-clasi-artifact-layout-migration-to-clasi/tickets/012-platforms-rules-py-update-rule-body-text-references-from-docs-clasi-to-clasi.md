@@ -2,7 +2,7 @@
 id: '012'
 title: '`platforms/_rules.py`: update rule body text references from `docs/clasi/`
   to `.clasi/`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

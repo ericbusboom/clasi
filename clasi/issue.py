@@ -1,4 +1,4 @@
-"""Todo: OO wrapper around a TODO markdown file."""
+"""Issue: OO wrapper around an issue markdown file."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from clasi.project import Project
 
 
-class Todo:
-    """A TODO file in docs/clasi/todo/."""
+class Issue:
+    """An issue file in docs/clasi/todo/."""
 
     def __init__(self, path: Path, project: Project):
         self._artifact = Artifact(path)

@@ -2,7 +2,7 @@
 id: 008
 title: 'Hook handlers: replace hardcoded `docs/clasi` path strings with `Project`
   property lookups'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

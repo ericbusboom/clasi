@@ -2,7 +2,7 @@
 id: 009
 title: '`platforms/claude.py`: update path globs and rule frontmatter for `.clasi/`
   and `.clasi/issues/`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

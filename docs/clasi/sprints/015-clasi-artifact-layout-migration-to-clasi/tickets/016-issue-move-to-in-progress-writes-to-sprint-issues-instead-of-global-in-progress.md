@@ -2,7 +2,7 @@
 id: '016'
 title: '`Issue.move_to_in_progress` writes to `<sprint>/issues/` instead of global
   `in-progress/`'
-status: todo
+status: open
 use-cases:
   - SUC-002
 depends-on:

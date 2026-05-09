@@ -2,7 +2,7 @@
 id: '013'
 title: 'CLI: rename `plan-to-todo` subcommand to `plan-to-issue` and `--todo-dir`
   to `--issues-dir`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

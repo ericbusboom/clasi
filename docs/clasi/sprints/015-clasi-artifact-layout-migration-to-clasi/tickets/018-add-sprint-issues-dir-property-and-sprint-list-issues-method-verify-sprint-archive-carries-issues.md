@@ -2,7 +2,7 @@
 id: 018
 title: Add `Sprint.issues_dir` property and `Sprint.list_issues()` method; verify
   `Sprint.archive()` carries issues
-status: todo
+status: open
 use-cases:
   - SUC-002
 depends-on:

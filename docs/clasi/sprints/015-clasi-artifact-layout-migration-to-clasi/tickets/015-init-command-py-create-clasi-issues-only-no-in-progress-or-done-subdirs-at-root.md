@@ -2,7 +2,7 @@
 id: '015'
 title: '`init_command.py`: create `.clasi/issues/` only (no `in-progress/` or `done/`
   subdirs at root)'
-status: todo
+status: open
 use-cases:
   - SUC-001
   - SUC-002

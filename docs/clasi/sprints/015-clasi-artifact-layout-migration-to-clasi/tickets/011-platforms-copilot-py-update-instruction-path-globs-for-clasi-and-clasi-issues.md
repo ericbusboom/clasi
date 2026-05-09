@@ -1,7 +1,7 @@
 ---
 id: '011'
 title: '`platforms/copilot.py`: update instruction path globs for `.clasi/` and `.clasi/issues/`'
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

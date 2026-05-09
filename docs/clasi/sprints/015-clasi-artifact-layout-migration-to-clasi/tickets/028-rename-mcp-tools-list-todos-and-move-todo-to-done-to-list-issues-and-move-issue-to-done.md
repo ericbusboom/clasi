@@ -1,7 +1,7 @@
 ---
 id: 028
 title: Rename MCP tools list_todos and move_todo_to_done to list_issues and move_issue_to_done
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:

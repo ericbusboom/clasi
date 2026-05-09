@@ -31,7 +31,7 @@ from clasi.templates import (
     TICKET_TEMPLATE,
 )
 from clasi.ticket import Ticket
-from clasi.todo import Todo
+from clasi.issue import Issue
 from clasi.versioning import (
     compute_next_version,
     create_version_tag,
@@ -735,7 +735,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
@@ -749,7 +749,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     moved_todos: list[str] = []
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     todo.move_to_done()
@@ -877,7 +877,7 @@ def _close_sprint_full(
     in_progress_todo_dir = todo_directory / "in-progress"
     if in_progress_todo_dir.exists():
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
@@ -913,7 +913,7 @@ def _close_sprint_full(
     # Also check pending TODOs in todo/ that are tagged with this sprint (legacy)
     if todo_directory.exists():
         for todo_file in sorted(todo_directory.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/

@@ -1,7 +1,7 @@
 ---
 id: '017'
 title: '`Issue.move_to_done` becomes frontmatter-only (no file move)'
-status: todo
+status: open
 use-cases:
   - SUC-002
 depends-on:

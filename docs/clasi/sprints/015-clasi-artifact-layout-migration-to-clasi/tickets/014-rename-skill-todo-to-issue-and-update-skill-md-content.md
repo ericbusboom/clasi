@@ -1,7 +1,7 @@
 ---
 id: '014'
 title: Rename skill `/todo` to `/issue` and update SKILL.md content
-status: todo
+status: open
 use-cases:
   - SUC-001
 depends-on:
