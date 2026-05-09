@@ -1,7 +1,7 @@
 ---
 id: "023"
 title: "Update README.md with Issues vs Tickets section and remove docs/clasi/ references"
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -28,11 +28,11 @@ The rename-todos-to-issues TODO specifies this requirement explicitly.
 
 ## Acceptance Criteria
 
-- [ ] `README.md` has no `docs/clasi/` references (6 hits at lines 63, 89, 99, 129, 160,
+- [x] `README.md` has no `docs/clasi/` references (6 hits at lines 63, 89, 99, 129, 160,
   279 per the TODO)
-- [ ] README has a clearly-headed "Issues vs Tickets" paragraph
-- [ ] `grep -n "docs/clasi" README.md` returns zero hits
-- [ ] Full test suite passes
+- [x] README has a clearly-headed "Issues vs Tickets" paragraph
+- [x] `grep -n "docs/clasi" README.md` returns zero hits
+- [x] Full test suite passes
 
 ## Implementation Plan
 
