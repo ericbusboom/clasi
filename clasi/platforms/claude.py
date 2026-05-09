@@ -48,13 +48,13 @@ RULES: Dict[str, str] = {
         '---\npaths:\n  - "**"\n---\n\n' + MCP_REQUIRED_BODY
     ),
     "clasi-artifacts.md": (
-        "---\npaths:\n  - docs/clasi/**\n---\n\n" + CLASI_ARTIFACTS_BODY
+        "---\npaths:\n  - .clasi/**\n---\n\n" + CLASI_ARTIFACTS_BODY
     ),
     "source-code.md": (
         "---\npaths:\n  - clasi/**\n  - tests/**\n---\n\n" + SOURCE_CODE_BODY
     ),
     "todo-dir.md": (
-        "---\npaths:\n  - docs/clasi/todo/**\n---\n\n" + TODO_DIR_BODY
+        "---\npaths:\n  - .clasi/issues/**\n---\n\n" + TODO_DIR_BODY
     ),
     "git-commits.md": (
         '---\npaths:\n  - "**/*.py"\n  - "**/*.md"\n---\n\n' + GIT_COMMITS_BODY

@@ -2,7 +2,7 @@
 id: 009
 title: '`platforms/claude.py`: update path globs and rule frontmatter for `.clasi/`
   and `.clasi/issues/`'
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -25,11 +25,11 @@ These globs scope which files trigger which rule files for the Claude platform.
 
 ## Acceptance Criteria
 
-- [ ] `paths: ["docs/clasi/**"]` changed to `paths: [".clasi/**"]` in all rule definitions
-- [ ] `paths: ["docs/clasi/todo/**"]` changed to `paths: [".clasi/issues/**"]`
-- [ ] No `docs/clasi` string literals remain in `claude.py`
-- [ ] `tests/unit/test_platform_claude.py` assertions updated (full in ticket 026)
-- [ ] Full test suite passes
+- [x] `paths: ["docs/clasi/**"]` changed to `paths: [".clasi/**"]` in all rule definitions
+- [x] `paths: ["docs/clasi/todo/**"]` changed to `paths: [".clasi/issues/**"]`
+- [x] No `docs/clasi` string literals remain in `claude.py`
+- [x] `tests/unit/test_platform_claude.py` assertions updated (full in ticket 026)
+- [x] Full test suite passes
 
 ## Implementation Plan
 
