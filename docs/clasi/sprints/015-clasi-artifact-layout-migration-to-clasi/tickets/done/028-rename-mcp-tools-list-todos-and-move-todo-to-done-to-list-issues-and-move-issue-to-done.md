@@ -1,12 +1,12 @@
 ---
 id: 028
 title: Rename MCP tools list_todos and move_todo_to_done to list_issues and move_issue_to_done
-status: open
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "019"
-  - "027"
+- 019
+- '027'
 github-issue: ''
 todo: rename-clasi-todos-to-issues.md
 completes_todo: true
@@ -30,14 +30,14 @@ After this ticket, the `rename-clasi-todos-to-issues.md` issue is fully resolved
 
 ## Acceptance Criteria
 
-- [ ] `list_todos` decorated function renamed to `list_issues` in `artifact_tools.py`
-- [ ] `move_todo_to_done` decorated function renamed to `move_issue_to_done`
-- [ ] All internal references within `artifact_tools.py` updated
-- [ ] Docstrings updated to use "issue" language
-- [ ] MCP server schema updated: new tool names exposed, old names gone
-- [ ] `tests/unit/test_todo_tools.py` (now `test_issue_tools.py` from ticket 027)
+- [x] `list_todos` decorated function renamed to `list_issues` in `artifact_tools.py`
+- [x] `move_todo_to_done` decorated function renamed to `move_issue_to_done`
+- [x] All internal references within `artifact_tools.py` updated
+- [x] Docstrings updated to use "issue" language
+- [x] MCP server schema updated: new tool names exposed, old names gone
+- [x] `tests/unit/test_todo_tools.py` (now `test_issue_tools.py` from ticket 027)
   passes with new function names
-- [ ] `uv run pytest` — full suite green
+- [x] `uv run pytest` — full suite green
 
 ## Implementation Plan
 

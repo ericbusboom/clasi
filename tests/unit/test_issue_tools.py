@@ -1,4 +1,4 @@
-"""Unit tests for TODO management MCP tools."""
+"""Unit tests for issue management MCP tools."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -9,8 +9,8 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
-    list_todos,
-    move_todo_to_done,
+    list_issues,
+    move_issue_to_done,
 )
 from clasi.frontmatter import read_frontmatter, write_frontmatter
 from clasi.mcp_server import set_project
@@ -49,7 +49,7 @@ def _advance_to_executing(work_dir, sprint_id: str) -> None:
     advance_phase(str(db_path), sprint_id)  # ticketing → executing
 
 
-class TestListTodos:
+class TestListIssues:
     def test_lists_todos(self, todo_dir):
         (todo_dir / "idea-one.md").write_text(
             "---\nstatus: pending\n---\n\n# Idea One\n\nSome details.\n"
@@ -58,7 +58,7 @@ class TestListTodos:
             "---\nstatus: pending\n---\n\n# Idea Two\n\nMore details.\n"
         )
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert len(result) == 2
         assert result[0]["filename"] == "idea-one.md"
         assert result[0]["title"] == "Idea One"
@@ -73,24 +73,24 @@ class TestListTodos:
         done.mkdir()
         (done / "finished.md").write_text("# Finished\n")
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert len(result) == 1
         assert result[0]["filename"] == "active.md"
 
     def test_empty_directory(self, todo_dir):
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert result == []
 
     def test_no_todo_directory(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert result == []
 
     def test_file_without_heading(self, todo_dir):
         (todo_dir / "no-heading.md").write_text("Just some text.\n")
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert len(result) == 1
         assert result[0]["title"] == "no-heading"
 
@@ -104,7 +104,7 @@ class TestListTodos:
             "---\nstatus: pending\n---\n\n# Pending\n"
         )
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         linked = next(r for r in result if r["filename"] == "linked.md")
         pending = next(r for r in result if r["filename"] == "pending.md")
 
@@ -117,20 +117,20 @@ class TestListTodos:
         assert "tickets" not in pending
 
 
-class TestMoveTodoToDone:
-    """move_todo_to_done updates frontmatter only — no file move."""
+class TestMoveIssueToDone:
+    """move_issue_to_done updates frontmatter only — no file move."""
 
     def test_sets_status_done(self, todo_dir):
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
 
-        result = json.loads(move_todo_to_done("idea.md"))
+        result = json.loads(move_issue_to_done("idea.md"))
         assert result["status"] == "done"
 
     def test_file_stays_in_place(self, todo_dir):
         """The file must NOT be moved — it stays at its original path."""
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
 
-        move_todo_to_done("idea.md")
+        move_issue_to_done("idea.md")
 
         assert (todo_dir / "idea.md").exists()
         assert not (todo_dir / "done" / "idea.md").exists()
@@ -140,19 +140,19 @@ class TestMoveTodoToDone:
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
         assert not (todo_dir / "done").exists()
 
-        move_todo_to_done("idea.md")
+        move_issue_to_done("idea.md")
 
         assert not (todo_dir / "done").exists()
 
     def test_error_on_nonexistent(self, todo_dir):
         with pytest.raises(ValueError, match="TODO not found"):
-            move_todo_to_done("nonexistent.md")
+            move_issue_to_done("nonexistent.md")
 
     def test_writes_traceability_frontmatter(self, todo_dir):
         """ticket_ids are written to frontmatter (no sprint_id to avoid validation)."""
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n\nDetails.\n")
 
-        move_todo_to_done("idea.md", ticket_ids=["001", "002"])
+        move_issue_to_done("idea.md", ticket_ids=["001", "002"])
 
         content = (todo_dir / "idea.md").read_text()
         assert "status: done" in content
@@ -162,7 +162,7 @@ class TestMoveTodoToDone:
     def test_writes_status_done_without_sprint(self, todo_dir):
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n# Idea\n")
 
-        move_todo_to_done("idea.md")
+        move_issue_to_done("idea.md")
 
         content = (todo_dir / "idea.md").read_text()
         assert "status: done" in content
@@ -172,7 +172,7 @@ class TestMoveTodoToDone:
             "---\nstatus: pending\nsource: https://example.com\n---\n\n# Idea\n"
         )
 
-        move_todo_to_done("idea.md")
+        move_issue_to_done("idea.md")
 
         content = (todo_dir / "idea.md").read_text()
         assert "status: done" in content
@@ -188,7 +188,7 @@ class TestMoveTodoToDone:
         create_sprint("Test Sprint")
 
         with pytest.raises(ValueError, match="not in the expected sprint issues"):
-            move_todo_to_done("idea.md", sprint_id="001")
+            move_issue_to_done("idea.md", sprint_id="001")
 
 
 class TestCreateTicketWithTodo:

@@ -1361,19 +1361,19 @@ def release_execution_lock(sprint_id: str) -> str:
         return json.dumps({"error": str(e)}, indent=2)
 
 
-# --- TODO management tools ---
+# --- Issue management tools ---
 
 
 
 @server.tool()
-def list_todos() -> str:
-    """List all active TODO files with sprint/ticket linkage.
+def list_issues() -> str:
+    """List all active issue files with sprint/ticket linkage.
 
-    Scans docs/clasi/todo/*.md (pending) and docs/clasi/todo/in-progress/*.md.
+    Scans .clasi/issues/*.md (pending) and sprint-scoped issues directories.
     Excludes the done/ subdirectory.
 
     Returns JSON array of {filename, title, status, sprint, tickets}.
-    The sprint and tickets fields are present only for in-progress TODOs.
+    The sprint and tickets fields are present only for in-progress issues.
     """
     project = get_project()
     results = []
@@ -1392,12 +1392,12 @@ def list_todos() -> str:
 
 
 @server.tool()
-def move_todo_to_done(
+def move_issue_to_done(
     filename: str,
     sprint_id: str | None = None,
     ticket_ids: list[str] | None = None,
 ) -> str:
-    """Mark a TODO/issue as done by updating its frontmatter (no file move).
+    """Mark an issue as done by updating its frontmatter (no file move).
 
     When ``sprint_id`` is provided the issue must reside in
     ``<sprint_id>/issues/`` (i.e. it must have been moved there by
@@ -1405,9 +1405,9 @@ def move_todo_to_done(
     issue that lives elsewhere is an error.
 
     Args:
-        filename: The TODO filename (e.g., 'my-idea.md')
-        sprint_id: Optional sprint ID that consumed this TODO
-        ticket_ids: Optional list of ticket IDs that address this TODO
+        filename: The issue filename (e.g., 'my-idea.md')
+        sprint_id: Optional sprint ID that consumed this issue
+        ticket_ids: Optional list of ticket IDs that address this issue
 
     Returns JSON with {path, status}.
     """

@@ -1,7 +1,7 @@
 """Unit tests for TODO three-state lifecycle (pending -> in-progress -> done).
 
-Tests the interactions between create_ticket, move_ticket_to_done, list_todos,
-and close_sprint regarding the TODO in-progress directory.
+Tests the interactions between create_ticket, move_ticket_to_done, list_issues,
+and close_sprint regarding the issue in-progress directory.
 """
 
 import json
@@ -12,7 +12,7 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
-    list_todos,
+    list_issues,
     move_ticket_to_done,
 )
 from clasi.frontmatter import read_frontmatter, write_frontmatter
@@ -208,23 +208,23 @@ class TestMoveTicketToDoneTriggersCompletion:
         assert "completed_todos" not in move_result
 
 
-class TestListTodosPendingPool:
-    """list_todos returns only the pending pool (.clasi/issues/*.md)."""
+class TestListIssuesPendingPool:
+    """list_issues returns only the pending pool (.clasi/issues/*.md)."""
 
     def test_lists_pending_issues(self, work_dir):
-        """list_todos returns pending issues from the pending pool."""
+        """list_issues returns pending issues from the pending pool."""
         todo = work_dir / ".clasi" / "issues"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "pending.md").write_text("---\nstatus: pending\n---\n\n# Pending\n")
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         assert len(result) == 1
 
         pending = next(r for r in result if r["filename"] == "pending.md")
         assert pending["status"] == "pending"
 
     def test_excludes_done(self, work_dir):
-        """list_todos excludes files in subdirectories (done/, in-progress/)."""
+        """list_issues excludes files in subdirectories (done/, in-progress/)."""
         todo = work_dir / ".clasi" / "issues"
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "active.md").write_text("# Active\n")
@@ -232,7 +232,7 @@ class TestListTodosPendingPool:
         done.mkdir()
         (done / "finished.md").write_text("# Finished\n")
 
-        result = json.loads(list_todos())
+        result = json.loads(list_issues())
         filenames = [r["filename"] for r in result]
         assert "active.md" in filenames
         assert "finished.md" not in filenames
