@@ -1,7 +1,7 @@
 ---
 id: "027"
 title: "Rename and update remaining unit tests; add sprint-scoped issue lifecycle integration tests"
-status: open
+status: done
 use-cases:
   - SUC-001
   - SUC-002
@@ -47,12 +47,12 @@ Finish all test file updates not covered by tickets 025-026, and add new lifecyc
 
 ## Acceptance Criteria
 
-- [ ] All test files renamed as specified
-- [ ] No `docs/clasi` string literals in any test file (done/ sprint archives exempt)
-- [ ] No `status: todo` in fixtures (use `status: open`)
-- [ ] Sprint-scoped issue lifecycle integration test passes end-to-end
-- [ ] `grep -rn "docs/clasi" tests/` returns zero hits (excluding done-sprint archives)
-- [ ] `uv run pytest` — full suite green
+- [x] All test files renamed as specified
+- [x] No `docs/clasi` string literals in any test file (done/ sprint archives exempt)
+- [x] No `status: todo` in fixtures (use `status: open`)
+- [x] Sprint-scoped issue lifecycle integration test passes end-to-end
+- [x] `grep -rn "docs/clasi" tests/` returns zero hits (excluding done-sprint archives)
+- [x] `uv run pytest` — full suite green
 
 ## Implementation Plan
 

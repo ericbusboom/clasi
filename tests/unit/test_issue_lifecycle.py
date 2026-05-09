@@ -287,3 +287,236 @@ class TestCloseSprintDoesNotBulkMove:
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
         assert "unresolved_todos" not in result
+
+
+# ---------------------------------------------------------------------------
+# Full sprint-scoped issue lifecycle integration tests
+# ---------------------------------------------------------------------------
+
+
+def _find_sprint_dir(work_dir, sprint_id: str = "001"):
+    """Return the active sprint directory for sprint_id."""
+    sprints_dir = work_dir / ".clasi" / "sprints"
+    for d in sorted(sprints_dir.iterdir()):
+        if d.is_dir() and d.name.startswith(sprint_id + "-"):
+            return d
+    raise ValueError(f"Sprint dir for {sprint_id!r} not found in {sprints_dir}")
+
+
+def _find_done_sprint_dir(work_dir, sprint_id: str = "001"):
+    """Return the archived sprint directory for sprint_id."""
+    done_dir = work_dir / ".clasi" / "sprints" / "done"
+    for d in sorted(done_dir.iterdir()):
+        if d.is_dir() and d.name.startswith(sprint_id + "-"):
+            return d
+    raise ValueError(f"Done sprint dir for {sprint_id!r} not found in {done_dir}")
+
+
+class TestSprintScopedIssueLifecycle:
+    """End-to-end lifecycle: pending issue → sprint claim → done → archive.
+
+    Exercises the complete sprint-scoped issue lifecycle:
+    1. Create issue in .clasi/issues/ (pending pool).
+    2. Create a sprint, advance to ticketing.
+    3. Claim the issue via create_ticket → file moves to <sprint>/issues/.
+    4. Complete the ticket via move_ticket_to_done → issue frontmatter status=done.
+    5. Archive the sprint via close_sprint → issue at done/<sprint>/issues/.
+    """
+
+    def test_full_lifecycle(self, work_dir):
+        """Full sprint-scoped issue lifecycle passes end-to-end."""
+        # Step 1: Create a pending issue in the pending pool
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        issue_file = pending_pool / "my-idea.md"
+        issue_file.write_text(
+            "---\nstatus: open\n---\n\n# My Idea\n\nDetails here.\n",
+            encoding="utf-8",
+        )
+        assert issue_file.exists(), "Issue must exist in pending pool before claim"
+
+        # Step 2: Create a sprint and advance to ticketing
+        create_sprint("Lifecycle Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        sprint_dir = _find_sprint_dir(work_dir, "001")
+        sprint_issues_dir = sprint_dir / "issues"
+
+        # Step 3: Claim the issue via create_ticket
+        result = json.loads(
+            create_ticket("001", "Implement My Idea", todo="my-idea.md")
+        )
+        ticket_path = result["path"]
+
+        # Issue is now at <sprint>/issues/, not in the pending pool
+        assert not issue_file.exists(), (
+            "Issue must not remain in pending pool after being claimed"
+        )
+        sprint_issue_path = sprint_issues_dir / "my-idea.md"
+        assert sprint_issue_path.exists(), (
+            "Issue must be in sprint issues dir after create_ticket"
+        )
+        issue_fm = read_frontmatter(sprint_issue_path)
+        assert issue_fm["status"] == "in-progress"
+        assert issue_fm["sprint"] == "001"
+        assert "001-001" in issue_fm["tickets"]
+
+        # Step 4: Complete the ticket and call move_ticket_to_done
+        fm = read_frontmatter(ticket_path)
+        fm["status"] = "done"
+        write_frontmatter(ticket_path, fm)
+        move_result = json.loads(move_ticket_to_done(ticket_path))
+
+        # Issue frontmatter shows done; file remains at <sprint>/issues/
+        assert "completed_todos" in move_result
+        assert "my-idea.md" in move_result["completed_todos"]
+        assert sprint_issue_path.exists(), (
+            "Issue file must remain at sprint issues dir (frontmatter-only update)"
+        )
+        done_fm = read_frontmatter(sprint_issue_path)
+        assert done_fm["status"] == "done"
+
+        # Step 5: Archive the sprint
+        close_result = json.loads(close_sprint("001"))
+        assert "new_path" in close_result
+        assert "done" in close_result["new_path"]
+        assert not sprint_dir.exists(), "Original sprint dir must be gone after archive"
+
+        # Issue is now at done/<sprint>/issues/
+        done_sprint_dir = _find_done_sprint_dir(work_dir, "001")
+        done_issue_path = done_sprint_dir / "issues" / "my-idea.md"
+        assert done_issue_path.exists(), (
+            "Issue must be at done/<sprint>/issues/ after sprint archive"
+        )
+        archived_fm = read_frontmatter(done_issue_path)
+        assert archived_fm["status"] == "done"
+
+    def test_archive_carries_issue_to_done_dir(self, work_dir):
+        """close_sprint carries the issues/ directory to done/<sprint>/issues/."""
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "story.md").write_text(
+            "---\nstatus: open\n---\n\n# Story\n", encoding="utf-8"
+        )
+
+        create_sprint("Story Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        sprint_dir = _find_sprint_dir(work_dir, "001")
+
+        result = json.loads(create_ticket("001", "Story Task", todo="story.md"))
+        ticket_path = result["path"]
+
+        fm = read_frontmatter(ticket_path)
+        fm["status"] = "done"
+        write_frontmatter(ticket_path, fm)
+        move_ticket_to_done(ticket_path)
+
+        close_sprint("001")
+
+        done_sprint_dir = _find_done_sprint_dir(work_dir, "001")
+        assert (done_sprint_dir / "issues" / "story.md").exists(), (
+            "Archived issue must be under done/<sprint>/issues/"
+        )
+
+    def test_multiple_issues_all_archived(self, work_dir):
+        """Multiple sprint-scoped issues all appear at done/<sprint>/issues/."""
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        for name in ["alpha.md", "beta.md", "gamma.md"]:
+            (pending_pool / name).write_text(
+                f"---\nstatus: open\n---\n\n# {name}\n", encoding="utf-8"
+            )
+
+        create_sprint("Multi Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        for name in ["alpha.md", "beta.md", "gamma.md"]:
+            r = json.loads(create_ticket("001", f"Task {name}", todo=name))
+            fm = read_frontmatter(r["path"])
+            fm["status"] = "done"
+            write_frontmatter(r["path"], fm)
+            move_ticket_to_done(r["path"])
+
+        close_sprint("001")
+
+        done_sprint_dir = _find_done_sprint_dir(work_dir, "001")
+        for name in ["alpha.md", "beta.md", "gamma.md"]:
+            assert (done_sprint_dir / "issues" / name).exists(), (
+                f"{name} must be at done/<sprint>/issues/ after archive"
+            )
+
+
+class TestSprintIssuesDirUnit:
+    """Unit tests for Sprint.issues_dir and Sprint.list_issues()."""
+
+    def test_issues_dir_returns_sprint_subpath(self, work_dir):
+        """Sprint.issues_dir returns <sprint_path>/issues."""
+        from clasi.project import Project
+
+        create_sprint("Test Sprint")
+        proj = Project(work_dir)
+        sprint = proj.get_sprint("001")
+        assert sprint.issues_dir == sprint.path / "issues"
+
+    def test_issues_dir_is_path_object(self, work_dir):
+        """Sprint.issues_dir returns a Path (not a string)."""
+        from pathlib import Path
+        from clasi.project import Project
+
+        create_sprint("Test Sprint")
+        proj = Project(work_dir)
+        sprint = proj.get_sprint("001")
+        assert isinstance(sprint.issues_dir, Path)
+
+    def test_list_issues_empty_when_no_dir(self, work_dir):
+        """Sprint.list_issues() returns [] when issues/ does not exist."""
+        from clasi.project import Project
+
+        create_sprint("Test Sprint")
+        proj = Project(work_dir)
+        sprint = proj.get_sprint("001")
+        assert not sprint.issues_dir.exists()
+        assert sprint.list_issues() == []
+
+    def test_list_issues_returns_issue_objects(self, work_dir):
+        """Sprint.list_issues() returns Issue instances for each .md file."""
+        from clasi.issue import Issue
+        from clasi.project import Project
+
+        create_sprint("Test Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "feature.md").write_text(
+            "---\nstatus: open\n---\n\n# Feature\n", encoding="utf-8"
+        )
+
+        create_ticket("001", "Implement Feature", todo="feature.md")
+
+        proj = Project(work_dir)
+        sprint = proj.get_sprint("001")
+        issues = sprint.list_issues()
+        assert len(issues) == 1
+        assert isinstance(issues[0], Issue)
+        assert issues[0].path.name == "feature.md"
+
+    def test_list_issues_multiple(self, work_dir):
+        """Sprint.list_issues() returns all .md issues sorted by name."""
+        from clasi.project import Project
+
+        create_sprint("Test Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        for name in ["aaa.md", "bbb.md", "ccc.md"]:
+            (pending_pool / name).write_text(
+                f"---\nstatus: open\n---\n\n# {name}\n", encoding="utf-8"
+            )
+            create_ticket("001", f"Task {name}", todo=name)
+
+        proj = Project(work_dir)
+        sprint = proj.get_sprint("001")
+        issues = sprint.list_issues()
+        assert len(issues) == 3
+        assert [i.path.name for i in issues] == ["aaa.md", "bbb.md", "ccc.md"]

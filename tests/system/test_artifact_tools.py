@@ -34,7 +34,7 @@ from clasi.state_db import (
 
 @pytest.fixture
 def work_dir(tmp_path, monkeypatch):
-    """Set up a temporary working directory with docs/clasi/sprints/ structure."""
+    """Set up a temporary working directory with .clasi/sprints/ structure."""
     monkeypatch.chdir(tmp_path)
     set_project(tmp_path)
     return tmp_path
@@ -947,7 +947,7 @@ class TestCloseSprintLockAndDbGuard:
         # git rev-parse --verify (delete, branch gone)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
-            self._make_subprocess_result(0, " M docs/clasi/.clasi.db\n"),  # git status --porcelain (dirty)
+            self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "sprint/001-sprint\n"),  # git rev-parse --abbrev-ref HEAD
             self._make_subprocess_result(0),            # git add .clasi.db
             self._make_subprocess_result(0),            # git commit
@@ -1065,7 +1065,7 @@ class TestCloseSprintLockAndDbGuard:
         # db is dirty but HEAD is not the sprint branch (e.g. accidentally on master)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
-            self._make_subprocess_result(0, " M docs/clasi/.clasi.db\n"),  # git status --porcelain (dirty)
+            self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "master\n"),  # git rev-parse --abbrev-ref HEAD (wrong branch)
             # Guard skipped — no git add or git commit for .clasi.db
             self._make_subprocess_result(1),            # git rev-parse --verify (branch gone)

@@ -225,7 +225,7 @@ class TestRunInit:
         assert not (issues_dir / "done").exists()
 
     def test_does_not_create_docs_clasi_todo(self, target_dir):
-        """clasi init must not create docs/clasi/todo/ or any docs/clasi/ dirs."""
+        """clasi init must not create a docs/ directory with CLASI artifacts."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
