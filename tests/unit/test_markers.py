@@ -14,6 +14,8 @@ from clasi.platforms._markers import (
     strip_named_section,
     write_section,
     strip_section,
+    write_version_stamp,
+    remove_version_stamp,
     MARKER_START,
     MARKER_END,
 )
@@ -309,3 +311,147 @@ class TestTwoBlocksCoexistRoundTrip:
         # Legacy CLASI:START/END markers are NOT present
         assert MARKER_START not in text
         assert MARKER_END not in text
+
+
+# ---------------------------------------------------------------------------
+# write_version_stamp — consolidated .clasi/clasi-version
+# ---------------------------------------------------------------------------
+
+
+class TestWriteVersionStamp:
+    def test_writes_clasi_clasi_version(self, tmp_path: Path) -> None:
+        """write_version_stamp writes .clasi/clasi-version in the target root."""
+        write_version_stamp(tmp_path)
+        stamp = tmp_path / ".clasi" / "clasi-version"
+        assert stamp.exists(), ".clasi/clasi-version must be created"
+
+    def test_stamp_contains_version_string(self, tmp_path: Path) -> None:
+        """Stamp file contains a non-empty version string followed by a newline."""
+        write_version_stamp(tmp_path)
+        stamp = tmp_path / ".clasi" / "clasi-version"
+        content = stamp.read_text(encoding="utf-8")
+        assert content.endswith("\n"), "Stamp must end with newline"
+        assert content.strip(), "Version string must be non-empty"
+
+    def test_idempotent_overwrite(self, tmp_path: Path) -> None:
+        """Calling write_version_stamp twice on the same target does not raise."""
+        write_version_stamp(tmp_path)
+        write_version_stamp(tmp_path)
+        stamp = tmp_path / ".clasi" / "clasi-version"
+        assert stamp.exists()
+
+    def test_creates_clasi_dir_if_absent(self, tmp_path: Path) -> None:
+        """.clasi/ is created automatically if it does not exist."""
+        assert not (tmp_path / ".clasi").exists()
+        write_version_stamp(tmp_path)
+        assert (tmp_path / ".clasi").is_dir()
+
+    def test_no_per_platform_stamp_written(self, tmp_path: Path) -> None:
+        """write_version_stamp must NOT write any per-platform .clasi-version files."""
+        write_version_stamp(tmp_path)
+        for stale_dir in [".claude", ".codex", ".agents", ".github"]:
+            stale = tmp_path / stale_dir / ".clasi-version"
+            assert not stale.exists(), (
+                f"{stale_dir}/.clasi-version must not be written by write_version_stamp"
+            )
+
+    def test_removes_stale_claude_stamp(self, tmp_path: Path) -> None:
+        """write_version_stamp removes a pre-existing .claude/.clasi-version."""
+        stale = tmp_path / ".claude" / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("old-version\n", encoding="utf-8")
+
+        write_version_stamp(tmp_path)
+
+        assert not stale.exists(), ".claude/.clasi-version must be removed"
+
+    def test_removes_stale_codex_stamp(self, tmp_path: Path) -> None:
+        """write_version_stamp removes a pre-existing .codex/.clasi-version."""
+        stale = tmp_path / ".codex" / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("old-version\n", encoding="utf-8")
+
+        write_version_stamp(tmp_path)
+
+        assert not stale.exists(), ".codex/.clasi-version must be removed"
+
+    def test_removes_stale_agents_stamp(self, tmp_path: Path) -> None:
+        """write_version_stamp removes a pre-existing .agents/.clasi-version."""
+        stale = tmp_path / ".agents" / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("old-version\n", encoding="utf-8")
+
+        write_version_stamp(tmp_path)
+
+        assert not stale.exists(), ".agents/.clasi-version must be removed"
+
+    def test_removes_stale_github_stamp(self, tmp_path: Path) -> None:
+        """write_version_stamp removes a pre-existing .github/.clasi-version."""
+        stale = tmp_path / ".github" / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("old-version\n", encoding="utf-8")
+
+        write_version_stamp(tmp_path)
+
+        assert not stale.exists(), ".github/.clasi-version must be removed"
+
+    def test_no_error_when_stale_stamp_absent(self, tmp_path: Path) -> None:
+        """write_version_stamp does not raise when no stale stamp files exist."""
+        write_version_stamp(tmp_path)  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# remove_version_stamp — uninstall cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveVersionStamp:
+    def test_removes_stamp_file(self, tmp_path: Path) -> None:
+        """remove_version_stamp deletes .clasi/clasi-version if present."""
+        write_version_stamp(tmp_path)
+        assert (tmp_path / ".clasi" / "clasi-version").exists()
+
+        remove_version_stamp(tmp_path)
+
+        assert not (tmp_path / ".clasi" / "clasi-version").exists()
+
+    def test_removes_empty_clasi_dir(self, tmp_path: Path) -> None:
+        """remove_version_stamp removes .clasi/ when it becomes empty."""
+        write_version_stamp(tmp_path)
+        assert (tmp_path / ".clasi").exists()
+
+        remove_version_stamp(tmp_path)
+
+        assert not (tmp_path / ".clasi").exists(), (
+            ".clasi/ must be removed when it becomes empty after stamp removal"
+        )
+
+    def test_preserves_clasi_dir_when_not_empty(self, tmp_path: Path) -> None:
+        """.clasi/ is NOT removed when other files remain after stamp removal."""
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        # Write the stamp
+        stamp = clasi_dir / "clasi-version"
+        stamp.write_text("v1\n", encoding="utf-8")
+        # Add an unrelated file in .clasi/
+        other = clasi_dir / "AGENTS.md"
+        other.write_text("# rules\n", encoding="utf-8")
+
+        remove_version_stamp(tmp_path)
+
+        assert not stamp.exists(), "clasi-version must be removed"
+        assert clasi_dir.exists(), ".clasi/ must survive (non-empty)"
+        assert other.exists(), "AGENTS.md must be preserved"
+
+    def test_noop_when_stamp_absent(self, tmp_path: Path) -> None:
+        """remove_version_stamp is a no-op when .clasi/clasi-version does not exist."""
+        remove_version_stamp(tmp_path)  # should not raise
+
+    def test_round_trip_install_uninstall(self, tmp_path: Path) -> None:
+        """write then remove leaves the target tree clean."""
+        write_version_stamp(tmp_path)
+        remove_version_stamp(tmp_path)
+
+        assert not (tmp_path / ".clasi" / "clasi-version").exists()
+        # .clasi/ itself must also be gone (was created solely for the stamp)
+        assert not (tmp_path / ".clasi").exists()

@@ -26,7 +26,7 @@ def _make_sprint_dir(tmp_path, sprint_id="001", title="Test Sprint", slug="test-
     return proj, sprint_dir
 
 
-def _add_ticket(sprint_dir, ticket_id="001", title="Fix Bug", status="todo", done=False):
+def _add_ticket(sprint_dir, ticket_id="001", title="Fix Bug", status="open", done=False):
     """Create a ticket file in the sprint."""
     subdir = sprint_dir / "tickets" / ("done" if done else "")
     subdir.mkdir(parents=True, exist_ok=True)
@@ -163,6 +163,18 @@ class TestSprintPathAccessors:
         s = Sprint(sprint_dir, proj)
         assert s.tickets_done_dir.is_dir()
 
+    def test_issues_dir_returns_path(self, tmp_path):
+        """issues_dir returns <sprint_path>/issues."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.issues_dir == sprint_dir / "issues"
+
+    def test_issues_dir_is_path_type(self, tmp_path):
+        """issues_dir returns a Path object."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert isinstance(s.issues_dir, Path)
+
 
 class TestSprintToDict:
     """Test Sprint.to_dict() serialization."""
@@ -277,7 +289,7 @@ class TestSprintTickets:
         t = s.create_ticket("New Feature")
         assert t.id == "001"
         assert t.title == "New Feature"
-        assert t.status == "todo"
+        assert t.status == "open"
         assert t.path.exists()
 
     def test_create_ticket_increments_id(self, tmp_path):
@@ -291,7 +303,7 @@ class TestSprintTickets:
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         t = s.create_ticket("With Todo", todo="my-idea.md")
-        assert t.todo_ref == "my-idea.md"
+        assert t.issue_ref == "my-idea.md"
 
     def test_create_ticket_auto_links_sprint_todos(self, tmp_path):
         """When no todo param given, auto-link from sprint.md todos field."""
@@ -306,7 +318,7 @@ class TestSprintTickets:
         )
         s = Sprint(sprint_dir, proj)
         t = s.create_ticket("Auto Linked")
-        assert t.todo_ref == "idea-a.md"
+        assert t.issue_ref == "idea-a.md"
 
     def test_create_ticket_explicit_todo_not_overridden(self, tmp_path):
         """Explicit todo param should NOT be overridden by sprint todos."""
@@ -320,14 +332,84 @@ class TestSprintTickets:
         )
         s = Sprint(sprint_dir, proj)
         t = s.create_ticket("Explicit Todo", todo="explicit.md")
-        assert t.todo_ref == "explicit.md"
+        assert t.issue_ref == "explicit.md"
 
     def test_create_ticket_no_todos_field_no_link(self, tmp_path):
         """When sprint.md has no todos field, no auto-linking happens."""
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         t = s.create_ticket("No Todos")
-        assert t.todo_ref is None
+        assert t.issue_ref is None
+
+
+def _add_issue(sprint_dir, filename="my-issue.md", status="pending"):
+    """Create an issue file in <sprint_dir>/issues/."""
+    issues_dir = sprint_dir / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+    path = issues_dir / filename
+    path.write_text(
+        f"---\nstatus: {status}\n---\n# Issue {filename}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestSprintIssues:
+    """Tests for Sprint.issues_dir and Sprint.list_issues()."""
+
+    def test_list_issues_empty_when_no_dir(self, tmp_path):
+        """list_issues() returns [] when issues/ does not exist."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.list_issues() == []
+
+    def test_list_issues_empty_dir(self, tmp_path):
+        """list_issues() returns [] when issues/ exists but has no .md files."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        (sprint_dir / "issues").mkdir()
+        s = Sprint(sprint_dir, proj)
+        assert s.list_issues() == []
+
+    def test_list_issues_returns_issue_objects(self, tmp_path):
+        """list_issues() returns Issue instances."""
+        from clasi.issue import Issue
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_issue(sprint_dir, "issue-a.md")
+        s = Sprint(sprint_dir, proj)
+        issues = s.list_issues()
+        assert len(issues) == 1
+        assert isinstance(issues[0], Issue)
+
+    def test_list_issues_multiple_files(self, tmp_path):
+        """list_issues() returns one Issue per .md file, sorted by name."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_issue(sprint_dir, "aaa.md")
+        _add_issue(sprint_dir, "bbb.md")
+        _add_issue(sprint_dir, "ccc.md")
+        s = Sprint(sprint_dir, proj)
+        issues = s.list_issues()
+        assert len(issues) == 3
+        assert [i.path.name for i in issues] == ["aaa.md", "bbb.md", "ccc.md"]
+
+    def test_list_issues_issue_path_correct(self, tmp_path):
+        """Returned Issue objects have correct path."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_issue(sprint_dir, "my-issue.md")
+        s = Sprint(sprint_dir, proj)
+        issue = s.list_issues()[0]
+        assert issue.path == sprint_dir / "issues" / "my-issue.md"
+
+    def test_list_issues_ignores_non_md_files(self, tmp_path):
+        """list_issues() only picks up .md files."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "note.txt").write_text("plain text", encoding="utf-8")
+        _add_issue(sprint_dir, "real.md")
+        s = Sprint(sprint_dir, proj)
+        issues = s.list_issues()
+        assert len(issues) == 1
+        assert issues[0].path.name == "real.md"
 
 
 class TestSprintPhase:
@@ -757,26 +839,26 @@ class TestSprintTicketCounts:
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts == {"todo": 0, "in_progress": 0, "done": 0}
+        assert counts == {"open": 0, "in_progress": 0, "done": 0}
 
     def test_ticket_counts_with_todo_tickets(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
-        _add_ticket(sprint_dir, "001", "First", status="todo")
-        _add_ticket(sprint_dir, "002", "Second", status="todo")
+        _add_ticket(sprint_dir, "001", "First", status="open")
+        _add_ticket(sprint_dir, "002", "Second", status="open")
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts["todo"] == 2
+        assert counts["open"] == 2
         assert counts["in_progress"] == 0
         assert counts["done"] == 0
 
     def test_ticket_counts_mixed_statuses(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
-        _add_ticket(sprint_dir, "001", "Todo", status="todo")
+        _add_ticket(sprint_dir, "001", "Open", status="open")
         _add_ticket(sprint_dir, "002", "In Progress", status="in-progress")
         _add_ticket(sprint_dir, "003", "Done", status="done", done=True)
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts["todo"] == 1
+        assert counts["open"] == 1
         assert counts["in_progress"] == 1
         assert counts["done"] == 1
 
@@ -858,3 +940,45 @@ class TestSprintArchive:
         # No architecture-update.md was created, should not raise
         result = s.archive()
         assert "new_path" in result
+
+    def test_archive_carries_issues_dir(self, tmp_path):
+        """archive() moves the entire sprint dir; issues/ travels with it."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        # Create issues/ subdir with a file
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir()
+        issue_file = issues_dir / "my-issue.md"
+        issue_file.write_text(
+            "---\nstatus: in-progress\n---\n# My Issue\n", encoding="utf-8"
+        )
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+
+        # The original location must be gone
+        assert not sprint_dir.exists()
+
+        # The issues dir must exist under done/<sprint>/issues/
+        done_sprint_dir = proj.sprints_dir / "done" / sprint_dir.name
+        done_issues_dir = done_sprint_dir / "issues"
+        assert done_issues_dir.is_dir(), "issues/ was not carried to done/"
+        assert (done_issues_dir / "my-issue.md").exists(), (
+            "issue file was not carried to done/"
+        )
+
+    def test_archive_issues_accessible_via_sprint_after_archive(self, tmp_path):
+        """After archive(), Sprint.list_issues() finds the moved issue files."""
+        from clasi.issue import Issue
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir()
+        (issues_dir / "ticket-issue.md").write_text(
+            "---\nstatus: in-progress\n---\n# Ticket Issue\n", encoding="utf-8"
+        )
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+
+        # Sprint._path was updated; list_issues() should see the archived file
+        issues = s.list_issues()
+        assert len(issues) == 1
+        assert isinstance(issues[0], Issue)
+        assert "done" in str(issues[0].path)

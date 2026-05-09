@@ -21,7 +21,7 @@ planning. All planning happens on main.
 ## Inputs
 
 - Stakeholder conversation describing the work to be done
-- `docs/clasi/design/overview.md` (must exist)
+- `.clasi/design/overview.md` (must exist)
 
 ## Critical Rules
 
@@ -38,10 +38,10 @@ For batch roadmap planning of multiple sprints.
 
 ### Process
 
-1. **Determine sprint number**: Check `docs/clasi/sprints/` and
-   `docs/clasi/sprints/done/` for existing sprints. Next sequential number.
+1. **Determine sprint number**: Check `.clasi/sprints/` and
+   `.clasi/sprints/done/` for existing sprints. Next sequential number.
 
-2. **Mine the TODO directory**: Scan `docs/clasi/todo/` for relevant ideas.
+2. **Mine the issues directory**: Scan `.clasi/issues/` for relevant ideas.
    Discuss with the stakeholder.
 
 3. **Create sprint directory**: Use the `create_sprint` MCP tool.
@@ -68,7 +68,7 @@ agent via the Agent tool to fill in full planning artifacts.
    sprint-planner agent with:
    - Sprint ID and directory path
    - Sprint goals and TODO references
-   - Path to `docs/clasi/design/overview.md`
+   - Path to `.clasi/design/overview.md`
    - Path to current architecture
 
    The sprint-planner handles architecture, architecture review, and

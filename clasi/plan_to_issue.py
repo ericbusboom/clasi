@@ -1,4 +1,4 @@
-"""Convert a Claude Code plan file to a CLASI TODO."""
+"""Convert a Claude Code plan file to a CLASI issue."""
 
 import hashlib
 from pathlib import Path
@@ -25,7 +25,7 @@ def _unique_path(directory: Path, slug: str) -> Path:
         n += 1
 
 
-def plan_to_todo(
+def plan_to_issue(
     plans_dir: Path,
     todo_dir: Path,
     plan_file: Optional[Path] = None,
@@ -36,7 +36,7 @@ def plan_to_todo(
     the newest .md in plans_dir. Adds ``status: pending`` frontmatter,
     writes it to todo_dir, and deletes the original.
 
-    Returns the path of the created TODO file, or None if nothing
+    Returns the path of the created issue file, or None if nothing
     was converted.
     """
     if plan_file is not None:
@@ -81,8 +81,8 @@ def plan_to_todo(
     return out_path
 
 
-def plan_to_todo_from_text(text: str, todo_dir: Path) -> Optional[Path]:
-    """Write a pending TODO from raw plan *text* with content-hash deduplication.
+def plan_to_issue_from_text(text: str, todo_dir: Path) -> Optional[Path]:
+    """Write a pending issue from raw plan *text* with content-hash deduplication.
 
     Adds ``source: codex-plan`` and ``source_hash`` to the frontmatter.
     Returns ``None`` if *text* is empty/blank or a duplicate already exists.

@@ -43,18 +43,52 @@ def _current_version() -> str:
         return "unknown"
 
 
-def write_version_stamp(target: Path, subdir: str) -> None:
-    """Write the installed clasi version to <target>/<subdir>/.clasi-version.
+def write_version_stamp(target: Path) -> None:
+    """Write the installed clasi version to <target>/.clasi/clasi-version.
 
     A single-line file (version + newline) so a reader can tell which
     clasi release populated this directory. Each platform installer
-    calls this for the directories it owns (e.g. .claude, .codex).
+    calls this once per target root.
+
+    Stale per-platform stamp files from old installs are deleted
+    opportunistically: .claude/.clasi-version, .codex/.clasi-version,
+    .agents/.clasi-version, .github/.clasi-version.
     """
-    dest = target / subdir / ".clasi-version"
+    dest = target / ".clasi" / "clasi-version"
     dest.parent.mkdir(parents=True, exist_ok=True)
     version = _current_version()
     dest.write_text(f"{version}\n", encoding="utf-8")
-    click.echo(f"  Wrote: {subdir}/.clasi-version ({version})")
+    click.echo(f"  Wrote: .clasi/clasi-version ({version})")
+
+    # Opportunistically remove stale per-platform stamp files from old installs.
+    _stale_dirs = [".claude", ".codex", ".agents", ".github"]
+    for stale_dir in _stale_dirs:
+        stale = target / stale_dir / ".clasi-version"
+        if stale.exists():
+            stale.unlink()
+            click.echo(f"  Removed stale: {stale_dir}/.clasi-version")
+
+
+def remove_version_stamp(target: Path) -> None:
+    """Remove <target>/.clasi/clasi-version on uninstall.
+
+    Removes the .clasi/ directory as well if it becomes empty after
+    the stamp file is deleted.  Does nothing if the file does not exist.
+    """
+    stamp = target / ".clasi" / "clasi-version"
+    if stamp.exists():
+        stamp.unlink()
+        click.echo("  Removed: .clasi/clasi-version")
+    else:
+        click.echo("  Skipped: .clasi/clasi-version (not found)")
+
+    clasi_dir = target / ".clasi"
+    if clasi_dir.exists():
+        try:
+            next(clasi_dir.iterdir())
+        except StopIteration:
+            clasi_dir.rmdir()
+            click.echo("  Removed: .clasi/ (empty)")
 
 
 def render_section(entry_point: str, version: Optional[str] = None) -> str:

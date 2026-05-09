@@ -31,7 +31,7 @@ from clasi.templates import (
     TICKET_TEMPLATE,
 )
 from clasi.ticket import Ticket
-from clasi.todo import Todo
+from clasi.issue import Issue
 from clasi.versioning import (
     compute_next_version,
     create_version_tag,
@@ -96,10 +96,10 @@ def _is_ticket_done(ticket_ref: str) -> bool:
 
 
 def _any_ticket_suppresses_todo(ticket_refs: list[str], todo_filename: str) -> bool:
-    """Return True if any referencing ticket has completes_todo: false for the given TODO.
+    """Return True if any referencing ticket has completes_issue: false for the given issue.
 
     Iterates over all ticket references (as 'sprint_id-ticket_id' strings) and
-    calls ``Ticket.completes_todo_for(todo_filename)`` on each one that can be
+    calls ``Ticket.completes_issue_for(todo_filename)`` on each one that can be
     loaded.  If any ticket returns ``False``, archival should be suppressed.
 
     Returns False (do not suppress) if no tickets can be loaded or all return True.
@@ -114,40 +114,40 @@ def _any_ticket_suppresses_todo(ticket_refs: list[str], todo_filename: str) -> b
             ticket = sprint.get_ticket(ticket_id)
         except ValueError:
             continue
-        if not ticket.completes_todo_for(todo_filename):
+        if not ticket.completes_issue_for(todo_filename):
             return True
     return False
 
 
 def _todo_is_deferred(sprint: Sprint, todo_filename: str) -> bool:
-    """Return True if a TODO is intentionally deferred by a ticket in this sprint.
+    """Return True if an issue is intentionally deferred by a ticket in this sprint.
 
-    A TODO is considered deferred when at least one ticket in ``sprint`` that
-    lists ``todo_filename`` in its ``todo`` frontmatter field has
-    ``completes_todo: false`` for that filename.
+    An issue is considered deferred when at least one ticket in ``sprint`` that
+    lists ``todo_filename`` in its ``issue`` frontmatter field has
+    ``completes_issue: false`` for that filename.
 
     This is used by the close_sprint precondition check: if every ticket that
-    references the TODO has ``completes_todo: true`` (or absent), the TODO
+    references the issue has ``completes_issue: true`` (or absent), the issue
     should have been archived and its in-progress state is an error.  But if
-    any ticket deliberately set ``completes_todo: false``, the TODO is expected
+    any ticket deliberately set ``completes_issue: false``, the issue is expected
     to remain in-progress for future sprints, and the precondition should allow
     the sprint to close.
 
-    Returns False (not deferred) if no tickets in the sprint reference the TODO,
-    or if all referencing tickets have ``completes_todo: true`` (default).
+    Returns False (not deferred) if no tickets in the sprint reference the issue,
+    or if all referencing tickets have ``completes_issue: true`` (default).
     """
     for location in [sprint.tickets_dir, sprint.tickets_done_dir]:
         if not location.exists():
             continue
         for ticket_file in sorted(location.glob("*.md")):
             ticket = Ticket(ticket_file, sprint)
-            todo_ref = ticket.todo_ref
-            if todo_ref is None:
+            issue_ref = ticket.issue_ref
+            if issue_ref is None:
                 continue
-            linked = [todo_ref] if isinstance(todo_ref, str) else list(todo_ref)
+            linked = [issue_ref] if isinstance(issue_ref, str) else list(issue_ref)
             if todo_filename not in linked:
                 continue
-            if not ticket.completes_todo_for(todo_filename):
+            if not ticket.completes_issue_for(todo_filename):
                 return True
     return False
 
@@ -462,16 +462,16 @@ def create_ticket(
 
     ticket = sprint.create_ticket(title, todo=todo_arg)
 
-    # If multiple TODOs, set the todo field to a list
+    # If multiple issues, set the issue field to a list
     if todo_list and len(todo_list) > 1:
-        ticket._artifact.update_frontmatter(todo=todo_list)
+        ticket._artifact.update_frontmatter(issue=todo_list)
 
     # Update each referenced TODO file and move to in-progress
     if todo_list:
         full_ticket_id = f"{sprint_id}-{ticket.id}"
         for todo_filename in todo_list:
             try:
-                todo_obj = project.get_todo(todo_filename)
+                todo_obj = project.get_issue(todo_filename)
             except ValueError:
                 continue  # Skip missing TODOs gracefully
             todo_obj.move_to_in_progress(sprint_id, full_ticket_id)
@@ -512,7 +512,7 @@ def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) 
 
     Args:
         sprint_id: Optional sprint ID to filter by
-        status: Optional status filter (todo, in-progress, done)
+        status: Optional status filter (open, in-progress, done)
 
     Returns JSON array of {id, title, status, sprint_id, path}.
     """
@@ -549,7 +549,7 @@ def get_sprint_status(sprint_id: str) -> str:
     Args:
         sprint_id: The sprint ID (e.g., '001')
 
-    Returns JSON with {id, title, status, branch, tickets: {todo, in_progress, done}}.
+    Returns JSON with {id, title, status, branch, tickets: {open, in_progress, done}}.
     """
     sprint = get_project().get_sprint(sprint_id)
 
@@ -571,11 +571,11 @@ def update_ticket_status(path: str, status: str) -> str:
 
     Args:
         path: Path to the ticket file
-        status: New status (todo, in-progress, done)
+        status: New status (open, in-progress, done)
 
     Returns JSON with {path, old_status, new_status}.
     """
-    valid_statuses = {"todo", "in-progress", "done"}
+    valid_statuses = {"open", "in-progress", "done"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
 
@@ -623,14 +623,14 @@ def move_ticket_to_done(path: str) -> str:
     # Move the ticket and its plan file
     result = ticket.move_to_done_with_plan()
 
-    # Check if this ticket references any TODOs and trigger completion
-    todo_refs = ticket.todo_ref
+    # Check if this ticket references any issues and trigger completion
+    todo_refs = ticket.issue_ref
     if todo_refs is not None:
         todo_list = [todo_refs] if isinstance(todo_refs, str) else list(todo_refs)
         completed_todos: list[str] = []
         for todo_filename in todo_list:
             try:
-                todo = project.get_todo(todo_filename)
+                todo = project.get_issue(todo_filename)
             except ValueError:
                 continue
             # Only process in-progress TODOs
@@ -656,8 +656,8 @@ def reopen_ticket(path: str) -> str:
     """Reopen a completed ticket by moving it from done/ back to the sprint's tickets/ directory.
 
     Behaviour:
-    - If the ticket is in tickets/done/, move it back to tickets/ and reset status to "todo".
-    - If the ticket exists but is NOT in done/, just reset status to "todo".
+    - If the ticket is in tickets/done/, move it back to tickets/ and reset status to "open".
+    - If the ticket exists but is NOT in done/, just reset status to "open".
     - If the ticket file doesn't exist anywhere, raise an error.
 
     Also moves the plan file back if one exists in done/.
@@ -729,13 +729,15 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     project = get_project()
     sprint = project.get_sprint(sprint_id)
 
-    # Check in-progress TODOs — they should already be resolved individually
+    # Check in-progress TODOs — they should already be resolved individually.
+    # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
     unresolved_todos: list[str] = []
-    todo_directory = project.todo_dir
-    in_progress_todo_dir = todo_directory / "in-progress"
-    if in_progress_todo_dir.exists():
+    sprint_issues_dir = sprint.path / "issues"
+    for in_progress_todo_dir in [sprint_issues_dir]:
+        if not in_progress_todo_dir.exists():
+            continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
@@ -745,11 +747,12 @@ def _close_sprint_legacy(sprint_id: str) -> str:
                     if not _todo_is_deferred(sprint, todo_file.name):
                         unresolved_todos.append(todo_file.name)
 
-    # Also check legacy pending TODOs tagged with this sprint
+    # Check pending pool issues tagged with this sprint
+    pending_dir = project.issues_dir
     moved_todos: list[str] = []
-    if todo_directory.exists():
-        for todo_file in sorted(todo_directory.glob("*.md")):
-            todo = Todo(todo_file, project)
+    if pending_dir.exists():
+        for todo_file in sorted(pending_dir.glob("*.md")):
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     todo.move_to_done()
@@ -872,12 +875,14 @@ def _close_sprint_full(
                     "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                 }, indent=2)
 
-    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved
-    todo_directory = project.todo_dir
-    in_progress_todo_dir = todo_directory / "in-progress"
-    if in_progress_todo_dir.exists():
+    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
+    # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+    sprint_issues_dir_full = sprint.path / "issues"
+    for in_progress_todo_dir in [sprint_issues_dir_full]:
+        if not in_progress_todo_dir.exists():
+            continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
-            todo = Todo(todo_file, project)
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
@@ -886,8 +891,8 @@ def _close_sprint_full(
                 else:
                     # TODO still in-progress — check if intentionally deferred
                     if _todo_is_deferred(sprint, todo_file.name):
-                        # At least one ticket in this sprint has completes_todo: false
-                        # for this TODO — it spans future sprints; allow close to proceed
+                        # At least one ticket in this sprint has completes_issue: false
+                        # for this issue — it spans future sprints; allow close to proceed
                         continue
                     # TODO is unresolved and not deferred — unrepairable
                     error_msg = f"TODO {todo_file.name} is still in-progress for sprint {sprint_id}"
@@ -910,10 +915,11 @@ def _close_sprint_full(
                         "completed_steps": [],
                         "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                     }, indent=2)
-    # Also check pending TODOs in todo/ that are tagged with this sprint (legacy)
-    if todo_directory.exists():
-        for todo_file in sorted(todo_directory.glob("*.md")):
-            todo = Todo(todo_file, project)
+    # Also check pending pool issues that are tagged with this sprint
+    pending_pool = project.issues_dir
+    if pending_pool.exists():
+        for todo_file in sorted(pending_pool.glob("*.md")):
+            todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
                     # Self-repair: move to done/
@@ -1091,7 +1097,7 @@ def _close_sprint_full(
     completed_steps.append("version_bump")
 
     # ── Step 5b: Commit .clasi.db if still dirty after version_bump ──
-    db_file = project.root / "docs" / "clasi" / ".clasi.db"
+    db_file = project.clasi_dir / ".clasi.db"
     if db_file.exists():
         status_result = subprocess.run(
             ["git", "status", "--porcelain", str(db_file)],
@@ -1355,24 +1361,24 @@ def release_execution_lock(sprint_id: str) -> str:
         return json.dumps({"error": str(e)}, indent=2)
 
 
-# --- TODO management tools ---
+# --- Issue management tools ---
 
 
 
 @server.tool()
-def list_todos() -> str:
-    """List all active TODO files with sprint/ticket linkage.
+def list_issues() -> str:
+    """List all active issue files with sprint/ticket linkage.
 
-    Scans docs/clasi/todo/*.md (pending) and docs/clasi/todo/in-progress/*.md.
+    Scans .clasi/issues/*.md (pending) and sprint-scoped issues directories.
     Excludes the done/ subdirectory.
 
     Returns JSON array of {filename, title, status, sprint, tickets}.
-    The sprint and tickets fields are present only for in-progress TODOs.
+    The sprint and tickets fields are present only for in-progress issues.
     """
     project = get_project()
     results = []
 
-    for todo in project.list_todos():
+    for todo in project.list_issues():
         entry: dict = {"filename": todo.path.name, "title": todo.title}
         entry["status"] = todo.status
         if todo.status == "in-progress":
@@ -1386,32 +1392,51 @@ def list_todos() -> str:
 
 
 @server.tool()
-def move_todo_to_done(
+def move_issue_to_done(
     filename: str,
     sprint_id: str | None = None,
     ticket_ids: list[str] | None = None,
 ) -> str:
-    """Move a TODO file to the done/ subdirectory.
+    """Mark an issue as done by updating its frontmatter (no file move).
+
+    When ``sprint_id`` is provided the issue must reside in
+    ``<sprint_id>/issues/`` (i.e. it must have been moved there by
+    ``move_todo_to_in_progress`` first).  Passing a ``sprint_id`` for an
+    issue that lives elsewhere is an error.
 
     Args:
-        filename: The TODO filename (e.g., 'my-idea.md')
-        sprint_id: Optional sprint ID that consumed this TODO
-        ticket_ids: Optional list of ticket IDs that address this TODO
+        filename: The issue filename (e.g., 'my-idea.md')
+        sprint_id: Optional sprint ID that consumed this issue
+        ticket_ids: Optional list of ticket IDs that address this issue
 
-    Returns JSON with {old_path, new_path}.
+    Returns JSON with {path, status}.
     """
     project = get_project()
     try:
-        todo = project.get_todo(filename)
+        todo = project.get_issue(filename)
     except ValueError:
         raise ValueError(f"TODO not found: {filename}")
-    old_path = todo.path
+
+    # Validate sprint-scoped location when sprint_id is given
+    if sprint_id is not None:
+        try:
+            sprint = project.get_sprint(sprint_id)
+        except ValueError:
+            raise ValueError(f"Sprint not found: {sprint_id}")
+        expected_dir = sprint.path / "issues"
+        if todo.path.parent.resolve() != expected_dir.resolve():
+            raise ValueError(
+                f"Issue '{filename}' is not in the expected sprint issues "
+                f"directory '{expected_dir}'. "
+                f"Current location: '{todo.path.parent}'. "
+                "Run move_todo_to_in_progress first."
+            )
 
     todo.move_to_done(sprint_id=sprint_id, ticket_ids=ticket_ids)
 
     return json.dumps({
-        "old_path": str(old_path),
-        "new_path": str(todo.path),
+        "path": str(todo.path),
+        "status": todo.status,
     }, indent=2)
 
 
@@ -1879,7 +1904,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     """Validate sprint state before execution begins.
 
     Checks that planning docs are complete, not template placeholders,
-    and tickets exist in todo status.
+    and tickets exist in open status.
 
     Args:
         sprint_id: The sprint ID (e.g., '015')
@@ -1978,7 +2003,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
             })
         else:
             for t in tickets:
-                if t["status"] not in ("todo", "in-progress"):
+                if t["status"] not in ("open", "in-progress"):
                     issues.append({
                         "severity": "warning",
                         "check": "ticket_status_pre_execution",

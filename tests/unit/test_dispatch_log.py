@@ -23,7 +23,7 @@ def _chdir_to_tmp(tmp_path, monkeypatch):
 
 class TestLogDir:
     def test_returns_log_path_relative_to_cwd(self, tmp_path):
-        expected = tmp_path / "docs" / "clasi" / "log"
+        expected = tmp_path / ".clasi" / "log"
         assert _log_dir() == expected
 
 
@@ -88,7 +88,7 @@ class TestLogDispatch:
             sprint_name="001-my-sprint",
             ticket_id="003",
         )
-        expected_dir = tmp_path / "docs" / "clasi" / "log" / "sprints" / "001-my-sprint"
+        expected_dir = tmp_path / ".clasi" / "log" / "sprints" / "001-my-sprint"
         assert path.parent == expected_dir
         assert path.name == "001-ticket-003.md"
 
@@ -101,7 +101,7 @@ class TestLogDispatch:
             prompt="Plan the sprint.",
             sprint_name="002-next-sprint",
         )
-        expected_dir = tmp_path / "docs" / "clasi" / "log" / "sprints" / "002-next-sprint"
+        expected_dir = tmp_path / ".clasi" / "log" / "sprints" / "002-next-sprint"
         assert path.parent == expected_dir
         assert path.name == "001-sp.md"
 
@@ -139,7 +139,7 @@ class TestLogDispatch:
             scope="docs/",
             prompt="Ad-hoc change.",
         )
-        expected_dir = tmp_path / "docs" / "clasi" / "log" / "adhoc"
+        expected_dir = tmp_path / ".clasi" / "log" / "adhoc"
         assert path.parent == expected_dir
         assert path.name == "001.md"
 
@@ -183,7 +183,7 @@ class TestLogDispatch:
         assert long_prompt in body
 
     def test_creates_directories_on_demand(self, tmp_path):
-        sprint_dir = tmp_path / "docs" / "clasi" / "log" / "sprints" / "new-sprint"
+        sprint_dir = tmp_path / ".clasi" / "log" / "sprints" / "new-sprint"
         assert not sprint_dir.exists()
         log_dispatch(
             parent="se",
@@ -196,7 +196,7 @@ class TestLogDispatch:
         assert sprint_dir.is_dir()
 
     def test_adhoc_creates_directory_on_demand(self, tmp_path):
-        adhoc_dir = tmp_path / "docs" / "clasi" / "log" / "adhoc"
+        adhoc_dir = tmp_path / ".clasi" / "log" / "adhoc"
         assert not adhoc_dir.exists()
         log_dispatch(parent="mc", child="ah", scope=".", prompt="Test.")
         assert adhoc_dir.is_dir()
@@ -366,18 +366,18 @@ class TestAutoContextDocuments:
     def test_sprint_only(self):
         docs = _auto_context_documents("001-my-sprint")
         assert docs == [
-            "docs/clasi/sprints/001-my-sprint/sprint.md",
-            "docs/clasi/sprints/001-my-sprint/architecture-update.md",
-            "docs/clasi/sprints/001-my-sprint/usecases.md",
+            ".clasi/sprints/001-my-sprint/sprint.md",
+            ".clasi/sprints/001-my-sprint/architecture-update.md",
+            ".clasi/sprints/001-my-sprint/usecases.md",
         ]
 
     def test_sprint_with_ticket(self):
         docs = _auto_context_documents("002-sprint", ticket_id="007")
         assert docs == [
-            "docs/clasi/sprints/002-sprint/sprint.md",
-            "docs/clasi/sprints/002-sprint/architecture-update.md",
-            "docs/clasi/sprints/002-sprint/usecases.md",
-            "docs/clasi/sprints/002-sprint/tickets/007.md",
+            ".clasi/sprints/002-sprint/sprint.md",
+            ".clasi/sprints/002-sprint/architecture-update.md",
+            ".clasi/sprints/002-sprint/usecases.md",
+            ".clasi/sprints/002-sprint/tickets/007.md",
         ]
 
 
@@ -398,9 +398,9 @@ class TestContextDocuments:
         fm, body = read_document(path)
         assert "context_documents" in fm
         assert fm["context_documents"] == [
-            "docs/clasi/sprints/010-my-sprint/sprint.md",
-            "docs/clasi/sprints/010-my-sprint/architecture-update.md",
-            "docs/clasi/sprints/010-my-sprint/usecases.md",
+            ".clasi/sprints/010-my-sprint/sprint.md",
+            ".clasi/sprints/010-my-sprint/architecture-update.md",
+            ".clasi/sprints/010-my-sprint/usecases.md",
         ]
 
     def test_auto_populated_with_ticket(self, tmp_path):
@@ -415,7 +415,7 @@ class TestContextDocuments:
             template_used="dispatch-template.md",
         )
         fm, _ = read_document(path)
-        assert "docs/clasi/sprints/010-my-sprint/tickets/003.md" in fm["context_documents"]
+        assert ".clasi/sprints/010-my-sprint/tickets/003.md" in fm["context_documents"]
 
     def test_explicit_context_documents_override(self, tmp_path):
         """Passing an explicit list replaces auto-population."""
@@ -469,9 +469,9 @@ class TestContextDocuments:
         )
         _, body = read_document(path)
         assert "## Context Documents" in body
-        assert "`docs/clasi/sprints/010-my-sprint/sprint.md`" in body
-        assert "`docs/clasi/sprints/010-my-sprint/architecture-update.md`" in body
-        assert "`docs/clasi/sprints/010-my-sprint/usecases.md`" in body
+        assert "`.clasi/sprints/010-my-sprint/sprint.md`" in body
+        assert "`.clasi/sprints/010-my-sprint/architecture-update.md`" in body
+        assert "`.clasi/sprints/010-my-sprint/usecases.md`" in body
 
     def test_explicit_context_documents_in_body(self, tmp_path):
         """Explicit context_documents appear in the body section."""

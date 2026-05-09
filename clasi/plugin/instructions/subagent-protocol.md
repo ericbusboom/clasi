@@ -76,14 +76,14 @@ prompt: |
 ### Dispatching architect for sprint planning
 
 ```
-scope_directory: docs/clasi/sprints/001-my-sprint/
+scope_directory: .clasi/sprints/001-my-sprint/
 context:
-  - docs/clasi/architecture/architecture-021.md (previous)
-  - docs/clasi/sprints/001-my-sprint/sprint.md
+  - .clasi/architecture/architecture-021.md (previous)
+  - .clasi/sprints/001-my-sprint/sprint.md
   - instructions/architectural-quality.md
 prompt: |
   You are the architect. Update the architecture for sprint 001.
-  You may only modify files under docs/clasi/sprints/001-my-sprint/.
+  You may only modify files under .clasi/sprints/001-my-sprint/.
   [previous architecture content]
   [sprint goals]
 ```

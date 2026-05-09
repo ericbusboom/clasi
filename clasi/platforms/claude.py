@@ -48,13 +48,13 @@ RULES: Dict[str, str] = {
         '---\npaths:\n  - "**"\n---\n\n' + MCP_REQUIRED_BODY
     ),
     "clasi-artifacts.md": (
-        "---\npaths:\n  - docs/clasi/**\n---\n\n" + CLASI_ARTIFACTS_BODY
+        "---\npaths:\n  - .clasi/**\n---\n\n" + CLASI_ARTIFACTS_BODY
     ),
     "source-code.md": (
         "---\npaths:\n  - clasi/**\n  - tests/**\n---\n\n" + SOURCE_CODE_BODY
     ),
     "todo-dir.md": (
-        "---\npaths:\n  - docs/clasi/todo/**\n---\n\n" + TODO_DIR_BODY
+        "---\npaths:\n  - .clasi/issues/**\n---\n\n" + TODO_DIR_BODY
     ),
     "git-commits.md": (
         '---\npaths:\n  - "**/*.py"\n  - "**/*.md"\n---\n\n' + GIT_COMMITS_BODY
@@ -449,12 +449,10 @@ def install(
     _create_rules(target)
     click.echo()
 
-    # Drop a version stamp in each installed directory so it's obvious
-    # which clasi release wrote the contents.
+    # Drop a version stamp so it's obvious which clasi release wrote the contents.
     from clasi.platforms._markers import write_version_stamp
-    click.echo("Version stamps:")
-    write_version_stamp(target, ".claude")
-    write_version_stamp(target, ".agents")
+    click.echo("Version stamp:")
+    write_version_stamp(target)
     click.echo()
 
 
@@ -598,6 +596,10 @@ def uninstall(target: Path, copy: bool = False) -> None:
             click.echo("  Updated: .claude/settings.local.json (removed mcp__clasi__*)")
         else:
             click.echo("  Unchanged: .claude/settings.local.json (permission not found)")
+
+    # --- .clasi/clasi-version ---
+    from clasi.platforms._markers import remove_version_stamp
+    remove_version_stamp(target)
 
     click.echo()
     click.echo("Done! Claude platform integration removed.")

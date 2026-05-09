@@ -1,5 +1,12 @@
 ---
-status: pending
+status: in-progress
+sprint: '015'
+tickets:
+- 015-015
+- 015-016
+- 015-017
+- 015-018
+- 015-019
 ---
 
 # Sprint-scoped issues directory

@@ -26,8 +26,8 @@ review, and ticket creation)
 ## Inputs
 
 - Stakeholder conversation describing the work to be done
-- `docs/clasi/brief.md` or `docs/clasi/design/overview.md` (must exist)
-- `docs/clasi/design/usecases.md` (must exist, or overview covers use cases)
+- `.clasi/brief.md` or `.clasi/design/overview.md` (must exist)
+- `.clasi/design/usecases.md` (must exist, or overview covers use cases)
 
 ## Critical Rule
 
@@ -46,12 +46,12 @@ planning. Multiple sprints can be planned in a single session.
 
 ### Roadmap Process
 
-1. **Determine sprint number**: Check `docs/clasi/sprints/` and
-   `docs/clasi/sprints/done/` for existing sprints. The new sprint gets the
+1. **Determine sprint number**: Check `.clasi/sprints/` and
+   `.clasi/sprints/done/` for existing sprints. The new sprint gets the
    next sequential number (NNN format: 001, 002, ...).
 
-2. **Mine the TODO directory**: Scan `docs/clasi/todo/` for ideas relevant
-   to the sprint. Discuss relevant TODOs with the stakeholder.
+2. **Mine the issues directory**: Scan `.clasi/issues/` for ideas relevant
+   to the sprint. Discuss relevant issues with the stakeholder.
 
    For each TODO claimed by this sprint, set `sprint: "NNN"` in the
    TODO's YAML frontmatter (using `write_artifact_frontmatter`).
@@ -69,7 +69,7 @@ planning. Multiple sprints can be planned in a single session.
 
 ### Roadmap Output
 
-- Sprint directory `docs/clasi/sprints/NNN-slug/` with `sprint.md`
+- Sprint directory `.clasi/sprints/NNN-slug/` with `sprint.md`
 - Sprint `sprint.md` status set to `roadmap`
 - No branch created
 - No tickets created

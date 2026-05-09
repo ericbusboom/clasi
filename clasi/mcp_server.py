@@ -118,7 +118,7 @@ class Clasi:
         # startup rather than producing confusing per-tool errors.
         _required = [
             "clasi.artifact", "clasi.sprint", "clasi.ticket",
-            "clasi.todo", "clasi.frontmatter", "clasi.versioning",
+            "clasi.issue", "clasi.frontmatter", "clasi.versioning",
         ]
         for _mod in _required:
             try:

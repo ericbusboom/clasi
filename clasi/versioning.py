@@ -1,6 +1,6 @@
 """Versioning utilities for the CLASI project.
 
-Supports configurable version formats via docs/clasi/settings.yaml.
+Supports configurable version formats via .clasi/settings.yaml.
 
 Default format: X+.YYYYMMDD.R+
 
@@ -189,14 +189,19 @@ VALID_TRIGGERS = ("manual", "every_sprint", "every_change")
 
 
 def _load_settings(project_root: Path | None = None) -> dict:
-    """Load docs/clasi/settings.yaml as a dict.
+    """Load .clasi/settings.yaml as a dict.
+
+    Falls back to the legacy docs/clasi/settings.yaml location for
+    repos that have not yet migrated the artifact root.
 
     Returns an empty dict if the file doesn't exist or can't be parsed.
     """
     if project_root is None:
         project_root = Path.cwd()
 
-    settings_path = project_root / "docs" / "clasi" / "settings.yaml"
+    settings_path = project_root / ".clasi" / "settings.yaml"
+    if not settings_path.exists():
+        settings_path = project_root / "docs" / "clasi" / "settings.yaml"
     if not settings_path.exists():
         settings_path = project_root / "docs" / "plans" / "settings.yaml"
     if not settings_path.exists():
@@ -211,7 +216,7 @@ def _load_settings(project_root: Path | None = None) -> dict:
 
 
 def load_version_format(project_root: Path | None = None) -> str:
-    """Load the version format from docs/clasi/settings.yaml.
+    """Load the version format from .clasi/settings.yaml.
 
     Falls back to DEFAULT_FORMAT if the file or key doesn't exist.
     """
@@ -219,7 +224,7 @@ def load_version_format(project_root: Path | None = None) -> str:
 
 
 def load_version_trigger(project_root: Path | None = None) -> str:
-    """Load the version trigger from docs/clasi/settings.yaml.
+    """Load the version trigger from .clasi/settings.yaml.
 
     Returns one of: 'manual', 'every_sprint', 'every_change'.
     Falls back to DEFAULT_TRIGGER ('every_change') if not set.

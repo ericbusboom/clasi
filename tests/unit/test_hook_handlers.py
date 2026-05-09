@@ -12,8 +12,10 @@ from clasi.hook_handlers import (
     handle_task_completed,
     handle_subagent_start,
     handle_commit_check,
-    handle_plan_to_todo,
-    handle_codex_plan_to_todo,
+    handle_plan_to_issue,
+    handle_plan_to_todo,  # backward-compatible alias
+    handle_codex_plan_to_issue,
+    handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
     _get_log_dir,
     _get_active_tickets,
@@ -29,7 +31,7 @@ from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_ag
 
 
 def _make_log_dir(tmp_path: Path) -> Path:
-    log_dir = tmp_path / "docs" / "clasi" / "log"
+    log_dir = tmp_path / ".clasi" / "log"
     log_dir.mkdir(parents=True)
     return log_dir
 
@@ -102,7 +104,7 @@ class TestHandleTaskCreated:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
 
@@ -115,7 +117,7 @@ class TestHandleTaskCreated:
     def test_creates_active_marker(self, tmp_path):
         """task_created registers task-{id} in the DB as an active agent."""
         _make_log_dir(tmp_path)
-        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
         payload = _task_created_payload(task_id="t-42")
 
         with pytest.raises(SystemExit):
@@ -129,13 +131,13 @@ class TestHandleTaskCreated:
     def test_marker_log_file_points_to_created_log(self, tmp_path):
         """The DB record's log_file path matches the created log file."""
         _make_log_dir(tmp_path)
-        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
         payload = _task_created_payload(task_id="t-10")
 
         with pytest.raises(SystemExit):
             _run_with_cwd(tmp_path, handle_task_created, payload)
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         record = get_active_agent(db_path, "task-t-10")
         assert record is not None
@@ -144,7 +146,7 @@ class TestHandleTaskCreated:
         assert Path(record["log_file"]).name == log_files[0].name
 
     def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_created exits 0 gracefully if docs/clasi/log does not exist."""
+        """task_created exits 0 gracefully if .clasi/log does not exist."""
         payload = _task_created_payload()
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_task_created, payload)
@@ -158,7 +160,7 @@ class TestHandleTaskCreated:
         with pytest.raises(SystemExit):
             _run_with_cwd(tmp_path, handle_task_created, payload)
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         # slug should be lowercase, spaces replaced with dashes
@@ -187,7 +189,7 @@ class TestHandleTaskCompleted:
             _run_with_cwd(tmp_path, handle_task_completed, payload)
         assert exc.value.code == 0
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -197,7 +199,7 @@ class TestHandleTaskCompleted:
     def test_removes_active_marker_after_completion(self, tmp_path):
         """task_completed removes the DB record for the task."""
         _make_log_dir(tmp_path)
-        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
         self._setup_active_task(tmp_path, task_id="t-002")
 
         # The DB record should exist after task_created
@@ -230,7 +232,7 @@ class TestHandleTaskCompleted:
         with pytest.raises(SystemExit):
             _run_with_cwd(tmp_path, handle_task_completed, payload)
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         content = log_files[0].read_text()
         assert "## Transcript" in content
@@ -256,14 +258,14 @@ class TestHandleTaskCompleted:
         with pytest.raises(SystemExit):
             _run_with_cwd(tmp_path, handle_task_completed, payload)
 
-        log_dir = tmp_path / "docs" / "clasi" / "log"
+        log_dir = tmp_path / ".clasi" / "log"
         log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
         content = log_files[0].read_text()
         assert "## Prompt" in content
         assert "The initial prompt text." in content
 
     def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_completed exits 0 gracefully if docs/clasi/log does not exist."""
+        """task_completed exits 0 gracefully if .clasi/log does not exist."""
         payload = _task_completed_payload()
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_task_completed, payload)
@@ -285,7 +287,7 @@ class TestHandleTaskCompleted:
 
 def _setup_db_with_lock(tmp_path: Path, sprint_id: str = "001") -> str:
     """Create a state DB with a registered sprint holding the execution lock."""
-    db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
     init_db(db_path)
     register_sprint(db_path, sprint_id, f"sprint-{sprint_id}")
     acquire_lock(db_path, sprint_id)
@@ -294,7 +296,7 @@ def _setup_db_with_lock(tmp_path: Path, sprint_id: str = "001") -> str:
 
 class TestGetLogDir:
     def test_returns_none_when_log_dir_missing(self, tmp_path):
-        """_get_log_dir returns None when docs/clasi/log does not exist."""
+        """_get_log_dir returns None when .clasi/log does not exist."""
         result = _run_with_cwd(tmp_path, _get_log_dir)
         assert result is None
 
@@ -302,31 +304,31 @@ class TestGetLogDir:
         """_get_log_dir returns base log dir when no state DB exists."""
         _make_log_dir(tmp_path)
         result = _run_with_cwd(tmp_path, _get_log_dir)
-        assert result == Path("docs/clasi/log")
+        assert result == tmp_path / ".clasi" / "log"
 
     def test_returns_base_dir_when_no_lock(self, tmp_path):
         """_get_log_dir returns base log dir when DB exists but no lock held."""
         _make_log_dir(tmp_path)
-        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
         init_db(db_path)
         register_sprint(db_path, "001", "sprint-001")
         # No lock acquired
         result = _run_with_cwd(tmp_path, _get_log_dir)
-        assert result == Path("docs/clasi/log")
+        assert result == tmp_path / ".clasi" / "log"
 
     def test_returns_sprint_subdir_when_lock_held(self, tmp_path):
         """_get_log_dir returns sprint-scoped subdir when execution lock is held."""
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="002")
         result = _run_with_cwd(tmp_path, _get_log_dir)
-        assert result == Path("docs/clasi/log/sprint-002")
+        assert result == tmp_path / ".clasi" / "log" / "sprint-002"
 
     def test_creates_sprint_subdir_when_lock_held(self, tmp_path):
         """_get_log_dir creates the sprint subdirectory on the filesystem."""
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="003")
         _run_with_cwd(tmp_path, _get_log_dir)
-        assert (tmp_path / "docs" / "clasi" / "log" / "sprint-003").is_dir()
+        assert (tmp_path / ".clasi" / "log" / "sprint-003").is_dir()
 
 
 class TestSprintScopedLogging:
@@ -340,7 +342,7 @@ class TestSprintScopedLogging:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-001"
+        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
         log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -375,7 +377,7 @@ class TestSprintScopedLogging:
             _run_with_cwd(tmp_path, handle_task_completed, complete_payload)
         assert exc.value.code == 0
 
-        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-001"
+        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
         log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -386,7 +388,7 @@ class TestSprintScopedLogging:
         """task_created uses base log dir when no sprint holds the lock."""
         _make_log_dir(tmp_path)
         # DB exists but no lock
-        db_path = str(tmp_path / "docs" / "clasi" / ".clasi.db")
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
         init_db(db_path)
         register_sprint(db_path, "001", "sprint-001")
 
@@ -395,7 +397,7 @@ class TestSprintScopedLogging:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        base_log_dir = tmp_path / "docs" / "clasi" / "log"
+        base_log_dir = tmp_path / ".clasi" / "log"
         log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         # Sprint subdir should not have been created
@@ -430,13 +432,13 @@ class TestGetActiveTickets:
         assert result == []
 
     def test_returns_empty_when_no_sprints_dir(self, tmp_path):
-        """_get_active_tickets returns empty list when docs/clasi/sprints does not exist."""
+        """_get_active_tickets returns empty list when .clasi/sprints does not exist."""
         result = _run_with_cwd(tmp_path, _get_active_tickets, "001")
         assert result == []
 
     def test_returns_empty_when_no_matching_sprint_dir(self, tmp_path):
         """_get_active_tickets returns empty list when no sprint dir matches sprint_id."""
-        sprints = tmp_path / "docs" / "clasi" / "sprints"
+        sprints = tmp_path / ".clasi" / "sprints"
         sprints.mkdir(parents=True)
         (sprints / "002-some-sprint").mkdir()
         result = _run_with_cwd(tmp_path, _get_active_tickets, "001")
@@ -444,7 +446,7 @@ class TestGetActiveTickets:
 
     def test_returns_in_progress_ticket_ids(self, tmp_path):
         """_get_active_tickets returns ticket IDs for in-progress tickets."""
-        sprints = tmp_path / "docs" / "clasi" / "sprints"
+        sprints = tmp_path / ".clasi" / "sprints"
         sprint_dir = sprints / "002-my-sprint"
         sprint_dir.mkdir(parents=True)
         _make_in_progress_ticket(sprint_dir, "007", "Feature A")
@@ -458,7 +460,7 @@ class TestGetActiveTickets:
 
     def test_returns_empty_when_no_in_progress_tickets(self, tmp_path):
         """_get_active_tickets returns empty list when all tickets are done."""
-        sprints = tmp_path / "docs" / "clasi" / "sprints"
+        sprints = tmp_path / ".clasi" / "sprints"
         sprint_dir = sprints / "003-another-sprint"
         sprint_dir.mkdir(parents=True)
         _make_done_ticket(sprint_dir, "001", "Done one")
@@ -478,7 +480,7 @@ class TestSprintIdInFrontmatter:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-002"
+        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
         log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -493,7 +495,7 @@ class TestSprintIdInFrontmatter:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        base_log_dir = tmp_path / "docs" / "clasi" / "log"
+        base_log_dir = tmp_path / ".clasi" / "log"
         log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -505,7 +507,7 @@ class TestSprintIdInFrontmatter:
         _setup_db_with_lock(tmp_path, sprint_id="002")
 
         # Create sprint directory with in-progress ticket
-        sprint_dir = tmp_path / "docs" / "clasi" / "sprints" / "002-test-sprint"
+        sprint_dir = tmp_path / ".clasi" / "sprints" / "002-test-sprint"
         _make_in_progress_ticket(sprint_dir, "007", "Feature A")
 
         payload = _task_created_payload(task_id="t-tickets")
@@ -513,7 +515,7 @@ class TestSprintIdInFrontmatter:
             _run_with_cwd(tmp_path, handle_task_created, payload)
         assert exc.value.code == 0
 
-        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-002"
+        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
         log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         content = log_files[0].read_text()
         assert "002-007" in content
@@ -533,7 +535,7 @@ class TestSprintIdInFrontmatter:
             _run_with_cwd(tmp_path, handle_subagent_start, payload)
         assert exc.value.code == 0
 
-        sprint_log_dir = tmp_path / "docs" / "clasi" / "log" / "sprint-002"
+        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
         log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -555,7 +557,7 @@ class TestSprintIdInFrontmatter:
             _run_with_cwd(tmp_path, handle_subagent_start, payload)
         assert exc.value.code == 0
 
-        base_log_dir = tmp_path / "docs" / "clasi" / "log"
+        base_log_dir = tmp_path / ".clasi" / "log"
         log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
         assert len(log_files) == 1
         content = log_files[0].read_text()
@@ -617,7 +619,7 @@ class TestRenderTranscriptLines:
     def test_write_md_renders_inline_markdown(self):
         """Write to .md file renders content as inline markdown, no fence."""
         block = _make_tool_use_block("Write", {
-            "file_path": "docs/clasi/sprints/003/tickets/001-ticket.md",
+            "file_path": ".clasi/sprints/003/tickets/001-ticket.md",
             "content": "# Ticket Title\n\nSome description.",
         })
         msg = _make_message_with_tool_use(block)
@@ -762,9 +764,18 @@ class TestHandleHook:
                 handle_hook("mcp-guard")
             mock_handler.assert_called_once_with({})
 
+    def test_routes_plan_to_issue(self):
+        """handle_hook('plan-to-issue') calls handle_plan_to_issue."""
+        with patch("clasi.hook_handlers.handle_plan_to_issue") as mock_handler, \
+             patch("clasi.hook_handlers.read_payload", return_value={}):
+            mock_handler.side_effect = SystemExit(0)
+            with pytest.raises(SystemExit):
+                handle_hook("plan-to-issue")
+            mock_handler.assert_called_once_with({})
+
     def test_routes_plan_to_todo(self):
-        """handle_hook('plan-to-todo') calls handle_plan_to_todo."""
-        with patch("clasi.hook_handlers.handle_plan_to_todo") as mock_handler, \
+        """handle_hook('plan-to-todo') calls handle_plan_to_issue (backward-compat alias)."""
+        with patch("clasi.hook_handlers.handle_plan_to_issue") as mock_handler, \
              patch("clasi.hook_handlers.read_payload", return_value={}):
             mock_handler.side_effect = SystemExit(0)
             with pytest.raises(SystemExit):
@@ -855,25 +866,24 @@ class TestHandleCommitCheck:
 
 class TestHandlePlanToTodo:
     def test_calls_plan_to_todo_with_standard_dirs(self, tmp_path):
-        """handle_plan_to_todo calls plan_to_todo with home/.claude/plans and docs/clasi/todo."""
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        """handle_plan_to_issue calls plan_to_issue with home/.claude/plans and issues_dir."""
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_todo({})
+                handle_plan_to_issue({})
         assert exc.value.code == 0
-        mock_p2t.assert_called_once_with(
-            Path.home() / ".claude" / "plans",
-            Path("docs/clasi/todo"),
-            plan_file=None,
-        )
+        args, kwargs = mock_p2t.call_args
+        assert args[0] == Path.home() / ".claude" / "plans"
+        assert str(args[1]).endswith(".clasi/issues")
+        assert kwargs.get("plan_file") is None
 
     def test_prints_result_path_when_todo_created(self, capsys):
-        """handle_plan_to_todo writes JSON to stderr and exits 2 when plan_to_todo returns a path."""
-        todo_path = Path("docs/clasi/todo/001-my-plan.md")
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        """handle_plan_to_issue writes JSON to stderr and exits 2 when plan_to_issue returns a path."""
+        todo_path = Path(".clasi/todo/001-my-plan.md")
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = todo_path
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_todo({})
+                handle_plan_to_issue({})
         assert exc.value.code == 2
         captured = capsys.readouterr()
         assert "001-my-plan.md" in captured.err
@@ -881,27 +891,26 @@ class TestHandlePlanToTodo:
         assert data["decision"] == "block"
 
     def test_no_output_when_no_plan_file(self, capsys):
-        """handle_plan_to_todo prints nothing when plan_to_todo returns None."""
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        """handle_plan_to_issue prints nothing when plan_to_issue returns None."""
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_todo({})
+                handle_plan_to_issue({})
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == ""
 
     def test_passes_plan_file_path_from_payload(self):
-        """handle_plan_to_todo passes planFilePath from payload as plan_file argument."""
+        """handle_plan_to_issue passes planFilePath from payload as plan_file argument."""
         payload = {"tool_input": {"planFilePath": "/tmp/my-plan.md"}}
-        with patch("clasi.plan_to_todo.plan_to_todo") as mock_p2t:
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit):
-                handle_plan_to_todo(payload)
-        mock_p2t.assert_called_once_with(
-            Path.home() / ".claude" / "plans",
-            Path("docs/clasi/todo"),
-            plan_file=Path("/tmp/my-plan.md"),
-        )
+                handle_plan_to_issue(payload)
+        args, kwargs = mock_p2t.call_args
+        assert args[0] == Path.home() / ".claude" / "plans"
+        assert str(args[1]).endswith(".clasi/issues")
+        assert kwargs.get("plan_file") == Path("/tmp/my-plan.md")
 
 
 # ---------------------------------------------------------------------------
@@ -919,7 +928,7 @@ class TestHandleCodexPlanToTodo:
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
-        todo_dir = tmp_path / "docs" / "clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "todo"
         assert not todo_dir.exists() or len(list(todo_dir.glob("*.md"))) == 0
 
     def test_no_plan_tag_never_exits_2(self, tmp_path):
@@ -931,7 +940,7 @@ class TestHandleCodexPlanToTodo:
 
     def test_with_plan_creates_todo_exits_0(self, tmp_path, capsys):
         """<proposed_plan> present: one TODO file created, exits 0."""
-        (tmp_path / "docs" / "clasi" / "todo").mkdir(parents=True)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -939,7 +948,7 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / "docs" / "clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "issues"
         todo_files = list(todo_dir.glob("*.md"))
         assert len(todo_files) == 1
         content = todo_files[0].read_text()
@@ -951,7 +960,7 @@ class TestHandleCodexPlanToTodo:
 
     def test_with_plan_never_exits_2(self, tmp_path):
         """handle_codex_plan_to_todo always exits 0, even when a TODO is created."""
-        (tmp_path / "docs" / "clasi" / "todo").mkdir(parents=True)
+        (tmp_path / ".clasi" / "todo").mkdir(parents=True)
         message = "<proposed_plan>\n# Plan\n\nDetails here.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -961,7 +970,7 @@ class TestHandleCodexPlanToTodo:
 
     def test_dedup_second_call_creates_no_file(self, tmp_path):
         """Duplicate plan (same content hash): second call creates no file."""
-        (tmp_path / "docs" / "clasi" / "todo").mkdir(parents=True)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -970,7 +979,7 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / "docs" / "clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "issues"
         files_after_first = list(todo_dir.glob("*.md"))
         assert len(files_after_first) == 1
 
@@ -988,7 +997,7 @@ class TestHandleCodexPlanToTodo:
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
-        todo_dir = tmp_path / "docs" / "clasi" / "todo"
+        todo_dir = tmp_path / ".clasi" / "todo"
         assert not todo_dir.exists() or len(list(todo_dir.glob("*.md"))) == 0
 
     def test_missing_last_assistant_message_key_exits_0(self, tmp_path):
@@ -1000,11 +1009,20 @@ class TestHandleCodexPlanToTodo:
 
 
 class TestHandleHookCodexPlanToTodo:
-    """Test that handle_hook routes codex-plan-to-todo to handle_codex_plan_to_todo."""
+    """Test that handle_hook routes codex-plan-to-issue and its backward-compat alias."""
+
+    def test_routes_codex_plan_to_issue(self):
+        """handle_hook('codex-plan-to-issue') calls handle_codex_plan_to_issue."""
+        with patch("clasi.hook_handlers.handle_codex_plan_to_issue") as mock_handler, \
+             patch("clasi.hook_handlers.read_payload", return_value={}):
+            mock_handler.side_effect = SystemExit(0)
+            with pytest.raises(SystemExit):
+                handle_hook("codex-plan-to-issue")
+            mock_handler.assert_called_once_with({})
 
     def test_routes_codex_plan_to_todo(self):
-        """handle_hook('codex-plan-to-todo') calls handle_codex_plan_to_todo."""
-        with patch("clasi.hook_handlers.handle_codex_plan_to_todo") as mock_handler, \
+        """handle_hook('codex-plan-to-todo') calls handle_codex_plan_to_issue (backward-compat alias)."""
+        with patch("clasi.hook_handlers.handle_codex_plan_to_issue") as mock_handler, \
              patch("clasi.hook_handlers.read_payload", return_value={}):
             mock_handler.side_effect = SystemExit(0)
             with pytest.raises(SystemExit):

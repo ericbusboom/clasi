@@ -205,8 +205,8 @@ def _uninstall_global_instructions(target: Path) -> None:
 # content without adding value.  Only the three genuinely path-scoped rules
 # are emitted here.
 _PATH_RULES: list[tuple[str, str, str]] = [
-    ("clasi-artifacts.instructions.md", "docs/clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", "docs/clasi/todo/**", TODO_DIR_BODY),
+    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
     ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
 ]
 
@@ -456,9 +456,8 @@ def install(
     click.echo()
 
     from clasi.platforms._markers import write_version_stamp
-    click.echo("Version stamps:")
-    write_version_stamp(target, ".github")
-    write_version_stamp(target, ".agents")
+    click.echo("Version stamp:")
+    write_version_stamp(target)
     click.echo()
 
 
@@ -505,5 +504,10 @@ def uninstall(target: Path, copy: bool = False) -> None:
     _uninstall_vscode_mcp(target)
     click.echo()
 
+    # --- .clasi/clasi-version ---
+    from clasi.platforms._markers import remove_version_stamp
+    click.echo("Version stamp:")
+    remove_version_stamp(target)
     click.echo()
+
     click.echo("Done! GitHub Copilot platform integration removed.")

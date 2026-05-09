@@ -1,0 +1,31 @@
+---
+name: issue
+description: Create an issue file from user input and place it in .clasi/issues/
+---
+
+# Issue Skill
+
+This skill captures an idea or task as an issue file in the project's
+issues directory.
+
+## Process
+
+1. Take the user's input (everything after `/issue` or `/se issue`).
+2. Create a markdown file in `.clasi/issues/` with:
+   - YAML frontmatter: `status: pending`
+   - A `# ` heading summarizing the idea
+   - A description section expanding on the idea
+3. Filename: slugified version of the heading (e.g., `my-idea.md`).
+4. If `.clasi/issues/` doesn't exist, create it.
+
+## Output
+
+Confirm the file was created and show its path.
+
+## When to use this skill vs plan mode
+
+This skill is for **quick capture** — the user has a clear idea and
+wants it recorded as an issue. If the user wants to discuss, explore
+options, or refine an idea before capturing it, use plan mode
+(`EnterPlanMode`) instead. The plan-to-issue hook will create the
+issue automatically when plan mode exits.

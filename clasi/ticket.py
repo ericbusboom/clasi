@@ -35,7 +35,7 @@ class Ticket:
     @property
     def status(self) -> str:
         """From frontmatter 'status' field."""
-        return self.frontmatter.get("status", "todo")
+        return self.frontmatter.get("status", "open")
 
     @status.setter
     def status(self, value: str) -> None:
@@ -50,25 +50,25 @@ class Ticket:
         return list(val) if val else []
 
     @property
-    def todo_ref(self) -> str | None:
-        """From frontmatter 'todo' field."""
-        val = self.frontmatter.get("todo", "")
+    def issue_ref(self) -> str | None:
+        """From frontmatter 'issue' field."""
+        val = self.frontmatter.get("issue", "")
         return val if val else None
 
-    def completes_todo_for(self, filename: str) -> bool:
-        """Return whether moving this ticket to done should archive a linked TODO.
+    def completes_issue_for(self, filename: str) -> bool:
+        """Return whether moving this ticket to done should archive a linked issue.
 
-        Reads the ``completes_todo`` frontmatter field and resolves it for the
-        given TODO filename.
+        Reads the ``completes_issue`` frontmatter field and resolves it for the
+        given issue filename.
 
         Resolution rules:
-        - Absent or ``True`` (scalar): return ``True`` (default — archive the TODO).
-        - ``False`` (scalar): return ``False`` (suppress archival for all linked TODOs).
+        - Absent or ``True`` (scalar): return ``True`` (default — archive the issue).
+        - ``False`` (scalar): return ``False`` (suppress archival for all linked issues).
         - Mapping ``{filename: bool, ...}``: look up ``filename``; default ``True``
           if the key is absent.
         - Any other unexpected type: return ``True`` (safe default).
         """
-        val = self.frontmatter.get("completes_todo")
+        val = self.frontmatter.get("completes_issue")
         if val is None or val is True:
             return True
         if val is False:
@@ -160,7 +160,7 @@ class Ticket:
         return result
 
     def reopen(self) -> dict:
-        """Reopen this ticket by moving it from done/ back to tickets/ and resetting status to 'todo'.
+        """Reopen this ticket by moving it from done/ back to tickets/ and resetting status to 'open'.
 
         If the ticket is in tickets/done/, moves it back to tickets/.
         If the ticket exists but is not in done/, just resets the status.
@@ -192,13 +192,13 @@ class Ticket:
 
             # Update frontmatter on the moved file
             self._artifact = Artifact(new_path)
-            self._artifact.update_frontmatter(status="todo")
+            self._artifact.update_frontmatter(status="open")
         else:
             # Ticket exists but not in done/ — just reset status
             new_path = old_path
-            self._artifact.update_frontmatter(status="todo")
+            self._artifact.update_frontmatter(status="open")
             result = {"old_path": str(old_path), "new_path": str(new_path)}
 
         result["old_status"] = old_status
-        result["new_status"] = "todo"
+        result["new_status"] = "open"
         return result

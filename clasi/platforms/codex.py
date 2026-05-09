@@ -260,8 +260,8 @@ _ACTIVE_AGENTS = ["team-lead", "sprint-planner", "programmer"]
 _CLASI_SRC_RULES = SOURCE_CODE_BODY
 
 
-def _build_docs_clasi_content() -> str:
-    """Build the full content for docs/clasi/AGENTS.md.
+def _build_clasi_dir_content() -> str:
+    """Build the full content for .clasi/AGENTS.md.
 
     Wraps the complete CLASI_ARTIFACTS_BODY (active-sprint check, phase check,
     and MCP-tools-only instruction) with a section header.
@@ -269,13 +269,13 @@ def _build_docs_clasi_content() -> str:
     return f"# CLASI SE Process Rules\n\n{CLASI_ARTIFACTS_BODY}\n"
 
 
-def _build_todo_dir_content() -> str:
-    """Build the content for docs/clasi/todo/AGENTS.md.
+def _build_issues_dir_content() -> str:
+    """Build the content for .clasi/issues/AGENTS.md.
 
     Wraps TODO_DIR_BODY with a section header so Codex agents working in
-    docs/clasi/todo/ receive the instruction to use CLASI tooling.
+    .clasi/issues/ receive the instruction to use CLASI tooling.
     """
-    return f"# CLASI TODO Rules\n\n{TODO_DIR_BODY}\n"
+    return f"# CLASI Issues Rules\n\n{TODO_DIR_BODY}\n"
 
 
 def _install_agents(target: Path) -> None:
@@ -346,22 +346,22 @@ def _uninstall_agents(target: Path) -> None:
 
 
 def _install_rules(target: Path) -> None:
-    """Write nested AGENTS.md rule files at docs/clasi/, docs/clasi/todo/, and clasi/.
+    """Write nested AGENTS.md rule files at .clasi/, .clasi/issues/, and clasi/.
 
     These files provide path-scoped guidance for Codex agents operating in
     those directories, mirroring the intent of Claude's .claude/rules/ files.
     Each file is written in full (not marker-managed) and owned by the
     Codex installer.
     """
-    docs_clasi = target / "docs" / "clasi"
-    docs_clasi.mkdir(parents=True, exist_ok=True)
-    (docs_clasi / "AGENTS.md").write_text(_build_docs_clasi_content(), encoding="utf-8")
-    click.echo("  Wrote: docs/clasi/AGENTS.md")
+    dot_clasi = target / ".clasi"
+    dot_clasi.mkdir(parents=True, exist_ok=True)
+    (dot_clasi / "AGENTS.md").write_text(_build_clasi_dir_content(), encoding="utf-8")
+    click.echo("  Wrote: .clasi/AGENTS.md")
 
-    docs_clasi_todo = target / "docs" / "clasi" / "todo"
-    docs_clasi_todo.mkdir(parents=True, exist_ok=True)
-    (docs_clasi_todo / "AGENTS.md").write_text(_build_todo_dir_content(), encoding="utf-8")
-    click.echo("  Wrote: docs/clasi/todo/AGENTS.md")
+    dot_clasi_issues = target / ".clasi" / "issues"
+    dot_clasi_issues.mkdir(parents=True, exist_ok=True)
+    (dot_clasi_issues / "AGENTS.md").write_text(_build_issues_dir_content(), encoding="utf-8")
+    click.echo("  Wrote: .clasi/issues/AGENTS.md")
 
     clasi_src = target / "clasi"
     clasi_src.mkdir(parents=True, exist_ok=True)
@@ -375,19 +375,19 @@ def _uninstall_rules(target: Path) -> None:
     Non-destructive: if any file does not exist, the removal is skipped
     without error.
     """
-    docs_clasi_md = target / "docs" / "clasi" / "AGENTS.md"
-    if docs_clasi_md.exists():
-        docs_clasi_md.unlink()
-        click.echo("  Removed: docs/clasi/AGENTS.md")
+    dot_clasi_md = target / ".clasi" / "AGENTS.md"
+    if dot_clasi_md.exists():
+        dot_clasi_md.unlink()
+        click.echo("  Removed: .clasi/AGENTS.md")
     else:
-        click.echo("  Skipped: docs/clasi/AGENTS.md (not found)")
+        click.echo("  Skipped: .clasi/AGENTS.md (not found)")
 
-    docs_clasi_todo_md = target / "docs" / "clasi" / "todo" / "AGENTS.md"
-    if docs_clasi_todo_md.exists():
-        docs_clasi_todo_md.unlink()
-        click.echo("  Removed: docs/clasi/todo/AGENTS.md")
+    dot_clasi_issues_md = target / ".clasi" / "issues" / "AGENTS.md"
+    if dot_clasi_issues_md.exists():
+        dot_clasi_issues_md.unlink()
+        click.echo("  Removed: .clasi/issues/AGENTS.md")
     else:
-        click.echo("  Skipped: docs/clasi/todo/AGENTS.md (not found)")
+        click.echo("  Skipped: .clasi/issues/AGENTS.md (not found)")
 
     clasi_src_md = target / "clasi" / "AGENTS.md"
     if clasi_src_md.exists():
@@ -455,9 +455,8 @@ def install(
     click.echo()
 
     from clasi.platforms._markers import write_version_stamp
-    click.echo("Version stamps:")
-    write_version_stamp(target, ".codex")
-    write_version_stamp(target, ".agents")
+    click.echo("Version stamp:")
+    write_version_stamp(target)
     click.echo()
 
 
@@ -582,6 +581,12 @@ def uninstall(target: Path, copy: bool = False) -> None:
     click.echo()
     click.echo("Nested rule files:")
     _uninstall_rules(target)
+
+    # --- .clasi/clasi-version ---
+    from clasi.platforms._markers import remove_version_stamp
+    click.echo()
+    click.echo("Version stamp:")
+    remove_version_stamp(target)
 
     click.echo()
     click.echo("Done! Codex platform integration removed.")

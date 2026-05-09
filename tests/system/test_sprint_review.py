@@ -35,7 +35,7 @@ def work_dir(tmp_path, monkeypatch):
 
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase."""
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)
@@ -46,7 +46,7 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through to execution phase."""
     _advance_to_ticketing(work_dir, sprint_id)
-    db_path = work_dir / "docs" / "clasi" / ".clasi.db"
+    db_path = work_dir / ".clasi" / ".clasi.db"
     acquire_lock(db_path, sprint_id)
     advance_phase(db_path, sprint_id)
 
@@ -54,7 +54,7 @@ def _advance_to_executing(work_dir, sprint_id: str) -> None:
 def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
     """Create a sprint with real planning docs and tickets, ready for execution."""
     create_sprint("Test Sprint")
-    sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+    sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
 
     # Fill in sprint.md with real content
     fm = read_frontmatter(sprint_dir / "sprint.md")
@@ -122,7 +122,7 @@ class TestReviewSprintPreExecution:
     def test_draft_status_detected(self, work_dir):
         """Planning docs with draft status are flagged."""
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 
@@ -137,7 +137,7 @@ class TestReviewSprintPreExecution:
     def test_template_placeholder_detected(self, work_dir):
         """Files with template placeholder content are flagged."""
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
 
         # Update statuses but leave content as template
         for f in ["usecases.md", "architecture-update.md"]:
@@ -237,7 +237,7 @@ class TestReviewSprintPreClose:
     def test_draft_planning_docs_detected(self, work_dir):
         """Planning docs still in draft are flagged."""
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 
@@ -296,7 +296,7 @@ class TestReviewSprintPostClose:
                 move_ticket_to_done(str(f))
 
         # Archive the sprint
-        done_dir = work_dir / "docs" / "clasi" / "sprints" / "done"
+        done_dir = work_dir / ".clasi" / "sprints" / "done"
         done_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(str(sprint_dir), str(done_dir / sprint_dir.name))
 
@@ -306,7 +306,7 @@ class TestReviewSprintPostClose:
 
     def test_sprint_not_found(self, work_dir):
         """Sprint not found anywhere is flagged."""
-        (work_dir / "docs" / "clasi" / "sprints").mkdir(parents=True)
+        (work_dir / ".clasi" / "sprints").mkdir(parents=True)
 
         with patch("clasi.tools.artifact_tools._check_git_branch",
                     return_value="master"):
@@ -325,7 +325,7 @@ class TestTemplatePlaceholderDetection:
         from clasi.templates import SPRINT_TEMPLATE
 
         create_sprint("Test Sprint")
-        sprint_dir = work_dir / "docs" / "clasi" / "sprints" / "001-test-sprint"
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         assert _is_template_placeholder(
             sprint_dir / "sprint.md", SPRINT_TEMPLATE,
         ) is True

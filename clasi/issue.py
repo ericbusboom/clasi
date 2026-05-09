@@ -1,4 +1,4 @@
-"""Todo: OO wrapper around a TODO markdown file."""
+"""Issue: OO wrapper around an issue markdown file."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from clasi.project import Project
 
 
-class Todo:
-    """A TODO file in docs/clasi/todo/."""
+class Issue:
+    """An issue file in docs/clasi/todo/."""
 
     def __init__(self, path: Path, project: Project):
         self._artifact = Artifact(path)
@@ -65,9 +65,10 @@ class Todo:
         return self._artifact.content
 
     def move_to_in_progress(self, sprint_id: str, ticket_id: str) -> None:
-        """Move to todo/in-progress/, update frontmatter."""
-        in_progress_dir = self._project.todo_dir / "in-progress"
-        in_progress_dir.mkdir(parents=True, exist_ok=True)
+        """Move to <sprint>/issues/, update frontmatter."""
+        sprint = self._project.get_sprint(sprint_id)
+        sprint_issues_dir = sprint.path / "issues"
+        sprint_issues_dir.mkdir(parents=True, exist_ok=True)
 
         # Update frontmatter
         self._artifact.update_frontmatter(
@@ -76,9 +77,9 @@ class Todo:
         )
         self.add_ticket_ref(ticket_id)
 
-        # Move file if not already in in-progress/
-        if self.path.parent != in_progress_dir:
-            new_path = in_progress_dir / self.path.name
+        # Move file if not already in sprint issues dir
+        if self.path.parent != sprint_issues_dir:
+            new_path = sprint_issues_dir / self.path.name
             self.path.rename(new_path)
             self._artifact = Artifact(new_path)
 
@@ -87,24 +88,21 @@ class Todo:
         sprint_id: str | None = None,
         ticket_ids: list[str] | None = None,
     ) -> None:
-        """Move to todo/done/, set status to done.
+        """Mark issue as done by updating frontmatter only; no file is moved.
+
+        The issue file stays at its current location (typically
+        ``<sprint>/issues/<filename>``). Physical relocation to an archive
+        directory happens only when the sprint itself is closed/archived.
 
         Args:
             sprint_id: Optional sprint ID to record in frontmatter.
             ticket_ids: Optional list of ticket IDs to record in frontmatter.
         """
-        done_dir = self._project.todo_dir / "done"
-        done_dir.mkdir(parents=True, exist_ok=True)
-
         if sprint_id is not None:
             self._artifact.update_frontmatter(sprint=sprint_id)
         if ticket_ids is not None:
             self._artifact.update_frontmatter(tickets=ticket_ids)
         self._artifact.update_frontmatter(status="done")
-
-        new_path = done_dir / self.path.name
-        self.path.rename(new_path)
-        self._artifact = Artifact(new_path)
 
     def add_ticket_ref(self, ticket_id: str) -> None:
         """Append a ticket reference to the tickets list."""

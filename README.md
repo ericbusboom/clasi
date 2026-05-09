@@ -48,6 +48,24 @@ This creates:
 After init, open the project in Claude Code.
 The MCP server starts automatically when the AI connects.
 
+## Issues vs Tickets
+
+Two distinct concepts govern how work is tracked:
+
+- An **issue** is a proposed change to the system — an idea, bug report,
+  enhancement request, or task captured before sprint planning. Issues live
+  in `.clasi/issues/`. They are the raw material that sprint planning draws
+  from. A single issue may spawn one or more tickets, or be deferred
+  indefinitely.
+
+- A **ticket** is a concrete implementation step within a sprint. Tickets
+  live in `.clasi/sprints/<sprint-id>/tickets/`. A ticket is derived from
+  (and often closes) an issue, but it is scoped to what can be done in a
+  single sprint and carries acceptance criteria, a plan, and a status that
+  the SE process enforces.
+
+In short: issues propose; tickets implement.
+
 ## Typical Workflow
 
 A project moves through four stages. You can drive the whole process with
@@ -60,7 +78,7 @@ Start a new project by telling the agent what you want to build.
 Use `/project-initiation` or just `/next` on an empty repo.
 
 The agent interviews you, asks clarifying questions, and produces
-`docs/clasi/design/overview.md` — a one-page summary of the problem, scope,
+`.clasi/design/overview.md` — a one-page summary of the problem, scope,
 constraints, and high-level use cases.
 
 ### 2. Sprint Planning
@@ -86,7 +104,7 @@ where things stand.
 ### 4. Sprint Close
 
 When all tickets are done, the agent merges the sprint branch to main,
-tags a version, and archives the sprint to `docs/clasi/sprints/done/`.
+tags a version, and archives the sprint to `.clasi/sprints/done/`.
 Then `/next` picks up the next sprint or reports that the project is
 complete.
 
@@ -96,7 +114,7 @@ complete.
 |---------|-------------|
 | `/next` | Determine the next process step and execute it |
 | `/status` | Report current project state, progress, and next actions |
-| `/todo <description>` | Capture an idea as a TODO file in `docs/clasi/todo/` |
+| `/todo <description>` | Capture an idea as an issue file in `.clasi/issues/` |
 | `/project-initiation` | Start a new project with a guided interview |
 
 ## Codex Integration
@@ -126,7 +144,7 @@ clasi init --claude --codex
 | `.codex/agents/sprint-planner.toml` | Sub-agent definition for the sprint-planner role |
 | `.codex/agents/programmer.toml` | Sub-agent definition for the programmer role |
 | `.agents/skills/<name>/SKILL.md` | 26 skill workflow files (cross-tool standard — usable by any agent) |
-| `docs/clasi/AGENTS.md` | Nested rule file: SE process rules for agents working in `docs/clasi/` |
+| `.clasi/AGENTS.md` | Nested rule file: SE process rules for agents working in `.clasi/` |
 | `clasi/AGENTS.md` | Nested rule file: source-code rules for agents working in `clasi/` |
 
 ### Sub-Agents
@@ -157,7 +175,7 @@ clasi uninstall --codex
 This removes only CLASI-managed files and entries — the CLASI marker block
 in `AGENTS.md`, `[mcp_servers.clasi]` from `.codex/config.toml`, the CLASI
 Stop hook from `.codex/hooks.json`, the `.codex/agents/<name>.toml` sub-agent
-files, the `.agents/skills/` skill files, and the nested `docs/clasi/AGENTS.md`
+files, the `.agents/skills/` skill files, and the nested `.clasi/AGENTS.md`
 and `clasi/AGENTS.md` rule files. User-added content is preserved.
 
 To remove only the Claude integration:
@@ -276,7 +294,7 @@ definitions and manage artifacts:
 - **Instructions** — coding standards, git workflow rules, and testing
   guidelines loaded on demand
 - **Artifact tools** — create sprints, create tickets, track status, manage
-  the `docs/clasi/` directory structure
+  the `.clasi/` directory structure
 
 The AI reads these definitions at runtime via MCP tool calls. The slash
 command stubs installed by `clasi init` are thin wrappers that tell the

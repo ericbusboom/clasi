@@ -33,9 +33,9 @@ The stakeholder may request this mode with a variety of phrases, such as:
 5. Run `clasi version bump` and commit the result (`chore: bump
    version`). Tools are installed editable, so the version is how
    sessions tell which code is live — bump after every OOP commit.
-6. If the work addressed a TODO (from `docs/clasi/todo/`), call
-   `move_todo_to_done(filename)` to close it. The commit is not the
-   finish line — the TODO lifecycle must be closed too.
+6. If the work addressed an issue (from `.clasi/issues/`), call
+   `move_issue_to_done(filename)` to close it. The commit is not the
+   finish line — the issue lifecycle must be closed too.
 7. If tests fail, fix the issue and re-run.
 
 That's it. No sprint, no tickets, no review gates, no architecture review.

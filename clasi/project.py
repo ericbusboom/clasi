@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from clasi.agent import Agent
     from clasi.sprint import Sprint
     from clasi.state_db_class import StateDB
-    from clasi.todo import Todo
+    from clasi.issue import Issue
 
 
 class Project:
@@ -25,32 +25,32 @@ class Project:
 
     @property
     def clasi_dir(self) -> Path:
-        """docs/clasi/ directory."""
-        return self._root / "docs" / "clasi"
+        """.clasi/ directory — root for all CLASI artifacts."""
+        return self._root / ".clasi"
 
     @property
     def design_dir(self) -> Path:
-        """docs/clasi/design/ directory — overview, specification, usecases."""
-        return self.clasi_dir / "design"
+        """docs/design/ directory — overview, specification, usecases."""
+        return self._root / "docs" / "design"
 
     @property
     def sprints_dir(self) -> Path:
-        """docs/clasi/sprints/ directory."""
+        """.clasi/sprints/ directory."""
         return self.clasi_dir / "sprints"
 
     @property
-    def todo_dir(self) -> Path:
-        """docs/clasi/todo/ directory."""
-        return self.clasi_dir / "todo"
+    def issues_dir(self) -> Path:
+        """.clasi/issues/ pending pool directory."""
+        return self.clasi_dir / "issues"
 
     @property
     def log_dir(self) -> Path:
-        """docs/clasi/log/ directory."""
+        """.clasi/log/ directory."""
         return self.clasi_dir / "log"
 
     @property
     def architecture_dir(self) -> Path:
-        """docs/clasi/architecture/ directory."""
+        """.clasi/architecture/ directory."""
         return self.clasi_dir / "architecture"
 
     @property
@@ -212,27 +212,38 @@ class Project:
                 results.append(Agent(agent_dir, self))
         return results
 
-    # --- Todo management ---
+    # --- Issue management ---
 
-    def get_todo(self, filename: str) -> Todo:
-        """Get a TODO by its filename."""
-        from clasi.todo import Todo
+    def get_issue(self, filename: str) -> Issue:
+        """Get an issue by its filename.
 
-        # Check pending (top-level), in-progress, and done
-        for subdir in [self.todo_dir, self.todo_dir / "in-progress", self.todo_dir / "done"]:
-            path = subdir / filename
+        Search order:
+        1. Pending pool: ``.clasi/issues/<filename>``
+        2. Sprint-scoped issues: ``<sprint>/issues/<filename>`` for every sprint
+        """
+        from clasi.issue import Issue
+
+        # Check pending pool
+        path = self.issues_dir / filename
+        if path.exists():
+            return Issue(path, self)
+
+        # Check sprint-scoped issues directories (<sprint>/issues/<filename>)
+        for sprint in self.list_sprints():
+            path = sprint.path / "issues" / filename
             if path.exists():
-                return Todo(path, self)
-        raise ValueError(f"TODO '{filename}' not found")
+                return Issue(path, self)
 
-    def list_todos(self) -> list[Todo]:
-        """List all active TODOs (pending and in-progress, not done)."""
-        from clasi.todo import Todo
+        raise ValueError(f"Issue '{filename}' not found")
 
-        results: list[Todo] = []
-        for subdir in [self.todo_dir, self.todo_dir / "in-progress"]:
-            if not subdir.exists():
-                continue
-            for f in sorted(subdir.glob("*.md")):
-                results.append(Todo(f, self))
-        return results
+    def list_issues(self) -> list[Issue]:
+        """List all pending pool issues (``.clasi/issues/*.md``).
+
+        Returns only files in the top-level pending pool directory.
+        Sprint-scoped in-progress issues are retrieved via ``Sprint.list_issues()``.
+        """
+        from clasi.issue import Issue
+
+        if not self.issues_dir.exists():
+            return []
+        return [Issue(f, self) for f in sorted(self.issues_dir.glob("*.md"))]

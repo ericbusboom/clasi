@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '015'
+tickets:
+- 015-020
 ---
 
 # Consolidate the CLASI version marker into `.clasi/clasi-version`

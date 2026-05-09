@@ -283,8 +283,8 @@ def test_install_calls_print_cloud_mcp_notice(tmp_path: Path, capsys: pytest.Cap
 
 # Map of expected filename -> (applyTo glob, rule body constant)
 _EXPECTED_PATH_RULES = [
-    ("clasi-artifacts.instructions.md", "docs/clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", "docs/clasi/todo/**", TODO_DIR_BODY),
+    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
     ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
 ]
 
@@ -672,3 +672,47 @@ def test_uninstall_vscode_mcp_corrupt_json_skips(tmp_path: Path) -> None:
     copilot._uninstall_vscode_mcp(tmp_path)
 
     assert (vscode_dir / "mcp.json").read_text(encoding="utf-8") == bad_content
+
+
+# ---------------------------------------------------------------------------
+# Version stamp — consolidated .clasi/clasi-version
+# ---------------------------------------------------------------------------
+
+_MCP_CONFIG = {"command": "clasi", "args": ["mcp"]}
+
+
+def test_copilot_install_writes_clasi_clasi_version(tmp_path: Path) -> None:
+    """install() writes .clasi/clasi-version; no per-platform stamp files."""
+    copilot.install(tmp_path, mcp_config=_MCP_CONFIG)
+
+    stamp = tmp_path / ".clasi" / "clasi-version"
+    assert stamp.exists(), ".clasi/clasi-version must exist after copilot install"
+
+    for stale_dir in [".github", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        assert not stale.exists(), (
+            f"{stale_dir}/.clasi-version must not be written (old format)"
+        )
+
+
+def test_copilot_install_removes_stale_per_platform_stamps(tmp_path: Path) -> None:
+    """install() removes pre-existing stale per-platform stamp files."""
+    for stale_dir in [".github", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("0.old\n", encoding="utf-8")
+
+    copilot.install(tmp_path, mcp_config=_MCP_CONFIG)
+
+    for stale_dir in [".github", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        assert not stale.exists(), f"Stale {stale_dir}/.clasi-version must be removed"
+
+
+def test_copilot_uninstall_removes_clasi_version_stamp(tmp_path: Path) -> None:
+    """uninstall() removes .clasi/clasi-version."""
+    copilot.install(tmp_path, mcp_config=_MCP_CONFIG)
+    copilot.uninstall(tmp_path)
+    assert not (tmp_path / ".clasi" / "clasi-version").exists(), (
+        ".clasi/clasi-version must be removed by copilot uninstall"
+    )

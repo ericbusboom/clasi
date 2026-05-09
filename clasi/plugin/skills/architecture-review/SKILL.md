@@ -10,7 +10,7 @@ system, design quality, risks, and completeness.
 
 ## Process
 
-1. **Read the current architecture** in `docs/clasi/architecture/`.
+1. **Read the current architecture** in `.clasi/architecture/`.
 2. **Read the sprint's architecture update** (`architecture-update.md`).
 3. **Explore the codebase** to check alignment between documented and
    actual architecture.

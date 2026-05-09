@@ -5,7 +5,7 @@ or explicitly points out an error in your approach:
 
 1. Acknowledge the correction immediately.
 2. Run the **self-reflect** skill to produce a structured reflection
-   document in `docs/clasi/reflections/`.
+   document in `.clasi/reflections/`.
 3. Continue with the corrected approach.
 
 ## Detection Signals

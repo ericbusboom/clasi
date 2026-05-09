@@ -311,18 +311,18 @@ def test_three_platform_install_end_to_end(tmp_path: Path) -> None:
     assert "Stop" in hooks_data["hooks"], ".codex/hooks.json must have hooks.Stop"
 
     # ------------------------------------------------------------------
-    # docs/clasi/AGENTS.md, docs/clasi/todo/AGENTS.md, clasi/AGENTS.md
+    # .clasi/AGENTS.md, .clasi/issues/AGENTS.md, clasi/AGENTS.md
     # ------------------------------------------------------------------
-    docs_clasi_agents = tmp_path / "docs" / "clasi" / "AGENTS.md"
-    assert docs_clasi_agents.exists(), "docs/clasi/AGENTS.md must exist"
-    assert docs_clasi_agents.read_text(encoding="utf-8").strip(), (
-        "docs/clasi/AGENTS.md must have content"
+    dot_clasi_agents = tmp_path / ".clasi" / "AGENTS.md"
+    assert dot_clasi_agents.exists(), ".clasi/AGENTS.md must exist"
+    assert dot_clasi_agents.read_text(encoding="utf-8").strip(), (
+        ".clasi/AGENTS.md must have content"
     )
 
-    docs_clasi_todo_agents = tmp_path / "docs" / "clasi" / "todo" / "AGENTS.md"
-    assert docs_clasi_todo_agents.exists(), "docs/clasi/todo/AGENTS.md must exist"
-    assert docs_clasi_todo_agents.read_text(encoding="utf-8").strip(), (
-        "docs/clasi/todo/AGENTS.md must have content"
+    dot_clasi_issues_agents = tmp_path / ".clasi" / "issues" / "AGENTS.md"
+    assert dot_clasi_issues_agents.exists(), ".clasi/issues/AGENTS.md must exist"
+    assert dot_clasi_issues_agents.read_text(encoding="utf-8").strip(), (
+        ".clasi/issues/AGENTS.md must have content"
     )
 
     clasi_agents = tmp_path / "clasi" / "AGENTS.md"
