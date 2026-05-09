@@ -1,5 +1,17 @@
 ---
-status: pending
+status: in-progress
+sprint: '015'
+tickets:
+- 015-006
+- 015-007
+- 015-008
+- 015-009
+- 015-010
+- 015-011
+- 015-012
+- 015-015
+- 015-016
+- 015-021
 ---
 
 # Move CLASI artifact root from `docs/clasi/` to `.clasi/`

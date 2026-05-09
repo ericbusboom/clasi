@@ -1,5 +1,15 @@
 ---
-status: pending
+status: in-progress
+sprint: '015'
+tickets:
+- 015-001
+- 015-002
+- 015-003
+- 015-004
+- 015-005
+- 015-013
+- 015-014
+- 015-028
 ---
 
 # Rename CLASI TODOs to issues
