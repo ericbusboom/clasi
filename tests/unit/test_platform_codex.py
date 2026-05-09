@@ -980,3 +980,45 @@ def test_codex_install_round_trip_no_duplication(tmp_path: Path) -> None:
     assert (tmp_path / "clasi" / "AGENTS.md").exists(), (
         "clasi/AGENTS.md must exist after re-install"
     )
+
+
+# ---------------------------------------------------------------------------
+# Version stamp — consolidated .clasi/clasi-version
+# ---------------------------------------------------------------------------
+
+
+def test_codex_install_writes_clasi_clasi_version(tmp_path: Path) -> None:
+    """install() writes .clasi/clasi-version; no per-platform stamp files."""
+    install(tmp_path, _MCP_CONFIG)
+
+    stamp = tmp_path / ".clasi" / "clasi-version"
+    assert stamp.exists(), ".clasi/clasi-version must exist after codex install"
+
+    for stale_dir in [".codex", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        assert not stale.exists(), (
+            f"{stale_dir}/.clasi-version must not be written (old format)"
+        )
+
+
+def test_codex_install_removes_stale_per_platform_stamps(tmp_path: Path) -> None:
+    """install() removes pre-existing stale per-platform stamp files."""
+    for stale_dir in [".codex", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("0.old\n", encoding="utf-8")
+
+    install(tmp_path, _MCP_CONFIG)
+
+    for stale_dir in [".codex", ".agents"]:
+        stale = tmp_path / stale_dir / ".clasi-version"
+        assert not stale.exists(), f"Stale {stale_dir}/.clasi-version must be removed"
+
+
+def test_codex_uninstall_removes_clasi_version_stamp(tmp_path: Path) -> None:
+    """uninstall() removes .clasi/clasi-version."""
+    install(tmp_path, _MCP_CONFIG)
+    uninstall(tmp_path)
+    assert not (tmp_path / ".clasi" / "clasi-version").exists(), (
+        ".clasi/clasi-version must be removed by codex uninstall"
+    )

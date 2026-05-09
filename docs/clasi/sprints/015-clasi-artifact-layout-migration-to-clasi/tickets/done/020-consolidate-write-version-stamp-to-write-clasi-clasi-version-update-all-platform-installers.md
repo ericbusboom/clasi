@@ -2,7 +2,7 @@
 id: '020'
 title: Consolidate `write_version_stamp` to write `.clasi/clasi-version`; update all
   platform installers
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -29,13 +29,13 @@ update it to remove `.clasi/clasi-version` (and `.clasi/` if it becomes empty).
 
 ## Acceptance Criteria
 
-- [ ] `write_version_stamp(target)` writes only `<target>/.clasi/clasi-version`
-- [ ] No per-platform `.clasi-version` files written (`.claude/.clasi-version` etc. gone)
-- [ ] Each platform installer calls `write_version_stamp(target)` exactly once
-- [ ] Re-running install on same target overwrites the file safely (same content)
-- [ ] E2E: `clasi install --platform claude` on a temp dir → only `.clasi/clasi-version`
+- [x] `write_version_stamp(target)` writes only `<target>/.clasi/clasi-version`
+- [x] No per-platform `.clasi-version` files written (`.claude/.clasi-version` etc. gone)
+- [x] Each platform installer calls `write_version_stamp(target)` exactly once
+- [x] Re-running install on same target overwrites the file safely (same content)
+- [x] E2E: `clasi install --platform claude` on a temp dir → only `.clasi/clasi-version`
   exists; no `.claude/.clasi-version` or `.agents/.clasi-version`
-- [ ] Full test suite passes
+- [x] Full test suite passes
 
 ## Implementation Plan
 

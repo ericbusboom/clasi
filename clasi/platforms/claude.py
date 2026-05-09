@@ -449,12 +449,10 @@ def install(
     _create_rules(target)
     click.echo()
 
-    # Drop a version stamp in each installed directory so it's obvious
-    # which clasi release wrote the contents.
+    # Drop a version stamp so it's obvious which clasi release wrote the contents.
     from clasi.platforms._markers import write_version_stamp
-    click.echo("Version stamps:")
-    write_version_stamp(target, ".claude")
-    write_version_stamp(target, ".agents")
+    click.echo("Version stamp:")
+    write_version_stamp(target)
     click.echo()
 
 
@@ -598,6 +596,10 @@ def uninstall(target: Path, copy: bool = False) -> None:
             click.echo("  Updated: .claude/settings.local.json (removed mcp__clasi__*)")
         else:
             click.echo("  Unchanged: .claude/settings.local.json (permission not found)")
+
+    # --- .clasi/clasi-version ---
+    from clasi.platforms._markers import remove_version_stamp
+    remove_version_stamp(target)
 
     click.echo()
     click.echo("Done! Claude platform integration removed.")

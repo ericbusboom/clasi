@@ -455,9 +455,8 @@ def install(
     click.echo()
 
     from clasi.platforms._markers import write_version_stamp
-    click.echo("Version stamps:")
-    write_version_stamp(target, ".codex")
-    write_version_stamp(target, ".agents")
+    click.echo("Version stamp:")
+    write_version_stamp(target)
     click.echo()
 
 
@@ -582,6 +581,12 @@ def uninstall(target: Path, copy: bool = False) -> None:
     click.echo()
     click.echo("Nested rule files:")
     _uninstall_rules(target)
+
+    # --- .clasi/clasi-version ---
+    from clasi.platforms._markers import remove_version_stamp
+    click.echo()
+    click.echo("Version stamp:")
+    remove_version_stamp(target)
 
     click.echo()
     click.echo("Done! Codex platform integration removed.")

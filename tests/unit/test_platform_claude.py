@@ -565,3 +565,51 @@ class TestClaudeMdUninstall:
 
         claude_mod.uninstall(tmp_path)
         assert not claude_md.exists(), "Copy-mode CLAUDE.md must be removed by uninstall"
+
+
+# ---------------------------------------------------------------------------
+# Version stamp — consolidated .clasi/clasi-version
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeVersionStamp:
+    def test_install_writes_clasi_clasi_version(self, tmp_path: Path) -> None:
+        """install() writes exactly .clasi/clasi-version; no per-platform stamp files."""
+        claude_mod.install(tmp_path, mcp_config={})
+
+        stamp = tmp_path / ".clasi" / "clasi-version"
+        assert stamp.exists(), ".clasi/clasi-version must exist after install"
+
+        # No old-style per-platform stamp files
+        for stale_dir in [".claude", ".agents"]:
+            stale = tmp_path / stale_dir / ".clasi-version"
+            assert not stale.exists(), (
+                f"{stale_dir}/.clasi-version must not be written (old format)"
+            )
+
+    def test_install_stamp_is_readable_version(self, tmp_path: Path) -> None:
+        """The stamp file contains a non-empty version string."""
+        claude_mod.install(tmp_path, mcp_config={})
+        content = (tmp_path / ".clasi" / "clasi-version").read_text(encoding="utf-8")
+        assert content.strip(), "clasi-version stamp must not be empty"
+
+    def test_install_removes_stale_per_platform_stamps(self, tmp_path: Path) -> None:
+        """install() removes pre-existing stale per-platform stamp files."""
+        for stale_dir in [".claude", ".agents"]:
+            stale = tmp_path / stale_dir / ".clasi-version"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("0.old\n", encoding="utf-8")
+
+        claude_mod.install(tmp_path, mcp_config={})
+
+        for stale_dir in [".claude", ".agents"]:
+            stale = tmp_path / stale_dir / ".clasi-version"
+            assert not stale.exists(), f"Stale {stale_dir}/.clasi-version must be removed"
+
+    def test_uninstall_removes_clasi_version_stamp(self, tmp_path: Path) -> None:
+        """uninstall() removes .clasi/clasi-version."""
+        claude_mod.install(tmp_path, mcp_config={})
+        claude_mod.uninstall(tmp_path)
+        assert not (tmp_path / ".clasi" / "clasi-version").exists(), (
+            ".clasi/clasi-version must be removed by uninstall"
+        )
