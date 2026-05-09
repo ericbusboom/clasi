@@ -2,7 +2,7 @@
 id: '013'
 title: 'CLI: rename `plan-to-todo` subcommand to `plan-to-issue` and `--todo-dir`
   to `--issues-dir`'
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -23,13 +23,13 @@ from ticket 008).
 
 ## Acceptance Criteria
 
-- [ ] `@tool.command("plan-to-todo")` renamed to `@tool.command("plan-to-issue")`
-- [ ] `--todo-dir` option renamed to `--issues-dir`
-- [ ] Default value for `--issues-dir` updated to `".clasi/issues"`
-- [ ] Help strings updated to use "issue" language
-- [ ] Hook registration keys updated to `"plan-to-issue"` and `"codex-plan-to-issue"`
-- [ ] `clasi tool plan-to-issue --help` works correctly
-- [ ] Full test suite passes
+- [x] `@tool.command("plan-to-todo")` renamed to `@tool.command("plan-to-issue")`
+- [x] `--todo-dir` option renamed to `--issues-dir`
+- [x] Default value for `--issues-dir` updated to `".clasi/issues"`
+- [x] Help strings updated to use "issue" language
+- [x] Hook registration keys updated to `"plan-to-issue"` and `"codex-plan-to-issue"`
+- [x] `clasi tool plan-to-issue --help` works correctly
+- [x] Full test suite passes
 
 ## Implementation Plan
 

@@ -6,7 +6,7 @@ Subcommands:
     clasi install [target]          — Synonym for clasi init
     clasi uninstall [target]        — Remove CLASI platform integration files
     clasi mcp                       — Run the MCP server (stdio)
-    clasi tool plan-to-todo         — Convert plan file to TODO
+    clasi tool plan-to-issue        — Convert plan file to issue
     clasi version                   — Show the current project version
     clasi version bump              — Bump version, update files, tag
 """
@@ -98,14 +98,14 @@ def tool():
     """Utility tools for CLASI workflows."""
 
 
-@tool.command("plan-to-todo")
+@tool.command("plan-to-issue")
 @click.option("--plans-dir", default=None, type=click.Path(), help="Override plans directory (default: ~/.claude/plans).")
-@click.option("--todo-dir", default="docs/clasi/todo", type=click.Path(), help="TODO output directory.")
-def tool_plan_to_todo(plans_dir, todo_dir):
-    """Copy the most recent plan file to the TODO directory.
+@click.option("--issues-dir", default=".clasi/issues", type=click.Path(), help="Issues output directory.")
+def tool_plan_to_issue(plans_dir, issues_dir):
+    """Copy the most recent plan file to the issues directory.
 
     Finds the newest .md file in ~/.claude/plans/, prepends
-    status: pending frontmatter, writes it to docs/clasi/todo/,
+    status: pending frontmatter, writes it to .clasi/issues/,
     and deletes the original plan file.
     """
     from pathlib import Path
@@ -113,9 +113,9 @@ def tool_plan_to_todo(plans_dir, todo_dir):
     from clasi.plan_to_issue import plan_to_issue
 
     plans = Path(plans_dir) if plans_dir else Path.home() / ".claude" / "plans"
-    result = plan_to_issue(plans, Path(todo_dir))
+    result = plan_to_issue(plans, Path(issues_dir))
     if result:
-        click.echo(f"CLASI: Plan saved as TODO: {result}")
+        click.echo(f"CLASI: Plan saved as issue: {result}")
     else:
         click.echo("No plan file found to convert.")
 
@@ -219,7 +219,9 @@ def mcp():
             "task-created",
             "task-completed",
             "mcp-guard",
+            "plan-to-issue",
             "plan-to-todo",
+            "codex-plan-to-issue",
             "codex-plan-to-todo",
             "commit-check",
         ]
@@ -232,15 +234,17 @@ def hook(event):
     handler in clasi.hooks, and exits with the correct code.
 
     Valid events:
-      role-guard          PreToolUse: enforce write-scope rules by agent tier.
-      subagent-start      SubagentStart: log subagent lifecycle start.
-      subagent-stop       SubagentStop: append transcript to subagent log.
-      task-created        TaskCreated: log parallel-task lifecycle start.
-      task-completed      TaskCompleted: append transcript to task log.
-      mcp-guard           PreToolUse: block team-lead from direct MCP writes.
-      plan-to-todo        PostToolUse(ExitPlanMode): save Claude plan as TODO.
-      codex-plan-to-todo  Stop(Codex): extract <proposed_plan> and save as TODO.
-      commit-check        PostToolUse(Bash): remind to bump version on master.
+      role-guard           PreToolUse: enforce write-scope rules by agent tier.
+      subagent-start       SubagentStart: log subagent lifecycle start.
+      subagent-stop        SubagentStop: append transcript to subagent log.
+      task-created         TaskCreated: log parallel-task lifecycle start.
+      task-completed       TaskCompleted: append transcript to task log.
+      mcp-guard            PreToolUse: block team-lead from direct MCP writes.
+      plan-to-issue        PostToolUse(ExitPlanMode): save Claude plan as issue.
+      plan-to-todo         PostToolUse(ExitPlanMode): alias for plan-to-issue (deprecated).
+      codex-plan-to-issue  Stop(Codex): extract <proposed_plan> and save as issue.
+      codex-plan-to-todo   Stop(Codex): alias for codex-plan-to-issue (deprecated).
+      commit-check         PostToolUse(Bash): remind to bump version on master.
     """
     from clasi.hook_handlers import handle_hook
 
