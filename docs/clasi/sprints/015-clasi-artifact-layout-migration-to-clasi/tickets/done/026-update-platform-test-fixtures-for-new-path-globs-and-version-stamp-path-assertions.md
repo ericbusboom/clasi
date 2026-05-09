@@ -1,7 +1,7 @@
 ---
 id: "026"
 title: "Update platform test fixtures for new path globs and version stamp path assertions"
-status: open
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -30,12 +30,12 @@ Update platform-specific test files for the new path layout and version stamp:
 
 ## Acceptance Criteria
 
-- [ ] No `docs/clasi` string literals in any platform test file
-- [ ] Version stamp assertions check `.clasi/clasi-version` not per-platform stamp paths
-- [ ] All platform tests pass
-- [ ] `uv run pytest tests/unit/test_platform_*.py tests/unit/test_three_platform_install.py
+- [x] No `docs/clasi` string literals in any platform test file
+- [x] Version stamp assertions check `.clasi/clasi-version` not per-platform stamp paths
+- [x] All platform tests pass
+- [x] `uv run pytest tests/unit/test_platform_*.py tests/unit/test_three_platform_install.py
   tests/unit/test_uninstall_command.py` — green
-- [ ] `uv run pytest` — full suite
+- [x] `uv run pytest` — full suite
 
 ## Implementation Plan
 
