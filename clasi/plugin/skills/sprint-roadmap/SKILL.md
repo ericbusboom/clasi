@@ -15,13 +15,13 @@ them into sprints.
 
 ## Inputs
 
-- `docs/clasi/design/overview.md` (must exist)
+- `.clasi/design/overview.md` (must exist)
 - Current architecture (if available)
-- TODO files in `docs/clasi/todo/`
+- Issue files in `.clasi/issues/`
 
 ## Process
 
-1. **Read TODOs**: Scan `docs/clasi/todo/` for pending TODO files.
+1. **Read issues**: Scan `.clasi/issues/` for pending issue files.
    Read each to understand the work requested.
 
 2. **Group into sprints** based on:

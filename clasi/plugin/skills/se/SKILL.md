@@ -34,4 +34,4 @@ to the issue skill).
   wants it recorded. One statement → one issue file.
 - `/se plan`: The user wants to discuss, explore, and refine an idea
   before capturing it. Enters plan mode for a conversation. On exit,
-  the plan-to-todo hook automatically creates the issue.
+  the plan-to-issue hook automatically creates the issue.

@@ -27,5 +27,5 @@ Confirm the file was created and show its path.
 This skill is for **quick capture** — the user has a clear idea and
 wants it recorded as an issue. If the user wants to discuss, explore
 options, or refine an idea before capturing it, use plan mode
-(`EnterPlanMode`) instead. The plan-to-todo hook will create the
+(`EnterPlanMode`) instead. The plan-to-issue hook will create the
 issue automatically when plan mode exits.

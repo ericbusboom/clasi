@@ -189,7 +189,7 @@ Each ticket has YAML frontmatter:
 ---
 id: "NNN"
 title: Short title
-status: todo | in-progress | done
+status: open | in-progress | done
 use-cases: [SUC-001, SUC-002]
 depends-on: ["NNN"]
 github-issue: ""
@@ -207,7 +207,7 @@ implementation notes.
 |-------|------|-------------|
 | `id` | string | Per-sprint ticket number (`"001"`, `"002"`, …). |
 | `title` | string | Short human-readable title. |
-| `status` | string | `todo`, `in-progress`, or `done`. |
+| `status` | string | `open`, `in-progress`, or `done`. |
 | `use-cases` | list | Sprint use-case IDs this ticket satisfies. |
 | `depends-on` | list | Ticket IDs that must be done before this one starts. |
 | `github-issue` | string | Linked GitHub issue number or URL, if any. |
@@ -377,7 +377,7 @@ Skill: **create-tickets**
 
 Skill: **execute-ticket** (repeated for each ticket)
 
-1. Pick the next `todo` ticket whose dependencies are all `done`.
+1. Pick the next `open` ticket whose dependencies are all `done`.
 2. Create the ticket plan (`NNN-slug-plan.md`).
 3. Set the ticket status to `in-progress` in its YAML frontmatter.
 4. Implement the ticket following its plan (python-expert or appropriate
@@ -454,7 +454,7 @@ Things go wrong during implementation. Here is what to do.
 **Unresolvable blockers:**
 1. If you cannot make progress despite trying the above patterns, stop.
 2. Document what you tried and what blocked you in the ticket.
-3. Set the ticket status back to `todo` (not `in-progress` — it is not
+3. Set the ticket status back to `open` (not `in-progress` — it is not
    being actively worked).
 4. Escalate to the human: explain the blocker and ask for guidance.
 

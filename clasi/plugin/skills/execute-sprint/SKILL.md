@@ -12,11 +12,11 @@ at a time. All work happens directly on the sprint branch.
 This skill is **strictly serial**. There is no parallel mode and no
 worktree usage. Re-enabling parallel/worktree execution is a future
 project; see
-`docs/clasi/todo/define-proper-worktree-process-for-parallel-ticket-execution.md`.
+`.clasi/issues/define-proper-worktree-process-for-parallel-ticket-execution.md`.
 
 ## Inputs
 
-- Active sprint with tickets in `todo` status
+- Active sprint with tickets in `open` status
 - Execution lock acquired (`acquire_execution_lock`)
 - Sprint branch exists and is checked out
 
@@ -38,7 +38,7 @@ There are no execution groups. Tickets run one at a time.
 
 For each ticket in dependency order:
 
-1. Verify the ticket is `todo` and all of its `depends-on` tickets are
+1. Verify the ticket is `open` and all of its `depends-on` tickets are
    `done`. If not, stop and report the inconsistency.
 2. Update the ticket status to `in-progress` via
    `update_ticket_status(path, "in-progress")`.
@@ -51,7 +51,7 @@ For each ticket in dependency order:
 4. Wait for the programmer agent to complete before moving on.
 5. Verify `status: done` is set in the ticket's frontmatter.
 6. Call `move_ticket_to_done(ticket_path)` where `ticket_path` is the
-   relative path: `docs/clasi/sprints/NNN-slug/tickets/NNN-slug.md`.
+   relative path: `.clasi/sprints/NNN-slug/tickets/NNN-slug.md`.
    This is a team-lead responsibility — the programmer sets the
    frontmatter; the team-lead moves the file.
 7. Continue with the next ticket.

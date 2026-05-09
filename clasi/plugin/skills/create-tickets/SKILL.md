@@ -44,7 +44,7 @@ File: `<sprint-dir>/tickets/NNN-slug.md`
 ---
 id: "NNN"
 title: Short title
-status: todo
+status: open
 use-cases: [SUC-001, SUC-002]
 depends-on: [NNN]
 ---

@@ -10,7 +10,7 @@ which handles the full lifecycle.
 
 ## Inputs
 
-- Active sprint directory in `docs/clasi/sprints/NNN-slug/`
+- Active sprint directory in `.clasi/sprints/NNN-slug/`
 - All tickets for this sprint should be `done`
 
 ## Process
@@ -54,5 +54,5 @@ which handles the full lifecycle.
 ## Output
 
 - Sprint branch merged to main and deleted
-- Sprint document moved to `docs/clasi/sprints/done/`
+- Sprint document moved to `.clasi/sprints/done/`
 - Sprint completion summary
