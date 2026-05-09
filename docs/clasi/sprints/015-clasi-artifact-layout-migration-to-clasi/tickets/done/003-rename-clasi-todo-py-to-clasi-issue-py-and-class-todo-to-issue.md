@@ -3,9 +3,9 @@ id: '003'
 title: Rename `clasi/todo.py` to `clasi/issue.py` and class `Todo` to `Issue`
 status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "002"
+- '002'
 github-issue: ''
 todo: rename-clasi-todos-to-issues.md
 completes_todo: false
