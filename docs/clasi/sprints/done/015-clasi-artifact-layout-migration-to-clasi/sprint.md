@@ -1,11 +1,11 @@
 ---
-id: "015"
-title: "CLASI artifact layout migration to .clasi/"
-status: planning
+id: '015'
+title: CLASI artifact layout migration to .clasi/
+status: done
 branch: sprint/015-clasi-artifact-layout-migration-to-clasi
 use-cases:
-  - SUC-001
-  - SUC-002
+- SUC-001
+- SUC-002
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
