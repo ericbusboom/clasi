@@ -88,24 +88,21 @@ class Issue:
         sprint_id: str | None = None,
         ticket_ids: list[str] | None = None,
     ) -> None:
-        """Move to todo/done/, set status to done.
+        """Mark issue as done by updating frontmatter only; no file is moved.
+
+        The issue file stays at its current location (typically
+        ``<sprint>/issues/<filename>``). Physical relocation to an archive
+        directory happens only when the sprint itself is closed/archived.
 
         Args:
             sprint_id: Optional sprint ID to record in frontmatter.
             ticket_ids: Optional list of ticket IDs to record in frontmatter.
         """
-        done_dir = self._project.issues_dir / "done"
-        done_dir.mkdir(parents=True, exist_ok=True)
-
         if sprint_id is not None:
             self._artifact.update_frontmatter(sprint=sprint_id)
         if ticket_ids is not None:
             self._artifact.update_frontmatter(tickets=ticket_ids)
         self._artifact.update_frontmatter(status="done")
-
-        new_path = done_dir / self.path.name
-        self.path.rename(new_path)
-        self._artifact = Artifact(new_path)
 
     def add_ticket_ref(self, ticket_id: str) -> None:
         """Append a ticket reference to the tickets list."""

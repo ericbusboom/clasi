@@ -133,13 +133,13 @@ class TestMoveTicketToDoneTriggersCompletion:
         # Move ticket to done
         move_result = json.loads(move_ticket_to_done(ticket_path))
 
-        # TODO should be moved to done/
+        # TODO should remain in sprint issues dir with status=done (no file move)
         sprint_issues = _sprint_issues_dir(work_dir, "001")
-        assert not (sprint_issues / "my-idea.md").exists()
-        assert (todo / "done" / "my-idea.md").exists()
+        assert (sprint_issues / "my-idea.md").exists()
+        assert not (todo / "done" / "my-idea.md").exists()
 
         # Check TODO frontmatter
-        todo_fm = read_frontmatter(todo / "done" / "my-idea.md")
+        todo_fm = read_frontmatter(sprint_issues / "my-idea.md")
         assert todo_fm["status"] == "done"
 
         # Result should report completed TODO
@@ -185,10 +185,12 @@ class TestMoveTicketToDoneTriggersCompletion:
         write_frontmatter(ticket2_path, fm2)
         move_result = json.loads(move_ticket_to_done(ticket2_path))
 
-        # Now TODO should be in done/
+        # Now TODO should have status=done in sprint issues dir (no file move)
         sprint_issues = _sprint_issues_dir(work_dir, "001")
-        assert not (sprint_issues / "my-idea.md").exists()
-        assert (todo / "done" / "my-idea.md").exists()
+        assert (sprint_issues / "my-idea.md").exists()
+        assert not (todo / "done" / "my-idea.md").exists()
+        todo_fm = read_frontmatter(sprint_issues / "my-idea.md")
+        assert todo_fm["status"] == "done"
         assert "completed_todos" in move_result
 
     def test_ticket_without_todo_ref_works_normally(self, work_dir):
@@ -252,7 +254,7 @@ class TestCloseSprintDoesNotBulkMove:
     """close_sprint should NOT bulk-move TODOs; it should verify they are resolved."""
 
     def test_close_sprint_succeeds_when_todos_already_done(self, work_dir):
-        """TODOs moved to done/ by ticket completion should not block close."""
+        """TODOs marked done by ticket completion should not block close."""
         todo = _setup_sprint_with_todo(work_dir)
 
         result = json.loads(create_ticket("001", "Task", todo="my-idea.md"))
@@ -264,12 +266,15 @@ class TestCloseSprintDoesNotBulkMove:
         write_frontmatter(ticket_path, fm)
         move_ticket_to_done(ticket_path)
 
-        # Verify TODO is in done/
-        assert (todo / "done" / "my-idea.md").exists()
+        # Verify TODO has status=done in sprint issues dir (no file move)
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "my-idea.md").exists()
+        todo_fm = read_frontmatter(sprint_issues / "my-idea.md")
+        assert todo_fm["status"] == "done"
 
         # Close sprint should succeed
         close_result = json.loads(close_sprint("001"))
-        # Should not have moved_todos (they were already moved by ticket completion)
+        # Should not have moved_todos (they were already handled by ticket completion)
         assert "moved_todos" not in close_result
 
     def test_close_sprint_no_bulk_move_of_in_progress_todos(self, work_dir):

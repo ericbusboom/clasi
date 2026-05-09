@@ -1399,27 +1399,46 @@ def move_todo_to_done(
     sprint_id: str | None = None,
     ticket_ids: list[str] | None = None,
 ) -> str:
-    """Move a TODO file to the done/ subdirectory.
+    """Mark a TODO/issue as done by updating its frontmatter (no file move).
+
+    When ``sprint_id`` is provided the issue must reside in
+    ``<sprint_id>/issues/`` (i.e. it must have been moved there by
+    ``move_todo_to_in_progress`` first).  Passing a ``sprint_id`` for an
+    issue that lives elsewhere is an error.
 
     Args:
         filename: The TODO filename (e.g., 'my-idea.md')
         sprint_id: Optional sprint ID that consumed this TODO
         ticket_ids: Optional list of ticket IDs that address this TODO
 
-    Returns JSON with {old_path, new_path}.
+    Returns JSON with {path, status}.
     """
     project = get_project()
     try:
         todo = project.get_issue(filename)
     except ValueError:
         raise ValueError(f"TODO not found: {filename}")
-    old_path = todo.path
+
+    # Validate sprint-scoped location when sprint_id is given
+    if sprint_id is not None:
+        try:
+            sprint = project.get_sprint(sprint_id)
+        except ValueError:
+            raise ValueError(f"Sprint not found: {sprint_id}")
+        expected_dir = sprint.path / "issues"
+        if todo.path.parent.resolve() != expected_dir.resolve():
+            raise ValueError(
+                f"Issue '{filename}' is not in the expected sprint issues "
+                f"directory '{expected_dir}'. "
+                f"Current location: '{todo.path.parent}'. "
+                "Run move_todo_to_in_progress first."
+            )
 
     todo.move_to_done(sprint_id=sprint_id, ticket_ids=ticket_ids)
 
     return json.dumps({
-        "old_path": str(old_path),
-        "new_path": str(todo.path),
+        "path": str(todo.path),
+        "status": todo.status,
     }, indent=2)
 
 

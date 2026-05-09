@@ -167,18 +167,63 @@ class TestIssueMoveToInProgress:
 class TestIssueMoveToDone:
     """Test move_to_done."""
 
-    def test_move_to_done_from_pending(self, tmp_path):
-        proj, t = _make_issue(tmp_path, status="pending")
+    def test_move_to_done_sets_status(self, tmp_path):
+        """move_to_done writes status=done to frontmatter."""
+        _, t = _make_issue(tmp_path, status="pending")
         t.move_to_done()
         assert t.status == "done"
-        assert t.path.parent == proj.issues_dir / "done"
+
+    def test_move_to_done_file_location_unchanged(self, tmp_path):
+        """move_to_done does NOT move the file — it stays in its original dir."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        original_parent = t.path.parent
+        original_name = t.path.name
+        t.move_to_done()
+        assert t.path.parent == original_parent
+        assert t.path.name == original_name
         assert t.path.exists()
 
-    def test_move_to_done_from_in_progress(self, tmp_path):
-        proj, t = _make_issue(tmp_path, status="in-progress", sprint="001")
+    def test_move_to_done_no_done_dir_created(self, tmp_path):
+        """No done/ directory is created under issues_dir."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        t.move_to_done()
+        assert not (proj.issues_dir / "done").exists()
+
+    def test_move_to_done_sprint_in_issues_dir(self, tmp_path):
+        """Issue in sprint issues dir stays there after move_to_done."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        sprint_dir = _make_sprint(proj, "001")
+        t.move_to_in_progress("001", "001-001")
+        sprint_issues = sprint_dir / "issues"
+        assert t.path.parent == sprint_issues
+
+        t.move_to_done(sprint_id="001", ticket_ids=["001-001"])
+        assert t.status == "done"
+        assert t.path.parent == sprint_issues  # file stays in sprint issues dir
+        assert t.path.exists()
+
+    def test_move_to_done_sets_sprint_frontmatter(self, tmp_path):
+        """sprint_id argument is written to frontmatter."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        _make_sprint(proj, "001")
+        t.move_to_in_progress("001", "001-001")
+        t.move_to_done(sprint_id="001")
+        assert t.sprint == "001"
+
+    def test_move_to_done_sets_tickets_frontmatter(self, tmp_path):
+        """ticket_ids argument is written to frontmatter."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        _make_sprint(proj, "001")
+        t.move_to_in_progress("001", "001-001")
+        t.move_to_done(ticket_ids=["001-001", "001-002"])
+        assert "001-001" in t.tickets
+        assert "001-002" in t.tickets
+
+    def test_move_to_done_from_pending_no_args(self, tmp_path):
+        """move_to_done with no args works for a pending issue."""
+        _, t = _make_issue(tmp_path, status="pending")
         t.move_to_done()
         assert t.status == "done"
-        assert t.path.parent == proj.issues_dir / "done"
 
 
 class TestIssueAddTicketRef:
