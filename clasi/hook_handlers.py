@@ -16,6 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from clasi.project import Project
+
+
+def get_project() -> Project:
+    """Return a Project instance rooted at the current working directory."""
+    return Project(Path.cwd())
+
 
 def read_payload() -> dict:
     """Read JSON payload from stdin."""
@@ -38,16 +45,16 @@ def read_payload() -> dict:
 def _log_hook_event(
     event_type: str, payload: dict, exit_code: int, reason: str,
 ) -> None:
-    """Append a single line to docs/clasi/log/hooks.log.
+    """Append a single line to .clasi/log/hooks.log.
 
     Called just before sys.exit(). Includes the exit code and a
     fixed-width 12-char reason code.
 
-    Creates docs/clasi/log/ if docs/clasi/ exists. Wraps everything in
+    Creates .clasi/log/ if .clasi/ exists. Wraps everything in
     try/except so logging never causes a hook to fail.
     """
     try:
-        base = Path("docs/clasi")
+        base = get_project().clasi_dir
         if not base.exists():
             return
         log_dir = base / "log"
@@ -99,8 +106,8 @@ def handle_role_guard(payload: dict) -> None:
     ────────────────────────────  ──────   ──────   ──────   ───
     .claude/**  /  CLAUDE.md      ALLOW    ALLOW    ALLOW    ALLOW
     AGENTS.md                     ALLOW    ALLOW    ALLOW    ALLOW
-    docs/clasi/  (non-sprint)     ALLOW    ALLOW    ALLOW    ALLOW
-    docs/clasi/sprints/**         BLOCK    ALLOW    ALLOW    ALLOW
+    .clasi/  (non-sprint)         ALLOW    ALLOW    ALLOW    ALLOW
+    .clasi/sprints/**             BLOCK    ALLOW    ALLOW    ALLOW
     Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
     (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
@@ -130,7 +137,7 @@ def handle_role_guard(payload: dict) -> None:
     # If no env var, check the DB for the active agent tier
     if not agent_tier:
         try:
-            db_path_tier = Path("docs/clasi/.clasi.db")
+            db_path_tier = get_project().clasi_dir / ".clasi.db"
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
                 agent_tier = get_active_tier(str(db_path_tier))
@@ -149,7 +156,7 @@ def handle_role_guard(payload: dict) -> None:
 
     # Recovery state bypass: allows specific paths during sprint recovery
     # (e.g. resolving merge conflicts) when recorded in the state DB.
-    db_path = Path("docs/clasi/.clasi.db")
+    db_path = get_project().clasi_dir / ".clasi.db"
     if db_path.exists():
         try:
             from clasi.state_db import get_recovery_state
@@ -169,11 +176,14 @@ def handle_role_guard(payload: dict) -> None:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
 
-    # Team-lead (tier 0 or unset) can write to docs/clasi/ for planning
+    # Team-lead (tier 0 or unset) can write to .clasi/ for planning
     # artifacts (todo, reflections, log, overview, architecture) but CANNOT
     # directly edit sprint artifacts — those must go through MCP tools.
-    if agent_tier in ("", "0") and file_path.startswith("docs/clasi/"):
-        if file_path.startswith("docs/clasi/sprints/"):
+    _proj = get_project()
+    _clasi_prefix = str(_proj.clasi_dir.relative_to(_proj.root)) + "/"
+    _sprints_prefix = str(_proj.sprints_dir.relative_to(_proj.root)) + "/"
+    if agent_tier in ("", "0") and file_path.startswith(_clasi_prefix):
+        if file_path.startswith(_sprints_prefix):
             # Sprint artifacts are owned by sprint-planner (tier 1) and
             # managed via MCP tools. Direct edits are blocked to prevent
             # process violations (e.g. bypassing ticket status transitions).
@@ -183,12 +193,12 @@ def handle_role_guard(payload: dict) -> None:
                 file=sys.stderr,
             )
             _exit_hook("role-guard", payload, 2, "blk-sprint")
-        # docs/clasi/ non-sprint paths (todo/, log/, reflections/, etc.) — ALLOW
+        # .clasi/ non-sprint paths (todo/, log/, reflections/, etc.) — ALLOW
         _exit_hook("role-guard", payload, 0, "clasi-docs")
 
     # Sprint-planner (tier 1) can write to sprint directories they own.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
-    if agent_tier == "1" and file_path.startswith("docs/clasi/sprints/"):
+    if agent_tier == "1" and file_path.startswith(_sprints_prefix):
         _exit_hook("role-guard", payload, 0, "tier-1")
 
     # --- BLOCK ---
@@ -236,7 +246,7 @@ def handle_mcp_guard(payload: dict) -> None:
     # If no env var, check the DB for the active agent tier
     if not agent_tier:
         try:
-            db_path_tier = Path("docs/clasi/.clasi.db")
+            db_path_tier = get_project().clasi_dir / ".clasi.db"
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
                 agent_tier = get_active_tier(str(db_path_tier))
@@ -264,19 +274,19 @@ def handle_mcp_guard(payload: dict) -> None:
 def _get_sprint_context() -> tuple[Optional[Path], str]:
     """Return (log_dir, sprint_id) for the current sprint context.
 
-    log_dir is None if docs/clasi/log does not exist (handlers should exit 0).
+    log_dir is None if the clasi_dir does not exist (handlers should exit 0).
     If an execution lock is held, log_dir is a sprint-scoped subdirectory
-    (docs/clasi/log/sprint-{sprint_id}/), creating it if needed.
-    Otherwise log_dir is docs/clasi/log.
+    (.clasi/log/sprint-{sprint_id}/), creating it if needed.
+    Otherwise log_dir is .clasi/log.
     sprint_id is the active sprint ID string, or empty string if none.
     """
-    base = Path("docs/clasi")
+    base = get_project().clasi_dir
     if not base.exists():
         return None, ""
     log_base = base / "log"
     log_base.mkdir(exist_ok=True)
 
-    db_path = Path("docs/clasi/.clasi.db")
+    db_path = get_project().clasi_dir / ".clasi.db"
     if db_path.exists():
         try:
             from clasi.state_db import get_lock_holder
@@ -296,10 +306,10 @@ def _get_sprint_context() -> tuple[Optional[Path], str]:
 def _get_log_dir() -> Optional[Path]:
     """Return the log directory to use for the current sprint context.
 
-    Returns None if docs/clasi does not exist (handlers should exit 0).
+    Returns None if clasi_dir does not exist (handlers should exit 0).
     If an execution lock is held, returns a sprint-scoped subdirectory
-    (docs/clasi/log/sprint-{sprint_id}/), creating it if needed.
-    Otherwise returns docs/clasi/log.
+    (.clasi/log/sprint-{sprint_id}/), creating it if needed.
+    Otherwise returns .clasi/log.
     """
     log_dir, _ = _get_sprint_context()
     return log_dir
@@ -308,15 +318,15 @@ def _get_log_dir() -> Optional[Path]:
 def _get_active_tickets(sprint_id: str) -> list[str]:
     """Return a list of in-progress ticket IDs for the given sprint.
 
-    Scans docs/clasi/sprints/{sprint_dir}/tickets/ for files with
-    status: in-progress in their frontmatter. Returns ticket IDs in the
-    format "{sprint_id}-{ticket_id}" (e.g. "002-007").
+    Scans the sprints_dir for the sprint directory matching sprint_id, then
+    reads tickets/ for files with status: in-progress in their frontmatter.
+    Returns ticket IDs in the format "{sprint_id}-{ticket_id}" (e.g. "002-007").
     Returns an empty list on any error or if no in-progress tickets found.
     """
     if not sprint_id:
         return []
     try:
-        sprints_base = Path("docs/clasi/sprints")
+        sprints_base = get_project().sprints_dir
         if not sprints_base.exists():
             return []
 
@@ -374,7 +384,7 @@ def _get_active_tickets(sprint_id: str) -> list[str]:
 def handle_subagent_start(payload: dict) -> None:
     """Log when a subagent starts.
 
-    Creates a log file in docs/clasi/log/ with frontmatter. The stop
+    Creates a log file in .clasi/log/ with frontmatter. The stop
     hook appends the transcript to this same file.
     """
     log_dir, sprint_id = _get_sprint_context()
@@ -414,7 +424,7 @@ def handle_subagent_start(payload: dict) -> None:
     # Register in DB so stop hook can find the log file and tier guard can check tier
     marker_id = agent_id or session_id or "unknown"
     try:
-        db_path = Path("docs/clasi/.clasi.db")
+        db_path = get_project().clasi_dir / ".clasi.db"
         if db_path.exists() or (db_path.parent.exists()):
             from clasi.state_db import register_active_agent
             register_active_agent(
@@ -443,7 +453,7 @@ def handle_subagent_stop(payload: dict) -> None:
     log_file = None
     started_at = None
     try:
-        db_path = Path("docs/clasi/.clasi.db")
+        db_path = get_project().clasi_dir / ".clasi.db"
         if db_path.exists():
             from clasi.state_db import get_active_agent, remove_active_agent
             record = get_active_agent(str(db_path), marker_id)
@@ -517,7 +527,7 @@ def handle_subagent_stop(payload: dict) -> None:
 def handle_task_created(payload: dict) -> None:
     """Log when a programmer task starts.
 
-    Creates a log file in docs/clasi/log/ with frontmatter and writes an
+    Creates a log file in .clasi/log/ with frontmatter and writes an
     .active/task-{task_id}.json marker so task_completed can find it.
     """
     log_dir, sprint_id = _get_sprint_context()
@@ -555,7 +565,7 @@ def handle_task_created(payload: dict) -> None:
     # Register in DB so task_completed can find the log file
     task_marker_id = f"task-{task_id}"
     try:
-        db_path = Path("docs/clasi/.clasi.db")
+        db_path = get_project().clasi_dir / ".clasi.db"
         if db_path.exists() or (db_path.parent.exists()):
             from clasi.state_db import register_active_agent
             register_active_agent(
@@ -586,7 +596,7 @@ def handle_task_completed(payload: dict) -> None:
     log_file = None
     started_at = None
     try:
-        db_path = Path("docs/clasi/.clasi.db")
+        db_path = get_project().clasi_dir / ".clasi.db"
         if db_path.exists():
             from clasi.state_db import get_active_agent, remove_active_agent
             record = get_active_agent(str(db_path), task_marker_id)
@@ -849,12 +859,12 @@ def _next_log_number(log_dir: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
-def handle_codex_plan_to_todo(payload: dict) -> None:
+def handle_codex_plan_to_issue(payload: dict) -> None:
     """Convert a Codex plan tag in last_assistant_message to a CLASI TODO.
 
     Reads ``last_assistant_message`` from the payload, extracts the content
     between ``<proposed_plan>`` and ``</proposed_plan>`` tags, and calls
-    ``plan_to_todo_from_text`` to write a pending TODO file.
+    ``plan_to_issue_from_text`` to write a pending TODO file.
 
     Always exits 0 — the Codex Stop hook fires after the session has ended,
     so there is nothing to block.
@@ -869,17 +879,21 @@ def handle_codex_plan_to_todo(payload: dict) -> None:
         sys.exit(0)
 
     plan_text = match.group(1).strip()
-    todo_dir = Path("docs/clasi/todo")
+    todo_dir = get_project().issues_dir
     result = plan_to_issue_from_text(plan_text, todo_dir)
     if result:
         print(f"CLASI: Codex plan saved as TODO: {result}")
     sys.exit(0)
 
 
-def handle_plan_to_todo(payload: dict) -> None:
+# Backward-compatible alias
+handle_codex_plan_to_todo = handle_codex_plan_to_issue
+
+
+def handle_plan_to_issue(payload: dict) -> None:
     """Convert the most recent plan file to a CLASI TODO.
 
-    Calls plan_to_todo() with the standard directories and prints the
+    Calls plan_to_issue() with the standard directories and prints the
     path of the created TODO file if one was created.
     """
     from clasi.plan_to_issue import plan_to_issue
@@ -889,7 +903,7 @@ def handle_plan_to_todo(payload: dict) -> None:
 
     result = plan_to_issue(
         Path.home() / ".claude" / "plans",
-        Path("docs/clasi/todo"),
+        get_project().issues_dir,
         plan_file=plan_file,
     )
     if result:
@@ -906,6 +920,10 @@ def handle_plan_to_todo(payload: dict) -> None:
         )
         sys.exit(2)
     sys.exit(0)
+
+
+# Backward-compatible alias
+handle_plan_to_todo = handle_plan_to_issue
 
 
 # ---------------------------------------------------------------------------
@@ -958,8 +976,10 @@ def handle_hook(event: str) -> None:
         "task-created": handle_task_created,
         "task-completed": handle_task_completed,
         "mcp-guard": handle_mcp_guard,
-        "plan-to-todo": handle_plan_to_todo,
-        "codex-plan-to-todo": handle_codex_plan_to_todo,
+        "plan-to-issue": handle_plan_to_issue,
+        "plan-to-todo": handle_plan_to_issue,  # backward-compatible alias
+        "codex-plan-to-issue": handle_codex_plan_to_issue,
+        "codex-plan-to-todo": handle_codex_plan_to_issue,  # backward-compatible alias
         "commit-check": handle_commit_check,
     }
 

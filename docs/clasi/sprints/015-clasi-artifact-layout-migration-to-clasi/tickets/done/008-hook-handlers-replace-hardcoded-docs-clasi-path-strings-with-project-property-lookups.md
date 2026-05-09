@@ -2,12 +2,12 @@
 id: 008
 title: 'Hook handlers: replace hardcoded `docs/clasi` path strings with `Project`
   property lookups'
-status: open
+status: done
 use-cases:
-  - SUC-001
+- SUC-001
 depends-on:
-  - "006"
-  - "005"
+- '006'
+- '005'
 github-issue: ''
 todo: move-clasi-artifact-root-from-docs-clasi-to-dot-clasi.md
 completes_todo: false
@@ -32,13 +32,13 @@ And hook registry keys:
 
 ## Acceptance Criteria
 
-- [ ] No `"docs/clasi"` string literals remain in `hook_handlers.py`
-- [ ] All path constructions use `get_project().clasi_dir` or `Project` properties
-- [ ] `"docs/clasi/todo"` references replaced with `get_project().issues_dir`
-- [ ] Handler function names updated
-- [ ] Hook registry keys updated
-- [ ] `tests/unit/test_hook_handlers.py` imports updated (full fixture update in ticket 025)
-- [ ] Full test suite passes
+- [x] No `"docs/clasi"` string literals remain in `hook_handlers.py`
+- [x] All path constructions use `get_project().clasi_dir` or `Project` properties
+- [x] `"docs/clasi/todo"` references replaced with `get_project().issues_dir`
+- [x] Handler function names updated
+- [x] Hook registry keys updated
+- [x] `tests/unit/test_hook_handlers.py` imports updated (full fixture update in ticket 025)
+- [x] Full test suite passes
 
 ## Implementation Plan
 
