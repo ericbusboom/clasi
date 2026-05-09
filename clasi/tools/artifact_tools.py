@@ -729,11 +729,15 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     project = get_project()
     sprint = project.get_sprint(sprint_id)
 
-    # Check in-progress TODOs — they should already be resolved individually
+    # Check in-progress TODOs — they should already be resolved individually.
+    # Look in both the sprint-scoped issues dir and the legacy global in-progress dir.
     unresolved_todos: list[str] = []
+    sprint_issues_dir = sprint.path / "issues"
     todo_directory = project.issues_dir
-    in_progress_todo_dir = todo_directory / "in-progress"
-    if in_progress_todo_dir.exists():
+    in_progress_dirs = [sprint_issues_dir, todo_directory / "in-progress"]
+    for in_progress_todo_dir in in_progress_dirs:
+        if not in_progress_todo_dir.exists():
+            continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
@@ -872,10 +876,14 @@ def _close_sprint_full(
                     "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                 }, indent=2)
 
-    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved
+    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
+    # Look in both the sprint-scoped issues dir and the legacy global in-progress dir.
     todo_directory = project.issues_dir
-    in_progress_todo_dir = todo_directory / "in-progress"
-    if in_progress_todo_dir.exists():
+    sprint_issues_dir_full = sprint.path / "issues"
+    in_progress_dirs_full = [sprint_issues_dir_full, todo_directory / "in-progress"]
+    for in_progress_todo_dir in in_progress_dirs_full:
+        if not in_progress_todo_dir.exists():
+            continue
         for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:

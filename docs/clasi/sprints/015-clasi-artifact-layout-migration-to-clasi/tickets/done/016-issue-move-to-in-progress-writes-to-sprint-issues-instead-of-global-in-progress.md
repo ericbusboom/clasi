@@ -2,7 +2,7 @@
 id: '016'
 title: '`Issue.move_to_in_progress` writes to `<sprint>/issues/` instead of global
   `in-progress/`'
-status: open
+status: done
 use-cases:
   - SUC-002
 depends-on:
@@ -31,12 +31,12 @@ Frontmatter updates remain: `status: in-progress`, `sprint: <id>`, `ticket: <id>
 
 ## Acceptance Criteria
 
-- [ ] After `move_to_in_progress`, the issue file is at `<sprint>/issues/<filename>`
-- [ ] No file is created at `<root>/issues/in-progress/` or any global in-progress dir
-- [ ] `<sprint>/issues/` is created automatically on first call
-- [ ] Frontmatter: `status: in-progress`, correct sprint and ticket ids
-- [ ] `tests/unit/test_issue_lifecycle.py` (or equivalent) verifies the new path
-- [ ] Full test suite passes
+- [x] After `move_to_in_progress`, the issue file is at `<sprint>/issues/<filename>`
+- [x] No file is created at `<root>/issues/in-progress/` or any global in-progress dir
+- [x] `<sprint>/issues/` is created automatically on first call
+- [x] Frontmatter: `status: in-progress`, correct sprint and ticket ids
+- [x] `tests/unit/test_issue_lifecycle.py` (or equivalent) verifies the new path
+- [x] Full test suite passes
 
 ## Implementation Plan
 

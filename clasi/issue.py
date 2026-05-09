@@ -65,9 +65,10 @@ class Issue:
         return self._artifact.content
 
     def move_to_in_progress(self, sprint_id: str, ticket_id: str) -> None:
-        """Move to todo/in-progress/, update frontmatter."""
-        in_progress_dir = self._project.issues_dir / "in-progress"
-        in_progress_dir.mkdir(parents=True, exist_ok=True)
+        """Move to <sprint>/issues/, update frontmatter."""
+        sprint = self._project.get_sprint(sprint_id)
+        sprint_issues_dir = sprint.path / "issues"
+        sprint_issues_dir.mkdir(parents=True, exist_ok=True)
 
         # Update frontmatter
         self._artifact.update_frontmatter(
@@ -76,9 +77,9 @@ class Issue:
         )
         self.add_ticket_ref(ticket_id)
 
-        # Move file if not already in in-progress/
-        if self.path.parent != in_progress_dir:
-            new_path = in_progress_dir / self.path.name
+        # Move file if not already in sprint issues dir
+        if self.path.parent != sprint_issues_dir:
+            new_path = sprint_issues_dir / self.path.name
             self.path.rename(new_path)
             self._artifact = Artifact(new_path)
 

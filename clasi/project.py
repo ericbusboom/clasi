@@ -215,14 +215,25 @@ class Project:
     # --- Issue management ---
 
     def get_issue(self, filename: str) -> Issue:
-        """Get an issue by its filename."""
+        """Get an issue by its filename.
+
+        Search order: pending (issues_dir top-level), global in-progress
+        (legacy path), done, and sprint-scoped issues directories.
+        """
         from clasi.issue import Issue
 
-        # Check pending (top-level), in-progress, and done
+        # Check pending (top-level), legacy in-progress, and done
         for subdir in [self.issues_dir, self.issues_dir / "in-progress", self.issues_dir / "done"]:
             path = subdir / filename
             if path.exists():
                 return Issue(path, self)
+
+        # Check sprint-scoped issues directories (<sprint>/issues/<filename>)
+        for sprint in self.list_sprints():
+            path = sprint.path / "issues" / filename
+            if path.exists():
+                return Issue(path, self)
+
         raise ValueError(f"TODO '{filename}' not found")
 
     def list_issues(self) -> list[Issue]:
@@ -230,9 +241,17 @@ class Project:
         from clasi.issue import Issue
 
         results: list[Issue] = []
+        # Pending and legacy global in-progress
         for subdir in [self.issues_dir, self.issues_dir / "in-progress"]:
             if not subdir.exists():
                 continue
             for f in sorted(subdir.glob("*.md")):
+                results.append(Issue(f, self))
+        # Sprint-scoped in-progress issues
+        for sprint in self.list_sprints():
+            sprint_issues_dir = sprint.path / "issues"
+            if not sprint_issues_dir.exists():
+                continue
+            for f in sorted(sprint_issues_dir.glob("*.md")):
                 results.append(Issue(f, self))
         return results

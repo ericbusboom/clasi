@@ -6,12 +6,25 @@ from clasi.project import Project
 from clasi.issue import Issue
 
 
+def _make_sprint(proj: Project, sprint_id: str = "001") -> Path:
+    """Create a minimal sprint directory so get_sprint() can resolve it."""
+    sprint_dir = proj.sprints_dir / f"{sprint_id}-test-sprint"
+    sprint_dir.mkdir(parents=True, exist_ok=True)
+    sprint_dir.joinpath("sprint.md").write_text(
+        f'---\nid: "{sprint_id}"\ntitle: "Test Sprint"\nstatus: executing\n---\n',
+        encoding="utf-8",
+    )
+    return sprint_dir
+
+
 def _make_issue(tmp_path, filename="my-idea.md", title="My Idea",
                 status="pending", sprint=None, tickets=None, source=None):
     """Create a project with an issue file."""
     proj = Project(tmp_path)
 
     if status == "in-progress":
+        # Issues in-progress are now stored under the sprint dir; fall back to
+        # issues_dir root for fixture purposes when no sprint path is available.
         todo_dir = proj.issues_dir / "in-progress"
     elif status == "done":
         todo_dir = proj.issues_dir / "done"
@@ -103,7 +116,8 @@ class TestIssueMoveToInProgress:
     """Test move_to_in_progress."""
 
     def test_move_updates_frontmatter(self, tmp_path):
-        _, t = _make_issue(tmp_path, status="pending")
+        proj, t = _make_issue(tmp_path, status="pending")
+        _make_sprint(proj, "001")
         t.move_to_in_progress("001", "001-001")
         assert t.status == "in-progress"
         assert t.sprint == "001"
@@ -111,17 +125,43 @@ class TestIssueMoveToInProgress:
 
     def test_move_changes_directory(self, tmp_path):
         proj, t = _make_issue(tmp_path, status="pending")
-        old_dir = t.path.parent
+        sprint_dir = _make_sprint(proj, "001")
         t.move_to_in_progress("001", "001-001")
-        assert t.path.parent == proj.issues_dir / "in-progress"
+        assert t.path.parent == sprint_dir / "issues"
         assert t.path.exists()
 
     def test_move_already_in_progress(self, tmp_path):
         proj, t = _make_issue(tmp_path, status="in-progress", sprint="001")
+        sprint_dir = _make_sprint(proj, "001")
+        # Move into sprint issues dir first so it is already there
+        sprint_issues = sprint_dir / "issues"
+        sprint_issues.mkdir(parents=True, exist_ok=True)
+        new_path = sprint_issues / t.path.name
+        t.path.rename(new_path)
+        from clasi.artifact import Artifact
+        t._artifact = Artifact(new_path)
         # Should not raise, just update
         t.move_to_in_progress("001", "001-002")
-        assert t.path.parent == proj.issues_dir / "in-progress"
+        assert t.path.parent == sprint_issues
         assert "001-002" in t.tickets
+
+    def test_move_creates_sprint_issues_dir(self, tmp_path):
+        """Issues directory is created automatically on first move."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        sprint_dir = _make_sprint(proj, "002")
+        sprint_issues = sprint_dir / "issues"
+        assert not sprint_issues.exists()
+        t.move_to_in_progress("002", "002-001")
+        assert sprint_issues.exists()
+        assert t.path.parent == sprint_issues
+
+    def test_move_not_placed_in_global_in_progress(self, tmp_path):
+        """No file is created at the old global in-progress directory."""
+        proj, t = _make_issue(tmp_path, status="pending")
+        _make_sprint(proj, "003")
+        t.move_to_in_progress("003", "003-001")
+        global_in_progress = proj.issues_dir / "in-progress"
+        assert not global_in_progress.exists()
 
 
 class TestIssueMoveToDone:

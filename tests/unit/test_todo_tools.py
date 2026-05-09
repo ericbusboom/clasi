@@ -186,6 +186,15 @@ class TestCreateTicketWithTodo:
         todo.mkdir(parents=True, exist_ok=True)
         return todo
 
+    def _sprint_issues_dir(self, work_dir, sprint_id: str = "001"):
+        """Return the sprint-scoped issues directory."""
+        from pathlib import Path
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for d in sorted(sprints_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                return d / "issues"
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
+
     def test_creates_ticket_with_todo_field(self, work_dir):
         todo = self._setup_sprint(work_dir)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
@@ -201,8 +210,9 @@ class TestCreateTicketWithTodo:
 
         create_ticket("001", "Implement Idea", todo="my-idea.md")
 
-        # TODO is now in in-progress/
-        todo_fm = read_frontmatter(todo / "in-progress" / "my-idea.md")
+        # TODO is now in sprint issues dir
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        todo_fm = read_frontmatter(sprint_issues / "my-idea.md")
         assert todo_fm["status"] == "in-progress"
         assert todo_fm["sprint"] == "001"
         assert "001-001" in todo_fm["tickets"]
@@ -219,9 +229,10 @@ class TestCreateTicketWithTodo:
         ticket_fm = read_frontmatter(result["path"])
         assert ticket_fm["issue"] == ["idea-a.md", "idea-b.md"]
 
-        # Both TODOs should be in in-progress/
-        fm_a = read_frontmatter(todo / "in-progress" / "idea-a.md")
-        fm_b = read_frontmatter(todo / "in-progress" / "idea-b.md")
+        # Both TODOs should be in sprint issues dir
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        fm_a = read_frontmatter(sprint_issues / "idea-a.md")
+        fm_b = read_frontmatter(sprint_issues / "idea-b.md")
         assert fm_a["status"] == "in-progress"
         assert fm_b["status"] == "in-progress"
         assert fm_a["sprint"] == "001"
@@ -234,8 +245,9 @@ class TestCreateTicketWithTodo:
         create_ticket("001", "Part 1", todo="big-idea.md")
         create_ticket("001", "Part 2", todo="big-idea.md")
 
-        # TODO is in in-progress/
-        todo_fm = read_frontmatter(todo / "in-progress" / "big-idea.md")
+        # TODO is in sprint issues dir
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        todo_fm = read_frontmatter(sprint_issues / "big-idea.md")
         assert todo_fm["tickets"] == ["001-001", "001-002"]
 
     def test_missing_todo_file_handled_gracefully(self, work_dir):
@@ -247,15 +259,16 @@ class TestCreateTicketWithTodo:
         assert result["id"] == "001"
 
     def test_todo_moves_to_in_progress_not_done(self, work_dir):
-        """TODO moves to in-progress/ (not done/) when ticket is created."""
+        """TODO moves to sprint issues dir (not done/) when ticket is created."""
         todo = self._setup_sprint(work_dir)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
         create_ticket("001", "Implement Idea", todo="my-idea.md")
 
-        # Should be in in-progress/, not in pending or done
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        # Should be in sprint issues dir, not in pending or done
         assert not (todo / "my-idea.md").exists()
-        assert (todo / "in-progress" / "my-idea.md").exists()
+        assert (sprint_issues / "my-idea.md").exists()
         assert not (todo / "done" / "my-idea.md").exists()
 
 
@@ -267,6 +280,17 @@ class TestCloseSprintTodoHandling:
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         return tmp_path
+
+    def _sprint_issues_dir(self, work_dir, sprint_id: str = "001"):
+        """Return the sprint-scoped issues directory (checks active and done)."""
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for location in [sprints_dir, sprints_dir / "done"]:
+            if not location.exists():
+                continue
+            for d in sorted(location.iterdir()):
+                if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                    return d / "issues"
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
 
     def test_close_succeeds_when_todos_already_done(self, work_dir):
         """TODOs moved to done/ by ticket completion don't block close."""
@@ -373,8 +397,9 @@ class TestCloseSprintTodoHandling:
         # Close sprint — TODO is still in-progress but deferred, so no error
         result = json.loads(close_sprint("001"))
         assert "unresolved_todos" not in result
-        # TODO must still be in in-progress/ (not archived)
-        assert (todo / "in-progress" / "umbrella.md").exists()
+        # TODO must still be in sprint issues dir (not archived)
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "umbrella.md").exists()
 
     def test_close_sprint_blocks_unresolved_todo(self, work_dir):
         """Legacy path: in-progress TODO with no completes_issue: false is an error.
@@ -438,8 +463,9 @@ class TestCloseSprintTodoHandling:
         update_ticket_status(ticket_path, "done")
         move_ticket_to_done(ticket_path)
 
-        # TODO must still be in in-progress/ (suppressed by completes_issue: false)
-        assert (todo / "in-progress" / "umbrella.md").exists()
+        # TODO must still be in sprint issues dir (suppressed by completes_issue: false)
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "umbrella.md").exists()
 
         # Mock subprocess calls for the full lifecycle
         def _ok(returncode=0, stdout="", stderr=""):
@@ -480,6 +506,14 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         set_project(tmp_path)
         return tmp_path
 
+    def _sprint_issues_dir(self, work_dir, sprint_id: str = "001"):
+        """Return the sprint-scoped issues directory."""
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for d in sorted(sprints_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                return d / "issues"
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
+
     def _setup_sprint_with_todo(self, work_dir, todo_filename: str = "my-idea.md"):
         """Create sprint 001, create a ticket linked to todo_filename.
 
@@ -517,7 +551,8 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         assert "completed_todos" in result
         assert "my-idea.md" in result["completed_todos"]
         assert (todo / "done" / "my-idea.md").exists()
-        assert not (todo / "in-progress" / "my-idea.md").exists()
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        assert not (sprint_issues / "my-idea.md").exists()
 
     def test_does_not_archive_when_completes_todo_scalar_false(self, work_dir):
         """completes_issue: false on the ticket → TODO is NOT archived."""
@@ -533,8 +568,9 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         result = json.loads(move_ticket_to_done(ticket_path))
 
         assert "completed_todos" not in result
-        # TODO should still be in in-progress/
-        assert (todo / "in-progress" / "umbrella.md").exists()
+        # TODO should still be in sprint issues dir
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "umbrella.md").exists()
         assert not (todo / "done" / "umbrella.md").exists()
 
     def test_does_not_archive_when_any_ref_ticket_has_false(self, work_dir):
@@ -575,8 +611,9 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         result = json.loads(move_ticket_to_done(ticket2_path))
 
         # TODO must NOT be archived because ticket 001 suppressed it
+        sprint_issues = self._sprint_issues_dir(work_dir, "001")
         assert "completed_todos" not in result
-        assert (todo / "in-progress" / "umbrella.md").exists()
+        assert (sprint_issues / "umbrella.md").exists()
         assert not (todo / "done" / "umbrella.md").exists()
 
     def test_completed_todos_not_populated_for_suppressed(self, work_dir):

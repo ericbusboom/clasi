@@ -49,6 +49,16 @@ def work_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _sprint_issues_dir(work_dir, sprint_id: str = "001") -> "Path":
+    """Return the sprint-scoped issues directory for a sprint."""
+    from pathlib import Path
+    sprints_dir = work_dir / ".clasi" / "sprints"
+    for d in sorted(sprints_dir.iterdir()):
+        if d.is_dir() and d.name.startswith(sprint_id + "-"):
+            return d / "issues"
+    raise ValueError(f"Sprint dir for {sprint_id!r} not found in {sprints_dir}")
+
+
 def _setup_sprint_with_todo(work_dir, todo_content="---\nstatus: pending\n---\n\n# My Idea\n"):
     """Create a sprint in ticketing phase with a TODO file."""
     create_sprint("Test Sprint")
@@ -60,23 +70,25 @@ def _setup_sprint_with_todo(work_dir, todo_content="---\nstatus: pending\n---\n\
 
 
 class TestCreateTicketMovesToInProgress:
-    """create_ticket should move referenced TODOs to in-progress/."""
+    """create_ticket should move referenced TODOs to the sprint issues dir."""
 
     def test_moves_todo_from_pending_to_in_progress(self, work_dir):
         todo = _setup_sprint_with_todo(work_dir)
 
         create_ticket("001", "Implement Idea", todo="my-idea.md")
 
-        # TODO should be in in-progress/, not in pending
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        # TODO should be in sprint issues dir, not in pending
         assert not (todo / "my-idea.md").exists()
-        assert (todo / "in-progress" / "my-idea.md").exists()
+        assert (sprint_issues / "my-idea.md").exists()
 
     def test_updates_frontmatter_with_sprint_and_ticket(self, work_dir):
         todo = _setup_sprint_with_todo(work_dir)
 
         create_ticket("001", "Implement Idea", todo="my-idea.md")
 
-        fm = read_frontmatter(todo / "in-progress" / "my-idea.md")
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        fm = read_frontmatter(sprint_issues / "my-idea.md")
         assert fm["status"] == "in-progress"
         assert fm["sprint"] == "001"
         assert "001-001" in fm["tickets"]
@@ -87,20 +99,21 @@ class TestCreateTicketMovesToInProgress:
         create_ticket("001", "Part 1", todo="my-idea.md")
         create_ticket("001", "Part 2", todo="my-idea.md")
 
-        # Should still be in in-progress/ (not moved again)
-        assert (todo / "in-progress" / "my-idea.md").exists()
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        # Should still be in sprint issues dir (not moved again)
+        assert (sprint_issues / "my-idea.md").exists()
         assert not (todo / "my-idea.md").exists()
 
-        fm = read_frontmatter(todo / "in-progress" / "my-idea.md")
+        fm = read_frontmatter(sprint_issues / "my-idea.md")
         assert fm["tickets"] == ["001-001", "001-002"]
 
     def test_creates_in_progress_directory(self, work_dir):
         todo = _setup_sprint_with_todo(work_dir)
-        assert not (todo / "in-progress").exists()
 
         create_ticket("001", "Task", todo="my-idea.md")
 
-        assert (todo / "in-progress").is_dir()
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert sprint_issues.is_dir()
 
 
 class TestMoveTicketToDoneTriggersCompletion:
@@ -121,7 +134,8 @@ class TestMoveTicketToDoneTriggersCompletion:
         move_result = json.loads(move_ticket_to_done(ticket_path))
 
         # TODO should be moved to done/
-        assert not (todo / "in-progress" / "my-idea.md").exists()
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert not (sprint_issues / "my-idea.md").exists()
         assert (todo / "done" / "my-idea.md").exists()
 
         # Check TODO frontmatter
@@ -145,8 +159,9 @@ class TestMoveTicketToDoneTriggersCompletion:
         write_frontmatter(ticket1_path, fm1)
         move_result = json.loads(move_ticket_to_done(ticket1_path))
 
-        # TODO should still be in in-progress/ (ticket 2 is not done)
-        assert (todo / "in-progress" / "my-idea.md").exists()
+        # TODO should still be in sprint issues dir (ticket 2 is not done)
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "my-idea.md").exists()
         assert not (todo / "done" / "my-idea.md").exists()
         assert "completed_todos" not in move_result
 
@@ -171,7 +186,8 @@ class TestMoveTicketToDoneTriggersCompletion:
         move_result = json.loads(move_ticket_to_done(ticket2_path))
 
         # Now TODO should be in done/
-        assert not (todo / "in-progress" / "my-idea.md").exists()
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert not (sprint_issues / "my-idea.md").exists()
         assert (todo / "done" / "my-idea.md").exists()
         assert "completed_todos" in move_result
 
@@ -262,14 +278,15 @@ class TestCloseSprintDoesNotBulkMove:
 
         create_ticket("001", "Task", todo="my-idea.md")
 
-        # Don't complete the ticket -- TODO stays in in-progress
-        assert (todo / "in-progress" / "my-idea.md").exists()
+        # Don't complete the ticket -- TODO stays in sprint issues dir
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "my-idea.md").exists()
 
         # Close sprint (legacy mode) -- should still succeed but report unresolved
         close_result = json.loads(close_sprint("001"))
 
         # The TODO should NOT have been moved to done/ by close_sprint
-        # (it may still exist in in-progress/ since close doesn't bulk-move)
+        # (it may still exist in sprint issues dir since close doesn't bulk-move)
         assert "unresolved_todos" in close_result or not (todo / "done" / "my-idea.md").exists()
 
     def test_close_without_todos(self, work_dir):
