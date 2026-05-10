@@ -1,11 +1,14 @@
 ---
-id: "009"
-title: "Remove PHASES feature flag: make schema-derived path unconditional"
-status: todo
-use-cases: [SUC-001, SUC-003]
-depends-on: ["008"]
-github-issue: ""
-todo: ""
+id: 009
+title: 'Remove PHASES feature flag: make schema-derived path unconditional'
+status: done
+use-cases:
+- SUC-001
+- SUC-003
+depends-on:
+- 008
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -34,12 +37,12 @@ PHASES = _ArtifactGraph(_loader.load(_schema_path)).phases()
 
 ## Acceptance Criteria
 
-- [ ] `_PHASES_FALLBACK` constant is removed from `state_db_class.py`.
-- [ ] The `CLASI_SCHEMA_PHASES` env-var branch is removed.
-- [ ] `PHASES` is unconditionally derived from `se-process/schema.yaml` at module import.
-- [ ] All existing tests that reference `PHASES` pass unchanged (the derived value is identical to the old hardcoded value).
-- [ ] The `CLASI_SCHEMA_PHASES=1` test added in ticket 008 is removed or updated to test the unconditional path.
-- [ ] `uv run pytest` passes.
+- [x] `_PHASES_FALLBACK` constant is removed from `state_db_class.py`.
+- [x] The `CLASI_SCHEMA_PHASES` env-var branch is removed.
+- [x] `PHASES` is unconditionally derived from `se-process/schema.yaml` at module import.
+- [x] All existing tests that reference `PHASES` pass unchanged (the derived value is identical to the old hardcoded value).
+- [x] The `CLASI_SCHEMA_PHASES=1` test added in ticket 008 is removed or updated to test the unconditional path.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 
