@@ -12,6 +12,14 @@ issue: ""
 # Set to a mapping {{filename.md: false}} to suppress archival per issue filename.
 # Use false for tickets that partially address a multi-sprint umbrella issue.
 completes_issue: true
+# exception: Written by a lower agent when it cannot proceed (see architecture §exception-protocol).
+# exception:
+#   thrown_by: "programmer"          # "programmer" | "sprint-planner"
+#   thrown_at: "2026-05-07T14:23:00Z"
+#   attempted: |
+#     Description of what was attempted before giving up.
+#   conflict: "architecture-update.md §3 — reason the agent is blocked"
+#   surface: "internal"              # "user-visible" | "internal"
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 

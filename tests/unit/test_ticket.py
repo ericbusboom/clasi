@@ -261,6 +261,111 @@ class TestTicketReopen:
         assert "new_status" in result
 
 
+def _make_ticket_with_exception(tmp_path, exception_yaml: str) -> Ticket:
+    """Create a ticket with an explicit exception block in frontmatter."""
+    proj = Project(tmp_path)
+    sprint_dir = proj.sprints_dir / "001-test-sprint"
+    sprint_dir.mkdir(parents=True, exist_ok=True)
+    tickets_dir = sprint_dir / "tickets"
+    tickets_dir.mkdir(exist_ok=True)
+    (tickets_dir / "done").mkdir(exist_ok=True)
+
+    (sprint_dir / "sprint.md").write_text(
+        '---\nid: "001"\ntitle: "Test Sprint"\nstatus: active\n'
+        "branch: sprint/001-test-sprint\n---\n# Sprint 001\n",
+        encoding="utf-8",
+    )
+
+    ticket_path = tickets_dir / "001-fix-bug.md"
+    ticket_path.write_text(
+        '---\nid: "001"\ntitle: "Fix Bug"\nstatus: open\n'
+        'use-cases: []\ndepends-on: []\nissue: ""\n'
+        f"{exception_yaml}"
+        "---\n# Fix Bug\n\n## Description\n\nSome work.\n",
+        encoding="utf-8",
+    )
+
+    sprint = Sprint(sprint_dir, proj)
+    return Ticket(ticket_path, sprint)
+
+
+class TestExceptionPayload:
+    """Tests for Ticket.exception_payload property."""
+
+    def test_absent_field_returns_none(self, tmp_path):
+        """No exception key in frontmatter → None."""
+        _, _, t = _setup(tmp_path)
+        assert t.exception_payload is None
+
+    def test_exception_payload_returns_dict(self, tmp_path):
+        """exception: block present → dict."""
+        exception_yaml = (
+            "exception:\n"
+            "  thrown_by: programmer\n"
+            "  thrown_at: '2026-05-07T14:23:00Z'\n"
+            "  attempted: |\n"
+            "    tried several things\n"
+            "  conflict: 'architecture-update.md §3 — blocked'\n"
+            "  surface: internal\n"
+        )
+        t = _make_ticket_with_exception(tmp_path, exception_yaml)
+        payload = t.exception_payload
+        assert isinstance(payload, dict)
+
+    def test_exception_payload_fields(self, tmp_path):
+        """exception: block fields are accessible by key."""
+        exception_yaml = (
+            "exception:\n"
+            "  thrown_by: programmer\n"
+            "  thrown_at: '2026-05-07T14:23:00Z'\n"
+            "  attempted: |\n"
+            "    tried several things\n"
+            "  conflict: 'architecture-update.md §3 — blocked'\n"
+            "  surface: internal\n"
+        )
+        t = _make_ticket_with_exception(tmp_path, exception_yaml)
+        payload = t.exception_payload
+        assert payload["thrown_by"] == "programmer"
+        assert payload["thrown_at"] == "2026-05-07T14:23:00Z"
+        assert "tried several things" in payload["attempted"]
+        assert "blocked" in payload["conflict"]
+        assert payload["surface"] == "internal"
+
+    def test_exception_payload_surface_user_visible(self, tmp_path):
+        """surface field can be 'user-visible'."""
+        exception_yaml = (
+            "exception:\n"
+            "  thrown_by: sprint-planner\n"
+            "  thrown_at: '2026-05-07T15:00:00Z'\n"
+            "  attempted: something\n"
+            "  conflict: reason\n"
+            "  surface: user-visible\n"
+        )
+        t = _make_ticket_with_exception(tmp_path, exception_yaml)
+        payload = t.exception_payload
+        assert payload["surface"] == "user-visible"
+        assert payload["thrown_by"] == "sprint-planner"
+
+    def test_exception_payload_non_dict_returns_none(self, tmp_path):
+        """If exception key is a scalar (not a dict), return None."""
+        exception_yaml = "exception: some-string-value\n"
+        t = _make_ticket_with_exception(tmp_path, exception_yaml)
+        assert t.exception_payload is None
+
+    def test_exception_payload_is_copy(self, tmp_path):
+        """Returned dict is an independent copy (modifying it doesn't affect frontmatter)."""
+        exception_yaml = (
+            "exception:\n"
+            "  thrown_by: programmer\n"
+            "  surface: internal\n"
+        )
+        t = _make_ticket_with_exception(tmp_path, exception_yaml)
+        payload = t.exception_payload
+        payload["thrown_by"] = "mutated"
+        # Fresh read should return original value
+        assert t.exception_payload["thrown_by"] == "programmer"
+
+
 def _make_ticket_with_completes_issue(tmp_path, completes_issue_yaml: str) -> Ticket:
     """Create a ticket with an explicit completes_issue frontmatter line."""
     proj = Project(tmp_path)

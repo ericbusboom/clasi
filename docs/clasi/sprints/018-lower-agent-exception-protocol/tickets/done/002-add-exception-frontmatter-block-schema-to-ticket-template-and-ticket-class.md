@@ -1,15 +1,15 @@
 ---
-id: "002"
-title: "Add `exception:` frontmatter block schema to ticket template and Ticket class"
-status: todo
+id: '002'
+title: Add `exception:` frontmatter block schema to ticket template and Ticket class
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-004
-  - SUC-007
+- SUC-001
+- SUC-002
+- SUC-004
+- SUC-007
 depends-on: []
-github-issue: ""
-todo: ""
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -40,13 +40,13 @@ happens at write time in the `throw_ticket_exception` tool (ticket 003).
 
 ## Acceptance Criteria
 
-- [ ] `Ticket.exception_payload` property exists; returns `dict | None` from
+- [x] `Ticket.exception_payload` property exists; returns `dict | None` from
   frontmatter `exception` key.
-- [ ] When frontmatter has no `exception` key, `exception_payload` returns
+- [x] When frontmatter has no `exception` key, `exception_payload` returns
   `None`.
-- [ ] The ticket template includes a commented-out example of the `exception:`
+- [x] The ticket template includes a commented-out example of the `exception:`
   block so authors know the schema.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
