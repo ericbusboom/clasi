@@ -111,12 +111,14 @@ class Project:
         return results
 
     def create_sprint(self, title: str) -> Sprint:
-        """Create a new sprint directory with template planning documents."""
+        """Create a new sprint directory with only sprint.md (roadmap phase).
+
+        Writes only sprint.md; usecases.md, architecture-update.md, and the
+        tickets/ directory tree are created later during detail planning.
+        """
         from clasi.sprint import Sprint
         from clasi.templates import (
             SPRINT_TEMPLATE,
-            SPRINT_USECASES_TEMPLATE,
-            SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
             slugify,
         )
 
@@ -129,18 +131,10 @@ class Project:
 
         sprint_dir.mkdir(parents=True, exist_ok=True)
         sprint = Sprint(sprint_dir, self)
-        sprint.tickets_dir.mkdir()
-        sprint.tickets_done_dir.mkdir()
 
         fmt = {"id": sprint_id, "title": title, "slug": slug}
         sprint.sprint_md.write_text(
             SPRINT_TEMPLATE.format(**fmt), encoding="utf-8"
-        )
-        sprint.usecases_md.write_text(
-            SPRINT_USECASES_TEMPLATE.format(**fmt), encoding="utf-8"
-        )
-        sprint.architecture_update_md.write_text(
-            SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
         )
 
         return sprint

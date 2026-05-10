@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
+import pytest
+
 from clasi.artifact import Artifact
 from clasi.project import Project
 from clasi.sprint import Sprint, MergeConflictError
@@ -439,7 +441,7 @@ class TestSprintPhase:
         proj.db.init()
         proj.db.register_sprint("001", "test-sprint", "sprint/001-test-sprint")
         s = Sprint(sprint_dir, proj)
-        assert s.phase == "planning-docs"
+        assert s.phase == "roadmap"
 
 
 class TestProjectSprints:
@@ -492,15 +494,115 @@ class TestProjectSprints:
         assert s.id == "001"
         assert s.title == "My New Sprint"
         assert s.sprint_doc.exists
-        assert s.usecases.exists
-        assert s.architecture.exists
-        assert (s.path / "tickets").is_dir()
-        assert (s.path / "tickets" / "done").is_dir()
+        # Lightweight roadmap-phase sprint: only sprint.md is written
+        assert not s.usecases.exists
+        assert not s.architecture.exists
+        assert not (s.path / "tickets").exists()
+
+    def test_create_sprint_writes_only_sprint_md(self, tmp_path):
+        """After create_sprint(), the sprint directory contains only sprint.md."""
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True)
+        s = proj.create_sprint("Lightweight Sprint")
+        files = list(s.path.iterdir())
+        assert len(files) == 1, f"Expected only sprint.md, got: {[f.name for f in files]}"
+        assert files[0].name == "sprint.md"
 
     def test_create_sprint_increments_id(self, tmp_path):
         proj, _ = _make_sprint_dir(tmp_path)
         s2 = proj.create_sprint("Second Sprint")
         assert s2.id == "002"
+
+    def test_create_sprint_status_roadmap(self, tmp_path):
+        """sprint.md written by create_sprint has status: roadmap in frontmatter."""
+        from clasi.frontmatter import read_frontmatter
+
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True)
+        s = proj.create_sprint("Roadmap Sprint")
+        fm = read_frontmatter(s.sprint_md)
+        assert fm.get("status") == "roadmap"
+
+
+# ---------------------------------------------------------------------------
+# Helpers to set up a sprint registered in the state DB (roadmap phase)
+# ---------------------------------------------------------------------------
+
+
+def _make_roadmap_sprint(tmp_path, sprint_id="001", title="Test Sprint", slug="test-sprint"):
+    """Create a sprint directory and register it in the DB at roadmap phase."""
+    proj = Project(tmp_path)
+    proj.sprints_dir.mkdir(parents=True, exist_ok=True)
+    proj.clasi_dir.mkdir(parents=True, exist_ok=True)
+    proj.db.init()
+
+    sprint_dir = proj.sprints_dir / f"{sprint_id}-{slug}"
+    sprint_dir.mkdir(parents=True)
+
+    sprint_md = sprint_dir / "sprint.md"
+    sprint_md.write_text(
+        f"---\nid: \"{sprint_id}\"\ntitle: \"{title}\"\n"
+        f"status: roadmap\nbranch: sprint/{sprint_id}-{slug}\n---\n"
+        f"# Sprint {sprint_id}: {title}\n",
+        encoding="utf-8",
+    )
+
+    proj.db.register_sprint(sprint_id, slug, branch=f"sprint/{sprint_id}-{slug}")
+    return proj, sprint_dir
+
+
+class TestDetailPromote:
+    """Tests for Sprint.detail_promote()."""
+
+    def test_detail_promote_scaffolds_artifacts(self, tmp_path):
+        """detail_promote() writes usecases.md, architecture-update.md, tickets/, tickets/done/.
+
+        After promotion the sprint phase must be 'planning-docs'.
+        """
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.detail_promote()
+
+        # Return value
+        assert result["sprint_id"] == "001"
+        assert result["phase"] == "planning-docs"
+        assert len(result["files_written"]) == 2
+
+        # Artifact files exist
+        assert (sprint_dir / "usecases.md").exists()
+        assert (sprint_dir / "architecture-update.md").exists()
+
+        # Directory structure created
+        assert (sprint_dir / "tickets").is_dir()
+        assert (sprint_dir / "tickets" / "done").is_dir()
+
+        # Phase advanced in DB
+        assert s.phase == "planning-docs"
+
+    def test_detail_promote_rejects_non_roadmap(self, tmp_path):
+        """detail_promote() raises ValueError when sprint is not in roadmap phase."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        # Advance past roadmap -> planning-docs
+        proj.db.advance_phase("001")
+
+        with pytest.raises(ValueError, match="not in roadmap phase"):
+            s.detail_promote()
+
+    def test_detail_promote_idempotent_guard(self, tmp_path):
+        """detail_promote() raises ValueError when usecases.md already exists."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        # Manually pre-create usecases.md to simulate a partially-promoted sprint
+        (sprint_dir / "usecases.md").write_text(
+            "---\nstatus: draft\n---\n# Use Cases\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="already detail-planned"):
+            s.detail_promote()
 
 
 # ---------------------------------------------------------------------------

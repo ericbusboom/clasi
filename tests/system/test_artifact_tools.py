@@ -12,6 +12,7 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
+    detail_sprint,
     get_sprint_status,
     insert_sprint,
     list_sprints,
@@ -43,6 +44,7 @@ def work_dir(tmp_path, monkeypatch):
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase for testing."""
     db_path = work_dir / ".clasi" / ".clasi.db"
+    advance_phase(db_path, sprint_id)  # roadmap → planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs → architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review → stakeholder-review
@@ -52,15 +54,16 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 
 class TestCreateSprint:
     def test_creates_directory_structure(self, work_dir):
+        """create_sprint (roadmap phase) writes only sprint.md — no other artifacts."""
         result = json.loads(create_sprint("Test Sprint"))
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         assert sprint_dir.is_dir()
         assert (sprint_dir / "sprint.md").exists()
         assert not (sprint_dir / "brief.md").exists()
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
-        assert (sprint_dir / "tickets").is_dir()
-        assert (sprint_dir / "tickets" / "done").is_dir()
+        # Lightweight roadmap-phase sprint: only sprint.md is written
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
+        assert not (sprint_dir / "tickets").exists()
         assert result["id"] == "001"
         assert result["branch"] == "sprint/001-test-sprint"
 
@@ -85,41 +88,61 @@ class TestCreateSprint:
         assert "## Test Strategy" in content
 
 
-class TestCreateSprintArchitectureUpdate:
-    def test_creates_architecture_update_template(self, work_dir):
-        """create_sprint generates a lightweight architecture-update template."""
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        arch = sprint_dir / "architecture-update.md"
-        assert arch.exists()
-        content = arch.read_text(encoding="utf-8")
-        assert "## What Changed" in content
-        assert "## Why" in content
-        assert "## Impact on Existing Components" in content
-        assert "## Migration Concerns" in content
+class TestDetailSprint:
+    """Tests for the detail_sprint MCP tool."""
 
-    def test_does_not_copy_previous_architecture(self, work_dir):
-        """create_sprint no longer copies the full architecture."""
-        arch_dir = work_dir / ".clasi" / "architecture"
-        arch_dir.mkdir(parents=True)
-        (arch_dir / "architecture-015.md").write_text(
-            "---\nstatus: approved\n---\n\n# Architecture\n\nExisting arch.\n",
-            encoding="utf-8",
-        )
+    def test_success_path_roadmap_to_planning_docs(self, work_dir):
+        """detail_sprint on a roadmap sprint scaffolds files and returns correct JSON."""
+        create_sprint("My Sprint")
+        result = json.loads(detail_sprint("001"))
+        assert result["sprint_id"] == "001"
+        assert result["phase"] == "planning-docs"
+        assert len(result["files_written"]) >= 2
+        # usecases.md and architecture-update.md should be among files written
+        written_names = [Path(f).name for f in result["files_written"]]
+        assert "usecases.md" in written_names
+        assert "architecture-update.md" in written_names
 
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        # Should NOT have architecture.md (old behavior)
-        assert not (sprint_dir / "architecture.md").exists()
-        # Should have architecture-update.md (new behavior)
+    def test_scaffolds_full_directory_structure(self, work_dir):
+        """After detail_sprint, tickets/ and tickets/done/ directories exist."""
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-my-sprint"
+        assert (sprint_dir / "usecases.md").exists()
         assert (sprint_dir / "architecture-update.md").exists()
+        assert (sprint_dir / "tickets").is_dir()
+        assert (sprint_dir / "tickets" / "done").is_dir()
 
-    def test_architecture_update_includes_sprint_id(self, work_dir):
-        """architecture-update template includes the sprint ID."""
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        content = (sprint_dir / "architecture-update.md").read_text(encoding="utf-8")
-        assert "001" in content
+    def test_phase_advances_to_planning_docs(self, work_dir):
+        """get_sprint_phase returns planning-docs after detail_sprint."""
+        from clasi.tools.artifact_tools import get_sprint_phase
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        phase_result = json.loads(get_sprint_phase("001"))
+        assert phase_result["phase"] == "planning-docs"
+
+    def test_error_if_sprint_not_in_roadmap(self, work_dir):
+        """detail_sprint returns JSON error if sprint is not in roadmap phase."""
+        create_sprint("My Sprint")
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        # Advance past roadmap manually
+        advance_phase(db_path, "001")  # roadmap -> planning-docs
+        result = json.loads(detail_sprint("001"))
+        assert "error" in result
+        assert "roadmap" in result["error"]
+
+    def test_error_if_already_detail_planned(self, work_dir):
+        """detail_sprint returns JSON error if called a second time."""
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        # Second call should fail
+        result = json.loads(detail_sprint("001"))
+        assert "error" in result
+
+    def test_error_if_sprint_not_found(self, work_dir):
+        """detail_sprint returns JSON error for a nonexistent sprint ID."""
+        result = json.loads(detail_sprint("999"))
+        assert "error" in result
 
 
 class TestCreateTicket:
@@ -155,7 +178,7 @@ class TestCreateTicket:
 
     def test_blocked_before_ticketing_phase(self, work_dir):
         create_sprint("My Sprint")
-        with pytest.raises(ValueError, match="planning-docs.*phase"):
+        with pytest.raises(ValueError, match="roadmap.*phase"):
             create_ticket("001", "Too Early")
 
     def test_auto_links_sprint_todos_when_no_todo_param(self, work_dir):
@@ -210,7 +233,7 @@ class TestListSprints:
 
     def test_filter_by_status(self, work_dir):
         create_sprint("Active Sprint")
-        result = json.loads(list_sprints(status="planning"))
+        result = json.loads(list_sprints(status="roadmap"))
         assert len(result) == 1
         result = json.loads(list_sprints(status="done"))
         assert len(result) == 0
@@ -258,7 +281,7 @@ class TestGetSprintStatus:
         create_ticket("001", "Task B")
         result = json.loads(get_sprint_status("001"))
         assert result["id"] == "001"
-        assert result["status"] == "planning"
+        assert result["status"] == "roadmap"
         assert result["tickets"]["open"] == 2
         assert result["tickets"]["done"] == 0
 
@@ -332,7 +355,7 @@ class TestInsertSprint:
         # New sprint gets ID 002
         assert result["id"] == "002"
         assert "002-urgent-fix" in result["path"]
-        assert result["phase"] == "planning-docs"
+        assert result["phase"] == "roadmap"
 
         # Old 002 (Beta) -> 003, old 003 (Gamma) -> 004
         assert len(result["renumbered"]) == 2
@@ -914,6 +937,75 @@ class TestCloseSprintFull:
         # Recovery state should be cleared
         recovery = get_recovery_state(db_path)
         assert recovery is None
+
+
+class TestSystemRoundtrip:
+    """System-level end-to-end tests covering create_sprint → list_sprints → detail_sprint flow."""
+
+    def test_detail_sprint_tool_roundtrip(self, work_dir):
+        """Full roundtrip: create_sprint → detail_sprint → get_sprint_phase → assert artifacts exist."""
+        from clasi.tools.artifact_tools import get_sprint_phase
+
+        # Create a roadmap sprint
+        create_result = json.loads(create_sprint("Roundtrip Sprint"))
+        sprint_id = create_result["id"]
+        assert create_result["phase"] == "roadmap"
+
+        # Advance it via detail_sprint
+        detail_result = json.loads(detail_sprint(sprint_id))
+        assert "error" not in detail_result
+        assert detail_result["sprint_id"] == sprint_id
+        assert detail_result["phase"] == "planning-docs"
+
+        # Verify phase via get_sprint_phase
+        phase_result = json.loads(get_sprint_phase(sprint_id))
+        assert phase_result["phase"] == "planning-docs"
+
+        # Verify all three artifact files exist
+        sprint_dir = work_dir / ".clasi" / "sprints" / f"{sprint_id}-roundtrip-sprint"
+        assert (sprint_dir / "sprint.md").exists()
+        assert (sprint_dir / "usecases.md").exists()
+        assert (sprint_dir / "architecture-update.md").exists()
+
+    def test_detail_sprint_rejects_non_roadmap(self, work_dir):
+        """detail_sprint on a sprint already in planning-docs returns error with non-empty message."""
+        create_sprint("Already Detailed")
+        # Advance to planning-docs first
+        detail_sprint("001")
+        # Calling detail_sprint again on planning-docs sprint must return an error
+        result = json.loads(detail_sprint("001"))
+        assert "error" in result
+        assert len(result["error"]) > 0
+
+    def test_list_sprints_status_roadmap(self, work_dir):
+        """list_sprints(status='roadmap') returns only the sprint not yet detailed."""
+        create_sprint("Sprint Alpha")   # 001 — stays roadmap
+        create_sprint("Sprint Beta")    # 002 — will be advanced to planning-docs
+
+        # Advance sprint 002 via detail_sprint
+        detail_result = json.loads(detail_sprint("002"))
+        assert detail_result["phase"] == "planning-docs"
+
+        # Only sprint 001 should appear in roadmap filter
+        roadmap_sprints = json.loads(list_sprints(status="roadmap"))
+        roadmap_ids = [s["id"] for s in roadmap_sprints]
+        assert "001" in roadmap_ids
+        assert "002" not in roadmap_ids
+
+    def test_list_sprints_default_returns_all(self, work_dir):
+        """list_sprints() with no filter returns both roadmap and planning-docs sprints."""
+        create_sprint("Sprint Alpha")   # 001 — stays roadmap
+        create_sprint("Sprint Beta")    # 002 — will be advanced to planning-docs
+
+        # Advance sprint 002 via detail_sprint
+        detail_sprint("002")
+
+        # No-filter call must return both sprints
+        all_sprints = json.loads(list_sprints())
+        all_ids = [s["id"] for s in all_sprints]
+        assert "001" in all_ids
+        assert "002" in all_ids
+        assert len(all_sprints) == 2
 
 
 class TestCloseSprintLockAndDbGuard:

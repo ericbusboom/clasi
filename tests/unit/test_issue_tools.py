@@ -34,6 +34,7 @@ def todo_dir(tmp_path, monkeypatch):
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase for testing."""
     db_path = work_dir / ".clasi" / ".clasi.db"
+    advance_phase(db_path, sprint_id)  # roadmap -> planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review

@@ -419,6 +419,61 @@ class Sprint:
                 counts[s] += 1
         return counts
 
+    def detail_promote(self) -> dict:
+        """Promote a sprint from roadmap phase to planning-docs phase.
+
+        Scaffolds usecases.md, architecture-update.md, tickets/, and
+        tickets/done/ from templates onto the sprint directory, then
+        advances the state DB phase from 'roadmap' to 'planning-docs'.
+
+        Returns a dict: {"sprint_id": ..., "phase": "planning-docs",
+                          "files_written": [...]}.
+
+        Raises ValueError if the sprint is not in roadmap phase or if
+        usecases.md already exists.
+        """
+        current_phase = self.phase
+        if current_phase != "roadmap":
+            raise ValueError(
+                f"Sprint {self.id} is not in roadmap phase (current: {current_phase})"
+            )
+
+        if self.usecases_md.exists():
+            raise ValueError(
+                f"Sprint {self.id} is already detail-planned (usecases.md exists)"
+            )
+
+        sprint_id = self.id
+        sprint_title = self.title
+
+        files_written: list[str] = []
+
+        # Write usecases.md from template
+        usecases_content = SPRINT_USECASES_TEMPLATE.format(id=sprint_id, title=sprint_title)
+        self.usecases_md.write_text(usecases_content, encoding="utf-8")
+        files_written.append(str(self.usecases_md))
+
+        # Write architecture-update.md from template
+        arch_content = SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(id=sprint_id, title=sprint_title)
+        self.architecture_update_md.write_text(arch_content, encoding="utf-8")
+        files_written.append(str(self.architecture_update_md))
+
+        # Create tickets/ and tickets/done/ directories
+        self.tickets_dir.mkdir(parents=True, exist_ok=True)
+        self.tickets_done_dir.mkdir(exist_ok=True)
+
+        # Update sprint.md frontmatter status to reflect new phase
+        self.sprint_doc.update_frontmatter(status="planning-docs")
+
+        # Advance phase from roadmap -> planning-docs
+        self.advance_phase()
+
+        return {
+            "sprint_id": sprint_id,
+            "phase": "planning-docs",
+            "files_written": files_written,
+        }
+
     def archive(self) -> dict:
         """Archive this sprint by updating status to 'done' and moving to sprints/done/.
 

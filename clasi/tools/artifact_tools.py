@@ -199,6 +199,28 @@ def create_sprint(title: str) -> str:
     return json.dumps(sprint.to_dict(), indent=2)
 
 
+@server.tool()
+def detail_sprint(sprint_id: str) -> str:
+    """Promote a roadmap sprint to detail planning.
+
+    Scaffolds usecases.md, architecture-update.md, tickets/, and tickets/done/
+    for the given sprint and advances the state DB phase from roadmap to
+    planning-docs.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '017')
+
+    Returns JSON with {sprint_id, phase, files_written}.
+    """
+    try:
+        project = get_project()
+        sprint = project.get_sprint(sprint_id)
+        result = sprint.detail_promote()
+        return json.dumps(result)
+    except (ValueError, FileNotFoundError) as e:
+        return json.dumps({"error": str(e)})
+
+
 def _list_active_sprints() -> list[dict]:
     """Return all active (non-done) sprints sorted by numeric ID.
 
@@ -315,10 +337,11 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     active_sprints = _list_active_sprints()
     to_renumber = [s for s in active_sprints if s["id"] >= anchor_num + 1]
 
-    # Check that all sprints to renumber are in planning-docs phase
+    # Check that all sprints to renumber are in a pre-planning phase
+    _renameable_phases = {"roadmap", "planning-docs"}
     for sprint in to_renumber:
         phase = _get_sprint_phase_safe(sprint["str_id"])
-        if phase is not None and phase != "planning-docs":
+        if phase is not None and phase not in _renameable_phases:
             raise ValueError(
                 f"Cannot insert sprint: sprint '{sprint['str_id']}' "
                 f"({sprint['slug']}) is in '{phase}' phase and cannot "
