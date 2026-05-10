@@ -357,6 +357,51 @@ def test_install_with_copy_flag(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# platforms list
+# ---------------------------------------------------------------------------
+
+
+def test_platforms_list_prints_sorted_ids(capsys: pytest.CaptureFixture[str]) -> None:
+    """clasr platforms list should print registered platform IDs sorted, one per line."""
+    rc = main(["platforms", "list"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    lines = captured.out.splitlines()
+    assert lines == sorted(lines), "Platform IDs should be sorted"
+    assert len(lines) > 0, "Should list at least one platform"
+    # cursor is registered in this sprint
+    assert "cursor" in lines
+    # verify the expected set of currently registered platforms
+    assert "claude" in lines
+    assert "codex" in lines
+    assert "copilot" in lines
+
+
+def test_platforms_list_via_subprocess() -> None:
+    """clasr platforms list should work end-to-end via subprocess and exit 0."""
+    result = subprocess.run(
+        [sys.executable, "-m", "clasr.cli", "platforms", "list"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    assert "cursor" in lines
+    assert lines == sorted(lines)
+
+
+def test_platforms_no_subcommand_prints_help_exits_zero() -> None:
+    """clasr platforms (no subcommand) should print help and exit 0."""
+    result = subprocess.run(
+        [sys.executable, "-m", "clasr.cli", "platforms"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "list" in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # No imports from clasi (static check)
 # ---------------------------------------------------------------------------
 
