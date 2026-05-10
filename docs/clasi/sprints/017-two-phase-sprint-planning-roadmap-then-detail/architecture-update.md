@@ -1,6 +1,6 @@
 ---
-sprint: "017"
-status: draft
+sprint: '017'
+status: done
 ---
 
 # Architecture Update — Sprint 017: Two-phase sprint planning: roadmap then detail
