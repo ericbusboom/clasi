@@ -1,5 +1,6 @@
 ---
-sprint: "020"
+sprint: '020'
+status: done
 ---
 
 # Use Cases — Sprint 020: Schema-driven workflow: YAML DAG of artifacts

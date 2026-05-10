@@ -1,6 +1,6 @@
 ---
-sprint: "020"
-status: approved
+sprint: '020'
+status: done
 ---
 
 # Architecture Update — Sprint 020: Schema-driven workflow: YAML DAG of artifacts
