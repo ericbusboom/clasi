@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from clasr.merge import is_json_passthrough, merge_json_files, reverse_diff
+from clasr.merge import _deep_diff, _reverse_diff, is_json_passthrough, merge_json_files, reverse_diff
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +56,10 @@ def test_merge_json_files_basic(tmp_path):
     merged, diff = merge_json_files(existing, incoming, "provA", "provB")
 
     assert merged == {"alpha": 1, "beta": 2, "gamma": 3}
-    assert isinstance(diff, dict)
-    assert "beta" in diff
-    assert "gamma" in diff
+    assert diff == {"beta": 2, "gamma": 3}
 
 
-def test_merge_json_files_returns_contributed_diff(tmp_path):
+def test_merge_json_files_returns_contributed_keys(tmp_path):
     """diff is a dict containing only what incoming contributes beyond existing."""
     existing = tmp_path / "s.json"
     existing.write_text(json.dumps({"existing_key": True}))
@@ -69,8 +67,7 @@ def test_merge_json_files_returns_contributed_diff(tmp_path):
     incoming = {"mcpServers": {"my-server": {}}}
     _, diff = merge_json_files(existing, incoming, "provA", "provB")
 
-    assert isinstance(diff, dict)
-    assert "mcpServers" in diff
+    assert diff == {"mcpServers": {"my-server": {}}}
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +159,7 @@ def test_reverse_diff_removes_contributed_keys(tmp_path):
     assert restored == {"alpha": 1}
 
 
-def test_reverse_diff_nested(tmp_path):
+def test_reverse_diff_removes_contributed_nested(tmp_path):
     """reverse_diff removes only contributed nested keys, not pre-existing siblings."""
     existing = tmp_path / "settings.json"
     existing.write_text(json.dumps({"servers": {"a": 1}}))
@@ -180,3 +177,85 @@ def test_reverse_diff_public_export():
     diff = {"y": 2}
     result = reverse_diff(current, diff)
     assert result == {"x": 1}
+
+
+# ---------------------------------------------------------------------------
+# _deep_diff and _reverse_diff
+# ---------------------------------------------------------------------------
+
+
+def test_deep_diff_absent_key():
+    """Key absent from base: full value from overlay is returned in diff."""
+    base = {"a": 1}
+    overlay = {"a": 1, "b": 2}
+    diff = _deep_diff(base, overlay)
+    assert diff == {"b": 2}
+
+
+def test_deep_diff_equal_values_excluded():
+    """Equal values are not included in the diff."""
+    base = {"a": 1, "b": 2}
+    overlay = {"a": 1, "b": 2}
+    diff = _deep_diff(base, overlay)
+    assert diff == {}
+
+
+def test_deep_diff_scalar_conflict():
+    """When overlay has a different scalar value, it is included in diff."""
+    base = {"key": "old"}
+    overlay = {"key": "new"}
+    diff = _deep_diff(base, overlay)
+    assert diff == {"key": "new"}
+
+
+def test_deep_diff_nested_partial():
+    """Only the new nested leaf is in diff, not the full sub-dict."""
+    base = {"servers": {"a": 1}}
+    overlay = {"servers": {"a": 1, "b": 2}}
+    diff = _deep_diff(base, overlay)
+    assert diff == {"servers": {"b": 2}}
+
+
+def test_reverse_diff_removes_key():
+    """_reverse_diff removes a contributed top-level key from current."""
+    current = {"x": 1, "y": 2}
+    diff = {"y": 2}
+    result = _reverse_diff(current, diff)
+    assert result == {"x": 1}
+
+
+def test_reverse_diff_nested():
+    """_reverse_diff removes a nested contributed leaf, leaving siblings intact."""
+    current = {"servers": {"a": 1, "b": 2}}
+    diff = {"servers": {"b": 2}}
+    result = _reverse_diff(current, diff)
+    assert result == {"servers": {"a": 1}}
+
+
+def test_reverse_diff_missing_key_skipped():
+    """_reverse_diff silently skips keys in diff absent from current."""
+    current = {"x": 1}
+    diff = {"z": 99}
+    result = _reverse_diff(current, diff)
+    assert result == {"x": 1}
+
+
+def test_reverse_diff_entire_sub_dict_removed():
+    """When recursion yields an empty dict, the parent key is removed entirely."""
+    current = {"group": {"only": "leaf"}}
+    diff = {"group": {"only": "leaf"}}
+    result = _reverse_diff(current, diff)
+    assert result == {}
+
+
+def test_merge_json_files_round_trip(tmp_path):
+    """Merge then reverse reproduces the original base for non-overlapping incoming."""
+    existing = tmp_path / "settings.json"
+    base = {"alpha": 1, "nested": {"x": 10}}
+    existing.write_text(json.dumps(base))
+
+    incoming = {"beta": 2, "extra": {"y": 20}}
+    merged, diff = merge_json_files(existing, incoming, "provA", "provB")
+
+    restored = reverse_diff(merged, diff)
+    assert restored == base
