@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '021'
+tickets:
+- 021-001
 ---
 
 # Integration registry — base class + registry, not three ad-hoc modules
