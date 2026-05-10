@@ -2,8 +2,21 @@
 
 import pytest
 
-from clasi.state_db_class import StateDB
+from clasi.state_db_class import PHASES, StateDB
 from clasi.project import Project
+
+
+class TestPhases:
+    """Tests for the PHASES constant."""
+
+    def test_roadmap_is_first_phase(self):
+        """PHASES[0] must be 'roadmap' — the lightweight planning phase."""
+        assert PHASES[0] == "roadmap"
+
+    def test_planning_docs_follows_roadmap(self):
+        """Advancing from roadmap lands on planning-docs."""
+        idx = PHASES.index("roadmap")
+        assert PHASES[idx + 1] == "planning-docs"
 
 
 class TestStateDB:
