@@ -1,17 +1,17 @@
 ---
-id: "022"
-title: "Worktree process for parallel ticket execution"
-status: planning
+id: '022'
+title: Worktree process for parallel ticket execution
+status: done
 branch: sprint/022-worktree-process-for-parallel-ticket-execution
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
-  - SUC-005
-  - SUC-006
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
 source-todos:
-  - define-proper-worktree-process-for-parallel-ticket-execution.md
+- define-proper-worktree-process-for-parallel-ticket-execution.md
 ---
 
 # Sprint 022: Worktree process for parallel ticket execution
