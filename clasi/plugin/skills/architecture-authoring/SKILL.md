@@ -20,12 +20,21 @@ the first architecture document following steps 1-7 below.
 
 ### Mode 2: Sprint Architecture Update
 
-Write a focused architecture diff describing what changed in this sprint.
-This is an incremental update, not a rewrite.
+Write a focused architecture planning document describing the structural
+changes the sprint will introduce. This artifact is authored after use
+cases are defined and **before tickets exist** — tickets are derived from
+it, not the other way around. The guiding question throughout is: "Is this
+description clear enough that tickets can be derived from it without
+ambiguity?"
+
+At authoring time the document is a structural plan; after the sprint
+closes it accumulates as a historical record (an ADR at sprint
+granularity). It is not merged back into the canonical architecture docs —
+it stands on its own.
 
 Given the sprint plan and current architecture, write
-`architecture-update.md` with: What Changed, Why, Impact on Existing
-Components, Migration Concerns.
+`architecture-update.md` with: Planned Changes, Rationale, Impact on
+Existing Components, Migration Concerns.
 
 ## Steps
 
