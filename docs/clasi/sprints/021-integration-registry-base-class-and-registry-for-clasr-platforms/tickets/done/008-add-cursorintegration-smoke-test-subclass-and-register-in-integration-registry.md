@@ -1,7 +1,7 @@
 ---
 id: "008"
 title: "Add CursorIntegration smoke-test subclass and register in INTEGRATION_REGISTRY"
-status: todo
+status: done
 use-cases: [SUC-008]
 depends-on: ["006"]
 github-issue: ""
@@ -30,13 +30,13 @@ The key validation: adding Cursor requires only this file plus one line in `INTE
 
 ## Acceptance Criteria
 
-- [ ] `clasr/platforms/cursor.py` exists with `CursorIntegration` subclassing `MarkdownIntegration`.
-- [ ] All 14 class-level fields declared with correct Cursor-specific values.
-- [ ] `render_rule` overridden to emit `.mdc` files in `.cursor/rules/`.
-- [ ] `INTEGRATION_REGISTRY` in `registry.py` has `"cursor": CursorIntegration`.
-- [ ] `test_integration_contract.py` now shows 4 parametrized runs (claude, codex, copilot, cursor), all pass — with NO changes to the test file.
-- [ ] `IntegrationBase`, registry helpers, and CLI dispatch unchanged.
-- [ ] `uv run pytest` green.
+- [x] `clasr/platforms/cursor.py` exists with `CursorIntegration` subclassing `MarkdownIntegration`.
+- [x] All 14 class-level fields declared with correct Cursor-specific values.
+- [x] `render_rule` overridden to emit `.mdc` files in `.cursor/rules/`.
+- [x] `INTEGRATION_REGISTRY` in `registry.py` has `"cursor": CursorIntegration`.
+- [x] `test_integration_contract.py` now shows 4 parametrized runs (claude, codex, copilot, cursor), all pass — with NO changes to the test file.
+- [x] `IntegrationBase`, registry helpers, and CLI dispatch unchanged.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 

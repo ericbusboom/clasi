@@ -27,6 +27,7 @@ from clasr.integration import IntegrationBase
 from clasr.platforms.claude import ClaudeIntegration
 from clasr.platforms.codex import CodexIntegration
 from clasr.platforms.copilot import CopilotIntegration
+from clasr.platforms.cursor import CursorIntegration
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -36,6 +37,7 @@ INTEGRATION_REGISTRY: dict[str, type[IntegrationBase]] = {
     "claude": ClaudeIntegration,
     "codex": CodexIntegration,
     "copilot": CopilotIntegration,
+    "cursor": CursorIntegration,
 }
 
 
