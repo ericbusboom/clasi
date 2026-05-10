@@ -1,7 +1,7 @@
 ---
 id: "004"
 title: "Implement Sprint.detail_promote() method"
-status: todo
+status: done
 use-cases:
   - SUC-002
   - SUC-004
@@ -30,14 +30,14 @@ sprint's own artifacts and calls `self.advance_phase()` to update the state DB.
 
 ## Acceptance Criteria
 
-- [ ] `Sprint.detail_promote()` raises `ValueError` if the sprint's current phase is not `roadmap`.
-- [ ] `Sprint.detail_promote()` raises `ValueError` if `usecases.md` already exists (idempotency guard).
-- [ ] On success, `usecases.md` is written from `SPRINT_USECASES_TEMPLATE`.
-- [ ] On success, `architecture-update.md` is written from `SPRINT_ARCHITECTURE_UPDATE_TEMPLATE`.
-- [ ] On success, `tickets/` and `tickets/done/` directories are created.
-- [ ] `self.advance_phase()` is called, moving state DB from `roadmap` to `planning-docs`.
-- [ ] The method returns a dict: `{"sprint_id": ..., "phase": "planning-docs", "files_written": [...]}`.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `Sprint.detail_promote()` raises `ValueError` if the sprint's current phase is not `roadmap`.
+- [x] `Sprint.detail_promote()` raises `ValueError` if `usecases.md` already exists (idempotency guard).
+- [x] On success, `usecases.md` is written from `SPRINT_USECASES_TEMPLATE`.
+- [x] On success, `architecture-update.md` is written from `SPRINT_ARCHITECTURE_UPDATE_TEMPLATE`.
+- [x] On success, `tickets/` and `tickets/done/` directories are created.
+- [x] `self.advance_phase()` is called, moving state DB from `roadmap` to `planning-docs`.
+- [x] The method returns a dict: `{"sprint_id": ..., "phase": "planning-docs", "files_written": [...]}`.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
