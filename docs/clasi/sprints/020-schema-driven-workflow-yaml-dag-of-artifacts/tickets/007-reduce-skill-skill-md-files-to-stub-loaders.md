@@ -1,7 +1,7 @@
 ---
 id: "007"
 title: "Reduce skill SKILL.md files to stub loaders"
-status: todo
+status: done
 use-cases: [SUC-004]
 depends-on: ["006"]
 github-issue: ""
@@ -35,15 +35,15 @@ reaches the agent, just via a file load instead of inline embedding.
 
 ## Acceptance Criteria
 
-- [ ] `plan-sprint/SKILL.md` is reduced to frontmatter + purpose sentence + load directive pointing to `sprint-plan.md`.
-- [ ] `execute-sprint/SKILL.md` is reduced similarly, pointing to `execution.md`.
-- [ ] `architecture-review/SKILL.md` is reduced similarly, pointing to `architecture-update.md`.
-- [ ] `sprint-review/SKILL.md` is reduced similarly, pointing to `sprint-review.md`.
-- [ ] `close-sprint/SKILL.md` is reduced similarly, pointing to `close.md`.
-- [ ] The five stub files retain their YAML `name:` and `description:` frontmatter fields unchanged.
-- [ ] The skill loader machinery (`clasi/plugin/`) is updated to resolve and include the referenced instruction file when a `Load from:` directive is present (if the machinery does not already support this, add the support).
-- [ ] A manual invocation test: invoke one of the stubs and confirm the instruction prose from the file appears in the agent context.
-- [ ] `uv run pytest` passes.
+- [x] `plan-sprint/SKILL.md` is reduced to frontmatter + purpose sentence + load directive pointing to `sprint-plan.md`.
+- [x] `execute-sprint/SKILL.md` is reduced similarly, pointing to `execution.md`.
+- [x] `architecture-review/SKILL.md` is reduced similarly, pointing to `architecture-update.md`.
+- [x] `sprint-review/SKILL.md` is reduced similarly, pointing to `sprint-review.md`.
+- [x] `close-sprint/SKILL.md` is reduced similarly, pointing to `close.md`.
+- [x] The five stub files retain their YAML `name:` and `description:` frontmatter fields unchanged.
+- [x] The skill loader machinery (`clasi/plugin/`) is updated to resolve and include the referenced instruction file when a `Load from:` directive is present (if the machinery does not already support this, add the support).
+- [x] A manual invocation test: invoke one of the stubs and confirm the instruction prose from the file appears in the agent context.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 

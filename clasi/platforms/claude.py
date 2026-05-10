@@ -151,6 +151,7 @@ def _migrate_claude(target: Path) -> dict:
     # --- Skills ---
     plugin_skills = _PLUGIN_DIR / "skills"
     if plugin_skills.exists():
+        from clasi.tools.process_tools import resolve_skill_body
         for skill_dir in sorted(plugin_skills.iterdir()):
             if not skill_dir.is_dir():
                 continue
@@ -159,9 +160,15 @@ def _migrate_claude(target: Path) -> dict:
                 continue
 
             # Write canonical so migrate_to_symlink can compare bytes.
+            # Resolve any Load from: directive so the installed file has the full prose.
             canonical = target / ".agents" / "skills" / skill_dir.name / "SKILL.md"
             canonical.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill_src, canonical)
+            raw = skill_src.read_text(encoding="utf-8")
+            resolved = resolve_skill_body(raw)
+            if resolved != raw:
+                canonical.write_text(resolved, encoding="utf-8")
+            else:
+                shutil.copy2(skill_src, canonical)
 
             alias = target / ".claude" / "skills" / skill_dir.name / "SKILL.md"
             result = _links.migrate_to_symlink(canonical, alias)
@@ -240,6 +247,7 @@ def _install_plugin_content(
     # Copy skills
     plugin_skills = _PLUGIN_DIR / "skills"
     if plugin_skills.exists():
+        from clasi.tools.process_tools import resolve_skill_body
         click.echo("Skills:")
         for skill_dir in sorted(plugin_skills.iterdir()):
             if not skill_dir.is_dir():
@@ -249,9 +257,15 @@ def _install_plugin_content(
                 continue
 
             # 1. Write canonical to .agents/skills/<n>/SKILL.md
+            # Resolve any Load from: directive so the installed file has the full prose.
             canonical = target / ".agents" / "skills" / skill_dir.name / "SKILL.md"
             canonical.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill_src, canonical)
+            raw = skill_src.read_text(encoding="utf-8")
+            resolved = resolve_skill_body(raw)
+            if resolved != raw:
+                canonical.write_text(resolved, encoding="utf-8")
+            else:
+                shutil.copy2(skill_src, canonical)
 
             # 2. Create alias .claude/skills/<n>/SKILL.md
             alias = target / ".claude" / "skills" / skill_dir.name / "SKILL.md"

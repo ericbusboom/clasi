@@ -5,6 +5,7 @@ from the installed package.
 """
 
 import json
+import re
 from pathlib import Path
 
 from clasi import __version__
@@ -241,11 +242,70 @@ def get_agent_definition(name: str) -> str:
     return agent_content
 
 
+# Pattern for the Load from: directive.
+# Matches lines like: Load from: `clasi/schemas/se-process/instructions/foo.md`
+_LOAD_FROM_RE = re.compile(
+    r"^Load from:\s*`([^`]+)`\s*$",
+    re.MULTILINE,
+)
+
+# Root of the clasi package, used to resolve Load from: paths.
+_PACKAGE_ROOT = Path(__file__).parent.parent.parent
+
+
+def resolve_skill_body(raw: str, base_path: Path | None = None) -> str:
+    """Resolve a ``Load from:`` directive in a skill body.
+
+    If *raw* contains a line of the form::
+
+        Load from: `<relative-path>`
+
+    the referenced file is read and its contents replace the entire body
+    (everything below the YAML frontmatter).  The frontmatter itself is
+    preserved verbatim.
+
+    If no ``Load from:`` directive is present, *raw* is returned unchanged.
+
+    *base_path* is the directory used to resolve the referenced path.
+    When ``None``, it defaults to the clasi package root
+    (``clasi/schemas/se-process/instructions/`` paths are relative to that).
+
+    Raises :class:`FileNotFoundError` if the directive references a file that
+    does not exist.
+    """
+    match = _LOAD_FROM_RE.search(raw)
+    if match is None:
+        return raw
+
+    ref_path_str = match.group(1)
+    root = base_path if base_path is not None else _PACKAGE_ROOT
+    ref_path = root / ref_path_str
+
+    if not ref_path.exists():
+        raise FileNotFoundError(
+            f"Skill 'Load from:' directive references non-existent file: {ref_path}"
+        )
+
+    # Split off YAML frontmatter (--- ... ---) if present, keep it.
+    # Body is everything after the closing ---.
+    fm_match = re.match(r"^(---\s*\n.*?\n---\s*\n)", raw, re.DOTALL)
+    if fm_match:
+        frontmatter = fm_match.group(1)
+    else:
+        frontmatter = ""
+
+    included_body = ref_path.read_text(encoding="utf-8")
+    return frontmatter + included_body
+
+
 #@server.tool()
 def get_skill_definition(name: str) -> str:
     """Get the full markdown content of a named skill definition.
 
-    Searches global skills first, then agent directories.
+    Searches global skills first, then agent directories.  If the skill
+    file contains a ``Load from:`` directive, the referenced instruction
+    file is read and substituted for the skill body so the caller always
+    receives the full prose.
 
     Args:
         name: The skill name (e.g., 'execute-ticket', 'plan-sprint')
@@ -254,16 +314,16 @@ def get_skill_definition(name: str) -> str:
     skills_dir = content_path("plugin", "skills")
     path = skills_dir / f"{name}.md"
     if path.exists():
-        return path.read_text(encoding="utf-8")
+        return resolve_skill_body(path.read_text(encoding="utf-8"))
     skill_md = skills_dir / name / "SKILL.md"
     if skill_md.exists():
-        return skill_md.read_text(encoding="utf-8")
+        return resolve_skill_body(skill_md.read_text(encoding="utf-8"))
     # Search agent directories
     agents_dir = content_path("plugin", "agents")
     if agents_dir.exists():
         matches = list(agents_dir.rglob(f"{name}.md"))
         if matches:
-            return matches[0].read_text(encoding="utf-8")
+            return resolve_skill_body(matches[0].read_text(encoding="utf-8"))
     raise ValueError(
         f"'{name}' not found in skills/ or agent directories."
     )
