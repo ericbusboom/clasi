@@ -199,6 +199,28 @@ def create_sprint(title: str) -> str:
     return json.dumps(sprint.to_dict(), indent=2)
 
 
+@server.tool()
+def detail_sprint(sprint_id: str) -> str:
+    """Promote a roadmap sprint to detail planning.
+
+    Scaffolds usecases.md, architecture-update.md, tickets/, and tickets/done/
+    for the given sprint and advances the state DB phase from roadmap to
+    planning-docs.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '017')
+
+    Returns JSON with {sprint_id, phase, files_written}.
+    """
+    try:
+        project = get_project()
+        sprint = project.get_sprint(sprint_id)
+        result = sprint.detail_promote()
+        return json.dumps(result)
+    except (ValueError, FileNotFoundError) as e:
+        return json.dumps({"error": str(e)})
+
+
 def _list_active_sprints() -> list[dict]:
     """Return all active (non-done) sprints sorted by numeric ID.
 
