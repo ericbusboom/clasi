@@ -266,6 +266,12 @@ class TestJsonMergeInstall:
         assert "mcpServers" in settings_entry.get("keys", []), (
             "Expected 'mcpServers' in provider_b manifest keys"
         )
+        assert isinstance(settings_entry.get("contributed"), dict), (
+            "Expected 'contributed' field to be a dict in provider_b manifest"
+        )
+        assert "mcpServers" in settings_entry["contributed"], (
+            "Expected 'mcpServers' key inside provider_b manifest 'contributed' dict"
+        )
 
     def test_conflict_warning_emitted_to_stderr(
         self, workspace: dict, capsys: pytest.CaptureFixture
