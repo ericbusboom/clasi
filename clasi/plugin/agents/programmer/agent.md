@@ -125,3 +125,29 @@ results, and a recommendation. Wait for guidance.
 - Your code may be reviewed by the `code-review` skill after implementation.
 - Consider the `tdd-cycle` skill when designing well-defined, testable
   interfaces.
+
+## Exception Protocol
+
+**Threshold**: Throw an exception when you cannot proceed without overriding
+an upstream architecture decision or a use-case boundary. Hard implementation
+work — even very hard work — is not a threshold. The wall must be structural.
+
+**How to throw**: Call `throw_ticket_exception(path, thrown_by="programmer",
+attempted=..., conflict=..., surface=...)`. Do this before exiting.
+
+- `attempted`: One paragraph describing what you tried before hitting the wall.
+- `conflict`: The specific architecture section, use-case, or decision
+  that blocks you. Be precise — cite the section heading or use-case ID.
+- `surface`: Your first-pass classification:
+  - `"user-visible"` — the conflict affects behavior described in usecases.md.
+  - `"internal"` — the conflict is purely structural (module boundary,
+    dependency direction, internal data model). When in doubt, prefer
+    `"internal"` and let the team-lead override.
+
+**Exit cleanly**: After calling `throw_ticket_exception`, stop. Do not write
+partial code. Do not mark the ticket in-progress beyond the exception call.
+The thrown exception is your deliverable.
+
+**No out-of-band signaling**: The ticket is the carrier. Do not return the
+exception payload in your final message text as a substitute for writing
+it to the ticket frontmatter via the tool.
