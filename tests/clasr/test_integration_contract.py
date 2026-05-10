@@ -3,22 +3,13 @@ tests/clasr/test_integration_contract.py
 
 Parametrized contract test for IntegrationBase subclasses.
 
-Every integration registered in _TEST_REGISTRY (or, once ticket 006 lands,
-INTEGRATION_REGISTRY) must satisfy the install / uninstall contract:
+Every integration registered in INTEGRATION_REGISTRY must satisfy the
+install / uninstall contract:
 
 1. install() writes a manifest file at
    target / integration.target_root / ".clasr-manifest" / "<provider>.json".
 2. At least one file is installed inside ``target``.
 3. uninstall() removes the manifest.
-
-The parametrize source will be switched to::
-
-    from clasr.registry import INTEGRATION_REGISTRY
-    @pytest.mark.parametrize("integration_cls", list(INTEGRATION_REGISTRY.values()), ...)
-
-once INTEGRATION_REGISTRY is available (ticket 006). Until then the local
-placeholder ``_TEST_REGISTRY`` is used.  When it is empty the test is
-collected but immediately skipped, producing exit code 0.
 """
 
 from __future__ import annotations
@@ -28,21 +19,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from clasr.registry import INTEGRATION_REGISTRY
+
 if TYPE_CHECKING:
     from clasr.integration import IntegrationBase
 
 # ---------------------------------------------------------------------------
-# Registry placeholder — replace with INTEGRATION_REGISTRY.values() in ticket 006
+# Registry — parametrize over all registered integrations
 # ---------------------------------------------------------------------------
 
-# _TEST_REGISTRY maps platform id → integration class.
-# Ticket 006 populates INTEGRATION_REGISTRY; until then this dict is empty and
-# the parametrize decorator below yields no test instances (no collection error).
-_TEST_REGISTRY: dict[str, type] = {}
-
-# Uncomment after ticket 006 lands:
-# from clasr.registry import INTEGRATION_REGISTRY
-# _TEST_REGISTRY = dict(INTEGRATION_REGISTRY)
+_TEST_REGISTRY: dict[str, type] = dict(INTEGRATION_REGISTRY)
 
 
 # ---------------------------------------------------------------------------
