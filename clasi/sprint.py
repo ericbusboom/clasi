@@ -462,6 +462,9 @@ class Sprint:
         self.tickets_dir.mkdir(parents=True, exist_ok=True)
         self.tickets_done_dir.mkdir(exist_ok=True)
 
+        # Update sprint.md frontmatter status to reflect new phase
+        self.sprint_doc.update_frontmatter(status="planning-docs")
+
         # Advance phase from roadmap -> planning-docs
         self.advance_phase()
 

@@ -1,7 +1,7 @@
 ---
 id: "010"
 title: "Write system tests for detail_sprint MCP tool and list_sprints roadmap filter"
-status: todo
+status: done
 use-cases:
   - SUC-006
 depends-on:
@@ -27,12 +27,12 @@ the full stack including the state DB.
 
 ## Acceptance Criteria
 
-- [ ] `test_detail_sprint_tool_roundtrip`: calls `create_sprint` (asserts phase = `roadmap`), then `detail_sprint`, then `get_sprint_phase` (asserts phase = `planning-docs`), then asserts all three artifact files exist.
-- [ ] `test_detail_sprint_rejects_non_roadmap`: calls `detail_sprint` on a sprint already in `planning-docs`; asserts the response contains an `"error"` key with a non-empty message.
-- [ ] `test_list_sprints_status_roadmap`: creates two sprints, advances one to `planning-docs` via `detail_sprint`, calls `list_sprints(status="roadmap")`, asserts only the non-advanced sprint is returned.
-- [ ] `test_list_sprints_default_returns_all`: same setup; calls `list_sprints()` (no filter), asserts both sprints appear.
-- [ ] All tests pass: `uv run pytest tests/system/`.
-- [ ] Full suite passes: `uv run pytest`.
+- [x] `test_detail_sprint_tool_roundtrip`: calls `create_sprint` (asserts phase = `roadmap`), then `detail_sprint`, then `get_sprint_phase` (asserts phase = `planning-docs`), then asserts all three artifact files exist.
+- [x] `test_detail_sprint_rejects_non_roadmap`: calls `detail_sprint` on a sprint already in `planning-docs`; asserts the response contains an `"error"` key with a non-empty message.
+- [x] `test_list_sprints_status_roadmap`: creates two sprints, advances one to `planning-docs` via `detail_sprint`, calls `list_sprints(status="roadmap")`, asserts only the non-advanced sprint is returned.
+- [x] `test_list_sprints_default_returns_all`: same setup; calls `list_sprints()` (no filter), asserts both sprints appear.
+- [x] All tests pass: `uv run pytest tests/system/`.
+- [x] Full suite passes: `uv run pytest`.
 
 ## Implementation Plan
 
