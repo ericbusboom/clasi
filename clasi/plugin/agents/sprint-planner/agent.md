@@ -122,6 +122,11 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    Quality checks: every module addresses at least one use case; no cycles in
    the dependency graph; each module passes the cohesion test.
 
+   **Revision naming**: When revising in response to an exception, write
+   `architecture-update-r1.md` (never overwrite `architecture-update.md`) —
+   see the `architecture-authoring` skill for the full revision naming and
+   preservation rule.
+
 #### Phase 3: Architecture Self-Review
 
 5. Review your own architecture update against these five categories:
@@ -235,3 +240,33 @@ Domain components have no outward dependencies. Infrastructure is a plugin.
   `create-tickets` skill.
 - For merging architecture documents across sprints, see the
   `consolidate-architecture` skill.
+
+## Exception Protocol
+
+**Threshold**: Throw when you cannot resolve a conflict without overriding
+an upstream architecture decision or a use-case boundary set by a prior
+sprint. Hard design decisions are within your authority; upstream overrides
+are not.
+
+**When a ticket exists** (during ticketing phase or after): Call
+`throw_ticket_exception(path, thrown_by="sprint-planner", attempted=...,
+conflict=..., surface=...)`. Then stop. Leave no partial artifacts.
+
+**When no ticket exists yet** (during planning-docs or architecture-review
+phase): Surface the exception in your return text in this format:
+
+```
+EXCEPTION:
+  thrown_by: sprint-planner
+  attempted: |
+    <what was tried>
+  conflict: <specific decision or section being blocked>
+  surface: <"user-visible" | "internal">
+```
+
+Do not continue planning past an exception. The team-lead will route.
+
+**Surface classification**:
+- `"user-visible"`: conflict touches behavior described in usecases.md.
+- `"internal"`: purely structural (module boundary, data model, etc.).
+  When in doubt, prefer `"internal"`.

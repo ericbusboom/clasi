@@ -1,11 +1,11 @@
 ---
-id: "018"
-title: "Lower-agent exception protocol"
-status: roadmap
+id: 018
+title: Lower-agent exception protocol
+status: done
 branch: sprint/018-lower-agent-exception-protocol
 use-cases: []
 source-todos:
-  - sprint-process-changes.md
+- sprint-process-changes.md
 ---
 
 # Sprint 018: Lower-agent exception protocol
@@ -110,3 +110,11 @@ cord half.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Add `exception` to ticket status enum and ticket_counts() | — |
+| 002 | Add `exception:` frontmatter block schema to Ticket class | — |
+| 003 | Implement `throw_ticket_exception` MCP tool | 001, 002 |
+| 004 | Update programmer agent prompt with exception protocol section | 003 |
+| 005 | Update sprint-planner agent prompt with exception protocol section | 003 |
+| 006 | Update team-lead agent prompt with exception routing rules | 003, 004, 005 |
+| 007 | Update architecture-authoring skill with revision naming and preservation rule | 006 |
+| 008 | Write tests, SE overview "Exception protocol" section | 001, 002, 003, 007 |

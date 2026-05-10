@@ -941,7 +941,7 @@ class TestSprintTicketCounts:
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
-        assert counts == {"open": 0, "in_progress": 0, "done": 0}
+        assert counts == {"open": 0, "in_progress": 0, "done": 0, "exception": 0}
 
     def test_ticket_counts_with_todo_tickets(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
@@ -980,6 +980,26 @@ class TestSprintTicketCounts:
         s = Sprint(sprint_dir, proj)
         counts = s.ticket_counts()
         assert counts["done"] == 1
+
+    def test_ticket_counts_includes_exception_bucket(self, tmp_path):
+        """ticket_counts() includes an 'exception' key initialized to 0."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert "exception" in counts
+        assert counts["exception"] == 0
+
+    def test_ticket_counts_counts_exception_tickets(self, tmp_path):
+        """Tickets with status 'exception' are counted in the exception bucket."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "Open", status="open")
+        _add_ticket(sprint_dir, "002", "Exception", status="exception")
+        s = Sprint(sprint_dir, proj)
+        counts = s.ticket_counts()
+        assert counts["exception"] == 1
+        assert counts["open"] == 1
+        assert counts["in_progress"] == 0
+        assert counts["done"] == 0
 
 
 class TestSprintArchive:

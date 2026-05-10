@@ -124,6 +124,35 @@ Invoke the `oop` skill. Make the change directly, run tests, commit.
 2. Invoke the `close-sprint` skill.
 3. Report the result.
 
+## Exception Routing
+
+After each programmer or sprint-planner dispatch, check for thrown exceptions:
+
+1. Call `list_tickets(sprint_id=<current>, status="exception")`.
+2. If no exception tickets, proceed normally.
+3. For each exception ticket:
+   a. Read the ticket's `exception:` frontmatter block.
+   b. Consult `usecases.md`. Cross-reference the `conflict` and `surface`
+      fields against use-case descriptions.
+   c. **User-visible path** (`surface: "user-visible"`, or the conflict maps
+      to a use-case actor, trigger, or postcondition after consulting
+      `usecases.md`): Escalate to the stakeholder. Describe the conflict in
+      plain terms. State what decision is needed to unblock. Do not re-dispatch
+      the lower agent until the stakeholder has decided.
+   d. **Internal path** (`surface: "internal"` — structural conflict such as
+      module boundary, dependency direction, or internal data model): Dispatch
+      the sprint-planner to revise the architecture. Pass the full exception
+      payload as context. The sprint-planner writes `architecture-update-r1.md`
+      (or `-r2.md`, etc.); the original `architecture-update.md` is preserved.
+4. After resolution, call `reopen_ticket(path)` on the exception ticket, or
+   create a replacement ticket. Do not leave any ticket in `exception` status
+   permanently.
+
+**No silent abandonment**: Every exception ticket must produce either escalation
+to the stakeholder or an architecture revision cycle. If `usecases.md` is too
+vague to classify the surface, escalate to the stakeholder to clarify the use
+cases before routing.
+
 ## Pre-Flight Check
 
 At the start of every session:
