@@ -1,11 +1,17 @@
 ---
-id: "019"
-title: "clasr settings.json multi-provider uninstall fix"
-status: active
+id: 019
+title: clasr settings.json multi-provider uninstall fix
+status: done
 branch: sprint/019-clasr-settings-json-multi-provider-uninstall-fix
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004, SUC-005, SUC-006]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
 source-todos:
-  - clasr-settings-json-multi-provider-uninstall-overlapping-top-level-keys.md
+- clasr-settings-json-multi-provider-uninstall-overlapping-top-level-keys.md
 ---
 
 # Sprint 019: clasr settings.json multi-provider uninstall fix
