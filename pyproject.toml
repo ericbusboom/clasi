@@ -70,6 +70,7 @@ clasi = [
     "contract-schema.yaml",
     "init/*.md",
     "plugin/**/*",
+    "schemas/**/*",
     "templates/*.md",
     "se-overview-template.md",
 ]
