@@ -315,10 +315,11 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     active_sprints = _list_active_sprints()
     to_renumber = [s for s in active_sprints if s["id"] >= anchor_num + 1]
 
-    # Check that all sprints to renumber are in planning-docs phase
+    # Check that all sprints to renumber are in a pre-planning phase
+    _renameable_phases = {"roadmap", "planning-docs"}
     for sprint in to_renumber:
         phase = _get_sprint_phase_safe(sprint["str_id"])
-        if phase is not None and phase != "planning-docs":
+        if phase is not None and phase not in _renameable_phases:
             raise ValueError(
                 f"Cannot insert sprint: sprint '{sprint['str_id']}' "
                 f"({sprint['slug']}) is in '{phase}' phase and cannot "

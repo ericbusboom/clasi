@@ -43,6 +43,7 @@ def work_dir(tmp_path, monkeypatch):
 def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     """Advance a sprint through review gates to ticketing phase for testing."""
     db_path = work_dir / ".clasi" / ".clasi.db"
+    advance_phase(db_path, sprint_id)  # roadmap → planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs → architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
     advance_phase(db_path, sprint_id)  # architecture-review → stakeholder-review
@@ -155,7 +156,7 @@ class TestCreateTicket:
 
     def test_blocked_before_ticketing_phase(self, work_dir):
         create_sprint("My Sprint")
-        with pytest.raises(ValueError, match="planning-docs.*phase"):
+        with pytest.raises(ValueError, match="roadmap.*phase"):
             create_ticket("001", "Too Early")
 
     def test_auto_links_sprint_todos_when_no_todo_param(self, work_dir):
@@ -332,7 +333,7 @@ class TestInsertSprint:
         # New sprint gets ID 002
         assert result["id"] == "002"
         assert "002-urgent-fix" in result["path"]
-        assert result["phase"] == "planning-docs"
+        assert result["phase"] == "roadmap"
 
         # Old 002 (Beta) -> 003, old 003 (Gamma) -> 004
         assert len(result["renumbered"]) == 2

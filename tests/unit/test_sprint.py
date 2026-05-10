@@ -439,7 +439,7 @@ class TestSprintPhase:
         proj.db.init()
         proj.db.register_sprint("001", "test-sprint", "sprint/001-test-sprint")
         s = Sprint(sprint_dir, proj)
-        assert s.phase == "planning-docs"
+        assert s.phase == "roadmap"
 
 
 class TestProjectSprints:

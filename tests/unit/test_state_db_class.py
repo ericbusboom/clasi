@@ -32,7 +32,7 @@ class TestStateDB:
 
         state = db.get_sprint_state("025")
         assert state["id"] == "025"
-        assert state["phase"] == "planning-docs"
+        assert state["phase"] == "roadmap"
         assert state["branch"] == "sprint/025"
 
     def test_register_duplicate_raises(self, db):
@@ -44,14 +44,22 @@ class TestStateDB:
         with pytest.raises(ValueError, match="not registered"):
             db.get_sprint_state("999")
 
-    def test_advance_phase(self, db):
+    def test_advance_phase_from_roadmap(self, db):
         db.register_sprint("010", "test-sprint")
         result = db.advance_phase("010")
+        assert result["old_phase"] == "roadmap"
+        assert result["new_phase"] == "planning-docs"
+
+    def test_advance_phase_from_planning_docs(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+        result = db.advance_phase("010")  # planning-docs -> architecture-review
         assert result["old_phase"] == "planning-docs"
         assert result["new_phase"] == "architecture-review"
 
     def test_advance_phase_requires_gate(self, db):
         db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
         db.advance_phase("010")  # planning-docs -> architecture-review
         # architecture-review -> stakeholder-review requires architecture_review gate
         with pytest.raises(ValueError, match="gate.*architecture_review.*not passed"):
@@ -59,7 +67,8 @@ class TestStateDB:
 
     def test_record_gate_and_advance(self, db):
         db.register_sprint("010", "test-sprint")
-        db.advance_phase("010")  # -> architecture-review
+        db.advance_phase("010")  # roadmap -> planning-docs
+        db.advance_phase("010")  # planning-docs -> architecture-review
         db.record_gate("010", "architecture_review", "passed")
         result = db.advance_phase("010")  # -> stakeholder-review
         assert result["new_phase"] == "stakeholder-review"
@@ -219,4 +228,4 @@ class TestProjectDbIntegration:
         db.init()
         db.register_sprint("001", "test")
         state = db.get_sprint_state("001")
-        assert state["phase"] == "planning-docs"
+        assert state["phase"] == "roadmap"
