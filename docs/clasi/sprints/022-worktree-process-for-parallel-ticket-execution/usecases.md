@@ -1,6 +1,6 @@
 ---
-sprint: "022"
-status: planning
+sprint: '022'
+status: done
 ---
 
 # Use Cases — Sprint 022: Worktree Process for Parallel Ticket Execution
