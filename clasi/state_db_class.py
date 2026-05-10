@@ -7,14 +7,17 @@ are thin wrappers that instantiate StateDB and delegate to these methods.
 from __future__ import annotations
 
 import json as _json
+import logging as _logging
+import os as _os
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+_logger = _logging.getLogger(__name__)
 
-PHASES = [
+_PHASES_FALLBACK = [
     "roadmap",
     "planning-docs",
     "architecture-review",
@@ -24,6 +27,34 @@ PHASES = [
     "closing",
     "done",
 ]
+
+if _os.environ.get("CLASI_SCHEMA_PHASES") == "1":
+    try:
+        from clasi.schemas import loader as _loader
+        from clasi.schemas.graph import ArtifactGraph as _ArtifactGraph
+
+        _schema_path = Path(__file__).parent / "schemas" / "se-process" / "schema.yaml"
+        _schema = _loader.load(_schema_path)
+        _derived = _ArtifactGraph(_schema).phases()
+        if _derived != _PHASES_FALLBACK:
+            _logger.warning(
+                "Schema-derived PHASES differs from fallback; using fallback. "
+                "derived=%r fallback=%r",
+                _derived,
+                _PHASES_FALLBACK,
+            )
+            PHASES = _PHASES_FALLBACK
+        else:
+            PHASES = _derived
+    except Exception as _exc:
+        _logger.warning(
+            "Failed to derive PHASES from schema (CLASI_SCHEMA_PHASES=1); "
+            "falling back to hardcoded list. Error: %s",
+            _exc,
+        )
+        PHASES = _PHASES_FALLBACK
+else:
+    PHASES = _PHASES_FALLBACK
 
 VALID_GATE_NAMES = {"architecture_review", "stakeholder_approval"}
 VALID_GATE_RESULTS = {"passed", "failed"}

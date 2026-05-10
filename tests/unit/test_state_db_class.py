@@ -2,7 +2,7 @@
 
 import pytest
 
-from clasi.state_db_class import PHASES, StateDB
+from clasi.state_db_class import PHASES, _PHASES_FALLBACK, StateDB
 from clasi.project import Project
 
 
@@ -17,6 +17,54 @@ class TestPhases:
         """Advancing from roadmap lands on planning-docs."""
         idx = PHASES.index("roadmap")
         assert PHASES[idx + 1] == "planning-docs"
+
+    def test_phases_fallback_is_complete(self):
+        """_PHASES_FALLBACK contains all expected lifecycle phases."""
+        expected = [
+            "roadmap",
+            "planning-docs",
+            "architecture-review",
+            "stakeholder-review",
+            "ticketing",
+            "executing",
+            "closing",
+            "done",
+        ]
+        assert _PHASES_FALLBACK == expected
+
+    def test_schema_phases_flag_derives_correct_list(self, monkeypatch):
+        """CLASI_SCHEMA_PHASES=1 yields a PHASES list identical to _PHASES_FALLBACK."""
+        from pathlib import Path
+        from clasi.schemas import loader as schema_loader
+        from clasi.schemas.graph import ArtifactGraph
+
+        schema_path = (
+            Path(__file__).parent.parent.parent
+            / "clasi" / "schemas" / "se-process" / "schema.yaml"
+        )
+        schema = schema_loader.load(schema_path)
+        derived = ArtifactGraph(schema).phases()
+        assert derived == _PHASES_FALLBACK
+
+    def test_schema_phases_flag_via_subprocess(self):
+        """CLASI_SCHEMA_PHASES=1 makes the module-level PHASES match _PHASES_FALLBACK."""
+        import json
+        import subprocess
+        import sys
+
+        code = (
+            "import os; os.environ['CLASI_SCHEMA_PHASES'] = '1'; "
+            "import clasi.state_db_class as m; "
+            "import json; print(json.dumps(m.PHASES))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"subprocess failed: {result.stderr}"
+        derived = json.loads(result.stdout.strip())
+        assert derived == _PHASES_FALLBACK
 
 
 class TestStateDB:
