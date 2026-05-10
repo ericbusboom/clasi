@@ -1,7 +1,7 @@
 ---
 id: "012"
 title: "clasi init --process flag and config.yaml process key"
-status: todo
+status: done
 use-cases: [SUC-006]
 depends-on: ["010", "011"]
 github-issue: ""
@@ -25,15 +25,15 @@ schema is also part of this ticket.
 
 ## Acceptance Criteria
 
-- [ ] `clasi init` gains a `--process [se|solo]` option, default `se`.
-- [ ] `clasi init --process solo .` writes `process: solo` to `.clasi/config.yaml` (creating the file and directory if absent).
-- [ ] `clasi init` with no `--process` flag writes `process: se` to `.clasi/config.yaml`.
-- [ ] Server startup reads `.clasi/config.yaml` `process:` key to determine the active schema path; falls back to `se` if the key is absent.
-- [ ] An unknown `--process` value (e.g., `--process foo`) fails with a clear error message before touching any files.
-- [ ] `clasi init --process solo` followed by server startup selects `solo-process/schema.yaml`.
-- [ ] Existing `clasi init` behavior (platform selection, plugin mode, etc.) is unchanged.
-- [ ] Tests: `clasi init --process solo` writes correct config; `clasi init` with no flag writes `se`; unknown value rejects.
-- [ ] `uv run pytest` passes.
+- [x] `clasi init` gains a `--process [se|solo]` option, default `se`.
+- [x] `clasi init --process solo .` writes `process: solo` to `.clasi/config.yaml` (creating the file and directory if absent).
+- [x] `clasi init` with no `--process` flag writes `process: se` to `.clasi/config.yaml`.
+- [x] Server startup reads `.clasi/config.yaml` `process:` key to determine the active schema path; falls back to `se` if the key is absent.
+- [x] An unknown `--process` value (e.g., `--process foo`) fails with a clear error message before touching any files.
+- [x] `clasi init --process solo` followed by server startup selects `solo-process/schema.yaml`.
+- [x] Existing `clasi init` behavior (platform selection, plugin mode, etc.) is unchanged.
+- [x] Tests: `clasi init --process solo` writes correct config; `clasi init` with no flag writes `se`; unknown value rejects.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 

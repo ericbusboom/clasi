@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 import click
+import yaml
 
 # The plugin directory is bundled inside the clasi package.
 _PLUGIN_DIR = Path(__file__).parent / "plugin"
@@ -117,6 +118,7 @@ def run_init(
     copilot: bool = False,
     copy: bool = False,
     migrate: bool = False,
+    process: str = "se",
 ) -> None:
     """Initialize a repository for the CLASI SE process.
 
@@ -135,6 +137,8 @@ def run_init(
         copilot: If True, run the Copilot platform installer.
         copy: If True, use file copy instead of symlink for alias operations.
         migrate: If True, convert legacy direct-copy installs to symlinks.
+        process: SE process variant to activate; one of ``"se"`` or ``"solo"``.
+            Written to ``.clasi/config.yaml`` as the ``process:`` key.
     """
     from clasi.platforms.claude import install as claude_install
     from clasi.platforms.codex import install as codex_install
@@ -219,6 +223,20 @@ def run_init(
     log_gitignore = log_dir / ".gitignore"
     log_gitignore.write_text("# Ignore all log files\n*\n!.gitignore\n", encoding="utf-8")
     click.echo("  Created: .clasi/log/ (with .gitignore)")
+
+    # Write (or update) .clasi/config.yaml with the chosen process.
+    config_path = clasi_dir / "config.yaml"
+    config_data: dict = {}
+    if config_path.exists():
+        try:
+            existing = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                config_data = existing
+        except yaml.YAMLError:
+            pass  # overwrite a corrupt config
+    config_data["process"] = process
+    config_path.write_text(yaml.safe_dump(config_data, default_flow_style=False), encoding="utf-8")
+    click.echo(f"  Written: .clasi/config.yaml (process: {process})")
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")
