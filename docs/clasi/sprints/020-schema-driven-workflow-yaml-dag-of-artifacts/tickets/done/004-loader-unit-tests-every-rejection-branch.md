@@ -1,7 +1,7 @@
 ---
 id: "004"
 title: "Loader unit tests: every rejection branch"
-status: todo
+status: done
 use-cases: [SUC-002]
 depends-on: ["002"]
 github-issue: ""
@@ -25,17 +25,17 @@ rejection branch documented in the loader.
 
 ## Acceptance Criteria
 
-- [ ] Test: valid minimal schema (two artifacts, one `requires`) loads successfully.
-- [ ] Test: duplicate artifact `id` raises `SchemaError` with the duplicate ID in the message.
-- [ ] Test: `requires` referencing a non-existent ID raises `SchemaError` naming the missing ID.
-- [ ] Test: cycle `A -> B -> A` raises `SchemaError`.
-- [ ] Test: three-node cycle `A -> B -> C -> A` raises `SchemaError`.
-- [ ] Test: unknown `gate.kind` raises `SchemaError` naming the unknown kind.
-- [ ] Test: extra unknown field on artifact (e.g., `foo: bar`) raises `SchemaError` (Pydantic `extra="forbid"`).
-- [ ] Test: missing required field `id` on artifact raises `SchemaError`.
-- [ ] Test: artifact with no `requires` field defaults to empty list (not a rejection).
-- [ ] All tests live in `tests/clasi/schemas/test_loader.py`.
-- [ ] `uv run pytest tests/clasi/schemas/` passes.
+- [x] Test: valid minimal schema (two artifacts, one `requires`) loads successfully.
+- [x] Test: duplicate artifact `id` raises `SchemaError` with the duplicate ID in the message.
+- [x] Test: `requires` referencing a non-existent ID raises `SchemaError` naming the missing ID.
+- [x] Test: cycle `A -> B -> A` raises `SchemaError`.
+- [x] Test: three-node cycle `A -> B -> C -> A` raises `SchemaError`.
+- [x] Test: unknown `gate.kind` raises `SchemaError` naming the unknown kind.
+- [x] Test: extra unknown field on artifact (e.g., `foo: bar`) raises `SchemaError` (Pydantic `extra="forbid"`).
+- [x] Test: missing required field `id` on artifact raises `SchemaError`.
+- [x] Test: artifact with no `requires` field defaults to empty list (not a rejection).
+- [x] All tests live in `tests/clasi/schemas/test_loader.py`.
+- [x] `uv run pytest tests/clasi/schemas/` passes.
 
 ## Implementation Plan
 

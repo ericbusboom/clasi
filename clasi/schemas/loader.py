@@ -22,6 +22,54 @@ _VALID_GATE_KINDS: frozenset[str] = frozenset(
 )
 
 
+def load_from_dict(data: dict) -> WorkflowSchema:
+    """Validate and structurally check a workflow schema from an already-parsed dict.
+
+    Runs the same validation and structural checks as :func:`load` but skips
+    YAML file I/O.  Useful in tests that construct schema dicts in-memory.
+
+    Raises :class:`SchemaError` on any validation or structural failure.
+    """
+    if not isinstance(data, dict):
+        raise SchemaError(f"Schema data must be a mapping, got {type(data).__name__}")
+
+    # --- Pydantic validation ---
+    try:
+        schema = WorkflowSchema.model_validate(data)
+    except ValidationError as exc:
+        raise SchemaError(f"Schema validation error: {exc}") from exc
+
+    artifacts: list[ArtifactSpec] = schema.artifacts
+
+    # --- Duplicate ID check ---
+    seen_ids: set[str] = set()
+    for artifact in artifacts:
+        if artifact.id in seen_ids:
+            raise SchemaError(f"Duplicate artifact id {artifact.id!r}")
+        seen_ids.add(artifact.id)
+
+    # --- Missing requires references ---
+    for artifact in artifacts:
+        for req in artifact.requires:
+            if req not in seen_ids:
+                raise SchemaError(
+                    f"Artifact {artifact.id!r} requires unknown artifact {req!r}"
+                )
+
+    # --- Unknown gate kinds ---
+    for artifact in artifacts:
+        if artifact.gate is not None and artifact.gate.kind not in _VALID_GATE_KINDS:
+            raise SchemaError(
+                f"Artifact {artifact.id!r} has unknown gate kind {artifact.gate.kind!r}; "
+                f"valid kinds are {sorted(_VALID_GATE_KINDS)}"
+            )
+
+    # --- Topological sort with cycle detection (Kahn's algorithm) ---
+    sorted_artifacts = _topo_sort(artifacts, Path("<in-memory>"))
+
+    return schema.model_copy(update={"artifacts": sorted_artifacts})
+
+
 def load(path: str | Path) -> WorkflowSchema:
     """Load a workflow schema from a YAML file.
 
