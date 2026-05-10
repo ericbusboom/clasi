@@ -44,6 +44,64 @@ In short: issues propose; tickets implement.
 
 {instruction_lines}
 
+## Exception protocol
+
+When a lower agent (programmer or sprint-planner) cannot make progress after
+three failed fix attempts, it must **throw a ticket exception** rather than
+continuing to guess.
+
+### Threshold
+
+After three failed fix attempts on the same problem, STOP. Do not make a
+fourth attempt. Use the `throw_ticket_exception` MCP tool to record the
+block and escalate.
+
+### Payload schema
+
+`throw_ticket_exception` writes an `exception:` block to the ticket
+frontmatter and sets `status: exception`:
+
+```yaml
+exception:
+  thrown_by: programmer        # "programmer" or "sprint-planner"
+  thrown_at: 2026-05-07T14:23:00Z
+  attempted: |
+    Summary of what was tried across three attempts.
+  conflict: |
+    Exact description of what blocked progress — architecture decision,
+    missing dependency, contradictory requirements, etc.
+  surface: internal            # "internal" or "user-visible"
+```
+
+### Ticket as carrier
+
+The ticket file itself is the exception carrier. Its `status` is set to
+`exception`; the `exception:` block records the full context. The ticket is
+**not** moved to `done/` — it stays in `tickets/` so the team-lead can
+inspect and route it.
+
+### Team-lead routing branches
+
+When the team-lead sees a ticket with `status: exception`, it must choose one
+of the following routing branches before resuming execution:
+
+| `surface` value | Routing |
+|-----------------|---------|
+| `internal`      | Team-lead resolves autonomously: update architecture, revise ticket, reopen it with `reopen_ticket`, then continue. |
+| `user-visible`  | Team-lead escalates to the stakeholder: present the conflict and wait for a decision before taking any further action. |
+
+### Revision naming convention
+
+When reopening an exception ticket after resolution, update the ticket title
+or add a `## Revision` section describing what changed. Do not silently
+re-execute the same plan that failed.
+
+### Calibration signal
+
+A sprint with more than one or two exception tickets signals a planning
+problem. Escalate to the stakeholder for scope review rather than resolving
+each exception in isolation.
+
 ## MCP Tools Quick Reference
 
 ### SE Process Access (this tool group)
