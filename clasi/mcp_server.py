@@ -104,12 +104,17 @@ class Clasi:
         self._serving_agent = agent_name
         self._serving_tier = agent_tier
 
+        from clasi.schemas import get_active_schema_path
+
+        active_schema = get_active_schema_path(self.project.root)
+
         logger.info("=" * 60)
         logger.info("CLASI MCP server starting")
         logger.info("  serving: %s (tier %s)", agent_name, agent_tier)
         logger.info("  project_root: %s", self.project.root)
         logger.info("  clasi_dir: %s", self.project.clasi_dir)
         logger.info("  content_root: %s", self.content_root)
+        logger.info("  active_schema: %s", active_schema)
         logger.info("  python: %s", sys.executable)
         logger.info("  log_file: %s", self.project.log_dir / "mcp-server.log")
 
