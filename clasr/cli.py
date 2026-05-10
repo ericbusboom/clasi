@@ -41,8 +41,17 @@ def _validate_required_flag(
         parser.error(f"--{flag} is required")
 
 
+def _cmd_platforms_list(args: argparse.Namespace) -> int:  # noqa: ARG001
+    """Print registered platform IDs, one per line, sorted."""
+    from clasr.registry import INTEGRATION_REGISTRY  # lazy import
+
+    for platform_id in sorted(INTEGRATION_REGISTRY.keys()):
+        print(platform_id)
+    return 0
+
+
 def _cmd_install(args: argparse.Namespace, install_parser: argparse.ArgumentParser) -> int:
-    """Install subcommand — dispatches to platform modules."""
+    """Install subcommand — dispatches to platform integrations via INTEGRATION_REGISTRY."""
     _validate_required_flag(args, "source", install_parser)
     _validate_required_flag(args, "provider", install_parser)
     _validate_platform_flags(args, install_parser)
@@ -57,28 +66,28 @@ def _cmd_install(args: argparse.Namespace, install_parser: argparse.ArgumentPars
         print(f"clasr: error: --target '{args.target}' is not a directory", file=sys.stderr)
         return 1
 
-    from clasr.platforms import claude, codex, copilot  # lazy import
+    from clasr.registry import INTEGRATION_REGISTRY  # lazy import
 
-    platforms = []
+    selected: list[str] = []
     if args.claude:
-        platforms.append(("claude", claude))
+        selected.append("claude")
     if args.codex:
-        platforms.append(("codex", codex))
+        selected.append("codex")
     if args.copilot:
-        platforms.append(("copilot", copilot))
+        selected.append("copilot")
 
-    for platform_name, platform_module in platforms:
+    for name in selected:
         try:
-            platform_module.install(source, target, args.provider, copy=args.copy)
+            INTEGRATION_REGISTRY[name]().install(source, target, args.provider, copy=args.copy)
         except Exception as exc:  # noqa: BLE001
-            print(f"clasr: error installing {platform_name}: {exc}", file=sys.stderr)
+            print(f"clasr: error installing {name}: {exc}", file=sys.stderr)
             return 1
 
     return 0
 
 
 def _cmd_uninstall(args: argparse.Namespace, uninstall_parser: argparse.ArgumentParser) -> int:
-    """Uninstall subcommand — dispatches to platform modules."""
+    """Uninstall subcommand — dispatches to platform integrations via INTEGRATION_REGISTRY."""
     _validate_required_flag(args, "provider", uninstall_parser)
     _validate_platform_flags(args, uninstall_parser)
 
@@ -87,21 +96,21 @@ def _cmd_uninstall(args: argparse.Namespace, uninstall_parser: argparse.Argument
         print(f"clasr: error: --target '{args.target}' is not a directory", file=sys.stderr)
         return 1
 
-    from clasr.platforms import claude, codex, copilot  # lazy import
+    from clasr.registry import INTEGRATION_REGISTRY  # lazy import
 
-    platforms = []
+    selected: list[str] = []
     if args.claude:
-        platforms.append(("claude", claude))
+        selected.append("claude")
     if args.codex:
-        platforms.append(("codex", codex))
+        selected.append("codex")
     if args.copilot:
-        platforms.append(("copilot", copilot))
+        selected.append("copilot")
 
-    for platform_name, platform_module in platforms:
+    for name in selected:
         try:
-            platform_module.uninstall(target, args.provider)
+            INTEGRATION_REGISTRY[name]().uninstall(target, args.provider)
         except Exception as exc:  # noqa: BLE001
-            print(f"clasr: error uninstalling {platform_name}: {exc}", file=sys.stderr)
+            print(f"clasr: error uninstalling {name}: {exc}", file=sys.stderr)
             return 1
 
     return 0
@@ -177,6 +186,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Use file copies instead of symlinks.",
     )
 
+    # platforms subcommand group
+    platforms_parser = subparsers.add_parser(
+        "platforms",
+        help="Inspect registered clasr platforms.",
+    )
+    platforms_subparsers = platforms_parser.add_subparsers(dest="platforms_command", metavar="subcommand")
+    platforms_subparsers.add_parser(
+        "list",
+        help="Print registered platform IDs, one per line, sorted.",
+    )
+
     # uninstall subcommand (stub)
     uninstall_parser = subparsers.add_parser(
         "uninstall",
@@ -223,6 +243,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "uninstall":
         return _cmd_uninstall(args, uninstall_parser)
+
+    if args.command == "platforms":
+        if args.platforms_command == "list":
+            return _cmd_platforms_list(args)
+        # No subcommand — print platforms help
+        platforms_parser.print_help()
+        return 0
 
     # No subcommand given — print help
     parser.print_help()

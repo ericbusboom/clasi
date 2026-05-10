@@ -13,7 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from clasr.platforms.copilot import install, uninstall
+from clasr.platforms.copilot import CopilotIntegration
+
+# Convenience aliases so test bodies read naturally without rewriting every call.
+_integration = CopilotIntegration()
+install = _integration.install
+uninstall = _integration.uninstall
 
 
 # ---------------------------------------------------------------------------

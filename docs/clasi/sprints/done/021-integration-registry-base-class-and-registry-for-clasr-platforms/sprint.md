@@ -1,11 +1,20 @@
 ---
-id: "021"
-title: "Integration registry: base class and registry for clasr platforms"
-status: roadmap
+id: '021'
+title: 'Integration registry: base class and registry for clasr platforms'
+status: done
 branch: sprint/021-integration-registry-base-class-and-registry-for-clasr-platforms
-use-cases: []
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
+- SUC-008
+- SUC-009
 source-todos:
-  - integration-registry-base-class-and-registry.md
+- integration-registry-base-class-and-registry.md
 ---
 
 # Sprint 021: Integration registry: base class and registry for clasr platforms
@@ -114,3 +123,15 @@ the target shape: adding Aider there was three lines and a markdown body.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Define IntegrationBase ABC and three intermediate classes in clasr/integration.py | — |
+| 002 | Scaffold parametrized contract test with empty registry placeholder | 001 |
+| 003 | Convert ClaudeIntegration to IntegrationBase subclass with module-level shims | 001 |
+| 004 | Convert CodexIntegration to IntegrationBase subclass with module-level shims | 001, 003 |
+| 005 | Convert CopilotIntegration to IntegrationBase subclass with module-level shims | 001, 004 |
+| 006 | Create INTEGRATION_REGISTRY in clasr/registry.py with get() and detect() helpers | 003, 004, 005 |
+| 007 | Wire clasr/cli.py install and uninstall to use INTEGRATION_REGISTRY dispatch | 006 |
+| 008 | Add CursorIntegration smoke-test subclass and register in INTEGRATION_REGISTRY | 006 |
+| 009 | Add clasr platforms list CLI subcommand | 008 |
+| 010 | Deprecate clasr/platforms/detect.py as a wrapper around registry.detect() | 006 |
+| 011 | Remove module-level shims and confirm full registry dispatch end-to-end | 007, 009, 010 |
+| 012 | Update tests for registry dispatch and run full test suite green | 011 |

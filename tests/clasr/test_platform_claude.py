@@ -14,7 +14,12 @@ from typing import Generator
 
 import pytest
 
-from clasr.platforms.claude import install, uninstall
+from clasr.platforms.claude import ClaudeIntegration
+
+# Convenience aliases so test bodies read naturally without rewriting every call.
+_integration = ClaudeIntegration()
+install = _integration.install
+uninstall = _integration.uninstall
 
 
 # ---------------------------------------------------------------------------
