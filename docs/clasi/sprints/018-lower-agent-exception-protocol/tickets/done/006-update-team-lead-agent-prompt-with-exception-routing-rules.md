@@ -1,7 +1,7 @@
 ---
 id: "006"
 title: "Update team-lead agent prompt with exception routing rules"
-status: todo
+status: done
 use-cases:
   - SUC-003
   - SUC-004
@@ -33,26 +33,26 @@ the protocol the lower agents are following.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/agents/team-lead/agent.md` contains a clearly delimited
+- [x] `clasi/plugin/agents/team-lead/agent.md` contains a clearly delimited
   "Exception routing" section.
-- [ ] Section instructs the team-lead to call `list_tickets(status="exception")`
+- [x] Section instructs the team-lead to call `list_tickets(status="exception")`
   after each lower-agent dispatch to detect thrown exceptions.
-- [ ] Section instructs reading the ticket's `exception:` frontmatter block.
-- [ ] Section defines the two routing branches:
+- [x] Section instructs reading the ticket's `exception:` frontmatter block.
+- [x] Section defines the two routing branches:
   - User-visible (`surface: "user-visible"` or team-lead overrides after
     consulting `usecases.md`): escalate to stakeholder with a clear
     description of the conflict and the decision needed.
   - Internal (`surface: "internal"`): dispatch sprint-planner to revise
     `architecture-update.md` (or write `architecture-update-r1.md`),
     passing the full exception payload as context.
-- [ ] Section instructs the team-lead to re-open or replace the ticket after
+- [x] Section instructs the team-lead to re-open or replace the ticket after
   resolution — no exception ticket is left in `exception` status permanently.
-- [ ] Section states no silent abandonment: every exception ticket must
+- [x] Section states no silent abandonment: every exception ticket must
   produce either escalation or a revision cycle.
-- [ ] Section references `usecases.md` as the anchor for the
+- [x] Section references `usecases.md` as the anchor for the
   user-visible-vs-internal classification.
-- [ ] No existing content removed or materially altered.
-- [ ] No tests (documentation change only).
+- [x] No existing content removed or materially altered.
+- [x] No tests (documentation change only).
 
 ## Implementation Plan
 
