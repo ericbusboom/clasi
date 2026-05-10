@@ -1,11 +1,13 @@
 ---
-id: "002"
-title: "Scaffold parametrized contract test with empty registry placeholder"
-status: todo
-use-cases: [SUC-002]
-depends-on: ["001"]
-github-issue: ""
-todo: ""
+id: '002'
+title: Scaffold parametrized contract test with empty registry placeholder
+status: done
+use-cases:
+- SUC-002
+depends-on:
+- '001'
+github-issue: ''
+todo: ''
 completes_todo: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -26,11 +28,11 @@ The test fixture builds a minimal source directory valid for all platform types:
 
 ## Acceptance Criteria
 
-- [ ] `tests/clasr/test_integration_contract.py` exists.
-- [ ] The parametrize source is `INTEGRATION_REGISTRY.values()` (after 006 lands; placeholder before).
-- [ ] The minimal-source fixture creates `skills/test-skill/SKILL.md`, `agents/agent.md`, `rules/rule.md`, `AGENTS.md`.
-- [ ] The test runs and is skipped (or passes vacuously) if the registry is empty — no collection error.
-- [ ] `uv run pytest tests/clasr/test_integration_contract.py` exits 0.
+- [x] `tests/clasr/test_integration_contract.py` exists.
+- [x] The parametrize source is `INTEGRATION_REGISTRY.values()` (after 006 lands; placeholder before).
+- [x] The minimal-source fixture creates `skills/test-skill/SKILL.md`, `agents/agent.md`, `rules/rule.md`, `AGENTS.md`.
+- [x] The test runs and is skipped (or passes vacuously) if the registry is empty — no collection error.
+- [x] `uv run pytest tests/clasr/test_integration_contract.py` exits 0.
 
 ## Implementation Plan
 
