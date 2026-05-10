@@ -1,11 +1,17 @@
 ---
-id: "012"
-title: "Update tests for registry dispatch and run full test suite green"
-status: todo
-use-cases: [SUC-002, SUC-006, SUC-007, SUC-008, SUC-009]
-depends-on: ["011"]
-github-issue: ""
-todo: ""
+id: '012'
+title: Update tests for registry dispatch and run full test suite green
+status: done
+use-cases:
+- SUC-002
+- SUC-006
+- SUC-007
+- SUC-008
+- SUC-009
+depends-on:
+- '011'
+github-issue: ''
+todo: ''
 completes_todo: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -27,12 +33,12 @@ Also confirm mypy passes on the full `clasr/` package with no `IntegrationBase` 
 
 ## Acceptance Criteria
 
-- [ ] All test files use class-based API exclusively.
-- [ ] `test_integration_contract.py` shows 4 runs, all green.
-- [ ] `test_cli.py` covers `clasr platforms list`.
-- [ ] `test_three_platform_roundtrip.py` passes.
-- [ ] `mypy clasr/` passes clean.
-- [ ] `uv run pytest` — full suite green, zero failures, zero errors.
+- [x] All test files use class-based API exclusively.
+- [x] `test_integration_contract.py` shows 4 runs, all green.
+- [x] `test_cli.py` covers `clasr platforms list`.
+- [x] `test_three_platform_roundtrip.py` passes.
+- [x] `mypy clasr/` passes clean.
+- [x] `uv run pytest` — full suite green, zero failures, zero errors.
 
 ## Implementation Plan
 
