@@ -1,7 +1,7 @@
 ---
 id: "{id}"
 title: "{title}"
-status: planning
+status: roadmap
 branch: sprint/{id}-{slug}
 use-cases: []
 ---

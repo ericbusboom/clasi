@@ -211,7 +211,7 @@ class TestListSprints:
 
     def test_filter_by_status(self, work_dir):
         create_sprint("Active Sprint")
-        result = json.loads(list_sprints(status="planning"))
+        result = json.loads(list_sprints(status="roadmap"))
         assert len(result) == 1
         result = json.loads(list_sprints(status="done"))
         assert len(result) == 0
@@ -259,7 +259,7 @@ class TestGetSprintStatus:
         create_ticket("001", "Task B")
         result = json.loads(get_sprint_status("001"))
         assert result["id"] == "001"
-        assert result["status"] == "planning"
+        assert result["status"] == "roadmap"
         assert result["tickets"]["open"] == 2
         assert result["tickets"]["done"] == 0
 
