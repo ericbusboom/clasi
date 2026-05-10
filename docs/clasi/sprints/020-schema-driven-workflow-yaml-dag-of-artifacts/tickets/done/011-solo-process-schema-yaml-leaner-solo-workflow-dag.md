@@ -1,11 +1,14 @@
 ---
-id: "011"
-title: "solo-process/schema.yaml: leaner solo workflow DAG"
-status: todo
-use-cases: [SUC-001, SUC-006]
-depends-on: ["002"]
-github-issue: ""
-todo: ""
+id: '011'
+title: 'solo-process/schema.yaml: leaner solo workflow DAG'
+status: done
+use-cases:
+- SUC-001
+- SUC-006
+depends-on:
+- '002'
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -29,14 +32,14 @@ correctly through the same loader.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/schemas/solo-process/schema.yaml` exists and loads via `loader.load()`.
-- [ ] `ArtifactGraph(schema).phases()` returns `["roadmap", "planning-docs", "ticketing", "executing", "closing", "done"]`.
-- [ ] No `architecture-review` or `stakeholder-review` artifact nodes exist in the solo schema.
-- [ ] No `gate.kind: review` or `gate.kind: stakeholder-review` gates exist in the solo schema.
-- [ ] `executing` artifact still has `gate.kind: per-ticket` and `lock: execution`.
-- [ ] Instruction stub files exist for each artifact: `overview.md`, `sprint-plan.md`, `tickets.md`, `execution.md`, `close.md`.
-- [ ] `pyproject.toml` package data config already covers `clasi/schemas/**/*` (from ticket 005; no change needed).
-- [ ] `uv run pytest` passes.
+- [x] `clasi/schemas/solo-process/schema.yaml` exists and loads via `loader.load()`.
+- [x] `ArtifactGraph(schema).phases()` returns `["roadmap", "planning-docs", "ticketing", "executing", "closing", "done"]`.
+- [x] No `architecture-review` or `stakeholder-review` artifact nodes exist in the solo schema.
+- [x] No `gate.kind: review` or `gate.kind: stakeholder-review` gates exist in the solo schema.
+- [x] `executing` artifact still has `gate.kind: per-ticket` and `lock: execution`.
+- [x] Instruction stub files exist for each artifact: `overview.md`, `sprint-plan.md`, `tickets.md`, `execution.md`, `close.md`.
+- [x] `pyproject.toml` package data config already covers `clasi/schemas/**/*` (from ticket 005; no change needed).
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 

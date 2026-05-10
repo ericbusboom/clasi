@@ -1,0 +1,46 @@
+version: 1
+name: solo-process
+description: >
+  CLASI solo-developer workflow — leaner DAG without architecture-review or
+  stakeholder-review gates. Phase sequence: roadmap, planning-docs, ticketing,
+  executing, closing, done.
+
+artifacts:
+  - id: roadmap
+    generates: docs/clasi/overview.md
+    instruction: clasi/schemas/solo-process/instructions/overview.md
+    requires: []
+
+  - id: planning-docs
+    generates: docs/clasi/sprints/<id>/planning-docs/
+    instruction: clasi/schemas/solo-process/instructions/sprint-plan.md
+    requires:
+      - roadmap
+
+  - id: ticketing
+    generates: docs/clasi/sprints/<id>/tickets/
+    instruction: clasi/schemas/solo-process/instructions/tickets.md
+    requires:
+      - planning-docs
+
+  - id: executing
+    generates: docs/clasi/sprints/<id>/tickets/<id>.md (updated to done)
+    instruction: clasi/schemas/solo-process/instructions/execution.md
+    requires:
+      - ticketing
+    gate:
+      kind: per-ticket
+      record: per_ticket_done
+    lock: execution
+
+  - id: closing
+    generates: docs/clasi/sprints/<id>/close-report.md
+    instruction: clasi/schemas/solo-process/instructions/close.md
+    requires:
+      - executing
+
+  - id: done
+    generates: docs/clasi/sprints/<id>/ (archived)
+    instruction: clasi/schemas/solo-process/instructions/sprint-plan.md
+    requires:
+      - closing
