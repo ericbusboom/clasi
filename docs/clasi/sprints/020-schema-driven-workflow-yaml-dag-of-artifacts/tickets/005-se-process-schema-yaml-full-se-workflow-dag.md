@@ -1,7 +1,7 @@
 ---
 id: "005"
 title: "se-process/schema.yaml: full SE workflow DAG"
-status: todo
+status: done
 use-cases: [SUC-001, SUC-003]
 depends-on: ["002"]
 github-issue: ""
@@ -37,14 +37,14 @@ Ensure the package data configuration in `pyproject.toml` includes
 
 ## Acceptance Criteria
 
-- [ ] `clasi/schemas/se-process/schema.yaml` exists and is valid per `loader.load()`.
-- [ ] Artifact IDs in the schema, in topo-sort order, produce exactly `["roadmap", "planning-docs", "architecture-review", "stakeholder-review", "ticketing", "executing", "closing", "done"]`.
-- [ ] `architecture-review` artifact has `gate.kind: review` and `gate.record: architecture_review`.
-- [ ] `stakeholder-review` artifact has `gate.kind: stakeholder-review` and `gate.record: stakeholder_approval`.
-- [ ] `executing` artifact has `gate.kind: per-ticket` and `lock: execution`.
-- [ ] All 8 instruction stub files exist under `clasi/schemas/se-process/instructions/`.
-- [ ] `pyproject.toml` package data config includes `clasi/schemas/**/*`.
-- [ ] `uv run pytest` passes.
+- [x] `clasi/schemas/se-process/schema.yaml` exists and is valid per `loader.load()`.
+- [x] Artifact IDs in the schema, in topo-sort order, produce exactly `["roadmap", "planning-docs", "architecture-review", "stakeholder-review", "ticketing", "executing", "closing", "done"]`.
+- [x] `architecture-review` artifact has `gate.kind: review` and `gate.record: architecture_review`.
+- [x] `stakeholder-review` artifact has `gate.kind: stakeholder-review` and `gate.record: stakeholder_approval`.
+- [x] `executing` artifact has `gate.kind: per-ticket` and `lock: execution`.
+- [x] All 8 instruction stub files exist under `clasi/schemas/se-process/instructions/`.
+- [x] `pyproject.toml` package data config includes `clasi/schemas/**/*`.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 
