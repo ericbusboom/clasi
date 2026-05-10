@@ -1,11 +1,20 @@
 ---
-id: "021"
-title: "Integration registry: base class and registry for clasr platforms"
-status: active
+id: '021'
+title: 'Integration registry: base class and registry for clasr platforms'
+status: done
 branch: sprint/021-integration-registry-base-class-and-registry-for-clasr-platforms
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004, SUC-005, SUC-006, SUC-007, SUC-008, SUC-009]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
+- SUC-008
+- SUC-009
 source-todos:
-  - integration-registry-base-class-and-registry.md
+- integration-registry-base-class-and-registry.md
 ---
 
 # Sprint 021: Integration registry: base class and registry for clasr platforms
