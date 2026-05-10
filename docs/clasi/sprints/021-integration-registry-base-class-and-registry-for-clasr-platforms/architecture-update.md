@@ -1,6 +1,6 @@
 ---
-sprint: "021"
-status: draft
+sprint: '021'
+status: done
 ---
 
 # Architecture Update — Sprint 021: Integration registry: base class and registry for clasr platforms
