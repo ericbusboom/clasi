@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Change merge_json_files return type to dict and export reverse_diff"
-status: todo
+status: done
 use-cases: [SUC-001, SUC-002, SUC-004]
 depends-on: ["001"]
 github-issue: ""
@@ -36,15 +36,15 @@ Update the module docstring and function docstring to reflect the new API.
 
 ## Acceptance Criteria
 
-- [ ] `merge_json_files` calls `_deep_diff(base, incoming)` to compute the contribution.
-- [ ] `merge_json_files` returns `(merged_dict, diff)` where `diff` is the deep-diff dict.
-- [ ] `reverse_diff(current, diff) -> dict` is exported as a public function (wraps `_reverse_diff`).
-- [ ] The conflict warning behavior (one WARNING per conflicting top-level key) is unchanged.
-- [ ] The merged result dict is unchanged in behavior — `_deep_merge` still produces it.
-- [ ] `merge_json_files` docstring updated to document new return type.
-- [ ] `reverse_diff` has a module-level docstring describing its contract.
-- [ ] `uv run pytest tests/clasr/test_merge.py` passes with existing tests updated for dict return type.
-- [ ] Existing callers in `claude.py`, `codex.py`, `copilot.py` are NOT yet updated (that is ticket 003).
+- [x] `merge_json_files` calls `_deep_diff(base, incoming)` to compute the contribution.
+- [x] `merge_json_files` returns `(merged_dict, diff)` where `diff` is the deep-diff dict.
+- [x] `reverse_diff(current, diff) -> dict` is exported as a public function (wraps `_reverse_diff`).
+- [x] The conflict warning behavior (one WARNING per conflicting top-level key) is unchanged.
+- [x] The merged result dict is unchanged in behavior — `_deep_merge` still produces it.
+- [x] `merge_json_files` docstring updated to document new return type.
+- [x] `reverse_diff` has a module-level docstring describing its contract.
+- [x] `uv run pytest tests/clasr/test_merge.py` passes with existing tests updated for dict return type.
+- [x] Existing callers in `claude.py`, `codex.py`, `copilot.py` are NOT yet updated (that is ticket 003).
 
 ## Implementation Plan
 
