@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Audit current worktree references and serial-only state
-status: todo
+status: done
 use-cases:
   - SUC-006
 depends-on: []
@@ -24,20 +24,20 @@ This sprint is design-only. No code is changed in this ticket.
 
 ## Acceptance Criteria
 
-- [ ] Grep and read every file under `clasi/` that contains "worktree", "parallel",
+- [x] Grep and read every file under `clasi/` that contains "worktree", "parallel",
       "EnterWorktree", or "ExitWorktree" (excluding `.venv/`, `__pycache__/`,
       and build artifacts).
-- [ ] Grep `docs/clasi/` for the same terms.
-- [ ] For each reference found, note: file path, context (archived/active/log),
+- [x] Grep `docs/clasi/` for the same terms.
+- [x] For each reference found, note: file path, context (archived/active/log),
       and whether it contains any behavioral logic vs. narrative only.
-- [ ] Confirm the current execution path: read
+- [x] Confirm the current execution path: read
       `clasi/schemas/se-process/instructions/execution.md` and state in the
       audit summary that the serial-only mandate is active and
       `clasi/worktree.py` does not exist.
-- [ ] Write the audit summary as a comment block at the top of
+- [x] Write the audit summary as a comment block at the top of
       `docs/clasi/sprints/022-worktree-process-for-parallel-ticket-execution/worktree-audit-notes.md`
       (plain prose, not a formal doc; consumed only by ticket 002).
-- [ ] No files outside the sprint directory are modified.
+- [x] No files outside the sprint directory are modified.
 
 ## Implementation Plan
 
