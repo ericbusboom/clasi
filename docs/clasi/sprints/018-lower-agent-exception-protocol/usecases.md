@@ -1,5 +1,6 @@
 ---
-sprint: "018"
+sprint: 018
+status: done
 ---
 
 # Use Cases — Sprint 018: Lower-agent exception protocol

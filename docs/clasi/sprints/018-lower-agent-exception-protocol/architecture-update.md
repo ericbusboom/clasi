@@ -1,6 +1,6 @@
 ---
-sprint: "018"
-status: planning
+sprint: 018
+status: done
 ---
 
 # Architecture Update — Sprint 018: Lower-agent exception protocol
