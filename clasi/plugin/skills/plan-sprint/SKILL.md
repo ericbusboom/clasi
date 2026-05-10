@@ -44,10 +44,13 @@ For batch roadmap planning of multiple sprints.
 2. **Mine the issues directory**: Scan `.clasi/issues/` for relevant ideas.
    Discuss with the stakeholder.
 
-3. **Create sprint directory**: Use the `create_sprint` MCP tool.
+3. **Create sprint directory**: Call `create_sprint(title)`. The tool
+   creates the sprint directory and writes a `sprint.md` template with
+   `status: roadmap`. Only `sprint.md` is created — no `usecases.md`,
+   no `architecture-update.md`, no `tickets/` directory.
 
-4. **Write sprint.md**: Lightweight plan with:
-   - Frontmatter: `status: roadmap`
+4. **Populate sprint.md**: Edit the generated file to fill in the
+   lightweight plan:
    - Goals and feature scope
    - TODO references
    - No tickets, no architecture, no use cases
@@ -64,7 +67,12 @@ agent via the Agent tool to fill in full planning artifacts.
 1. **Verify sprint exists**: Sprint directory and roadmap `sprint.md`
    should already exist from Phase 1.
 
-2. **Invoke sprint-planner agent**: Use the Agent tool to dispatch the
+2. **Scaffold detail artifacts**: Call `detail_sprint(sprint_id)`. This
+   creates `usecases.md`, `architecture-update.md`, `tickets/`, and
+   `tickets/done/`, and advances the sprint phase to `planning-docs`.
+   Do not write planning artifacts before calling this tool.
+
+3. **Invoke sprint-planner agent**: Use the Agent tool to dispatch the
    sprint-planner agent with:
    - Sprint ID and directory path
    - Sprint goals and TODO references
@@ -74,13 +82,13 @@ agent via the Agent tool to fill in full planning artifacts.
    The sprint-planner handles architecture, architecture review, and
    ticket creation inline — no sub-dispatches needed.
 
-3. **Stakeholder review**: Present the completed plan to the stakeholder.
+4. **Stakeholder review**: Present the completed plan to the stakeholder.
    Record stakeholder approval gate (`record_gate_result`).
 
-4. **Acquire execution lock**: Call `acquire_execution_lock` to claim
+5. **Acquire execution lock**: Call `acquire_execution_lock` to claim
    the lock and create the sprint branch. Advance to `executing`.
 
-5. **Set sprint status**: Update sprint doc status to `active`.
+6. **Set sprint status**: Update sprint doc status to `active`.
 
 ## Output
 
