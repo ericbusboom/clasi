@@ -86,6 +86,16 @@ class Ticket:
         return list(val) if val else []
 
     @property
+    def exception_payload(self) -> dict | None:
+        """From frontmatter 'exception' block; None if absent.
+
+        Schema keys: thrown_by, thrown_at, attempted, conflict, surface.
+        No validation is performed — returns the raw dict as-is.
+        """
+        val = self.frontmatter.get("exception")
+        return dict(val) if isinstance(val, dict) else None
+
+    @property
     def sprint(self) -> Sprint:
         return self._sprint
 
