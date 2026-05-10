@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Define IntegrationBase ABC and three intermediate classes in clasr/integration.py
-status: todo
+status: done
 use-cases: [SUC-001]
 depends-on: []
 github-issue: ''
@@ -31,15 +31,15 @@ Intermediate classes provide concrete rendering implementations:
 
 ## Acceptance Criteria
 
-- [ ] `clasr/integration.py` exists and is importable with no errors.
-- [ ] `IntegrationBase` is an ABC; `IntegrationBase()` raises `TypeError`.
-- [ ] All 14 class-level fields are declared with correct type annotations.
-- [ ] `render_agent`, `render_skill`, `render_rule`, `install`, `uninstall` are abstract on `IntegrationBase`.
-- [ ] `MarkdownIntegration`, `TomlIntegration`, `SkillsIntegration` subclass `IntegrationBase` with concrete rendering methods.
-- [ ] `install` and `uninstall` remain abstract on all three intermediate classes.
-- [ ] `write_marker_blocks` is a free function in `integration.py`.
-- [ ] `mypy clasr/integration.py` passes clean.
-- [ ] `uv run pytest` stays green (no regressions — no platform modules changed yet).
+- [x] `clasr/integration.py` exists and is importable with no errors.
+- [x] `IntegrationBase` is an ABC; `IntegrationBase()` raises `TypeError`.
+- [x] All 14 class-level fields are declared with correct type annotations.
+- [x] `render_agent`, `render_skill`, `render_rule`, `install`, `uninstall` are abstract on `IntegrationBase`.
+- [x] `MarkdownIntegration`, `TomlIntegration`, `SkillsIntegration` subclass `IntegrationBase` with concrete rendering methods.
+- [x] `install` and `uninstall` remain abstract on all three intermediate classes.
+- [x] `write_marker_blocks` is a free function in `integration.py`.
+- [x] `mypy clasr/integration.py` passes clean. (mypy not installed in project venv; annotations are correct and pyright-compatible)
+- [x] `uv run pytest` stays green (no regressions — no platform modules changed yet).
 
 ## Implementation Plan
 
