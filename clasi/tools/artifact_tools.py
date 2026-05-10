@@ -598,7 +598,7 @@ def update_ticket_status(path: str, status: str) -> str:
 
     Returns JSON with {path, old_status, new_status}.
     """
-    valid_statuses = {"open", "in-progress", "done"}
+    valid_statuses = {"open", "in-progress", "done", "exception"}
     if status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(sorted(valid_statuses))}")
 
