@@ -1,7 +1,7 @@
 ---
 id: "007"
 title: "Update sprint-roadmap and plan-sprint skill prose"
-status: todo
+status: done
 use-cases:
   - SUC-005
 depends-on:
@@ -37,12 +37,12 @@ advances the phase to `planning-docs`.
 
 ## Acceptance Criteria
 
-- [ ] `sprint-roadmap/SKILL.md` contains no workaround steps for deleting extra artifacts.
-- [ ] `sprint-roadmap/SKILL.md` describes the lightweight `create_sprint` flow correctly.
-- [ ] `plan-sprint/SKILL.md` Phase 1 states `create_sprint` produces only `sprint.md` with `status: roadmap`.
-- [ ] `plan-sprint/SKILL.md` Phase 2 states `detail_sprint(sprint_id)` is called first to scaffold artifacts.
-- [ ] No contradictions between the two documents.
-- [ ] `uv run pytest` passes with no regressions (prose change only, no code touched).
+- [x] `sprint-roadmap/SKILL.md` contains no workaround steps for deleting extra artifacts.
+- [x] `sprint-roadmap/SKILL.md` describes the lightweight `create_sprint` flow correctly.
+- [x] `plan-sprint/SKILL.md` Phase 1 states `create_sprint` produces only `sprint.md` with `status: roadmap`.
+- [x] `plan-sprint/SKILL.md` Phase 2 states `detail_sprint(sprint_id)` is called first to scaffold artifacts.
+- [x] No contradictions between the two documents.
+- [x] `uv run pytest` passes with no regressions (prose change only, no code touched).
 
 ## Implementation Plan
 
