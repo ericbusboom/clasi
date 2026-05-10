@@ -22,6 +22,21 @@ API:
         Raises FileNotFoundError if existing does not exist.
         Emits a WARNING to stderr for each top-level key conflict.
 
+Private helpers (not part of the public API):
+
+    _deep_merge(base, overlay) -> dict
+        Deep-merges overlay into base; overlay wins on scalar/type conflicts.
+
+    _deep_diff(base, overlay) -> dict
+        Returns the sub-tree of overlay that contributes new or changed values
+        relative to base.  Used to record exactly what a provider contributed
+        so that its leaves can be removed precisely on uninstall.
+
+    _reverse_diff(current, diff) -> dict
+        Returns a copy of current with the leaves recorded in diff removed.
+        Used on uninstall to strip only a single provider's contribution from
+        a shared JSON file without touching another provider's keys.
+
 No imports from clasi or any other clasr module.
 """
 
@@ -49,6 +64,59 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
             result[k] = _deep_merge(result[k], v)
         else:
             result[k] = v
+    return result
+
+
+def _deep_diff(base: dict, overlay: dict) -> dict:
+    """Return the sub-tree of *overlay* that contributes new or changed values.
+
+    Rules
+    -----
+    - Key absent from *base*: include the full value from *overlay*.
+    - Both values are dicts: recurse; include only non-empty sub-diffs.
+    - Scalar / list / type-mismatch: include *overlay* value only when it
+      differs from the *base* value; omit entirely when equal.
+
+    Neither input is mutated.
+    """
+    result: dict = {}
+    for k, v in overlay.items():
+        if k not in base:
+            result[k] = v
+        elif isinstance(base[k], dict) and isinstance(v, dict):
+            sub = _deep_diff(base[k], v)
+            if sub:
+                result[k] = sub
+        else:
+            if v != base[k]:
+                result[k] = v
+    return result
+
+
+def _reverse_diff(current: dict, diff: dict) -> dict:
+    """Return a copy of *current* with the leaves recorded in *diff* removed.
+
+    Rules
+    -----
+    - Both values are dicts: recurse; if recursion yields an empty dict,
+      remove the key from the result entirely.
+    - Otherwise: delete ``result[k]`` (no element-level list subtraction).
+    - Keys absent from *current*: silently skip.
+
+    Neither input is mutated.
+    """
+    result = dict(current)
+    for k, v in diff.items():
+        if k not in result:
+            continue
+        if isinstance(result[k], dict) and isinstance(v, dict):
+            sub = _reverse_diff(result[k], v)
+            if sub:
+                result[k] = sub
+            else:
+                del result[k]
+        else:
+            del result[k]
     return result
 
 
