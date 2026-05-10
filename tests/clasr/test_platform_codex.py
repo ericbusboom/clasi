@@ -13,7 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from clasr.platforms.codex import install, uninstall
+from clasr.platforms.codex import CodexIntegration
+
+# Convenience aliases so test bodies read naturally without rewriting every call.
+_integration = CodexIntegration()
+install = _integration.install
+uninstall = _integration.uninstall
 
 
 # ---------------------------------------------------------------------------

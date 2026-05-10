@@ -8,8 +8,7 @@ Given an ``asr/`` source directory, installs CLASI-rendered content into
 ``.github/copilot-instructions.md``, and records everything in a manifest.
 
 Public API:
-    install(source: Path, target: Path, provider: str, copy: bool = False) -> None
-    uninstall(target: Path, provider: str) -> None
+    CopilotIntegration — use via INTEGRATION_REGISTRY or instantiate directly.
 
 Source layout expected:
     <source>/skills/<n>/SKILL.md  — installed under .agents/skills/; .github/skills/
@@ -500,27 +499,3 @@ class CopilotIntegration(MarkdownIntegration, SkillsIntegration):
         _cleanup_empty_dirs(target)
 
 
-# ---------------------------------------------------------------------------
-# Module-level shims (backward compatibility)
-# ---------------------------------------------------------------------------
-
-
-def install(
-    source: Path,
-    target: Path,
-    provider: str,
-    copy: bool = False,
-) -> None:
-    """Install the Copilot platform from *source* into *target*.
-
-    Shim that delegates to :class:`CopilotIntegration`.
-    """
-    CopilotIntegration().install(source, target, provider, copy)
-
-
-def uninstall(target: Path, provider: str) -> None:
-    """Uninstall the Copilot platform for *provider* from *target*.
-
-    Shim that delegates to :class:`CopilotIntegration`.
-    """
-    CopilotIntegration().uninstall(target, provider)
