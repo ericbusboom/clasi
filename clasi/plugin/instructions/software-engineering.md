@@ -473,6 +473,63 @@ Things go wrong during implementation. Here is what to do.
    being actively worked).
 4. Escalate to the human: explain the blocker and ask for guidance.
 
+## Exception protocol
+
+Lower agents (programmer and sprint-planner) use the exception protocol to
+escalate blocks that cannot be resolved within the agent's own authority.
+
+### Threshold
+
+After **three failed fix attempts** on the same problem, stop. Do not make
+a fourth attempt. Call `throw_ticket_exception` to record the block and
+hand off to the team-lead.
+
+### Payload schema
+
+The `throw_ticket_exception` MCP tool writes an `exception:` block to the
+ticket frontmatter and sets `status: exception`:
+
+```yaml
+exception:
+  thrown_by: programmer        # "programmer" or "sprint-planner"
+  thrown_at: 2026-05-07T14:23:00Z
+  attempted: |
+    Summary of what was tried across three attempts.
+  conflict: |
+    Exact description of what blocked progress — architecture decision,
+    missing dependency, contradictory requirements, etc.
+  surface: internal            # "internal" or "user-visible"
+```
+
+### Ticket as carrier
+
+The ticket itself is the exception carrier. Its `status` is set to
+`exception`; the `exception:` block records the full context. The ticket is
+**not** moved to `done/` — it stays in `tickets/` so the team-lead can
+inspect and route it.
+
+### Team-lead routing
+
+When the team-lead sees a ticket with `status: exception`, it chooses one of
+the following routing branches:
+
+| `surface` value | Routing |
+|-----------------|---------|
+| `internal`      | Team-lead resolves autonomously: update architecture or ticket plan, reopen with `reopen_ticket`, then continue. |
+| `user-visible`  | Team-lead escalates to the stakeholder: present the conflict and wait for a decision before proceeding. |
+
+### Revision naming convention
+
+When reopening an exception ticket after resolution, add a `## Revision`
+section or update the title to indicate what changed. Do not silently
+re-execute the same plan that failed.
+
+### Calibration signal
+
+A sprint with more than one or two exception tickets signals a planning
+problem. Escalate to the stakeholder for scope review rather than resolving
+each exception in isolation.
+
 ### Stage 4: Maintenance
 
 1. If a change alters scope, update the brief and affected use cases first.
