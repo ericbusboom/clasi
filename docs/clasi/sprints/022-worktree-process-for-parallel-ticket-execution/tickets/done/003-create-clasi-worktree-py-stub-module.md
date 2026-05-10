@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Create clasi/worktree.py stub module"
-status: todo
+status: done
 use-cases:
   - SUC-005
   - SUC-006
@@ -36,12 +36,12 @@ functions. No caller in the existing codebase imports this module.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/worktree.py` is created.
-- [ ] Module docstring references `docs/clasi/design/worktree-process.md` as the
+- [x] `clasi/worktree.py` is created.
+- [x] Module docstring references `docs/clasi/design/worktree-process.md` as the
       authoritative spec.
-- [ ] Module imports only from Python stdlib (`subprocess`, `json`, `pathlib`,
+- [x] Module imports only from Python stdlib (`subprocess`, `json`, `pathlib`,
       `datetime`). No CLASI package imports.
-- [ ] The following functions are defined as stubs (each raises
+- [x] The following functions are defined as stubs (each raises
       `NotImplementedError` or returns a documented sentinel):
       - `create_worktree(repo_root: Path, sprint_id: str, ticket_id: str) -> Path`
       - `create_ticket_branch(worktree_path: Path, sprint_id: str, ticket_id: str, slug: str) -> str`
@@ -51,12 +51,12 @@ functions. No caller in the existing codebase imports this module.
       - `write_audit_record(sprint_dir: Path, event: dict) -> None`
       - `read_audit_record(sprint_dir: Path) -> dict`
       - `check_independence(tickets: list[dict]) -> list[list[str]]`
-- [ ] Each function has a docstring stating: purpose, parameters, return value,
+- [x] Each function has a docstring stating: purpose, parameters, return value,
       and a "See: worktree-process.md §<section>" cross-reference.
-- [ ] No existing module in `clasi/` imports `clasi.worktree`.
-- [ ] `uv run pytest` passes (no regressions; new module is not imported by tests
+- [x] No existing module in `clasi/` imports `clasi.worktree`.
+- [x] `uv run pytest` passes (no regressions; new module is not imported by tests
       unless a smoke test is added per the optional criterion below).
-- [ ] Optional: a smoke test in `tests/clasi/test_worktree_stubs.py` that imports
+- [x] Optional: a smoke test in `tests/clasi/test_worktree_stubs.py` that imports
       the module and asserts each function raises `NotImplementedError`. Add if
       the programmer judges it valuable; note the decision either way.
 
