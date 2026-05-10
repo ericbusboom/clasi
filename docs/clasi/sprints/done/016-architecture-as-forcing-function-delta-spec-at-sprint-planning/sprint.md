@@ -1,11 +1,13 @@
 ---
-id: "016"
-title: "Architecture-update positioning: prose planning artifact, documented"
-status: planning
+id: '016'
+title: 'Architecture-update positioning: prose planning artifact, documented'
+status: done
 branch: sprint/016-architecture-as-forcing-function-delta-spec-at-sprint-planning
-use-cases: [SUC-001, SUC-002]
+use-cases:
+- SUC-001
+- SUC-002
 todos:
-  - sprint-process-changes.md (architecture-positioning half only)
+- sprint-process-changes.md (architecture-positioning half only)
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
