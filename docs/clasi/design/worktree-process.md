@@ -451,16 +451,18 @@ As of sprint 022 (2026-05-07), the worktree surface in the active codebase is:
 
 | Location | Status | Nature |
 |----------|--------|--------|
-| `clasi/schemas/se-process/instructions/execution.md` | Active | Behavioral — serial-only mandate, prohibits worktrees |
+| `clasi/schemas/se-process/instructions/execution.md` | Active | Behavioral — serial-only mandate, prohibits worktrees; references this spec |
+| `clasi/worktree.py` | Active (stub) | Public API stubs — all functions raise `NotImplementedError`; created in sprint 022 ticket 003 |
 | `clasi/cli.py` line 291 | Active | Log label only, unrelated to worktree execution |
 | `clasi/plugin/agents/old/sprint-executor/execute-ticket.md` | Archived | Historical narrative of old parallel path |
 | `clasi/plugin/agents/old/project-architect/agent.md` | Archived | General narrative |
 | `clasi/plugin/instructions/git-workflow.md` | Active | Minimal narrative, no worktree logic |
 | All `docs/clasi/` references | Archive/planning | Narrative only |
 
-No `clasi/worktree.py` exists. No active code implements or supports worktree
-operations. The deleted files (`worktree-protocol.md`, `parallel-execution/SKILL.md`)
-have no surviving implementations.
+`clasi/worktree.py` was created in sprint 022 (ticket 003) as an API attachment
+point. All functions are stubs that raise `NotImplementedError`. No other active
+module imports this module. The deleted files (`worktree-protocol.md`,
+`parallel-execution/SKILL.md`) have no surviving implementations beyond the stubs.
 
 This design document describes what must be built when the stakeholder lifts the
 serial-only mandate.

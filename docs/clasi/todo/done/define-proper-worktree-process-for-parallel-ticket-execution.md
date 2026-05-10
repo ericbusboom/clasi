@@ -1,8 +1,11 @@
 ---
-status: in-progress
+status: done
 sprint: '022'
 tickets:
 - 022-001
+- 022-002
+- 022-003
+- 022-004
 ---
 
 # Define Proper Worktree Process for Parallel Ticket Execution
