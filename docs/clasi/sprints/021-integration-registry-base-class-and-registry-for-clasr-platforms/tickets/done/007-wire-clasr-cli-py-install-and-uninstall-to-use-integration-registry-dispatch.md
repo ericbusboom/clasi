@@ -1,11 +1,13 @@
 ---
-id: "007"
-title: "Wire clasr/cli.py install and uninstall to use INTEGRATION_REGISTRY dispatch"
-status: todo
-use-cases: [SUC-007]
-depends-on: ["006"]
-github-issue: ""
-todo: ""
+id: '007'
+title: Wire clasr/cli.py install and uninstall to use INTEGRATION_REGISTRY dispatch
+status: done
+use-cases:
+- SUC-007
+depends-on:
+- '006'
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -41,12 +43,12 @@ The `--claude`, `--codex`, `--copilot` CLI flags continue to exist — only the 
 
 ## Acceptance Criteria
 
-- [ ] `_cmd_install` resolves platforms via `INTEGRATION_REGISTRY`, not direct module imports.
-- [ ] `_cmd_uninstall` resolves platforms via `INTEGRATION_REGISTRY`.
-- [ ] `clasr install --claude --source ... --provider ...` works end-to-end.
-- [ ] `clasr uninstall --claude --provider ...` works end-to-end.
-- [ ] `tests/clasr/test_cli.py` passes unchanged.
-- [ ] `uv run pytest` green.
+- [x] `_cmd_install` resolves platforms via `INTEGRATION_REGISTRY`, not direct module imports.
+- [x] `_cmd_uninstall` resolves platforms via `INTEGRATION_REGISTRY`.
+- [x] `clasr install --claude --source ... --provider ...` works end-to-end.
+- [x] `clasr uninstall --claude --provider ...` works end-to-end.
+- [x] `tests/clasr/test_cli.py` passes unchanged.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 
