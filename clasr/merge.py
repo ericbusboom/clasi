@@ -16,11 +16,18 @@ API:
         incoming: dict,
         provider: str,
         other_provider: str,
-    ) -> tuple[dict, list[str]]
+    ) -> tuple[dict, dict]
         Reads existing as JSON; deep-merges incoming into it; returns
-        (merged_dict, list_of_top_level_keys_from_incoming).
+        (merged_dict, diff) where diff is the deep-diff snapshot of what
+        incoming contributes beyond existing.
         Raises FileNotFoundError if existing does not exist.
         Emits a WARNING to stderr for each top-level key conflict.
+
+    reverse_diff(current: dict, diff: dict) -> dict
+        Remove the contribution recorded in *diff* from *current*.
+        Thin public wrapper around _reverse_diff, intended for use by
+        platform uninstallers that need to strip a provider's contribution
+        from a shared JSON file without duplicating dict-walking logic.
 
 Private helpers (not part of the public API):
 
@@ -120,12 +127,23 @@ def _reverse_diff(current: dict, diff: dict) -> dict:
     return result
 
 
+def reverse_diff(current: dict, diff: dict) -> dict:
+    """Remove the contribution recorded in *diff* from *current*.
+
+    Returns a new dict equal to *current* minus the leaves described by
+    *diff*.  Neither input is mutated.  Intended for use by platform
+    uninstallers that need to strip a single provider's contribution from a
+    shared JSON file.  See ``_reverse_diff`` for the detailed removal rules.
+    """
+    return _reverse_diff(current, diff)
+
+
 def merge_json_files(
     existing: Path,
     incoming: dict,
     provider: str,
     other_provider: str,
-) -> tuple[dict, list[str]]:
+) -> tuple[dict, dict]:
     """Read *existing* as JSON and deep-merge *incoming* into it.
 
     Parameters
@@ -142,9 +160,13 @@ def merge_json_files(
 
     Returns
     -------
-    tuple[dict, list[str]]
-        ``(merged_dict, keys_contributed_by_incoming)`` where
-        ``keys_contributed_by_incoming`` is ``list(incoming.keys())``.
+    tuple[dict, dict]
+        ``(merged_dict, diff)`` where ``merged_dict`` is the result of
+        deep-merging *incoming* into the existing file contents, and ``diff``
+        is the deep-diff snapshot (produced by ``_deep_diff``) recording
+        exactly what *incoming* contributes beyond the existing file.  The
+        diff can be passed to ``reverse_diff`` on uninstall to strip only
+        this provider's contribution.
 
     Side-effects
     ------------
@@ -166,4 +188,5 @@ def merge_json_files(
             )
 
     merged = _deep_merge(base, incoming)
-    return merged, list(incoming.keys())
+    diff = _deep_diff(base, incoming)
+    return merged, diff

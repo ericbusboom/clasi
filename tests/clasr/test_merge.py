@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from clasr.merge import is_json_passthrough, merge_json_files
+from clasr.merge import is_json_passthrough, merge_json_files, reverse_diff
 
 
 # ---------------------------------------------------------------------------
@@ -48,26 +48,29 @@ def test_merge_json_files_missing_existing_raises(tmp_path):
 
 
 def test_merge_json_files_basic(tmp_path):
-    """No conflicts: merged dict has all keys; keys_contributed == incoming keys."""
+    """No conflicts: merged dict has all keys; diff is a dict with incoming keys."""
     existing = tmp_path / "settings.json"
     existing.write_text(json.dumps({"alpha": 1}))
 
     incoming = {"beta": 2, "gamma": 3}
-    merged, contributed = merge_json_files(existing, incoming, "provA", "provB")
+    merged, diff = merge_json_files(existing, incoming, "provA", "provB")
 
     assert merged == {"alpha": 1, "beta": 2, "gamma": 3}
-    assert contributed == ["beta", "gamma"]
+    assert isinstance(diff, dict)
+    assert "beta" in diff
+    assert "gamma" in diff
 
 
-def test_merge_json_files_returns_contributed_keys(tmp_path):
-    """keys_contributed contains only the incoming top-level keys."""
+def test_merge_json_files_returns_contributed_diff(tmp_path):
+    """diff is a dict containing only what incoming contributes beyond existing."""
     existing = tmp_path / "s.json"
     existing.write_text(json.dumps({"existing_key": True}))
 
     incoming = {"mcpServers": {"my-server": {}}}
-    _, contributed = merge_json_files(existing, incoming, "provA", "provB")
+    _, diff = merge_json_files(existing, incoming, "provA", "provB")
 
-    assert contributed == ["mcpServers"]
+    assert isinstance(diff, dict)
+    assert "mcpServers" in diff
 
 
 # ---------------------------------------------------------------------------
@@ -128,3 +131,52 @@ def test_merge_json_files_non_dict_deeper_level_incoming_wins(tmp_path):
     )
 
     assert merged["key"] == {"nested": True}
+
+
+def test_merge_json_files_diff_excludes_unchanged_keys(tmp_path):
+    """Diff omits incoming keys whose value matches what is already in existing."""
+    existing = tmp_path / "settings.json"
+    existing.write_text(json.dumps({"shared": "same-value", "other": 1}))
+
+    incoming = {"shared": "same-value", "new_key": 42}
+    _, diff = merge_json_files(existing, incoming, "provA", "provB")
+
+    assert "shared" not in diff
+    assert "new_key" in diff
+
+
+# ---------------------------------------------------------------------------
+# reverse_diff
+# ---------------------------------------------------------------------------
+
+
+def test_reverse_diff_removes_contributed_keys(tmp_path):
+    """reverse_diff strips exactly the keys recorded in the diff."""
+    existing = tmp_path / "settings.json"
+    existing.write_text(json.dumps({"alpha": 1}))
+
+    incoming = {"beta": 2, "gamma": 3}
+    merged, diff = merge_json_files(existing, incoming, "provA", "provB")
+
+    restored = reverse_diff(merged, diff)
+    assert restored == {"alpha": 1}
+
+
+def test_reverse_diff_nested(tmp_path):
+    """reverse_diff removes only contributed nested keys, not pre-existing siblings."""
+    existing = tmp_path / "settings.json"
+    existing.write_text(json.dumps({"servers": {"a": 1}}))
+
+    incoming = {"servers": {"b": 2}}
+    merged, diff = merge_json_files(existing, incoming, "provA", "provB")
+
+    restored = reverse_diff(merged, diff)
+    assert restored == {"servers": {"a": 1}}
+
+
+def test_reverse_diff_public_export():
+    """reverse_diff is importable as a top-level public function."""
+    current = {"x": 1, "y": 2}
+    diff = {"y": 2}
+    result = reverse_diff(current, diff)
+    assert result == {"x": 1}
