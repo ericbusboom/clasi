@@ -52,10 +52,33 @@ def _advance_to_executing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)
 
 
+def _write_planning_docs(sprint_dir: Path) -> None:
+    """Create usecases.md and architecture-update.md in a sprint directory.
+
+    Since create_sprint() now only writes sprint.md (roadmap phase), tests
+    that need fully-populated planning docs must call this helper explicitly.
+    """
+    sprint_dir.joinpath("usecases.md").write_text(
+        "---\nstatus: draft\n---\n\n# Sprint Use Cases\n\n## SUC-001-001: placeholder\n",
+        encoding="utf-8",
+    )
+    sprint_dir.joinpath("architecture-update.md").write_text(
+        "---\nstatus: draft\n---\n\n# Architecture Update\n\n"
+        "## What Changed\n\n(placeholder)\n\n"
+        "## Why\n\n(placeholder)\n\n"
+        "## Impact on Existing Components\n\n(placeholder)\n\n"
+        "## Migration Concerns\n\n(placeholder)\n",
+        encoding="utf-8",
+    )
+
+
 def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
     """Create a sprint with real planning docs and tickets, ready for execution."""
     create_sprint("Test Sprint")
     sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
+
+    # create_sprint() only writes sprint.md now; create the planning docs explicitly.
+    _write_planning_docs(sprint_dir)
 
     # Fill in sprint.md with real content
     fm = read_frontmatter(sprint_dir / "sprint.md")
@@ -74,9 +97,6 @@ def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
     )
 
     # Fill in usecases.md with real content
-    fm_uc = read_frontmatter(sprint_dir / "usecases.md")
-    fm_uc["status"] = "approved"
-    write_frontmatter(sprint_dir / "usecases.md", fm_uc)
     (sprint_dir / "usecases.md").write_text(
         "---\nstatus: approved\n---\n\n# Sprint 001 Use Cases\n\n"
         "## SUC-001-001: Create Widget\n\n"
@@ -85,9 +105,6 @@ def _make_sprint_ready_for_execution(work_dir, sprint_id: str = "001"):
     )
 
     # Fill in architecture-update.md with real content
-    fm_arch = read_frontmatter(sprint_dir / "architecture-update.md")
-    fm_arch["status"] = "approved"
-    write_frontmatter(sprint_dir / "architecture-update.md", fm_arch)
     (sprint_dir / "architecture-update.md").write_text(
         "---\nstatus: approved\n---\n\n"
         "# Architecture Update\n\n"
@@ -124,6 +141,8 @@ class TestReviewSprintPreExecution:
         """Planning docs with draft status are flagged."""
         create_sprint("Test Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
+        # create_sprint() only writes sprint.md; add planning docs in draft status.
+        _write_planning_docs(sprint_dir)
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 
@@ -140,7 +159,10 @@ class TestReviewSprintPreExecution:
         create_sprint("Test Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
 
-        # Update statuses but leave content as template
+        # create_sprint() only writes sprint.md; add planning docs with template content.
+        _write_planning_docs(sprint_dir)
+
+        # Update statuses but leave content as template (placeholder text)
         for f in ["usecases.md", "architecture-update.md"]:
             fm = read_frontmatter(sprint_dir / f)
             fm["status"] = "approved"
@@ -239,6 +261,8 @@ class TestReviewSprintPreClose:
         """Planning docs still in draft are flagged."""
         create_sprint("Test Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
+        # create_sprint() only writes sprint.md; add planning docs in draft status.
+        _write_planning_docs(sprint_dir)
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 
