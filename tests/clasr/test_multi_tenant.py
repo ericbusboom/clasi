@@ -366,6 +366,199 @@ class TestJsonMergeUninstall:
 
 
 # ---------------------------------------------------------------------------
+# Section C2: JSON-merge uninstall — overlapping key scenario
+# ---------------------------------------------------------------------------
+
+
+class TestJsonMergeUninstallOverlapping:
+    """JSON-merge uninstall with overlapping keys between two providers.
+
+    This exercises the original bug: when both providers set the same key,
+    selective uninstall of one provider must preserve the surviving provider's
+    data rather than removing the shared key entirely.
+    """
+
+    def test_c2_1_uninstall_b_leaves_a_model_intact(self, tmp_path: Path) -> None:
+        """C2-1: Both providers set `model` to the same value.
+
+        Provider-B's `contributed` diff is empty for `model` (no change from
+        provider-A's value), so uninstalling B leaves A's `model` value intact.
+        """
+        src_a = make_asr_dir(
+            tmp_path / "a",
+            provider="provider_a",
+            skill_names=("skill_a",),
+            settings_keys={"model": "claude-3-sonnet"},
+        )
+        src_b = make_asr_dir(
+            tmp_path / "b",
+            provider="provider_b",
+            skill_names=("skill_b",),
+            settings_keys={"model": "claude-3-sonnet"},
+        )
+        target = tmp_path / "project"
+        target.mkdir()
+
+        claude_platform.install(source=src_a, target=target, provider="provider_a")
+        claude_platform.install(source=src_b, target=target, provider="provider_b")
+
+        # Uninstall provider_b only.
+        claude_platform.uninstall(target=target, provider="provider_b")
+
+        settings_path = target / ".claude" / "settings.json"
+        assert settings_path.exists(), (
+            "settings.json was deleted prematurely — provider_a still owns 'model'"
+        )
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert "model" in data, "provider_a's 'model' key was removed when only provider_b was uninstalled"
+        assert data["model"] == "claude-3-sonnet", (
+            f"provider_a's 'model' value corrupted; expected 'claude-3-sonnet', got '{data['model']}'"
+        )
+
+    def test_c2_2_uninstall_b_leaves_a_permissions_intact(self, tmp_path: Path) -> None:
+        """C2-2: Both providers set `permissions` with non-overlapping sub-keys.
+
+        Provider-A owns permissions.allow; provider-B adds permissions.deny.
+        Uninstalling B removes only the `deny` sub-key and leaves A's `allow` list.
+        """
+        src_a = make_asr_dir(
+            tmp_path / "a",
+            provider="provider_a",
+            skill_names=("skill_a",),
+            settings_keys={"permissions": {"allow": ["read", "write"]}},
+        )
+        src_b = make_asr_dir(
+            tmp_path / "b",
+            provider="provider_b",
+            skill_names=("skill_b",),
+            settings_keys={"permissions": {"deny": ["execute"]}},
+        )
+        target = tmp_path / "project"
+        target.mkdir()
+
+        claude_platform.install(source=src_a, target=target, provider="provider_a")
+        claude_platform.install(source=src_b, target=target, provider="provider_b")
+
+        # Both sub-keys should be present after both installs.
+        settings_path = target / ".claude" / "settings.json"
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert data.get("permissions", {}).get("allow") == ["read", "write"], (
+            "permissions.allow missing after both installs"
+        )
+        assert data.get("permissions", {}).get("deny") == ["execute"], (
+            "permissions.deny missing after both installs"
+        )
+
+        # Uninstall provider_b.
+        claude_platform.uninstall(target=target, provider="provider_b")
+
+        # settings.json must still exist with provider_a's permissions intact.
+        assert settings_path.exists(), (
+            "settings.json was deleted — provider_a still owns permissions.allow"
+        )
+        data_after = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert "permissions" in data_after, (
+            "provider_a's 'permissions' key was removed when only provider_b was uninstalled"
+        )
+        assert data_after["permissions"].get("allow") == ["read", "write"], (
+            "provider_a's 'permissions.allow' was corrupted after provider_b uninstall"
+        )
+        assert "deny" not in data_after["permissions"], (
+            "provider_b's 'permissions.deny' was not removed on uninstall"
+        )
+
+    def test_c2_3_uninstall_both_deletes_file(self, tmp_path: Path) -> None:
+        """C2-3: After uninstalling B then A (both with overlapping `model` key), settings.json is deleted."""
+        src_a = make_asr_dir(
+            tmp_path / "a",
+            provider="provider_a",
+            skill_names=("skill_a",),
+            settings_keys={"model": "claude-3-sonnet"},
+        )
+        src_b = make_asr_dir(
+            tmp_path / "b",
+            provider="provider_b",
+            skill_names=("skill_b",),
+            settings_keys={"model": "claude-3-sonnet"},
+        )
+        target = tmp_path / "project"
+        target.mkdir()
+
+        claude_platform.install(source=src_a, target=target, provider="provider_a")
+        claude_platform.install(source=src_b, target=target, provider="provider_b")
+
+        # Uninstall both providers.
+        claude_platform.uninstall(target=target, provider="provider_b")
+        claude_platform.uninstall(target=target, provider="provider_a")
+
+        settings_path = target / ".claude" / "settings.json"
+        assert not settings_path.exists(), (
+            "settings.json still exists after both providers uninstalled (should be deleted)"
+        )
+
+    def test_c2_4_old_format_manifest_fallback_emits_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """C2-4: Old-format manifest (no 'contributed' field) falls back and emits WARNING.
+
+        Manually craft a manifest entry for provider_b with 'json-merged' kind but
+        without the 'contributed' field, then call uninstall() and confirm that:
+        - A WARNING is printed to stderr.
+        - The uninstall completes without raising an exception.
+        """
+        import clasr.manifest as mf_module
+
+        # Install provider_a normally.
+        src_a = make_asr_dir(
+            tmp_path / "a",
+            provider="provider_a",
+            skill_names=("skill_a",),
+            settings_keys={"keyA": "valA", "keyB": "shared"},
+        )
+        target = tmp_path / "project"
+        target.mkdir()
+        claude_platform.install(source=src_a, target=target, provider="provider_a")
+
+        # Write provider_b's settings contribution to the target file directly.
+        settings_path = target / ".claude" / "settings.json"
+        existing = json.loads(settings_path.read_text(encoding="utf-8"))
+        existing["keyB"] = "provider_b_value"
+        settings_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+        # Craft an old-format manifest for provider_b (no 'contributed' field).
+        claude_dir = target / ".claude"
+        old_format_manifest = {
+            "version": 1,
+            "provider": "provider_b",
+            "platform": "claude",
+            "source": str(tmp_path / "b"),
+            "entries": [
+                {
+                    "path": ".claude/settings.json",
+                    "kind": "json-merged",
+                    "keys": ["keyB"],
+                    # Note: deliberately no 'contributed' field — this is the old format.
+                }
+            ],
+        }
+        mf_module.write_manifest(claude_dir, "provider_b", old_format_manifest)
+
+        # Uninstall provider_b using the old-format manifest.
+        claude_platform.uninstall(target=target, provider="provider_b")
+
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err, (
+            "Expected a WARNING on stderr for old-format manifest fallback; got none"
+        )
+
+        # Uninstall must complete without error; provider_b manifest is gone.
+        manifest_b = target / ".claude" / ".clasr-manifest" / "provider_b.json"
+        assert not manifest_b.exists(), (
+            "provider_b manifest should be deleted after uninstall"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Section D: Non-JSON passthrough collision
 # ---------------------------------------------------------------------------
 
