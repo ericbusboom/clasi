@@ -1,6 +1,6 @@
 ---
-sprint: "019"
-status: approved
+sprint: 019
+status: done
 ---
 
 # Architecture Update — Sprint 019: clasr settings.json multi-provider uninstall fix

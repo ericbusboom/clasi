@@ -1,5 +1,6 @@
 ---
-sprint: "019"
+sprint: 019
+status: done
 ---
 
 # Use Cases — Sprint 019: clasr settings.json multi-provider uninstall fix
