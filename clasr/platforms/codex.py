@@ -203,14 +203,15 @@ def install(
             if merge.is_json_passthrough(src_file):
                 if dest.exists():
                     other_prov = _discover_other_provider(codex_dir, rel_str) or "another provider"
-                    merged_dict, keys = merge.merge_json_files(
+                    merged_dict, diff = merge.merge_json_files(
                         dest, incoming, provider, other_prov
                     )
                     dest.write_text(json.dumps(merged_dict, indent=2), encoding="utf-8")
                     entries.append({
                         "path": rel_str,
                         "kind": "json-merged",
-                        "keys": keys,
+                        "keys": list(diff.keys()),
+                        "contributed": diff,
                     })
                 else:
                     # No existing file — plain write.

@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Update platform installers to store contributed deep-diff in json-merged manifest entries"
-status: todo
+status: done
 use-cases: [SUC-001, SUC-004]
 depends-on: ["002"]
 github-issue: ""
@@ -44,14 +44,14 @@ all three implement the same `json-merged` install pattern.
 
 ## Acceptance Criteria
 
-- [ ] `claude.py` install: `json-merged` manifest entry includes `"contributed"` dict field.
-- [ ] `claude.py` install: `"keys"` field is `list(diff.keys())` (top-level summary).
-- [ ] `codex.py` install: same change applied.
-- [ ] `copilot.py` install: same change applied.
-- [ ] Installing provider2 over provider1 with overlapping `model` key: provider2's manifest
+- [x] `claude.py` install: `json-merged` manifest entry includes `"contributed"` dict field.
+- [x] `claude.py` install: `"keys"` field is `list(diff.keys())` (top-level summary).
+- [x] `codex.py` install: same change applied.
+- [x] `copilot.py` install: same change applied.
+- [x] Installing provider2 over provider1 with overlapping `model` key: provider2's manifest
       entry `"contributed"` equals `{"model": <provider2_value>}` (not `["model"]`).
-- [ ] The merged `settings.json` content is unchanged (merge logic not affected).
-- [ ] `uv run pytest tests/clasr/` passes (full suite).
+- [x] The merged `settings.json` content is unchanged (merge logic not affected).
+- [x] `uv run pytest tests/clasr/` passes (full suite).
 
 ## Implementation Plan
 
