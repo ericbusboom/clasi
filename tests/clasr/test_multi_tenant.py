@@ -17,7 +17,16 @@ from pathlib import Path
 
 import pytest
 
-from clasr.platforms import claude as claude_platform
+from clasr.platforms.claude import ClaudeIntegration
+
+# Use the class API directly; expose install/uninstall on a small namespace so
+# the existing test bodies don't need rewriting.
+class _ClaudePlatform:
+    _inst = ClaudeIntegration()
+    install = staticmethod(_inst.install)
+    uninstall = staticmethod(_inst.uninstall)
+
+claude_platform = _ClaudePlatform()
 
 from tests.clasr.conftest import make_asr_dir
 

@@ -8,8 +8,7 @@ Given an ``asr/`` source directory, installs CLASI-rendered content into
 ``AGENTS.md`` and ``CLAUDE.md``, and records everything in a manifest.
 
 Public API:
-    install(source: Path, target: Path, provider: str, copy: bool = False) -> None
-    uninstall(target: Path, provider: str) -> None
+    ClaudeIntegration — use via INTEGRATION_REGISTRY or instantiate directly.
 
 Source layout expected:
     <source>/skills/<n>/SKILL.md  — installed as symlinks/copies
@@ -425,27 +424,3 @@ class ClaudeIntegration(MarkdownIntegration, SkillsIntegration):
         _cleanup_empty_dirs(target)
 
 
-# ---------------------------------------------------------------------------
-# Module-level shims (backward compatibility)
-# ---------------------------------------------------------------------------
-
-
-def install(
-    source: Path,
-    target: Path,
-    provider: str,
-    copy: bool = False,
-) -> None:
-    """Install the Claude platform from *source* into *target*.
-
-    Shim that delegates to :class:`ClaudeIntegration`.
-    """
-    ClaudeIntegration().install(source, target, provider, copy)
-
-
-def uninstall(target: Path, provider: str) -> None:
-    """Uninstall the Claude platform for *provider* from *target*.
-
-    Shim that delegates to :class:`ClaudeIntegration`.
-    """
-    ClaudeIntegration().uninstall(target, provider)

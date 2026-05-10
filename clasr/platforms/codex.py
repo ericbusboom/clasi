@@ -8,8 +8,7 @@ Given an ``asr/`` source directory, installs CLASI-rendered content into
 blocks into ``AGENTS.md``, and records everything in a manifest.
 
 Public API:
-    install(source: Path, target: Path, provider: str, copy: bool = False) -> None
-    uninstall(target: Path, provider: str) -> None
+    CodexIntegration — use via INTEGRATION_REGISTRY or instantiate directly.
 
 Source layout expected:
     <source>/skills/<n>/SKILL.md  — installed as symlinks/copies under .agents/
@@ -434,27 +433,3 @@ class CodexIntegration(TomlIntegration, SkillsIntegration):
         _cleanup_empty_dirs(target)
 
 
-# ---------------------------------------------------------------------------
-# Module-level shims (backward compatibility)
-# ---------------------------------------------------------------------------
-
-
-def install(
-    source: Path,
-    target: Path,
-    provider: str,
-    copy: bool = False,
-) -> None:
-    """Install the Codex platform from *source* into *target*.
-
-    Shim that delegates to :class:`CodexIntegration`.
-    """
-    CodexIntegration().install(source, target, provider, copy)
-
-
-def uninstall(target: Path, provider: str) -> None:
-    """Uninstall the Codex platform for *provider* from *target*.
-
-    Shim that delegates to :class:`CodexIntegration`.
-    """
-    CodexIntegration().uninstall(target, provider)

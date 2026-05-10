@@ -25,9 +25,19 @@ from pathlib import Path
 
 import pytest
 
-from clasr.platforms import claude as claude_platform
-from clasr.platforms import codex as codex_platform
-from clasr.platforms import copilot as copilot_platform
+from clasr.platforms.claude import ClaudeIntegration
+from clasr.platforms.codex import CodexIntegration
+from clasr.platforms.copilot import CopilotIntegration
+
+# Small namespaces so existing test bodies don't need rewriting.
+class _Platform:
+    def __init__(self, inst):
+        self.install = inst.install
+        self.uninstall = inst.uninstall
+
+claude_platform = _Platform(ClaudeIntegration())
+codex_platform = _Platform(CodexIntegration())
+copilot_platform = _Platform(CopilotIntegration())
 
 from tests.clasr.conftest import make_asr_dir
 
