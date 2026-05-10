@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: 'Schema package skeleton: Pydantic models and SchemaError'
-status: todo
+status: done
 use-cases: [SUC-001, SUC-002]
 depends-on: []
 github-issue: ''
@@ -29,15 +29,15 @@ stubs in this ticket — they get filled in by tickets 002 and 003.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/schemas/__init__.py` exists and exports `SchemaError`, `GateSpec`, `ArtifactSpec`, `WorkflowSchema`.
-- [ ] `clasi/schemas/loader.py` exists as a stub (`load()` raises `NotImplementedError`).
-- [ ] `clasi/schemas/graph.py` exists as a stub (`class ArtifactGraph: pass`).
-- [ ] `GateSpec` Pydantic model: required fields `kind: str`, `record: str`.
-- [ ] `ArtifactSpec` Pydantic model: required `id: str`, `generates: str`; optional `instruction: str | None`, `requires: list[str]` (default `[]`), `gate: GateSpec | None`, `lock: str | None`.
-- [ ] `WorkflowSchema` Pydantic model: required `version: int`, `name: str`, `description: str`, `artifacts: list[ArtifactSpec]`.
-- [ ] `SchemaError` is a subclass of `Exception`.
-- [ ] All three models use `model_config = ConfigDict(extra="forbid")` to reject unknown fields.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `clasi/schemas/__init__.py` exists and exports `SchemaError`, `GateSpec`, `ArtifactSpec`, `WorkflowSchema`.
+- [x] `clasi/schemas/loader.py` exists as a stub (`load()` raises `NotImplementedError`).
+- [x] `clasi/schemas/graph.py` exists as a stub (`class ArtifactGraph: pass`).
+- [x] `GateSpec` Pydantic model: required fields `kind: str`, `record: str`.
+- [x] `ArtifactSpec` Pydantic model: required `id: str`, `generates: str`; optional `instruction: str | None`, `requires: list[str]` (default `[]`), `gate: GateSpec | None`, `lock: str | None`.
+- [x] `WorkflowSchema` Pydantic model: required `version: int`, `name: str`, `description: str`, `artifacts: list[ArtifactSpec]`.
+- [x] `SchemaError` is a subclass of `Exception`.
+- [x] All three models use `model_config = ConfigDict(extra="forbid")` to reject unknown fields.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 

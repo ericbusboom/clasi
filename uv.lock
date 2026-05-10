@@ -127,13 +127,14 @@ wheels = [
 
 [[package]]
 name = "clasi"
-version = "0.20260510.16"
+version = "0.20260510.17"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },
     { name = "jsonschema" },
     { name = "mcp" },
+    { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "python-frontmatter" },
@@ -154,6 +155,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.0" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "mcp", specifier = ">=1.0" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
