@@ -87,7 +87,7 @@ When the overview is ready, `/next` creates a sprint. Each sprint gets:
 
 - **Sprint document** — goals, scope, branch name
 - **Use cases** — detailed scenarios for this sprint
-- **Architecture document** — components, design decisions, sprint changes
+- **Architecture document** — components, design decisions, sprint changes (authored before tickets are created and archived as historical record at sprint close)
 
 The plan goes through an architecture review gate and a stakeholder
 approval gate before any code is written.

@@ -60,4 +60,6 @@ tests/e2e/repro_project/
 tests/asr/project/
 
 docs/clasi/log/
+.clasi/log/
+.clasi/.clasi.db
 CLAUDE.md
