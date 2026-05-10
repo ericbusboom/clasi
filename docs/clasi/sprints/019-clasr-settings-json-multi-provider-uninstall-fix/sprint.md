@@ -1,9 +1,9 @@
 ---
 id: "019"
 title: "clasr settings.json multi-provider uninstall fix"
-status: roadmap
+status: active
 branch: sprint/019-clasr-settings-json-multi-provider-uninstall-fix
-use-cases: []
+use-cases: [SUC-001, SUC-002, SUC-003, SUC-004, SUC-005, SUC-006]
 source-todos:
   - clasr-settings-json-multi-provider-uninstall-overlapping-top-level-keys.md
 ---
@@ -99,3 +99,10 @@ deep-diff solution.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Add _deep_diff and _reverse_diff helpers to clasr/merge.py | — |
+| 002 | Change merge_json_files return type to dict and export reverse_diff | 001 |
+| 003 | Update platform installers to store contributed deep-diff in json-merged manifest entries | 002 |
+| 004 | Update platform uninstallers to reverse deep-diff with old-format fallback | 003 |
+| 005 | Add deep-diff unit tests to tests/clasr/test_merge.py | 002 |
+| 006 | Add overlapping-key multi-tenant integration tests to test_multi_tenant.py | 004 |
+| 007 | Update tests/asr provider2 settings.json and verify just demo end-to-end | 004, 006 |

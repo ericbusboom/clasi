@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: 019
+tickets:
+- 019-001
 ---
 
 # clasr settings.json multi-provider uninstall loses other provider's data when top-level keys overlap
