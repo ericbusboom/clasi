@@ -1,5 +1,6 @@
 ---
-sprint: "021"
+sprint: '021'
+status: done
 ---
 
 # Use Cases — Sprint 021: Integration registry: base class and registry for clasr platforms
