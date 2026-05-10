@@ -1,7 +1,7 @@
 ---
 id: "010"
 title: "Deprecate clasr/platforms/detect.py as a wrapper around registry.detect()"
-status: todo
+status: done
 use-cases: [SUC-006]
 depends-on: ["006"]
 github-issue: ""
@@ -25,12 +25,12 @@ The compatibility wrapper converts: for each integration instance returned by `r
 
 ## Acceptance Criteria
 
-- [ ] `clasr/platforms/detect.py` body replaced with compatibility wrapper.
-- [ ] `detect(target)` still returns `dict[str, list[str]]` (old format) but issues `DeprecationWarning`.
-- [ ] `registry.detect(target)` returns `list[IntegrationBase]` instances.
-- [ ] `tests/clasr/test_platform_detect.py` updated to test `registry.detect()` primarily; old-format test retained as compatibility check.
-- [ ] `uv run pytest tests/clasr/test_platform_detect.py` passes.
-- [ ] `uv run pytest` green.
+- [x] `clasr/platforms/detect.py` body replaced with compatibility wrapper.
+- [x] `detect(target)` still returns `dict[str, list[str]]` (old format) but issues `DeprecationWarning`.
+- [x] `registry.detect(target)` returns `list[IntegrationBase]` instances.
+- [x] `tests/clasr/test_platform_detect.py` updated to test `registry.detect()` primarily; old-format test retained as compatibility check.
+- [x] `uv run pytest tests/clasr/test_platform_detect.py` passes.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 
