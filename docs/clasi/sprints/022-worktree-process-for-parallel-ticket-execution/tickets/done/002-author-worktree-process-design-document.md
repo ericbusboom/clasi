@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Author worktree-process design document"
-status: todo
+status: done
 use-cases:
   - SUC-001
   - SUC-002
@@ -32,39 +32,39 @@ This sprint is design-only. No code is changed.
 
 ## Acceptance Criteria
 
-- [ ] `docs/clasi/design/` directory exists (create if absent).
-- [ ] `docs/clasi/design/worktree-process.md` is created with YAML frontmatter
+- [x] `docs/clasi/design/` directory exists (create if absent).
+- [x] `docs/clasi/design/worktree-process.md` is created with YAML frontmatter
       (`title`, `status: draft`, `sprint: "022"`).
-- [ ] Document covers **preconditions for parallel execution**: all conditions
+- [x] Document covers **preconditions for parallel execution**: all conditions
       that must be true before any worktree is created.
-- [ ] Document covers **ticket independence determination**: algorithm for
+- [x] Document covers **ticket independence determination**: algorithm for
       detecting shared-file and shared-test hazards; defines what "independent"
       means precisely.
-- [ ] Document covers **ownership**: explicitly states that the controller
+- [x] Document covers **ownership**: explicitly states that the controller
       (team-lead / execute-sprint skill) owns worktree create, branch create,
       merge-back, and cleanup; the programmer agent owns only implementation.
-- [ ] Document covers **naming conventions**: worktree path pattern and
+- [x] Document covers **naming conventions**: worktree path pattern and
       per-ticket branch name pattern with examples.
-- [ ] Document covers **pre-completion validation**: the three checks
+- [x] Document covers **pre-completion validation**: the three checks
       (tests pass, clean tree, ticket status done) that must pass before merge.
-- [ ] Document covers **merge strategy and conflict resolution**: fast-forward
+- [x] Document covers **merge strategy and conflict resolution**: fast-forward
       preference, merge-commit fallback, no rebase, conflict escalation to
       stakeholder.
-- [ ] Document covers **cleanup rules**: on success and on failure/abandonment.
-- [ ] Document covers **audit / recovery state**: schema for
+- [x] Document covers **cleanup rules**: on success and on failure/abandonment.
+- [x] Document covers **audit / recovery state**: schema for
       `.worktree-audit.json`, what is written at each lifecycle transition,
       how it is read on recovery.
-- [ ] Document covers **hooks vs. controller**: hooks are log-only; all
+- [x] Document covers **hooks vs. controller**: hooks are log-only; all
       enforcement is in controller code.
-- [ ] Document covers **error paths**: merge conflict, test failure (with retry
+- [x] Document covers **error paths**: merge conflict, test failure (with retry
       cap), orphaned worktree, abandoned branch.
-- [ ] Document covers **opt-in gate**: the sentinel file mechanism
+- [x] Document covers **opt-in gate**: the sentinel file mechanism
       (`docs/clasi/.parallel-exec-enabled`).
-- [ ] Document includes a state-machine diagram (Mermaid or ASCII) for the
+- [x] Document includes a state-machine diagram (Mermaid or ASCII) for the
       worktree lifecycle.
-- [ ] Open questions from the architecture-update are addressed or carried
+- [x] Open questions from the architecture-update are addressed or carried
       forward in a dedicated `## Open Questions` section.
-- [ ] No files outside `docs/clasi/design/` and the sprint directory are
+- [x] No files outside `docs/clasi/design/` and the sprint directory are
       modified.
 
 ## Implementation Plan
