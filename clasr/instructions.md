@@ -25,7 +25,19 @@ asr/
 ```
 clasr install --source ./asr --provider myprovider [--claude] [--codex] [--copilot]
 clasr uninstall --provider myprovider [--claude] [--codex] [--copilot]
+clasr platforms list
 clasr --instructions
+```
+
+### clasr platforms list
+
+Prints the IDs of all registered platforms, one per line, in sorted order. Example:
+
+```
+claude
+codex
+copilot
+cursor
 ```
 
 See `clasr --help` and `clasr SCHEMA.md` for the union frontmatter format.
