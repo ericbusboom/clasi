@@ -28,6 +28,7 @@ In short: issues propose; tickets implement.
    - Agent: `project-manager` (roadmap mode) → lightweight sprint.md files
 4. **Sprint Detail Planning**: Full planning for the next sprint to execute
    - Skill: `plan-sprint` | Agent: `sprint-planner` → usecases, architecture, tickets
+   - The `architecture-update.md` is authored before tickets are created; per-sprint files accumulate as a chronological historical record.
 5. **Sprint Execution**: Execute tickets in a planned sprint
    - Skill: `execute-ticket` | Agents: `sprint-executor`, `code-monkey`, `code-reviewer`
 
