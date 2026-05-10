@@ -1,7 +1,7 @@
 ---
 id: "006"
 title: "Lift se-process skill prose into instructions/*.md files"
-status: todo
+status: done
 use-cases: [SUC-004]
 depends-on: ["005"]
 github-issue: ""
@@ -29,13 +29,13 @@ right destination files.
 
 ## Acceptance Criteria
 
-- [ ] `se-process/instructions/sprint-plan.md` contains the full instructional prose from `plan-sprint/SKILL.md` (excluding the YAML frontmatter and skill-loader scaffolding).
-- [ ] `se-process/instructions/execution.md` contains the full instructional prose from `execute-sprint/SKILL.md`.
-- [ ] `se-process/instructions/architecture-update.md` contains the full instructional prose from `architecture-review/SKILL.md`.
-- [ ] `se-process/instructions/close.md` contains the full instructional prose from `close-sprint/SKILL.md`.
-- [ ] A `sprint-review.md` instruction file is created and populated from `sprint-review/SKILL.md` prose (even if `sprint-review` is not a schema artifact, the prose is preserved for reference).
-- [ ] The instruction files do not contain any YAML frontmatter or skill-specific loader scaffolding — just the instructional markdown.
-- [ ] `uv run pytest` passes (no behavioral changes in this ticket).
+- [x] `se-process/instructions/sprint-plan.md` contains the full instructional prose from `plan-sprint/SKILL.md` (excluding the YAML frontmatter and skill-loader scaffolding).
+- [x] `se-process/instructions/execution.md` contains the full instructional prose from `execute-sprint/SKILL.md`.
+- [x] `se-process/instructions/architecture-update.md` contains the full instructional prose from `architecture-review/SKILL.md`.
+- [x] `se-process/instructions/close.md` contains the full instructional prose from `close-sprint/SKILL.md`.
+- [x] A `sprint-review.md` instruction file is created and populated from `sprint-review/SKILL.md` prose (even if `sprint-review` is not a schema artifact, the prose is preserved for reference).
+- [x] The instruction files do not contain any YAML frontmatter or skill-specific loader scaffolding — just the instructional markdown.
+- [x] `uv run pytest` passes (no behavioral changes in this ticket).
 
 ## Implementation Plan
 
