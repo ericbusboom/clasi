@@ -1,7 +1,7 @@
 ---
 id: "002"
 title: "Update sprint.md template to set status: roadmap in frontmatter"
-status: todo
+status: done
 use-cases:
   - SUC-001
 depends-on:
@@ -28,9 +28,9 @@ No structural changes to the template body or other placeholders.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/templates/sprint.md` frontmatter contains `status: roadmap`.
-- [ ] All existing template placeholders (`{id}`, `{title}`, `{slug}`) remain intact and functional.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `clasi/templates/sprint.md` frontmatter contains `status: roadmap`.
+- [x] All existing template placeholders (`{id}`, `{title}`, `{slug}`) remain intact and functional.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
