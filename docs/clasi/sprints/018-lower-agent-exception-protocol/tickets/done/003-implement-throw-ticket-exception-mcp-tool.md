@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Implement `throw_ticket_exception` MCP tool"
-status: todo
+status: done
 use-cases:
   - SUC-007
   - SUC-001
@@ -40,21 +40,21 @@ Depends on ticket 001 (`exception` in valid_statuses) and ticket 002
 
 ## Acceptance Criteria
 
-- [ ] `throw_ticket_exception` is registered as an MCP tool and callable via
+- [x] `throw_ticket_exception` is registered as an MCP tool and callable via
   the MCP server.
-- [ ] Calling the tool writes `exception:` block (all five fields including
+- [x] Calling the tool writes `exception:` block (all five fields including
   `thrown_at` as current UTC ISO-8601) to ticket frontmatter.
-- [ ] Calling the tool sets ticket `status` to `exception`.
-- [ ] Both payload write and status change occur; partial writes do not occur
+- [x] Calling the tool sets ticket `status` to `exception`.
+- [x] Both payload write and status change occur; partial writes do not occur
   (write payload first, then status — if frontmatter write succeeds,
   status write follows immediately in same function).
-- [ ] `thrown_by` validated against `{"programmer", "sprint-planner"}`; returns
+- [x] `thrown_by` validated against `{"programmer", "sprint-planner"}`; returns
   JSON error on invalid value.
-- [ ] `surface` validated against `{"user-visible", "internal"}`; returns JSON
+- [x] `surface` validated against `{"user-visible", "internal"}`; returns JSON
   error on invalid value.
-- [ ] On unknown ticket path, returns JSON error with clear message.
-- [ ] Returns JSON: `{path, old_status, new_status: "exception", thrown_at}`.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] On unknown ticket path, returns JSON error with clear message.
+- [x] Returns JSON: `{path, old_status, new_status: "exception", thrown_at}`.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
