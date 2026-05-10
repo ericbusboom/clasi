@@ -1,11 +1,13 @@
 ---
-id: "003"
-title: "Convert ClaudeIntegration to IntegrationBase subclass with module-level shims"
-status: todo
-use-cases: [SUC-003]
-depends-on: ["001"]
-github-issue: ""
-todo: ""
+id: '003'
+title: Convert ClaudeIntegration to IntegrationBase subclass with module-level shims
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '001'
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -38,12 +40,12 @@ Private helpers `_discover_other_provider` and `_cleanup_empty_dirs` remain as m
 
 ## Acceptance Criteria
 
-- [ ] `ClaudeIntegration` class exists in `clasr/platforms/claude.py` and subclasses `MarkdownIntegration` and `SkillsIntegration`.
-- [ ] All 14 class-level fields are declared with correct values.
-- [ ] `ClaudeIntegration` passes `mypy` with no `IntegrationBase` violations.
-- [ ] Module-level `install()` and `uninstall()` shims are present.
-- [ ] `tests/clasr/test_platform_claude.py` passes unchanged.
-- [ ] `uv run pytest` green.
+- [x] `ClaudeIntegration` class exists in `clasr/platforms/claude.py` and subclasses `MarkdownIntegration` and `SkillsIntegration`.
+- [x] All 14 class-level fields are declared with correct values.
+- [x] `ClaudeIntegration` passes `mypy` with no `IntegrationBase` violations.
+- [x] Module-level `install()` and `uninstall()` shims are present.
+- [x] `tests/clasr/test_platform_claude.py` passes unchanged.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 
