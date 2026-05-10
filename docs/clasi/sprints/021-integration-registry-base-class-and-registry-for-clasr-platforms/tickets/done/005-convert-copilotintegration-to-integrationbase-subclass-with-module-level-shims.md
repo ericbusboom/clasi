@@ -1,11 +1,14 @@
 ---
-id: "005"
-title: "Convert CopilotIntegration to IntegrationBase subclass with module-level shims"
-status: todo
-use-cases: [SUC-005]
-depends-on: ["001", "004"]
-github-issue: ""
-todo: ""
+id: '005'
+title: Convert CopilotIntegration to IntegrationBase subclass with module-level shims
+status: done
+use-cases:
+- SUC-005
+depends-on:
+- '001'
+- '004'
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -28,13 +31,13 @@ Copilot overrides `render_agent` to append `.agent.md` suffix and `render_rule` 
 
 ## Acceptance Criteria
 
-- [ ] `CopilotIntegration` class exists and subclasses `MarkdownIntegration` and `SkillsIntegration`.
-- [ ] All 14 class-level fields declared with correct Copilot-specific values.
-- [ ] `render_agent` override appends `.agent.md`; `render_rule` override appends `.instructions.md`.
-- [ ] `mypy clasr/platforms/copilot.py` passes clean.
-- [ ] Module-level `install()` and `uninstall()` shims present.
-- [ ] `tests/clasr/test_platform_copilot.py` passes unchanged.
-- [ ] `uv run pytest` green.
+- [x] `CopilotIntegration` class exists and subclasses `MarkdownIntegration` and `SkillsIntegration`.
+- [x] All 14 class-level fields declared with correct Copilot-specific values.
+- [x] `render_agent` override appends `.agent.md`; `render_rule` override appends `.instructions.md`.
+- [x] `mypy clasr/platforms/copilot.py` passes clean.
+- [x] Module-level `install()` and `uninstall()` shims present.
+- [x] `tests/clasr/test_platform_copilot.py` passes unchanged.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 
