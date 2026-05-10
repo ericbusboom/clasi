@@ -112,3 +112,13 @@ detail-planning run. Specifically:
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Add roadmap as first phase in PHASES constant and update state DB default | — |
+| 002 | Update sprint.md template to set status: roadmap in frontmatter | 017-001 |
+| 003 | Modify create_sprint to write only sprint.md and register sprint at roadmap phase | 017-001, 017-002 |
+| 004 | Implement Sprint.detail_promote() method | 017-001, 017-003 |
+| 005 | Add detail_sprint MCP tool to artifact_tools.py | 017-004 |
+| 006 | Verify list_sprints status filter wiring in MCP tool layer | 017-003 |
+| 007 | Update sprint-roadmap and plan-sprint skill prose | 017-005 |
+| 008 | Update sprint-planner agent.md and team-lead agent.md prose | 017-007 |
+| 009 | Write unit tests for PHASES, create_sprint, and Sprint.detail_promote | 017-004 |
+| 010 | Write system tests for detail_sprint MCP tool and list_sprints roadmap filter | 017-005, 017-006, 017-009 |
