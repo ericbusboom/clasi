@@ -1,11 +1,13 @@
 ---
-id: "016-004"
-title: "Documentation: ADRs-at-sprint-granularity and planning-time positioning"
-status: todo
-use-cases: [SUC-002]
-depends-on: ["016-002"]
+id: 016-004
+title: 'Documentation: ADRs-at-sprint-granularity and planning-time positioning'
+status: done
+use-cases:
+- SUC-002
+depends-on:
+- 016-002
 todos:
-  - sprint-process-changes.md
+- sprint-process-changes.md
 ---
 
 # 016-004: Documentation — ADRs-at-sprint-granularity and planning-time positioning
@@ -46,7 +48,7 @@ at sprint close." That is the only addition needed.
 
 ## Acceptance Criteria
 
-- [ ] `software-engineering.md` Architecture artifact section (§2) is updated to:
+- [x] `software-engineering.md` Architecture artifact section (§2) is updated to:
   - Distinguish per-sprint `architecture-update.md` (planning-time, accumulates
     as historical record) from the consolidated architecture in
     `.clasi/architecture/` (optional, produced by `consolidate-architecture`
@@ -57,17 +59,17 @@ at sprint close." That is the only addition needed.
     per-sprint updates are the chronological record of structural intent.
   - State that canonical design docs (`design/overview.md`, etc.) are
     project-init artifacts, frozen after initiation.
-- [ ] `se-overview-template.md` Sprint Detail Planning step includes a sentence
+- [x] `se-overview-template.md` Sprint Detail Planning step includes a sentence
   noting that `architecture-update.md` is authored before tickets and
   accumulates as historical record.
-- [ ] `README.md` Sprint Planning description includes the phrase "authored
+- [x] `README.md` Sprint Planning description includes the phrase "authored
   before tickets are created" in its description of the architecture document.
-- [ ] No documentation file states `architecture-update.md` is written at
+- [x] No documentation file states `architecture-update.md` is written at
   sprint close or as a retrospective record.
-- [ ] `Sprint.archive()` behavior is verified (read-only): confirm no explicit
+- [x] `Sprint.archive()` behavior is verified (read-only): confirm no explicit
   exclusion of `architecture-update.md` in `clasi/sprint.py`. No code change
   expected — the file travels to done/ via directory move.
-- [ ] All existing tests pass (`uv run pytest`).
+- [x] All existing tests pass (`uv run pytest`).
 
 ## Implementation Plan
 

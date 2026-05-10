@@ -91,19 +91,34 @@ Contents:
 
 ### 2. Architecture (`.clasi/architecture/`)
 
-Versioned architecture documents describing the system's structure. Each
-version represents the target state after a sprint completes:
+Each sprint contains an `architecture-update.md` in its sprint directory.
+This file is a **planning-time artifact**: the architect authors it at the
+front of sprint planning, before any tickets are created. It captures the
+structural intent for that sprint — what components change, what design
+decisions are being made, and why. Per-sprint `architecture-update.md` files
+accumulate as a chronological historical record; they are never merged back
+into canonical design documents. Code is the source of truth for current
+architecture; the per-sprint updates are the record of structural intent over
+time. Canonical design documents (`design/overview.md`, etc.) are
+project-initiation artifacts, frozen after the project is initiated.
+
+The optional `.clasi/architecture/` directory holds **consolidated** architecture
+documents produced by the `consolidate-architecture` skill. These merge
+multiple sprint updates into a single coherent view. They are distinct from
+the per-sprint `architecture-update.md` files and are not required for every
+project:
 
 ```
 .clasi/architecture/
-  architecture-014.md   # Architecture at end of sprint 014
-  architecture-015.md   # Architecture at end of sprint 015
+  architecture-014.md   # Consolidated architecture through sprint 014
+  architecture-015.md   # Consolidated architecture through sprint 015
   ...
 ```
 
-The architect produces these documents; the architecture-reviewer evaluates
-them. See `instructions/architectural-quality.md` for versioning rules,
-document structure, and quality criteria.
+The architect produces sprint `architecture-update.md` files; the
+architecture-reviewer evaluates them during sprint planning. See
+`instructions/architectural-quality.md` for document structure and quality
+criteria.
 
 Not every sprint requires architectural changes -- pure bug fixes and
 refactors within existing boundaries can note "No architectural changes"
