@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '022'
+tickets:
+- 022-001
 ---
 
 # Define Proper Worktree Process for Parallel Ticket Execution

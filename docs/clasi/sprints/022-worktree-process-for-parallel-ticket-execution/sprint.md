@@ -1,9 +1,15 @@
 ---
 id: "022"
 title: "Worktree process for parallel ticket execution"
-status: roadmap
+status: planning
 branch: sprint/022-worktree-process-for-parallel-ticket-execution
-use-cases: []
+use-cases:
+  - SUC-001
+  - SUC-002
+  - SUC-003
+  - SUC-004
+  - SUC-005
+  - SUC-006
 source-todos:
   - define-proper-worktree-process-for-parallel-ticket-execution.md
 ---
@@ -109,3 +115,7 @@ resulting process.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Audit current worktree references and serial-only state | — |
+| 002 | Author worktree-process design document | 001 |
+| 003 | Create clasi/worktree.py stub module | 002 |
+| 004 | Add cross-references and finalize sprint artifacts | 002, 003 |
