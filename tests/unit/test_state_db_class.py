@@ -18,6 +18,25 @@ class TestPhases:
         idx = PHASES.index("roadmap")
         assert PHASES[idx + 1] == "planning-docs"
 
+    def test_phases_is_complete_list_derived_from_schema(self):
+        """PHASES contains all expected lifecycle phases, unconditionally from schema."""
+        expected = [
+            "roadmap",
+            "planning-docs",
+            "architecture-review",
+            "stakeholder-review",
+            "ticketing",
+            "executing",
+            "closing",
+            "done",
+        ]
+        assert PHASES == expected
+
+    def test_phases_is_non_empty_list(self):
+        """PHASES is a non-empty list loaded from the schema at module import."""
+        assert isinstance(PHASES, list)
+        assert len(PHASES) > 0
+
 
 class TestStateDB:
     """Test StateDB wrapper methods."""

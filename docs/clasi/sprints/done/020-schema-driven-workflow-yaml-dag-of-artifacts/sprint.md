@@ -1,11 +1,11 @@
 ---
-id: "020"
-title: "Schema-driven workflow: YAML DAG of artifacts"
-status: roadmap
+id: '020'
+title: 'Schema-driven workflow: YAML DAG of artifacts'
+status: done
 branch: sprint/020-schema-driven-workflow-yaml-dag-of-artifacts
 use-cases: []
 source-todos:
-  - schema-driven-workflow-yaml-dag.md
+- schema-driven-workflow-yaml-dag.md
 ---
 
 # Sprint 020: Schema-driven workflow: YAML DAG of artifacts
@@ -128,3 +128,16 @@ fallback constant).
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Schema package skeleton: Pydantic models and SchemaError | — |
+| 002 | Schema loader: parse YAML, validate, topo-sort, cycle detection | 001 |
+| 003 | ArtifactGraph: phases, artifact, requires, gate_for queries | 002 |
+| 004 | Loader unit tests: every rejection branch | 002 |
+| 005 | se-process/schema.yaml: full SE workflow DAG | 002 |
+| 006 | Lift se-process skill prose into instructions/*.md files | 005 |
+| 007 | Reduce skill SKILL.md files to stub loaders | 006 |
+| 008 | state_db_class.py: derive PHASES from schema behind feature flag | 003, 005 |
+| 009 | Remove PHASES feature flag: make schema-derived path unconditional | 008 |
+| 010 | clasi schema validate CLI subcommand | 002 |
+| 011 | solo-process/schema.yaml: leaner solo workflow DAG | 002 |
+| 012 | clasi init --process flag and config.yaml process key | 010, 011 |
+| 013 | End-to-end tests: se-process and solo-process round-trips | 009, 012 |

@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '020'
+tickets:
+- 020-001
 ---
 
 # Schema-driven workflow definition — YAML DAG of artifacts

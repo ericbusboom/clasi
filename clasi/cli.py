@@ -37,7 +37,14 @@ def cli():
               help="Use file copy instead of symlink for alias operations.")
 @click.option("--migrate", is_flag=True, default=False,
               help="Convert legacy direct-copy installs to symlinks.")
-def init(target, plugin, install_claude, install_codex, install_copilot, copy, migrate):
+@click.option(
+    "--process",
+    type=click.Choice(["se", "solo"]),
+    default="se",
+    show_default=True,
+    help="SE process variant to activate (se or solo).",
+)
+def init(target, plugin, install_claude, install_codex, install_copilot, copy, migrate, process):
     """Initialize a repository for the CLASI SE process.
 
     By default (no --claude, --codex, or --copilot flag), behavior depends on context:
@@ -53,7 +60,8 @@ def init(target, plugin, install_claude, install_codex, install_copilot, copy, m
     without prompting.  With --plugin, registers the CLASI plugin with Claude
     Code (plugin mode).  With --copy, alias operations use file copy instead of
     symlink (useful on Windows without Developer Mode).  With --migrate,
-    converts legacy direct-copy installs to symlinks.
+    converts legacy direct-copy installs to symlinks.  With --process, selects
+    the SE process variant (se or solo; default: se).
     """
     from clasi.init_command import run_init
 
@@ -65,6 +73,7 @@ def init(target, plugin, install_claude, install_codex, install_copilot, copy, m
         copilot=install_copilot,
         copy=copy,
         migrate=migrate,
+        process=process,
     )
 
 
@@ -217,6 +226,29 @@ def migrate(target):
     from clasi.migrate_command import run_migrate
 
     run_migrate(target)
+
+
+@cli.group()
+def schema():
+    """Schema validation and management tools."""
+
+
+@schema.command("validate")
+@click.argument("path", type=click.Path())
+def schema_validate(path: str) -> None:
+    """Validate a CLASI schema file."""
+    from clasi.schemas import SchemaError
+    from clasi.schemas import loader
+
+    try:
+        ws = loader.load(path)
+        click.echo(f"Schema valid: {ws.name} (version {ws.version})")
+    except SchemaError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    except FileNotFoundError:
+        click.echo(f"File not found: {path}", err=True)
+        raise SystemExit(1)
 
 
 @cli.command()

@@ -6,24 +6,22 @@ are thin wrappers that instantiate StateDB and delegate to these methods.
 
 from __future__ import annotations
 
+import importlib.resources as _res
 import json as _json
+import logging as _logging
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from clasi.schemas import loader as _loader
+from clasi.schemas.graph import ArtifactGraph as _ArtifactGraph
 
-PHASES = [
-    "roadmap",
-    "planning-docs",
-    "architecture-review",
-    "stakeholder-review",
-    "ticketing",
-    "executing",
-    "closing",
-    "done",
-]
+_logger = _logging.getLogger(__name__)
+
+_schema_path = _res.files("clasi.schemas").joinpath("se-process", "schema.yaml")
+PHASES = _ArtifactGraph(_loader.load(_schema_path)).phases()
 
 VALID_GATE_NAMES = {"architecture_review", "stakeholder_approval"}
 VALID_GATE_RESULTS = {"passed", "failed"}
