@@ -408,7 +408,7 @@ class Sprint:
         Returns a dict with keys: todo, in_progress, done.
         Only counts tickets that have a non-empty id field.
         """
-        counts: dict[str, int] = {"open": 0, "in_progress": 0, "done": 0}
+        counts: dict[str, int] = {"open": 0, "in_progress": 0, "done": 0, "exception": 0}
         for ticket in self.list_tickets():
             if not ticket.id:
                 continue
