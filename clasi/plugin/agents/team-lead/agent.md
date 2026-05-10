@@ -129,7 +129,14 @@ Invoke the `oop` skill. Make the change directly, run tests, commit.
 At the start of every session:
 1. Call `get_version()` to verify the MCP server is running.
 2. Call `list_sprints()` to check for active sprints.
-3. If an active sprint exists, report its status and tickets.
+3. If sprints exist, distinguish their readiness:
+   - **Roadmap sprints** (phase = `roadmap`): These have only a `sprint.md`.
+     They are not ready for execution. Detail planning via `detail_sprint`
+     must happen before any execution dispatch.
+   - **Detail-planned sprints** (phase = `planning-docs`, `ticketing`, or
+     `executing`): These have full artifacts and are eligible for execution
+     dispatch after stakeholder approval and `acquire_execution_lock`.
+4. Report status and tickets for any sprint in `executing` phase.
 
 ## Behavioral Rules
 

@@ -1,7 +1,7 @@
 ---
 id: "008"
 title: "Update sprint-planner agent.md and team-lead agent.md prose"
-status: todo
+status: done
 use-cases:
   - SUC-005
 depends-on:
@@ -39,11 +39,11 @@ implemented (tickets 001-006), their prose must match the actual tool contract.
 
 ## Acceptance Criteria
 
-- [ ] `sprint-planner/agent.md` Roadmap Mode describes `create_sprint` producing only `sprint.md`.
-- [ ] `sprint-planner/agent.md` Detail Mode describes calling `detail_sprint(sprint_id)` first.
-- [ ] `team-lead/agent.md` distinguishes `roadmap`-phase sprints from detail-planned sprints.
-- [ ] No contradictions with the skill files updated in ticket 007.
-- [ ] `uv run pytest` passes (prose change only).
+- [x] `sprint-planner/agent.md` Roadmap Mode describes `create_sprint` producing only `sprint.md`.
+- [x] `sprint-planner/agent.md` Detail Mode describes calling `detail_sprint(sprint_id)` first.
+- [x] `team-lead/agent.md` distinguishes `roadmap`-phase sprints from detail-planned sprints.
+- [x] No contradictions with the skill files updated in ticket 007.
+- [x] `uv run pytest` passes (prose change only).
 
 ## Implementation Plan
 
