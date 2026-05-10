@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '017'
+tickets:
+- 017-001
 ---
 
 # Two-phase sprint planning: roadmap then detail
