@@ -219,6 +219,29 @@ def migrate(target):
     run_migrate(target)
 
 
+@cli.group()
+def schema():
+    """Schema validation and management tools."""
+
+
+@schema.command("validate")
+@click.argument("path", type=click.Path())
+def schema_validate(path: str) -> None:
+    """Validate a CLASI schema file."""
+    from clasi.schemas import SchemaError
+    from clasi.schemas import loader
+
+    try:
+        ws = loader.load(path)
+        click.echo(f"Schema valid: {ws.name} (version {ws.version})")
+    except SchemaError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    except FileNotFoundError:
+        click.echo(f"File not found: {path}", err=True)
+        raise SystemExit(1)
+
+
 @cli.command()
 def mcp():
     """Run the CLASI MCP server (stdio transport)."""

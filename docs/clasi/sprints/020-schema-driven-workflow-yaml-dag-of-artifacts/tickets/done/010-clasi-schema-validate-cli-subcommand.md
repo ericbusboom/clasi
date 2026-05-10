@@ -1,7 +1,7 @@
 ---
 id: "010"
 title: "clasi schema validate CLI subcommand"
-status: todo
+status: done
 use-cases: [SUC-002, SUC-005]
 depends-on: ["002"]
 github-issue: ""
@@ -24,14 +24,14 @@ both the group and the `validate` subcommand.
 
 ## Acceptance Criteria
 
-- [ ] `cli.py` has a `schema` Click group registered at the top level.
-- [ ] `clasi schema validate <path>` is a subcommand of the `schema` group.
-- [ ] On success: prints `Schema valid: <schema.name> (version <schema.version>)` to stdout; exits 0.
-- [ ] On `SchemaError`: prints the error message to stderr; exits non-zero (exit code 1).
-- [ ] On file-not-found: prints a clear error message to stderr; exits non-zero.
-- [ ] `clasi schema validate --help` works and describes the subcommand.
-- [ ] A Click test (using `CliRunner`) covers: valid schema path (se-process), invalid schema (cycle), missing file.
-- [ ] `uv run pytest` passes.
+- [x] `cli.py` has a `schema` Click group registered at the top level.
+- [x] `clasi schema validate <path>` is a subcommand of the `schema` group.
+- [x] On success: prints `Schema valid: <schema.name> (version <schema.version>)` to stdout; exits 0.
+- [x] On `SchemaError`: prints the error message to stderr; exits non-zero (exit code 1).
+- [x] On file-not-found: prints a clear error message to stderr; exits non-zero.
+- [x] `clasi schema validate --help` works and describes the subcommand.
+- [x] A Click test (using `CliRunner`) covers: valid schema path (se-process), invalid schema (cycle), missing file.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 
