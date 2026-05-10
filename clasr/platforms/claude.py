@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -156,14 +157,15 @@ def install(
                 if dest.exists():
                     # Find who owns it (for the warning message).
                     other_prov = _discover_other_provider(claude_dir, rel_str) or "another provider"
-                    merged_dict, keys = merge.merge_json_files(
+                    merged_dict, diff = merge.merge_json_files(
                         dest, incoming, provider, other_prov
                     )
                     dest.write_text(json.dumps(merged_dict, indent=2), encoding="utf-8")
                     entries.append({
                         "path": rel_str,
                         "kind": "json-merged",
-                        "keys": keys,
+                        "keys": list(diff.keys()),
+                        "contributed": diff,
                     })
                 else:
                     # No existing file — plain write (nothing to merge).
@@ -267,14 +269,25 @@ def uninstall(target: Path, provider: str) -> None:
             markers.strip_block(full_path, provider)
 
         elif kind == "json-merged":
-            keys_to_remove: list[str] = entry.get("keys", [])
             if full_path.exists():
                 try:
                     data = json.loads(full_path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
                     data = {}
-                for k in keys_to_remove:
-                    data.pop(k, None)
+                contributed = entry.get("contributed")
+                if contributed is not None:
+                    # New format: reverse the deep-diff precisely.
+                    data = merge.reverse_diff(data, contributed)
+                else:
+                    # Old format fallback: top-level key removal.
+                    print(
+                        f"WARNING: clasr: manifest entry for '{path_rel}' uses old format "
+                        f"(no 'contributed' field); falling back to top-level key removal. "
+                        f"Reinstall '{provider}' to upgrade the manifest.",
+                        file=sys.stderr,
+                    )
+                    for k in entry.get("keys", []):
+                        data.pop(k, None)
                 if data:
                     full_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
                 else:
