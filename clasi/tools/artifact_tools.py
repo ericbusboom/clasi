@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -616,6 +617,75 @@ def update_ticket_status(path: str, status: str) -> str:
         "old_status": old_status,
         "new_status": status,
     }, indent=2)
+
+
+@server.tool()
+def throw_ticket_exception(
+    path: str,
+    thrown_by: str,
+    attempted: str,
+    conflict: str,
+    surface: str,
+) -> str:
+    """Atomically write an exception block to a ticket and set its status to 'exception'.
+
+    Args:
+        path: Path to the ticket file.
+        thrown_by: Who is throwing the exception ("programmer" or "sprint-planner").
+        attempted: What was tried before hitting the blocker.
+        conflict: The upstream decision or constraint that is blocked.
+        surface: Visibility of the exception ("user-visible" or "internal").
+
+    Returns JSON: {path, old_status, new_status, thrown_at}.
+    """
+    valid_thrown_by = {"programmer", "sprint-planner"}
+    if thrown_by not in valid_thrown_by:
+        raise ValueError(
+            f"Invalid thrown_by '{thrown_by}'. Must be one of: {', '.join(sorted(valid_thrown_by))}"
+        )
+
+    valid_surfaces = {"user-visible", "internal"}
+    if surface not in valid_surfaces:
+        raise ValueError(
+            f"Invalid surface '{surface}'. Must be one of: {', '.join(sorted(valid_surfaces))}"
+        )
+
+    for field_name, field_value in [
+        ("attempted", attempted),
+        ("conflict", conflict),
+    ]:
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise ValueError(f"'{field_name}' must be a non-empty string.")
+
+    try:
+        ticket_path = resolve_artifact_path(path)
+    except FileNotFoundError:
+        raise ValueError(f"Ticket not found: {path}")
+
+    artifact = Artifact(ticket_path)
+    old_status = artifact.frontmatter.get("status", "unknown")
+    thrown_at = datetime.now(timezone.utc).isoformat()
+
+    artifact.update_frontmatter(
+        exception={
+            "thrown_by": thrown_by,
+            "thrown_at": thrown_at,
+            "attempted": attempted,
+            "conflict": conflict,
+            "surface": surface,
+        }
+    )
+    artifact.update_frontmatter(status="exception")
+
+    return json.dumps(
+        {
+            "path": str(ticket_path),
+            "old_status": old_status,
+            "new_status": "exception",
+            "thrown_at": thrown_at,
+        },
+        indent=2,
+    )
 
 
 @server.tool()

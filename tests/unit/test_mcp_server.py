@@ -60,6 +60,7 @@ class TestToolRegistration:
         "update_ticket_status",
         "move_ticket_to_done",
         "reopen_ticket",
+        "throw_ticket_exception",
         "close_sprint",
         "clear_sprint_recovery",
         "get_sprint_phase",
@@ -102,7 +103,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 30
+        assert len(registered) == 31
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
