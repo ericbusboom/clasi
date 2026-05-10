@@ -70,7 +70,7 @@ class TestRegisterSprint:
         result = register_sprint(db_path, "001", "test-sprint", "sprint/001-test-sprint")
         assert result["id"] == "001"
         assert result["slug"] == "test-sprint"
-        assert result["phase"] == "planning-docs"
+        assert result["phase"] == "roadmap"
         assert result["branch"] == "sprint/001-test-sprint"
         assert result["created_at"] is not None
         assert result["updated_at"] is not None
@@ -103,7 +103,7 @@ class TestGetSprintState:
         state = get_sprint_state(db_path, "001")
         assert state["id"] == "001"
         assert state["slug"] == "test"
-        assert state["phase"] == "planning-docs"
+        assert state["phase"] == "roadmap"
         assert state["branch"] == "sprint/001-test"
         assert state["gates"] == []
         assert state["lock"] is None
@@ -122,28 +122,38 @@ class TestGetSprintState:
 
 
 class TestAdvancePhase:
-    def test_advance_from_planning_docs(self, db_path):
+    def test_advance_from_roadmap(self, db_path):
         register_sprint(db_path, "001", "test")
         result = advance_phase(db_path, "001")
+        assert result["old_phase"] == "roadmap"
+        assert result["new_phase"] == "planning-docs"
+
+    def test_advance_from_planning_docs(self, db_path):
+        register_sprint(db_path, "001", "test")
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        result = advance_phase(db_path, "001")  # planning-docs → architecture-review
         assert result["old_phase"] == "planning-docs"
         assert result["new_phase"] == "architecture-review"
 
     def test_advance_requires_gate(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         with pytest.raises(ValueError, match="architecture_review.*not passed"):
             advance_phase(db_path, "001")  # needs gate
 
     def test_advance_after_gate_passes(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
         result = advance_phase(db_path, "001")  # → stakeholder-review
         assert result["new_phase"] == "stakeholder-review"
 
     def test_advance_stakeholder_gate(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
         advance_phase(db_path, "001")  # → stakeholder-review
         with pytest.raises(ValueError, match="stakeholder_approval.*not passed"):
@@ -151,7 +161,8 @@ class TestAdvancePhase:
 
     def test_full_lifecycle(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
         advance_phase(db_path, "001")  # → stakeholder-review
         record_gate(db_path, "001", "stakeholder_approval", "passed")
@@ -165,7 +176,8 @@ class TestAdvancePhase:
 
     def test_cannot_advance_past_done(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
         advance_phase(db_path, "001")  # → stakeholder-review
         record_gate(db_path, "001", "stakeholder_approval", "passed")
@@ -179,9 +191,10 @@ class TestAdvancePhase:
 
     def test_ticketing_to_executing_requires_lock(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")
+        advance_phase(db_path, "001")  # → stakeholder-review
         record_gate(db_path, "001", "stakeholder_approval", "passed")
         advance_phase(db_path, "001")  # → ticketing
         with pytest.raises(ValueError, match="execution lock"):
@@ -194,7 +207,8 @@ class TestAdvancePhase:
 
     def test_failed_gate_blocks(self, db_path):
         register_sprint(db_path, "001", "test")
-        advance_phase(db_path, "001")  # → architecture-review
+        advance_phase(db_path, "001")  # roadmap → planning-docs
+        advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "failed")
         with pytest.raises(ValueError, match="not passed"):
             advance_phase(db_path, "001")
@@ -317,13 +331,14 @@ class TestExecutionLocks:
 
 class TestPhaseConstants:
     def test_phase_order(self):
-        assert PHASES[0] == "planning-docs"
+        assert PHASES[0] == "roadmap"
+        assert PHASES[1] == "planning-docs"
         assert PHASES[-1] == "done"
-        assert len(PHASES) == 7
+        assert len(PHASES) == 8
 
     def test_all_phases_present(self):
         expected = {
-            "planning-docs", "architecture-review", "stakeholder-review",
+            "roadmap", "planning-docs", "architecture-review", "stakeholder-review",
             "ticketing", "executing", "closing", "done",
         }
         assert set(PHASES) == expected

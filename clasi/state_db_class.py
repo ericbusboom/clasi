@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 
 PHASES = [
+    "roadmap",
     "planning-docs",
     "architecture-review",
     "stakeholder-review",
@@ -31,7 +32,7 @@ _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS sprints (
     id TEXT PRIMARY KEY,
     slug TEXT NOT NULL,
-    phase TEXT NOT NULL DEFAULT 'planning-docs',
+    phase TEXT NOT NULL DEFAULT 'roadmap',
     branch TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS active_agents (
 
 # Gate requirements for each transition: {from_phase: required_gate_name or None}
 _GATE_REQUIREMENTS: dict[str, Optional[str]] = {
+    "roadmap": None,  # No gate to advance from roadmap
     "planning-docs": None,  # No gate to advance from planning-docs
     "architecture-review": "architecture_review",
     "stakeholder-review": "stakeholder_approval",
@@ -140,7 +142,7 @@ class StateDB:
             try:
                 conn.execute(
                     "INSERT INTO sprints (id, slug, phase, branch, created_at, updated_at) "
-                    "VALUES (?, ?, 'planning-docs', ?, ?, ?)",
+                    "VALUES (?, ?, 'roadmap', ?, ?, ?)",
                     (sprint_id, slug, branch, now, now),
                 )
                 conn.commit()
@@ -149,7 +151,7 @@ class StateDB:
             return {
                 "id": sprint_id,
                 "slug": slug,
-                "phase": "planning-docs",
+                "phase": "roadmap",
                 "branch": branch,
                 "created_at": now,
                 "updated_at": now,
