@@ -1,7 +1,7 @@
 ---
 id: "003"
 title: "Modify create_sprint to write only sprint.md and register sprint at roadmap phase"
-status: todo
+status: done
 use-cases:
   - SUC-001
   - SUC-004
@@ -39,12 +39,12 @@ Remove those imports/uses if present.
 
 ## Acceptance Criteria
 
-- [ ] After `create_sprint(title=...)`, the sprint directory contains only `sprint.md`.
-- [ ] No `usecases.md` exists after `create_sprint`.
-- [ ] No `architecture-update.md` exists after `create_sprint`.
-- [ ] No `tickets/` directory exists after `create_sprint`.
-- [ ] `get_sprint_phase(sprint_id)` returns `{"phase": "roadmap"}` for the new sprint.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] After `create_sprint(title=...)`, the sprint directory contains only `sprint.md`.
+- [x] No `usecases.md` exists after `create_sprint`.
+- [x] No `architecture-update.md` exists after `create_sprint`.
+- [x] No `tickets/` directory exists after `create_sprint`.
+- [x] `get_sprint_phase(sprint_id)` returns `{"phase": "roadmap"}` for the new sprint.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 

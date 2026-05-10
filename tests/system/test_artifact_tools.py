@@ -53,15 +53,16 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
 
 class TestCreateSprint:
     def test_creates_directory_structure(self, work_dir):
+        """create_sprint (roadmap phase) writes only sprint.md — no other artifacts."""
         result = json.loads(create_sprint("Test Sprint"))
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
         assert sprint_dir.is_dir()
         assert (sprint_dir / "sprint.md").exists()
         assert not (sprint_dir / "brief.md").exists()
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
-        assert (sprint_dir / "tickets").is_dir()
-        assert (sprint_dir / "tickets" / "done").is_dir()
+        # Lightweight roadmap-phase sprint: only sprint.md is written
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
+        assert not (sprint_dir / "tickets").exists()
         assert result["id"] == "001"
         assert result["branch"] == "sprint/001-test-sprint"
 
@@ -84,43 +85,6 @@ class TestCreateSprint:
         assert "## Solution" in content
         assert "## Success Criteria" in content
         assert "## Test Strategy" in content
-
-
-class TestCreateSprintArchitectureUpdate:
-    def test_creates_architecture_update_template(self, work_dir):
-        """create_sprint generates a lightweight architecture-update template."""
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        arch = sprint_dir / "architecture-update.md"
-        assert arch.exists()
-        content = arch.read_text(encoding="utf-8")
-        assert "## What Changed" in content
-        assert "## Why" in content
-        assert "## Impact on Existing Components" in content
-        assert "## Migration Concerns" in content
-
-    def test_does_not_copy_previous_architecture(self, work_dir):
-        """create_sprint no longer copies the full architecture."""
-        arch_dir = work_dir / ".clasi" / "architecture"
-        arch_dir.mkdir(parents=True)
-        (arch_dir / "architecture-015.md").write_text(
-            "---\nstatus: approved\n---\n\n# Architecture\n\nExisting arch.\n",
-            encoding="utf-8",
-        )
-
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        # Should NOT have architecture.md (old behavior)
-        assert not (sprint_dir / "architecture.md").exists()
-        # Should have architecture-update.md (new behavior)
-        assert (sprint_dir / "architecture-update.md").exists()
-
-    def test_architecture_update_includes_sprint_id(self, work_dir):
-        """architecture-update template includes the sprint ID."""
-        create_sprint("Test Sprint")
-        sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        content = (sprint_dir / "architecture-update.md").read_text(encoding="utf-8")
-        assert "001" in content
 
 
 class TestCreateTicket:

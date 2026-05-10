@@ -492,10 +492,19 @@ class TestProjectSprints:
         assert s.id == "001"
         assert s.title == "My New Sprint"
         assert s.sprint_doc.exists
-        assert s.usecases.exists
-        assert s.architecture.exists
-        assert (s.path / "tickets").is_dir()
-        assert (s.path / "tickets" / "done").is_dir()
+        # Lightweight roadmap-phase sprint: only sprint.md is written
+        assert not s.usecases.exists
+        assert not s.architecture.exists
+        assert not (s.path / "tickets").exists()
+
+    def test_create_sprint_writes_only_sprint_md(self, tmp_path):
+        """After create_sprint(), the sprint directory contains only sprint.md."""
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True)
+        s = proj.create_sprint("Lightweight Sprint")
+        files = list(s.path.iterdir())
+        assert len(files) == 1, f"Expected only sprint.md, got: {[f.name for f in files]}"
+        assert files[0].name == "sprint.md"
 
     def test_create_sprint_increments_id(self, tmp_path):
         proj, _ = _make_sprint_dir(tmp_path)
