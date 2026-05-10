@@ -1,11 +1,11 @@
 ---
-id: "020"
-title: "Schema-driven workflow: YAML DAG of artifacts"
-status: ticketing
+id: '020'
+title: 'Schema-driven workflow: YAML DAG of artifacts'
+status: done
 branch: sprint/020-schema-driven-workflow-yaml-dag-of-artifacts
 use-cases: []
 source-todos:
-  - schema-driven-workflow-yaml-dag.md
+- schema-driven-workflow-yaml-dag.md
 ---
 
 # Sprint 020: Schema-driven workflow: YAML DAG of artifacts
