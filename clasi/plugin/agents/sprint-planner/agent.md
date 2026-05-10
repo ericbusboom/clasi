@@ -122,6 +122,11 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    Quality checks: every module addresses at least one use case; no cycles in
    the dependency graph; each module passes the cohesion test.
 
+   **Revision naming**: When revising in response to an exception, write
+   `architecture-update-r1.md` (never overwrite `architecture-update.md`) —
+   see the `architecture-authoring` skill for the full revision naming and
+   preservation rule.
+
 #### Phase 3: Architecture Self-Review
 
 5. Review your own architecture update against these five categories:

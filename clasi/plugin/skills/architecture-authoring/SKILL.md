@@ -36,6 +36,24 @@ Given the sprint plan and current architecture, write
 `architecture-update.md` with: Planned Changes, Rationale, Impact on
 Existing Components, Migration Concerns.
 
+### Revision naming and preservation
+
+When an exception loop triggers an architecture revision, **never
+overwrite `architecture-update.md`**. The original must be preserved as a
+calibration signal for future sprint reviews.
+
+Naming convention:
+- First revision: write `architecture-update-r1.md`
+- Subsequent revisions: increment the suffix — `architecture-update-r2.md`,
+  `architecture-update-r3.md`, etc.
+- The latest `-rN.md` file is the active planning artifact.
+- The original `architecture-update.md` and all intermediate revisions
+  remain in the sprint directory as historical record.
+
+The team-lead and sprint-planner both reference this convention. The full
+rule lives here; the sprint-planner agent carries only a brief
+cross-reference.
+
 ## Steps
 
 ### 1. Understand the Problem
