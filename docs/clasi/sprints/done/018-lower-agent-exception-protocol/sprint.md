@@ -1,11 +1,11 @@
 ---
-id: "018"
-title: "Lower-agent exception protocol"
-status: active
+id: 018
+title: Lower-agent exception protocol
+status: done
 branch: sprint/018-lower-agent-exception-protocol
 use-cases: []
 source-todos:
-  - sprint-process-changes.md
+- sprint-process-changes.md
 ---
 
 # Sprint 018: Lower-agent exception protocol
