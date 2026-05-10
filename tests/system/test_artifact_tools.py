@@ -12,6 +12,7 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
+    detail_sprint,
     get_sprint_status,
     insert_sprint,
     list_sprints,
@@ -85,6 +86,63 @@ class TestCreateSprint:
         assert "## Solution" in content
         assert "## Success Criteria" in content
         assert "## Test Strategy" in content
+
+
+class TestDetailSprint:
+    """Tests for the detail_sprint MCP tool."""
+
+    def test_success_path_roadmap_to_planning_docs(self, work_dir):
+        """detail_sprint on a roadmap sprint scaffolds files and returns correct JSON."""
+        create_sprint("My Sprint")
+        result = json.loads(detail_sprint("001"))
+        assert result["sprint_id"] == "001"
+        assert result["phase"] == "planning-docs"
+        assert len(result["files_written"]) >= 2
+        # usecases.md and architecture-update.md should be among files written
+        written_names = [Path(f).name for f in result["files_written"]]
+        assert "usecases.md" in written_names
+        assert "architecture-update.md" in written_names
+
+    def test_scaffolds_full_directory_structure(self, work_dir):
+        """After detail_sprint, tickets/ and tickets/done/ directories exist."""
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-my-sprint"
+        assert (sprint_dir / "usecases.md").exists()
+        assert (sprint_dir / "architecture-update.md").exists()
+        assert (sprint_dir / "tickets").is_dir()
+        assert (sprint_dir / "tickets" / "done").is_dir()
+
+    def test_phase_advances_to_planning_docs(self, work_dir):
+        """get_sprint_phase returns planning-docs after detail_sprint."""
+        from clasi.tools.artifact_tools import get_sprint_phase
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        phase_result = json.loads(get_sprint_phase("001"))
+        assert phase_result["phase"] == "planning-docs"
+
+    def test_error_if_sprint_not_in_roadmap(self, work_dir):
+        """detail_sprint returns JSON error if sprint is not in roadmap phase."""
+        create_sprint("My Sprint")
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        # Advance past roadmap manually
+        advance_phase(db_path, "001")  # roadmap -> planning-docs
+        result = json.loads(detail_sprint("001"))
+        assert "error" in result
+        assert "roadmap" in result["error"]
+
+    def test_error_if_already_detail_planned(self, work_dir):
+        """detail_sprint returns JSON error if called a second time."""
+        create_sprint("My Sprint")
+        detail_sprint("001")
+        # Second call should fail
+        result = json.loads(detail_sprint("001"))
+        assert "error" in result
+
+    def test_error_if_sprint_not_found(self, work_dir):
+        """detail_sprint returns JSON error for a nonexistent sprint ID."""
+        result = json.loads(detail_sprint("999"))
+        assert "error" in result
 
 
 class TestCreateTicket:

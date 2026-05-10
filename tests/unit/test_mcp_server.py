@@ -51,6 +51,7 @@ class TestToolRegistration:
 
     EXPECTED_ARTIFACT_TOOLS = {
         "create_sprint",
+        "detail_sprint",
         "insert_sprint",
         "create_ticket",
         "list_sprints",
@@ -101,7 +102,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 29
+        assert len(registered) == 30
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

@@ -1,13 +1,13 @@
 ---
-id: "005"
-title: "Add detail_sprint MCP tool to artifact_tools.py"
-status: todo
+id: '005'
+title: Add detail_sprint MCP tool to artifact_tools.py
+status: done
 use-cases:
-  - SUC-002
+- SUC-002
 depends-on:
-  - 017-004
-github-issue: ""
-todo: ""
+- 017-004
+github-issue: ''
+todo: ''
 completes_todo: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -29,12 +29,12 @@ domain method, return JSON result.
 
 ## Acceptance Criteria
 
-- [ ] `@server.tool()` named `detail_sprint` is registered and callable via MCP.
-- [ ] Accepts `sprint_id: str`.
-- [ ] Delegates to `sprint.detail_promote()` and returns JSON with `{sprint_id, phase, files_written}`.
-- [ ] On `ValueError` from `detail_promote()`, returns a JSON error string with a clear message (no unhandled exception).
-- [ ] `get_sprint_phase(sprint_id)` after a successful call returns `{"phase": "planning-docs"}`.
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `@server.tool()` named `detail_sprint` is registered and callable via MCP.
+- [x] Accepts `sprint_id: str`.
+- [x] Delegates to `sprint.detail_promote()` and returns JSON with `{sprint_id, phase, files_written}`.
+- [x] On `ValueError` from `detail_promote()`, returns a JSON error string with a clear message (no unhandled exception).
+- [x] `get_sprint_phase(sprint_id)` after a successful call returns `{"phase": "planning-docs"}`.
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
