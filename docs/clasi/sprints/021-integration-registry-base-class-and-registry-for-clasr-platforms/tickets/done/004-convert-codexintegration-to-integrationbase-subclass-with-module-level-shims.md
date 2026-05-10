@@ -1,7 +1,7 @@
 ---
 id: "004"
 title: "Convert CodexIntegration to IntegrationBase subclass with module-level shims"
-status: todo
+status: done
 use-cases: [SUC-004]
 depends-on: ["001", "003"]
 github-issue: ""
@@ -28,12 +28,12 @@ Codex-specific rule logic (scoped rules to nested AGENTS.md, unscoped rules coll
 
 ## Acceptance Criteria
 
-- [ ] `CodexIntegration` class exists and subclasses `TomlIntegration` and `SkillsIntegration`.
-- [ ] All 14 class-level fields declared with correct Codex-specific values.
-- [ ] `mypy clasr/platforms/codex.py` passes clean.
-- [ ] Module-level `install()` and `uninstall()` shims present.
-- [ ] `tests/clasr/test_platform_codex.py` passes unchanged.
-- [ ] `uv run pytest` green.
+- [x] `CodexIntegration` class exists and subclasses `TomlIntegration` and `SkillsIntegration`.
+- [x] All 14 class-level fields declared with correct Codex-specific values.
+- [x] `mypy clasr/platforms/codex.py` passes clean.
+- [x] Module-level `install()` and `uninstall()` shims present.
+- [x] `tests/clasr/test_platform_codex.py` passes unchanged.
+- [x] `uv run pytest` green.
 
 ## Implementation Plan
 
