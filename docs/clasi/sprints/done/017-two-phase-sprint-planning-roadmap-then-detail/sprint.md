@@ -1,11 +1,11 @@
 ---
-id: "017"
-title: "Two-phase sprint planning: roadmap then detail"
-status: roadmap
+id: '017'
+title: 'Two-phase sprint planning: roadmap then detail'
+status: done
 branch: sprint/017-two-phase-sprint-planning-roadmap-then-detail
 use-cases: []
 source-todos:
-  - two-phase-sprint-planning-roadmap-then-detail.md
+- two-phase-sprint-planning-roadmap-then-detail.md
 ---
 
 # Sprint 017: Two-phase sprint planning: roadmap then detail
