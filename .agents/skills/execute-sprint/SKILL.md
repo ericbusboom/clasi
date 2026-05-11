@@ -13,6 +13,8 @@ This skill is **strictly serial**. There is no parallel mode and no
 worktree usage. Re-enabling parallel/worktree execution is a future
 project; see
 `docs/clasi/todo/define-proper-worktree-process-for-parallel-ticket-execution.md`.
+When parallel execution is re-enabled, see
+`docs/clasi/design/worktree-process.md` for the process spec.
 
 ## Inputs
 
