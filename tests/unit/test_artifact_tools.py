@@ -13,7 +13,7 @@ def _make_ticket(tmp_path, status="open"):
     ticket = tmp_path / "001-task.md"
     ticket.write_text(
         f"---\nid: \"001\"\ntitle: \"Task\"\nstatus: {status}\n"
-        "use-cases: []\ndepends-on: []\ntodo: \"\"\n---\n# Task\n",
+        "use-cases: []\ndepends-on: []\nissue: \"\"\n---\n# Task\n",
         encoding="utf-8",
     )
     return str(ticket)
@@ -135,7 +135,7 @@ class TestThrowTicketException:
 
     def test_throw_ticket_exception_both_writes_occur(self, tmp_path):
         """Both exception payload and status are written (not partial)."""
-        path = _make_ticket(tmp_path, status="todo")
+        path = _make_ticket(tmp_path, status="open")
         throw_ticket_exception(path, **self._VALID_ARGS)
 
         artifact = Artifact(path)

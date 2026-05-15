@@ -411,7 +411,7 @@ class Sprint:
     def ticket_counts(self) -> dict:
         """Return a count of tickets by status.
 
-        Returns a dict with keys: todo, in_progress, done.
+        Returns a dict with keys: open, in_progress, done, exception.
         Only counts tickets that have a non-empty id field.
         """
         counts: dict[str, int] = {"open": 0, "in_progress": 0, "done": 0, "exception": 0}

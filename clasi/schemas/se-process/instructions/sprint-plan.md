@@ -73,7 +73,7 @@ agent via the Agent tool to fill in full planning artifacts.
        that cannot all fit in this sprint, call `split_issue` first to
        carve out the in-scope piece as a separate issue file. The split
        issue will be a sibling of the original in the same directory.
-       Then call `create_ticket(todo=<split-filename>)` to bring the
+       Then call `create_ticket(issue=<split-filename>)` to bring the
        in-scope piece into the sprint. The remainder stays in the pool
        or sprint for a future sprint.
 
