@@ -860,12 +860,12 @@ class TestHandleCommitCheck:
 
 
 # ---------------------------------------------------------------------------
-# handle_plan_to_todo tests
+# handle_plan_to_issue tests
 # ---------------------------------------------------------------------------
 
 
-class TestHandlePlanToTodo:
-    def test_calls_plan_to_todo_with_standard_dirs(self, tmp_path):
+class TestHandlePlanToIssue:
+    def test_calls_plan_to_issue_with_standard_dirs(self, tmp_path):
         """handle_plan_to_issue calls plan_to_issue with home/.claude/plans and issues_dir."""
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
@@ -877,9 +877,9 @@ class TestHandlePlanToTodo:
         assert str(args[1]).endswith(".clasi/issues")
         assert kwargs.get("plan_file") is None
 
-    def test_prints_result_path_when_todo_created(self, capsys):
+    def test_prints_result_path_when_issue_created(self, capsys):
         """handle_plan_to_issue writes JSON to stderr and exits 2 when plan_to_issue returns a path."""
-        todo_path = Path(".clasi/todo/001-my-plan.md")
+        todo_path = Path(".clasi/issues/001-my-plan.md")
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = todo_path
             with pytest.raises(SystemExit) as exc:
@@ -914,32 +914,32 @@ class TestHandlePlanToTodo:
 
 
 # ---------------------------------------------------------------------------
-# handle_codex_plan_to_todo tests
+# handle_codex_plan_to_issue tests
 # ---------------------------------------------------------------------------
 
 
-class TestHandleCodexPlanToTodo:
+class TestHandleCodexPlanToIssue:
     def _payload(self, message: str) -> dict:
         return {"last_assistant_message": message}
 
     def test_no_plan_tag_exits_0_no_file(self, tmp_path, capsys):
-        """No <proposed_plan> in message: exits 0, no TODO file created."""
+        """No <proposed_plan> in message: exits 0, no issue file created."""
         payload = self._payload("No plan tag here, just some text.")
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
-        todo_dir = tmp_path / ".clasi" / "todo"
-        assert not todo_dir.exists() or len(list(todo_dir.glob("*.md"))) == 0
+        issue_dir = tmp_path / ".clasi" / "issues"
+        assert not issue_dir.exists() or len(list(issue_dir.glob("*.md"))) == 0
 
     def test_no_plan_tag_never_exits_2(self, tmp_path):
-        """handle_codex_plan_to_todo never exits with code 2."""
+        """handle_codex_plan_to_issue never exits with code 2."""
         payload = self._payload("No plan here.")
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code != 2
 
-    def test_with_plan_creates_todo_exits_0(self, tmp_path, capsys):
-        """<proposed_plan> present: one TODO file created, exits 0."""
+    def test_with_plan_creates_issue_exits_0(self, tmp_path, capsys):
+        """<proposed_plan> present: one issue file created, exits 0."""
         (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
         payload = self._payload(message)
@@ -948,10 +948,10 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / ".clasi" / "issues"
-        todo_files = list(todo_dir.glob("*.md"))
-        assert len(todo_files) == 1
-        content = todo_files[0].read_text()
+        issue_dir = tmp_path / ".clasi" / "issues"
+        issue_files = list(issue_dir.glob("*.md"))
+        assert len(issue_files) == 1
+        content = issue_files[0].read_text()
         assert "# My Plan" in content
         assert "source: codex-plan" in content
 
@@ -959,8 +959,8 @@ class TestHandleCodexPlanToTodo:
         assert "CLASI: Codex plan saved as TODO:" in captured.out
 
     def test_with_plan_never_exits_2(self, tmp_path):
-        """handle_codex_plan_to_todo always exits 0, even when a TODO is created."""
-        (tmp_path / ".clasi" / "todo").mkdir(parents=True)
+        """handle_codex_plan_to_issue always exits 0, even when an issue is created."""
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
         message = "<proposed_plan>\n# Plan\n\nDetails here.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -974,13 +974,13 @@ class TestHandleCodexPlanToTodo:
         message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
         payload = self._payload(message)
 
-        # First call — creates a TODO
+        # First call — creates an issue
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        todo_dir = tmp_path / ".clasi" / "issues"
-        files_after_first = list(todo_dir.glob("*.md"))
+        issue_dir = tmp_path / ".clasi" / "issues"
+        files_after_first = list(issue_dir.glob("*.md"))
         assert len(files_after_first) == 1
 
         # Second call with identical payload — dedup, no new file
@@ -988,27 +988,27 @@ class TestHandleCodexPlanToTodo:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
-        files_after_second = list(todo_dir.glob("*.md"))
+        files_after_second = list(issue_dir.glob("*.md"))
         assert len(files_after_second) == 1
 
     def test_empty_message_exits_0_no_file(self, tmp_path):
-        """Empty last_assistant_message: exits 0, no TODO created."""
+        """Empty last_assistant_message: exits 0, no issue created."""
         payload = self._payload("")
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
-        todo_dir = tmp_path / ".clasi" / "todo"
-        assert not todo_dir.exists() or len(list(todo_dir.glob("*.md"))) == 0
+        issue_dir = tmp_path / ".clasi" / "issues"
+        assert not issue_dir.exists() or len(list(issue_dir.glob("*.md"))) == 0
 
     def test_missing_last_assistant_message_key_exits_0(self, tmp_path):
-        """Payload without last_assistant_message key: exits 0, no TODO created."""
+        """Payload without last_assistant_message key: exits 0, no issue created."""
         payload = {}
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
 
 
-class TestHandleHookCodexPlanToTodo:
+class TestHandleHookCodexPlanToIssue:
     """Test that handle_hook routes codex-plan-to-issue and its backward-compat alias."""
 
     def test_routes_codex_plan_to_issue(self):
