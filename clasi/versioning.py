@@ -1,39 +1,46 @@
 """Versioning utilities for the CLASI project.
 
-Supports configurable version formats via .clasi/settings.yaml.
+Thin shim over ``dotconfig.versioning``.  Shared computation (format
+parsing, version building, file updating, tagging) lives in dotconfig.
+This module retains only clasi-specific helpers that read
+``.clasi/settings.yaml`` and a wrapper for ``compute_next_version``
+that honours the clasi config-file authority.
 
 Default format: X+.YYYYMMDD.R+
-
-Format tokens:
-    X      — manual segment, exactly 1 digit
-    XX     — manual segment, exactly 2 digits
-    X+     — manual segment, one or more digits (variable width)
-    0XX    — manual segment, exactly 2 digits, zero-padded
-    0XXX   — manual segment, exactly 3 digits, zero-padded
-    YYYY   — four-digit year
-    MM     — two-digit month
-    DD     — two-digit day
-    R      — auto-incrementing revision, exactly 1 digit
-    RR     — revision, exactly 2 digits
-    R+     — revision, one or more digits (variable width)
-    0RR    — revision, exactly 2 digits, zero-padded
-    0RRR   — revision, exactly 3 digits, zero-padded
-    .      — literal dot separator
-
-Fully manual formats (no R or date tokens) produce X.X.X style versions
-that are not auto-computed.
 """
 
-
-import json
 import re
 import subprocess
 from datetime import date
 from pathlib import Path
 
+import json
 import yaml
 
+# ---------------------------------------------------------------------------
+# Re-exports from dotconfig (no clasi implementation retained)
+# ---------------------------------------------------------------------------
+from dotconfig.versioning import (
+    parse_format,
+    format_has_auto,
+    build_version,
+    build_tag_regex,
+    create_version_tag,
+    update_version_file,
+    update_pyproject_version,
+    update_package_json_version,
+)
+
+# ---------------------------------------------------------------------------
+# Compat constants
+# ---------------------------------------------------------------------------
+
 DEFAULT_FORMAT = "X+.YYYYMMDD.R+"
+DEFAULT_TRIGGER = "every_change"
+VALID_TRIGGERS = ("manual", "every_sprint", "every_change")
+
+# Kept for backward compatibility with callers that import it directly.
+VERSION_PATTERN = re.compile(r"^v?(\d+)\.(\d{8})\.(\d+)$")
 
 # Priority-ordered list of version file names and their types.
 _VERSION_FILES: list[tuple[str, str]] = [
@@ -41,159 +48,15 @@ _VERSION_FILES: list[tuple[str, str]] = [
     ("package.json", "package_json"),
 ]
 
-# --- Format parsing ---
-
-# Token pattern: longest match first.
-# Order matters: try 0-prefixed multi-char first, then multi-char, then
-# single+plus, then single, then date tokens, then dot.
-_TOKEN_RE = re.compile(
-    r"(0X{2,}|0R{2,}|X{2,}|R{2,}|X\+|R\+|X|R|YYYY|MM|DD|\.)"
-)
-
-
-def _classify_token(tok: str) -> tuple[str, int, bool]:
-    """Classify a format token.
-
-    Returns (kind, width, zero_pad).
-    kind: 'manual', 'year', 'month', 'day', 'rev', 'dot'
-    width: exact digit count, or 0 for variable-width (+ suffix)
-    zero_pad: True if the output should be zero-padded to width
-    """
-    if tok == ".":
-        return ("dot", 0, False)
-    if tok == "YYYY":
-        return ("year", 4, True)
-    if tok == "MM":
-        return ("month", 2, True)
-    if tok == "DD":
-        return ("day", 2, True)
-    # X+ or R+ — variable width
-    if tok == "X+":
-        return ("manual", 0, False)
-    if tok == "R+":
-        return ("rev", 0, False)
-    # 0XX, 0XXX — zero-padded manual
-    if tok.startswith("0") and all(c == "X" for c in tok[1:]):
-        return ("manual", len(tok) - 1, True)
-    # XX, XXX — exact width manual
-    if all(c == "X" for c in tok):
-        return ("manual", len(tok), False)
-    # 0RR, 0RRR — zero-padded rev
-    if tok.startswith("0") and all(c == "R" for c in tok[1:]):
-        return ("rev", len(tok) - 1, True)
-    # RR, RRR — exact width rev
-    if all(c == "R" for c in tok):
-        return ("rev", len(tok), False)
-    raise ValueError(f"Unknown version format token: {tok}")
-
-
-def parse_format(fmt: str) -> list[tuple[str, int, bool]]:
-    """Parse a version format string into classified tokens."""
-    tokens = _TOKEN_RE.findall(fmt)
-    # Verify we consumed the entire format string
-    reconstructed = "".join(tokens)
-    if reconstructed != fmt:
-        raise ValueError(
-            f"Invalid version format: {fmt!r} — unrecognized characters "
-            f"(parsed as {reconstructed!r})"
-        )
-    return [_classify_token(t) for t in tokens]
-
-
-def format_has_auto(parsed: list[tuple[str, int, bool]]) -> bool:
-    """Check if the format has any auto-computed segments (date or rev)."""
-    return any(k in ("year", "month", "day", "rev") for k, _, _ in parsed)
-
-
-def _format_segment(value: int, width: int, zero_pad: bool) -> str:
-    """Format a numeric segment with optional zero-padding.
-
-    width=0 means variable width (no padding, no truncation).
-    width>0 means exactly that many digits — zero-pad if zero_pad is True,
-    otherwise just str(value) (may exceed width if the value is large).
-    """
-    if width == 0:
-        return str(value)
-    if zero_pad:
-        return str(value).zfill(width)
-    return str(value)
-
-
-def build_version(
-    parsed: list[tuple[str, int, bool]],
-    manual_values: list[int],
-    rev: int = 1,
-    today: date | None = None,
-) -> str:
-    """Build a version string from parsed format, manual values, and auto values."""
-    if today is None:
-        today = date.today()
-
-    parts = []
-    manual_idx = 0
-    for kind, width, zero_pad in parsed:
-        if kind == "dot":
-            parts.append(".")
-        elif kind == "manual":
-            val = manual_values[manual_idx] if manual_idx < len(manual_values) else 0
-            manual_idx += 1
-            parts.append(_format_segment(val, width, zero_pad))
-        elif kind == "year":
-            parts.append(str(today.year))
-        elif kind == "month":
-            parts.append(f"{today.month:02d}")
-        elif kind == "day":
-            parts.append(f"{today.day:02d}")
-        elif kind == "rev":
-            parts.append(_format_segment(rev, width, zero_pad))
-    return "".join(parts)
-
-
-def build_tag_regex(parsed: list[tuple[str, int, bool]]) -> re.Pattern:
-    """Build a regex that matches version tags for this format.
-
-    Returns a compiled pattern with named groups for manual segments
-    (manual_0, manual_1, ...), date segments (year, month, day),
-    and revision (rev).
-    """
-    parts = ["^v?"]
-    manual_idx = 0
-    for kind, width, zero_pad in parsed:
-        if kind == "dot":
-            parts.append(r"\.")
-        elif kind == "manual":
-            if width == 0:
-                parts.append(f"(?P<manual_{manual_idx}>\\d+)")
-            else:
-                parts.append(f"(?P<manual_{manual_idx}>\\d{{{width}}})")
-            manual_idx += 1
-        elif kind == "year":
-            parts.append(r"(?P<year>\d{4})")
-        elif kind == "month":
-            parts.append(r"(?P<month>\d{2})")
-        elif kind == "day":
-            parts.append(r"(?P<day>\d{2})")
-        elif kind == "rev":
-            if width == 0:
-                parts.append(r"(?P<rev>\d+)")
-            else:
-                parts.append(f"(?P<rev>\\d{{{width}}})")
-    parts.append("$")
-    return re.compile("".join(parts))
-
-
-# --- Settings ---
-
-DEFAULT_TRIGGER = "every_change"
-VALID_TRIGGERS = ("manual", "every_sprint", "every_change")
+# ---------------------------------------------------------------------------
+# Clasi-specific settings helpers (read .clasi/settings.yaml)
+# ---------------------------------------------------------------------------
 
 
 def _load_settings(project_root: Path | None = None) -> dict:
     """Load .clasi/settings.yaml as a dict.
 
-    Falls back to the legacy docs/clasi/settings.yaml location for
-    repos that have not yet migrated the artifact root.
-
+    Falls back to legacy locations for repos that have not yet migrated.
     Returns an empty dict if the file doesn't exist or can't be parsed.
     """
     if project_root is None:
@@ -272,97 +135,9 @@ def load_version_sync(project_root: Path | None = None) -> list[str]:
     return []
 
 
-# --- Legacy compat ---
-
-# Keep VERSION_PATTERN for backward compatibility with existing code
-# that imports it directly
-VERSION_PATTERN = re.compile(r"^v?(\d+)\.(\d{8})\.(\d+)$")
-
-
-# --- Core API ---
-
-def _get_existing_tags() -> list[str]:
-    """Return all git tags in the current repository."""
-    result = subprocess.run(
-        ["git", "tag", "-l"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-
-def compute_next_version(major: int = 0) -> str:
-    """Compute the next version string based on existing git tags.
-
-    Reads the version format from project settings. For formats with
-    auto-computed segments (date, revision), scans git tags to find
-    the next revision number. For fully manual formats, returns the
-    major values joined by dots.
-    """
-    fmt = load_version_format()
-    parsed = parse_format(fmt)
-
-    if not format_has_auto(parsed):
-        # Fully manual format — return manual values as-is
-        manual_count = sum(1 for k, _, _ in parsed if k == "manual")
-        values = [major] + [0] * (manual_count - 1)
-        return build_version(parsed, values)
-
-    today = date.today()
-    today_str = today.strftime("%Y%m%d")
-    tag_pattern = build_tag_regex(parsed)
-
-    def _extract_rev(candidate: str) -> int | None:
-        m = tag_pattern.match(candidate.lstrip("v"))
-        if not m:
-            return None
-
-        # Check manual segments match
-        manual_idx = 0
-        for kind, _, _ in parsed:
-            if kind == "manual":
-                tag_val = int(m.group(f"manual_{manual_idx}"))
-                expected = major if manual_idx == 0 else 0
-                if tag_val != expected:
-                    return None
-                manual_idx += 1
-
-        # Check date segments match today
-        tag_date = ""
-        if "year" in m.groupdict():
-            tag_date += m.group("year")
-        if "month" in m.groupdict():
-            tag_date += m.group("month")
-        if "day" in m.groupdict():
-            tag_date += m.group("day")
-
-        if tag_date and tag_date != today_str[:len(tag_date)]:
-            return None
-
-        if "rev" in m.groupdict():
-            return int(m.group("rev"))
-        return None
-
-    max_rev = 0
-    for tag in _get_existing_tags():
-        rev = _extract_rev(tag)
-        if rev is not None:
-            max_rev = max(max_rev, rev)
-
-    # Also consider the version currently in the project's version file,
-    # so consecutive bumps advance even when --tag is not used.
-    current = read_current_version()
-    if current:
-        rev = _extract_rev(current)
-        if rev is not None:
-            max_rev = max(max_rev, rev)
-
-    manual_count = sum(1 for k, _, _ in parsed if k == "manual")
-    values = [major] + [0] * (manual_count - 1)
-    return build_version(parsed, values, rev=max_rev + 1, today=today)
+# ---------------------------------------------------------------------------
+# Clasi-specific version file detection
+# ---------------------------------------------------------------------------
 
 
 def _file_type_for(path: Path) -> str:
@@ -417,39 +192,6 @@ def read_current_version(project_root: Path | None = None) -> str | None:
     return None
 
 
-def update_pyproject_version(version: str, pyproject_path: Path) -> None:
-    """Update the version field in pyproject.toml."""
-    content = pyproject_path.read_text(encoding="utf-8")
-    pattern = re.compile(r'^version\s*=\s*"[^"]*"', re.MULTILINE)
-    if not pattern.search(content):
-        raise ValueError(f"Could not find version field in {pyproject_path}")
-    updated = pattern.sub(f'version = "{version}"', content, count=1)
-    if updated != content:
-        pyproject_path.write_text(updated, encoding="utf-8")
-
-
-def update_package_json_version(version: str, package_path: Path) -> None:
-    """Update the version field in package.json."""
-    content = package_path.read_text(encoding="utf-8")
-    data = json.loads(content)
-    if "version" not in data:
-        raise ValueError(f"No 'version' field in {package_path}")
-    data["version"] = version
-    package_path.write_text(
-        json.dumps(data, indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def update_version_file(path: Path, file_type: str, version: str) -> None:
-    """Update the version in the detected file, dispatching by type."""
-    if file_type == "pyproject":
-        update_pyproject_version(version, path)
-    elif file_type == "package_json":
-        update_package_json_version(version, path)
-    else:
-        raise ValueError(f"Unknown version file type: {file_type}")
-
-
 def sync_version(version: str, project_root: Path | None = None) -> list[str]:
     """Write the version to all sync files listed in settings.
 
@@ -470,23 +212,109 @@ def sync_version(version: str, project_root: Path | None = None) -> list[str]:
     return updated
 
 
-def create_version_tag(version: str) -> None:
-    """Create a git tag for the given version."""
-    tag_name = f"v{version}"
+# ---------------------------------------------------------------------------
+# compute_next_version wrapper
+#
+# Dotconfig's compute_next_version reads format from config/dotconfig.yaml.
+# Clasi projects store format in .clasi/settings.yaml.  This wrapper reads
+# the clasi format and calls dotconfig's lower-level helpers directly so
+# that the clasi config wins without any monkey-patching.
+# ---------------------------------------------------------------------------
+
+
+def _get_existing_tags() -> list[str]:
+    """Return all git tags in the current repository."""
     result = subprocess.run(
-        ["git", "tag", tag_name],
+        ["git", "tag", "-l"],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to create tag {tag_name}: {result.stderr.strip()}")
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def compute_next_version(major: int = 0) -> str:
+    """Compute the next version string based on existing git tags.
+
+    Reads the version format from .clasi/settings.yaml (clasi-specific).
+    For formats with auto-computed segments (date, revision), scans git
+    tags to find the next revision number.  For fully manual formats,
+    returns the major values joined by dots.
+    """
+    fmt = load_version_format()
+    parsed = parse_format(fmt)
+
+    if not format_has_auto(parsed):
+        # Fully manual format — return manual values as-is
+        manual_count = sum(1 for k, _, _ in parsed if k == "manual")
+        values = [major] + [0] * (manual_count - 1)
+        return build_version(parsed, values)
+
+    today = date.today()
+    today_str = today.strftime("%Y%m%d")
+    tag_pattern = build_tag_regex(parsed)
+
+    def _extract_rev(candidate: str) -> int | None:
+        m = tag_pattern.match(candidate.lstrip("v"))
+        if not m:
+            return None
+
+        # Check manual segments match
+        manual_idx = 0
+        for kind, _, _ in parsed:
+            if kind == "manual":
+                tag_val = int(m.group(f"manual_{manual_idx}"))
+                expected = major if manual_idx == 0 else 0
+                if tag_val != expected:
+                    return None
+                manual_idx += 1
+
+        # Check date segments match today
+        tag_date = ""
+        if "year" in m.groupdict():
+            tag_date += m.group("year")
+        if "month" in m.groupdict():
+            tag_date += m.group("month")
+        if "day" in m.groupdict():
+            tag_date += m.group("day")
+
+        if tag_date and tag_date != today_str[: len(tag_date)]:
+            return None
+
+        if "rev" in m.groupdict():
+            return int(m.group("rev"))
+        return None
+
+    max_rev = 0
+    for tag in _get_existing_tags():
+        rev = _extract_rev(tag)
+        if rev is not None:
+            max_rev = max(max_rev, rev)
+
+    # Also consider the version currently in the project's version file,
+    # so consecutive bumps advance even when --tag is not used.
+    current = read_current_version()
+    if current:
+        rev = _extract_rev(current)
+        if rev is not None:
+            max_rev = max(max_rev, rev)
+
+    manual_count = sum(1 for k, _, _ in parsed if k == "manual")
+    values = [major] + [0] * (manual_count - 1)
+    return build_version(parsed, values, rev=max_rev + 1, today=today)
+
+
+# ---------------------------------------------------------------------------
+# bump_version adapter (retained for external callers)
+# ---------------------------------------------------------------------------
 
 
 def bump_version(major: int = 0, tag: bool = False) -> dict:
     """Compute the next version, update all version files, and optionally tag.
 
-    This is the main entry point for `clasi version bump`.
+    This is the main entry point for ``clasi version bump``.
 
     Returns a dict with keys: version, source, synced, tag.
     """
