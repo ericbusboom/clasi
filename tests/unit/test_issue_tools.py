@@ -9,6 +9,7 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
+    link_sprint_issues,
     list_issues,
     move_issue_to_done,
     split_issue,
@@ -1228,3 +1229,128 @@ class TestSplitIssue:
         _, body = read_document(todo_dir / "new-issue.md")
         assert "# New Title" in body
         assert "New body content here." in body
+
+
+class TestLinkSprintIssues:
+    """Tests for the link_sprint_issues MCP tool."""
+
+    @pytest.fixture
+    def work_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
+        issues = tmp_path / ".clasi" / "issues"
+        issues.mkdir(parents=True)
+        return tmp_path
+
+    def _sprint_dir(self, work_dir, sprint_id: str = "001"):
+        """Return the sprint directory path."""
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for d in sorted(sprints_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                return d
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
+
+    def _issues_dir(self, work_dir):
+        return work_dir / ".clasi" / "issues"
+
+    def _make_issue(self, work_dir, filename: str, status: str = "pending", sprint: str | None = None):
+        """Create an issue file in the pending pool."""
+        lines = [f"---\nstatus: {status}\n"]
+        if sprint is not None:
+            lines.append(f"sprint: '{sprint}'\n")
+        lines.append(f"---\n\n# {filename.removesuffix('.md')}\n")
+        (self._issues_dir(work_dir) / filename).write_text("".join(lines))
+
+    def test_links_two_valid_issues(self, work_dir):
+        """Two valid issues get sprint: <id> set; sprint.md issues: contains both."""
+        create_sprint("My Sprint")
+        self._make_issue(work_dir, "issue-a.md")
+        self._make_issue(work_dir, "issue-b.md")
+
+        result = json.loads(link_sprint_issues("001", ["issue-a.md", "issue-b.md"]))
+
+        assert result["sprint_id"] == "001"
+        assert sorted(result["linked"]) == ["issue-a.md", "issue-b.md"]
+        assert result["already_linked"] == []
+        assert result["not_found"] == []
+
+        # Issues have sprint: '001' written to frontmatter
+        fm_a = read_frontmatter(self._issues_dir(work_dir) / "issue-a.md")
+        fm_b = read_frontmatter(self._issues_dir(work_dir) / "issue-b.md")
+        assert fm_a["sprint"] == "001"
+        assert fm_b["sprint"] == "001"
+
+        # Sprint.md issues: list contains both filenames
+        sprint_fm = read_frontmatter(self._sprint_dir(work_dir) / "sprint.md")
+        assert "issue-a.md" in sprint_fm["issues"]
+        assert "issue-b.md" in sprint_fm["issues"]
+
+    def test_idempotent_second_call(self, work_dir):
+        """Calling twice with same args → all in already_linked, no duplicates."""
+        create_sprint("My Sprint")
+        self._make_issue(work_dir, "issue-a.md")
+
+        link_sprint_issues("001", ["issue-a.md"])
+        result = json.loads(link_sprint_issues("001", ["issue-a.md"]))
+
+        assert result["linked"] == []
+        assert result["already_linked"] == ["issue-a.md"]
+        assert result["not_found"] == []
+
+        # Sprint.md issues: has exactly one entry (no duplicate)
+        sprint_fm = read_frontmatter(self._sprint_dir(work_dir) / "sprint.md")
+        assert sprint_fm["issues"].count("issue-a.md") == 1
+
+    def test_not_found_continues(self, work_dir):
+        """Unknown filename → in not_found, does not error."""
+        create_sprint("My Sprint")
+
+        result = json.loads(link_sprint_issues("001", ["ghost.md"]))
+
+        assert result["not_found"] == ["ghost.md"]
+        assert result["linked"] == []
+        assert result["already_linked"] == []
+
+    def test_mixed_valid_already_linked_not_found(self, work_dir):
+        """One valid, one already linked, one not found → correct categorization."""
+        create_sprint("My Sprint")
+        self._make_issue(work_dir, "new-issue.md")
+        self._make_issue(work_dir, "old-issue.md", sprint="001")
+
+        result = json.loads(
+            link_sprint_issues("001", ["new-issue.md", "old-issue.md", "missing.md"])
+        )
+
+        assert result["linked"] == ["new-issue.md"]
+        assert result["already_linked"] == ["old-issue.md"]
+        assert result["not_found"] == ["missing.md"]
+
+    def test_create_sprint_produces_issues_field(self, work_dir):
+        """create_sprint produces a sprint.md with issues: [] in frontmatter."""
+        result_str = create_sprint("Template Test Sprint")
+        result = json.loads(result_str)
+        sprint_id = result["id"]
+
+        sprint_dir = self._sprint_dir(work_dir, sprint_id)
+        sprint_fm = read_frontmatter(sprint_dir / "sprint.md")
+
+        assert "issues" in sprint_fm
+        assert sprint_fm["issues"] == []
+
+    def test_unknown_sprint_returns_error(self, work_dir):
+        """Calling with a non-existent sprint_id returns error key."""
+        result = json.loads(link_sprint_issues("999", ["issue-a.md"]))
+        assert "error" in result
+
+    def test_sprint_issues_list_no_duplicates_on_repeated_link(self, work_dir):
+        """Calling link_sprint_issues with overlapping lists never duplicates entries."""
+        create_sprint("Dup Test")
+        self._make_issue(work_dir, "item-a.md")
+        self._make_issue(work_dir, "item-b.md")
+
+        link_sprint_issues("001", ["item-a.md"])
+        link_sprint_issues("001", ["item-a.md", "item-b.md"])
+
+        sprint_fm = read_frontmatter(self._sprint_dir(work_dir) / "sprint.md")
+        assert sprint_fm["issues"].count("item-a.md") == 1
+        assert sprint_fm["issues"].count("item-b.md") == 1

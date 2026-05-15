@@ -489,6 +489,71 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     return json.dumps(result, indent=2)
 
 
+@server.tool()
+def link_sprint_issues(sprint_id: str, issue_filenames: list[str]) -> str:
+    """Establish bidirectional sprint↔issue links during the roadmap phase.
+
+    For each issue filename provided, writes ``sprint: <sprint_id>`` to the
+    issue's frontmatter and ensures the sprint's ``sprint.md`` frontmatter has
+    an ``issues:`` list that includes the filename.  The operation is
+    idempotent: calling it again with the same arguments produces no change.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '017').
+        issue_filenames: List of issue filenames (e.g., ['my-feature.md']).
+
+    Returns JSON with {sprint_id, linked, already_linked, not_found}.
+    """
+    project = get_project()
+
+    try:
+        sprint = project.get_sprint(sprint_id)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    linked: list[str] = []
+    already_linked: list[str] = []
+    not_found: list[str] = []
+
+    for filename in issue_filenames:
+        try:
+            issue = project.get_issue(filename)
+        except ValueError:
+            not_found.append(filename)
+            continue
+
+        if issue.sprint == sprint_id:
+            already_linked.append(filename)
+            continue
+
+        issue._artifact.update_frontmatter(sprint=sprint_id)
+        linked.append(filename)
+
+    # Update sprint.md issues: list — merge linked filenames (no duplicates)
+    sprint_artifact = sprint.sprint_doc
+    current_issues = sprint_artifact.frontmatter.get("issues", [])
+    if isinstance(current_issues, str):
+        current_issues = [current_issues] if current_issues else []
+    else:
+        current_issues = list(current_issues) if current_issues else []
+
+    # Add newly linked filenames that aren't already in the list
+    newly_to_add = [f for f in linked if f not in current_issues]
+    if newly_to_add:
+        merged = current_issues + newly_to_add
+        sprint_artifact.update_frontmatter(issues=merged)
+
+    return json.dumps(
+        {
+            "sprint_id": sprint_id,
+            "linked": linked,
+            "already_linked": already_linked,
+            "not_found": not_found,
+        },
+        indent=2,
+    )
+
+
 def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
     """Check that a sprint is in ticketing phase or later.
 
