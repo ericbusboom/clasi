@@ -8,8 +8,12 @@ Subcommands:
     clasi migrate [target]          — One-shot docs/clasi/ → .clasi/ migration
     clasi mcp                       — Run the MCP server (stdio)
     clasi tool plan-to-issue        — Convert plan file to issue
-    clasi version                   — Show the current project version
-    clasi version bump              — Bump version, update files, tag
+
+Versioning is delegated to dotconfig. Use ``dotconfig version`` and
+``dotconfig version bump`` for the user-facing commands. The
+``clasi.versioning`` module remains as an internal library used by
+``close_sprint``'s bump-and-tag step; that internal usage is targeted
+for retirement in a future sprint.
 """
 
 import click
@@ -128,86 +132,6 @@ def tool_plan_to_issue(plans_dir, issues_dir):
         click.echo(f"CLASI: Plan saved as issue: {result}")
     else:
         click.echo("No plan file found to convert.")
-
-
-@cli.group(invoke_without_command=True)
-@click.pass_context
-def version(ctx):
-    """Show or bump the project version.
-
-    With no subcommand, shows the current version.
-    """
-    if ctx.invoked_subcommand is None:
-        from clasi.versioning import read_current_version
-
-        ver = read_current_version()
-        if ver:
-            click.echo(ver)
-        else:
-            click.echo("No version file found.", err=True)
-            ctx.exit(1)
-
-
-@version.command(name="bump")
-@click.option("--major", default=0, type=int, help="Major version number.")
-@click.option("--tag", is_flag=True, help="Create a git tag for the new version.")
-@click.option("--push", "-p", is_flag=True, help="Commit, tag, and push (requires clean master).")
-def version_bump(major, tag, push):
-    """Compute the next version and update version files.
-
-    Reads version_format from settings to determine the format.
-    Updates the source file and all sync files.
-
-    With --tag, also creates a git tag.
-    With --push, checks for clean master/main, bumps, commits, tags, and pushes.
-    """
-    import subprocess
-
-    from clasi.versioning import bump_version
-
-    if push:
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        if branch not in ("master", "main"):
-            click.echo(
-                f"Error: not on master/main branch (on {branch})", err=True
-            )
-            raise SystemExit(1)
-
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        if status:
-            click.echo("Error: uncommitted changes", err=True)
-            raise SystemExit(1)
-
-    result = bump_version(major=major, tag=False)
-    click.echo(f"Version: {result['version']}")
-    if result["source"]:
-        click.echo(f"Updated: {result['source']}")
-    for s in result["synced"]:
-        click.echo(f"Synced:  {s}")
-
-    if push:
-        subprocess.run(["git", "add", "pyproject.toml"], check=True)
-        subprocess.run(
-            ["git", "commit", "-m", f"chore: bump version to {result['version']}"],
-            check=True,
-        )
-        from clasi.versioning import create_version_tag
-
-        create_version_tag(result["version"])
-        click.echo(f"Tagged:  v{result['version']}")
-        subprocess.run(["git", "push", "--tags"], check=True)
-        click.echo("Pushed.")
-    elif tag:
-        from clasi.versioning import create_version_tag
-
-        create_version_tag(result["version"])
-        click.echo(f"Tagged:  v{result['version']}")
 
 
 @cli.command()

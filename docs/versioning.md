@@ -1,12 +1,17 @@
 # CLASI Versioning — Reference for Porting
 
-This document describes how `clasi version` and `clasi version bump`
-work, in enough detail to port the same scheme into another tool. The
-reference implementation lives in [clasi/versioning.py](../clasi/versioning.py)
-(self-contained, ~500 lines, only stdlib + `pyyaml`).
+> **Note (2026-05-15):** The user-facing version commands have moved
+> to **dotconfig** — use `dotconfig version` and `dotconfig version
+> bump`. The `clasi version` CLI no longer exists. `clasi/versioning.py`
+> is still used internally by `close_sprint`'s bump-and-tag step;
+> migrating that to depend on `dotconfig.versioning` as a library is
+> tracked in a separate issue.
 
-The CLI surface is in [clasi/cli.py](../clasi/cli.py) under the
-`version` group.
+This document describes how the versioning scheme works, in enough
+detail to port the same scheme into another tool. The reference
+implementation lives in [clasi/versioning.py](../clasi/versioning.py)
+(self-contained, ~500 lines, only stdlib + `pyyaml`); dotconfig
+implements the same scheme.
 
 ---
 
