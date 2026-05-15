@@ -385,6 +385,7 @@ class TestUpdateVersionFile:
 
 
 class TestCreateVersionTag:
+    @pytest.mark.skip(reason="migrated in ticket 004-004: create_version_tag is now re-exported from dotconfig; patch dotconfig.versioning.subprocess instead")
     @patch("clasi.versioning.subprocess")
     def test_creates_tag(self, mock_subprocess):
         mock_subprocess.run.return_value.returncode = 0
@@ -398,6 +399,7 @@ class TestCreateVersionTag:
             check=False,
         )
 
+    @pytest.mark.skip(reason="migrated in ticket 004-004: create_version_tag is now re-exported from dotconfig; patch dotconfig.versioning.subprocess instead")
     @patch("clasi.versioning.subprocess")
     def test_raises_on_failure(self, mock_subprocess):
         mock_subprocess.run.return_value.returncode = 1
