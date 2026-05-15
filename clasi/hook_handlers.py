@@ -879,8 +879,8 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
         sys.exit(0)
 
     plan_text = match.group(1).strip()
-    todo_dir = get_project().issues_dir
-    result = plan_to_issue_from_text(plan_text, todo_dir)
+    issue_dir = get_project().issues_dir
+    result = plan_to_issue_from_text(plan_text, issue_dir)
     if result:
         print(f"CLASI: Codex plan saved as TODO: {result}")
     sys.exit(0)
