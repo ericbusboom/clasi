@@ -80,6 +80,54 @@ class StateReader(Protocol):
         """Return True if a programmer agent has been dispatched for *ticket_id*."""
         ...
 
+    def sprint_flag(self, sprint_id: str, flag: str) -> str:
+        """Return the value of a sprint flag (e.g. ``'pre_flight_review'``, ``'post_review'``).
+
+        Returns an empty string if the flag is not set.
+        """
+        ...
+
+    def branch_merged(self, sprint_id: str) -> bool:
+        """Return True if the sprint branch has been merged into the default branch."""
+        ...
+
+    def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True if every ticket listed in *ticket_id*'s ``depends-on`` is done."""
+        ...
+
+    def acceptance_criteria_met(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True if every acceptance-criteria checkbox in the ticket body is checked."""
+        ...
+
+    def tests_passing(self) -> bool:
+        """Return True if the project's test suite passes on the current branch."""
+        ...
+
+    def blocker_identified(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True if the programmer agent has declared it cannot proceed."""
+        ...
+
+    def blocker_resolved(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True if the blocker recorded in the ticket's exception block has been resolved."""
+        ...
+
+    def reopen_requested(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True if a ``reopen_ticket`` MCP call has been made for this ticket."""
+        ...
+
+    def any_sprint_in_phase(self, phase: str) -> bool:
+        """Return True if any sprint is currently in *phase*.
+
+        Used by project-machine predicates that need a global sprint query
+        without knowing a specific sprint ID (e.g. ``is_any_sprint_ticketed``,
+        ``is_any_sprint_executing``).
+        """
+        ...
+
+    def ticket_count(self, sprint_id: str) -> int:
+        """Return the number of ticket files in *sprint_id*'s tickets directory."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # NullStateReader — safe defaults for unit tests
@@ -134,6 +182,36 @@ class NullStateReader:
 
     def programmer_dispatched(self, sprint_id: str, ticket_id: str) -> bool:
         return False
+
+    def sprint_flag(self, sprint_id: str, flag: str) -> str:
+        return ""
+
+    def branch_merged(self, sprint_id: str) -> bool:
+        return False
+
+    def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
+
+    def acceptance_criteria_met(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
+
+    def tests_passing(self) -> bool:
+        return False
+
+    def blocker_identified(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
+
+    def blocker_resolved(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
+
+    def reopen_requested(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
+
+    def any_sprint_in_phase(self, phase: str) -> bool:
+        return False
+
+    def ticket_count(self, sprint_id: str) -> int:
+        return 0
 
 
 # ---------------------------------------------------------------------------
