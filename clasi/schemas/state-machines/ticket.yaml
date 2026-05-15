@@ -1,0 +1,118 @@
+machine: ticket
+context: TicketContext
+initial: open
+
+states:
+
+  open:
+    description: |
+      Ticket file exists in docs/clasi/sprints/<id>/tickets/. No
+      programmer has been dispatched.
+    invariants:
+      - is_ticket_file_present
+      - is_ticket_not_in_done_dir
+      - is_no_exception_block
+    transitions:
+      start:
+        to: in-progress
+        conditions:
+          - is_dependencies_done
+        action: dispatch_programmer
+
+  in-progress:
+    description: |
+      A programmer subagent has been dispatched and is working on the
+      ticket.
+    invariants:
+      - is_ticket_file_present
+      - is_ticket_not_in_done_dir
+      - is_programmer_dispatched
+      - is_sprint_executing
+    transitions:
+      finish:
+        to: done
+        conditions:
+          - is_acceptance_criteria_met
+          - is_tests_passing
+        action: move_ticket_to_done
+      throw:
+        to: exception
+        conditions:
+          - is_blocker_identified
+        action: write_exception_block
+
+  exception:
+    description: |
+      The programmer agent declared it cannot proceed. An exception
+      block is recorded in the ticket frontmatter.
+    invariants:
+      - is_ticket_file_present
+      - is_ticket_not_in_done_dir
+      - is_exception_block_present
+    transitions:
+      recover:
+        to: in-progress
+        conditions:
+          - is_blocker_resolved
+        action: clear_exception_block
+
+  done:
+    description: |
+      Ticket has been moved to tickets/done/. Acceptance criteria met
+      and tests passed at finish time.
+    invariants:
+      - is_ticket_file_present
+      - is_ticket_in_done_dir
+      - is_no_exception_block
+    transitions:
+      reopen:
+        to: open
+        conditions:
+          - is_reopen_requested
+        action: move_ticket_out_of_done
+
+predicates:
+  is_ticket_file_present:
+    description: Returns True iff the ticket file exists somewhere under the sprint's tickets/ tree.
+  is_ticket_in_done_dir:
+    description: Returns True iff the ticket file lives under tickets/done/.
+  is_ticket_not_in_done_dir:
+    description: Returns True iff the ticket file does NOT live under tickets/done/.
+  is_no_exception_block:
+    description: Returns True iff the ticket frontmatter has no `exception:` block.
+  is_exception_block_present:
+    description: Returns True iff the ticket frontmatter has an `exception:` block with the documented fields.
+  is_programmer_dispatched:
+    description: Returns True iff a programmer subagent dispatch is recorded for this ticket in the state DB.
+  is_sprint_executing:
+    description: Returns True iff the parent sprint is in the `executing` state.
+  is_dependencies_done:
+    description: Returns True iff every ticket listed in this ticket's `depends-on` frontmatter is in the `done` state.
+  is_acceptance_criteria_met:
+    description: Returns True iff every acceptance-criteria checkbox in the ticket body is checked.
+  is_tests_passing:
+    description: Returns True iff the project's test suite passes on the current branch.
+  is_blocker_identified:
+    description: |
+      Returns True iff the dispatched programmer agent has declared
+      it cannot proceed and a structured blocker description is
+      available for `write_exception_block` to record.
+  is_blocker_resolved:
+    description: |
+      Returns True iff the blocker recorded in the ticket's exception
+      block has been addressed (architecture updated, dependency
+      ticket completed, stakeholder clarification received, etc.).
+  is_reopen_requested:
+    description: Returns True iff a `reopen_ticket` MCP call has been made for this ticket.
+
+actions:
+  dispatch_programmer:
+    description: Dispatches a programmer subagent and records the dispatch in the state DB.
+  move_ticket_to_done:
+    description: Moves the ticket file into tickets/done/ and sets frontmatter status=done.
+  write_exception_block:
+    description: Writes the `exception:` block into the ticket frontmatter (thrown_by, thrown_at, attempted, conflict, surface).
+  clear_exception_block:
+    description: Removes the `exception:` block from frontmatter so the programmer can resume work.
+  move_ticket_out_of_done:
+    description: Moves the ticket file back out of tickets/done/ and clears frontmatter status to `open`.
