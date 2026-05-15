@@ -4,21 +4,52 @@ This package bridges the state machine engine (clasi.state_machine) to real
 project data (filesystem, git, StateDB) and produces the structured status
 output consumed by the CLI command, MCP tool, and auto-injected hook context.
 
-Sprint 006 ticket 001 adds ClasiStateReader and stubs for build_status /
-narrow_status. Subsequent tickets fill in the real implementations.
+Public API
+----------
+
+- :func:`build_status` — build the full status dict for a project.
+- :func:`narrow_status` — filter a full dict to an agent's scope (ticket 003).
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-def build_status(project, agent: str = "team-lead", sprint_id: str | None = None, ticket_id: str | None = None) -> dict:  # noqa: ARG001
-    """Build the full status dict for the given project and agent scope.
+if TYPE_CHECKING:
+    from clasi.project import Project
+    from clasi.state_machine.context import StateReader
 
-    .. note::
-        Stub implementation — returns an empty dict.
-        Sprint 006 ticket 002 (StatusReporter) provides the real implementation.
+
+def build_status(
+    project: "Project",
+    agent: str = "team-lead",
+    sprint_id: str | None = None,
+    ticket_id: str | None = None,
+    reader: "StateReader | None" = None,
+) -> dict:
+    """Build the full status dict for *project*.
+
+    Instantiates :class:`~clasi.status.reporter.StatusReporter` with
+    :class:`~clasi.status.reader.ClasiStateReader` (unless *reader* is
+    supplied) and delegates to :meth:`~clasi.status.reporter.StatusReporter.build`.
+
+    Args:
+        project: The CLASI project to evaluate.
+        agent: Requesting agent name; stored verbatim in the output.
+        sprint_id: Optional sprint ID hint passed through to the reporter.
+        ticket_id: Optional ticket ID hint passed through to the reporter.
+        reader: Optional :class:`~clasi.state_machine.context.StateReader`
+            override (useful for testing with :class:`~clasi.state_machine.context.NullStateReader`).
+
+    Returns:
+        A dict with top-level keys: ``agent``, ``computed_at``, ``project``,
+        ``sprints``, ``issues``, ``notes``, ``inconsistencies``.
     """
-    return {}
+    from clasi.status.reporter import StatusReporter
+
+    return StatusReporter(project, reader=reader).build(
+        agent=agent, sprint_id=sprint_id, ticket_id=ticket_id
+    )
 
 
 def narrow_status(full: dict, agent: str, sprint_id: str | None = None, ticket_id: str | None = None) -> dict:  # noqa: ARG001
