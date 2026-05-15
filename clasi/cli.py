@@ -270,6 +270,7 @@ def mcp():
             "codex-plan-to-issue",
             "codex-plan-to-todo",
             "commit-check",
+            "status-inject",
         ]
     ),
 )
@@ -291,6 +292,7 @@ def hook(event):
       codex-plan-to-issue  Stop(Codex): extract <proposed_plan> and save as issue.
       codex-plan-to-todo   Stop(Codex): alias for codex-plan-to-issue (deprecated).
       commit-check         PostToolUse(Bash): remind to bump version on master.
+      status-inject        UserPromptSubmit: prepend CLASI status block to context.
     """
     from clasi.hook_handlers import handle_hook
 
