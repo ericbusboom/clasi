@@ -47,6 +47,7 @@ class TestToolRegistration:
     EXPECTED_PROCESS_TOOLS = {
         "get_use_case_coverage",
         "get_version",
+        "get_status",
     }
 
     EXPECTED_ARTIFACT_TOOLS = {
@@ -106,7 +107,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 34
+        assert len(registered) == 35
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
