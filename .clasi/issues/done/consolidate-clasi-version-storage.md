@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Consolidate clasi-version storage

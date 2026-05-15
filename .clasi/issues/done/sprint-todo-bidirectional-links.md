@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Bidirectional links between sprints and the TODOs they implement

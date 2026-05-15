@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Auto-completion of issues in `move_ticket_to_done` only fires when the moved ticket has an `issue:` ref

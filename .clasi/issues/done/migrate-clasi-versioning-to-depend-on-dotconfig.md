@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Migrate clasi internal versioning to depend on dotconfig.versioning as a library

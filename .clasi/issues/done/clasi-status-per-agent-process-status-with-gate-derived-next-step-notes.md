@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # `clasi status` — per-agent process status, computed from the state machines

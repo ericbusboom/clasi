@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Finish the TODO → issue rename

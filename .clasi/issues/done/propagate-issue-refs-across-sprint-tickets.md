@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Propagate issue references across all tickets working on the same issue
