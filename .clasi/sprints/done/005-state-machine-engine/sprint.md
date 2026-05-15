@@ -1,7 +1,7 @@
 ---
-id: "005"
-title: "State Machine Engine"
-status: roadmap
+id: '005'
+title: State Machine Engine
+status: done
 branch: sprint/005-state-machine-engine
 use-cases: []
 issues: []
