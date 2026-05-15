@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class Issue:
-    """An issue file in docs/clasi/todo/."""
+    """An issue file in .clasi/issues/."""
 
     def __init__(self, path: Path, project: Project):
         self._artifact = Artifact(path)
