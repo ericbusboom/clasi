@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook status-inject"
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "matcher": ".*",

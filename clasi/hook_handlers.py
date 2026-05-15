@@ -377,15 +377,74 @@ def _get_active_tickets(sprint_id: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Subagent lifecycle logging — SubagentStart / SubagentStop
+# Status injection — UserPromptSubmit hook
 # ---------------------------------------------------------------------------
 
 
+def _build_status_block(agent: str) -> str:
+    """Build a ``## CLASI status`` fenced YAML block for *agent*.
+
+    Returns an empty string if building fails (e.g. no status data available).
+    Never raises — callers rely on this being safe.
+    """
+    try:
+        from clasi.status import build_status, narrow_status
+        from clasi.status.formatting import to_yaml
+
+        project = get_project()
+        full = build_status(project, agent=agent)
+        narrowed = narrow_status(full, agent=agent)
+        yaml_text = to_yaml(narrowed)
+        return f"## CLASI status\n\n```yaml\n{yaml_text}```\n"
+    except Exception:
+        return ""
+
+
+def handle_status_inject(payload: dict) -> None:
+    """Inject a ``## CLASI status`` block for the ``UserPromptSubmit`` event.
+
+    Reads ``$CLASI_AGENT_NAME`` to determine the agent scope (default:
+    ``team-lead``).  Calls :func:`build_status` + :func:`narrow_status`,
+    serializes to YAML, and prints the fenced block to stdout so Claude Code
+    prepends it to the context window.
+
+    Silent no-op (exit 0, no output) if:
+    - ``.clasi/`` does not exist (project not CLASI-initialized).
+    - ``.clasi/oop`` exists (out-of-process bypass).
+    """
+    project = get_project()
+    if not project.clasi_dir.exists():
+        _exit_hook("status-inject", payload, 0, "no-clasi")
+    if (project.clasi_dir / "oop").exists():
+        _exit_hook("status-inject", payload, 0, "oop-bypass")
+
+    agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")
+    block = _build_status_block(agent)
+    if block:
+        print(block)
+    _exit_hook("status-inject", payload, 0, "injected")
+
+
+# ---------------------------------------------------------------------------
+# Subagent lifecycle logging — SubagentStart / SubagentStop
+# ---------------------------------------------------------------------------
+
+# Maps agent_type values to CLASI agent role names for status narrowing.
+_AGENT_TYPE_TO_ROLE = {
+    "programmer": "programmer",
+    "sprint-planner": "sprint-planner",
+}
+
+
 def handle_subagent_start(payload: dict) -> None:
-    """Log when a subagent starts.
+    """Log when a subagent starts and prepend a CLASI status block.
 
     Creates a log file in .clasi/log/ with frontmatter. The stop
     hook appends the transcript to this same file.
+
+    Also emits a ``## CLASI status`` block to stdout (unless the project
+    is not CLASI-initialized or ``.clasi/oop`` exists), scoped to the
+    subagent's role as inferred from ``agent_type`` in the payload.
     """
     log_dir, sprint_id = _get_sprint_context()
     if log_dir is None:
@@ -432,6 +491,15 @@ def handle_subagent_start(payload: dict) -> None:
             )
     except Exception:
         pass
+
+    # Prepend status block — scoped to the subagent's role.
+    # Silent if .clasi/oop exists (already checked via log_dir above).
+    project = get_project()
+    if not (project.clasi_dir / "oop").exists():
+        agent_role = _AGENT_TYPE_TO_ROLE.get(agent_type, "team-lead")
+        block = _build_status_block(agent_role)
+        if block:
+            print(block)
 
     _exit_hook("sub-start", payload, 0, "logged")
 
@@ -981,6 +1049,7 @@ def handle_hook(event: str) -> None:
         "codex-plan-to-issue": handle_codex_plan_to_issue,
         "codex-plan-to-todo": handle_codex_plan_to_issue,  # backward-compatible alias
         "commit-check": handle_commit_check,
+        "status-inject": handle_status_inject,
     }
 
     handler = _ROUTING_TABLE.get(event)
