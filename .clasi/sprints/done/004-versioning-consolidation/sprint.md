@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Versioning Consolidation
-status: planning-docs
+status: done
 branch: sprint/004-versioning-consolidation
 use-cases: []
 issues:
