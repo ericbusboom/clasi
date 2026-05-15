@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Finish TODO to Issue Rename
-status: planning-docs
+status: done
 branch: sprint/003-finish-todo-to-issue-rename
 use-cases: []
 issues:
