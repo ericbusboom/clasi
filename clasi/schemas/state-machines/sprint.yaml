@@ -1,0 +1,159 @@
+machine: sprint
+context: SprintContext
+initial: open
+
+states:
+
+  open:
+    description: |
+      The sprint directory and sprint.md exist. No planning artifacts
+      yet.
+    invariants:
+      - is_sprint_doc_present
+    transitions:
+      plan:
+        to: planned
+        conditions: []
+        action: write_planning_docs
+
+  planned:
+    description: |
+      Planning artifacts (architecture-update.md, use-cases) are
+      present. Architecture review has not yet been recorded.
+    invariants:
+      - is_sprint_doc_present
+      - is_architecture_present
+      - is_usecases_present
+    transitions:
+      architecture-review:
+        to: pre-flight
+        conditions: []
+        action: record_architecture_review
+
+  pre-flight:
+    description: |
+      Architecture review has been recorded. Sprint pauses here for
+      stakeholder pre-flight review, OR auto-bumps if the
+      `pre_flight_review` flag is set to `skip`.
+    invariants:
+      - is_sprint_doc_present
+      - is_architecture_present
+      - is_usecases_present
+      - is_architecture_review_recorded
+    transitions:
+      confirm-pre-flight:
+        to: ticketed
+        conditions: []
+        action: write_tickets
+
+  ticketed:
+    description: |
+      Tickets have been written. Sprint is ready to execute but no
+      execution lock has been acquired yet.
+    invariants:
+      - is_sprint_doc_present
+      - is_architecture_present
+      - is_usecases_present
+      - is_architecture_review_recorded
+      - is_pre_flight_satisfied
+      - is_at_least_one_ticket
+    transitions:
+      execute:
+        to: executing
+        conditions:
+          - is_no_other_sprint_executing
+        action: acquire_execution_lock
+
+  executing:
+    description: |
+      Sprint owns the execution lock. HEAD is on its branch. Tickets
+      may be in any state in the ticket machine.
+    invariants:
+      - is_on_sprint_branch
+      - is_execution_lock_held_by_this_sprint
+      - is_at_least_one_ticket
+    transitions:
+      complete:
+        to: review
+        conditions: []
+        action: enter_review
+
+  review:
+    description: |
+      All tickets are done. Sprint pauses here for post-execution
+      review, OR auto-bumps if the `post_review` flag is set to `skip`.
+    invariants:
+      - is_on_sprint_branch
+      - is_execution_lock_held_by_this_sprint
+      - is_all_tickets_done
+    transitions:
+      close:
+        to: closed
+        conditions: []
+        action: close_sprint
+
+  closed:
+    description: |
+      Sprint has been merged into the default branch and archived.
+      Execution lock has been released.
+    invariants:
+      - is_close_report_present
+      - is_branch_merged
+      - is_review_satisfied
+    transitions: {}
+
+predicates:
+  is_sprint_doc_present:
+    description: Returns True iff docs/clasi/sprints/<id>/sprint.md exists with id and title set.
+  is_architecture_present:
+    description: Returns True iff docs/clasi/sprints/<id>/architecture-update.md exists.
+  is_usecases_present:
+    description: Returns True iff the sprint's use-cases artifact exists.
+  is_architecture_review_recorded:
+    description: Returns True iff the state DB has an `architecture_review` gate record for this sprint.
+  is_pre_flight_satisfied:
+    description: |
+      Returns True iff EITHER the state DB has a `stakeholder_approval`
+      gate record for this sprint, OR the sprint's `pre_flight_review`
+      flag is set to `skip`. Encodes the pause-or-bump semantics.
+  is_at_least_one_ticket:
+    description: Returns True iff docs/clasi/sprints/<id>/tickets/ contains at least one ticket file.
+  is_no_other_sprint_executing:
+    description: Returns True iff no other sprint holds the execution lock.
+  is_on_sprint_branch:
+    description: Returns True iff git HEAD is this sprint's branch.
+  is_execution_lock_held_by_this_sprint:
+    description: Returns True iff the execution lock in the state DB is held by this sprint.
+  is_all_tickets_done:
+    description: Returns True iff every ticket in this sprint is in the ticket-machine `done` state.
+  is_review_satisfied:
+    description: |
+      Returns True iff EITHER the state DB has a `sprint_review` gate
+      record marked passed, OR the sprint's `post_review` flag is set
+      to `skip`.
+  is_close_report_present:
+    description: Returns True iff docs/clasi/sprints/<id>/close-report.md exists.
+  is_branch_merged:
+    description: Returns True iff the sprint branch has been merged into the default branch.
+
+actions:
+  write_planning_docs:
+    description: Writes the sprint's planning artifacts (architecture-update.md, use-cases) from the sprint.md outline.
+  record_architecture_review:
+    description: Records the `architecture_review` gate result in the state DB.
+  write_tickets:
+    description: Generates ticket files in docs/clasi/sprints/<id>/tickets/ from the architecture and use cases.
+  acquire_execution_lock:
+    description: |
+      Acquires the project-wide execution lock and binds it to this
+      sprint. Triggers the project machine's `enter-sprint` transition.
+  enter_review:
+    description: |
+      Generates an initial close-report.md draft. If the sprint's
+      `post_review` flag is set to `skip`, also records a passing
+      `sprint_review` gate so `is_review_satisfied` is immediately true.
+  close_sprint:
+    description: |
+      Merges the sprint branch into default, archives the sprint
+      directory, releases the execution lock, and triggers the
+      project machine's `exit-sprint` transition.
