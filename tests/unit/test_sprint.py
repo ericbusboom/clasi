@@ -304,7 +304,7 @@ class TestSprintTickets:
     def test_create_ticket_with_todo(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        t = s.create_ticket("With Todo", todo="my-idea.md")
+        t = s.create_ticket("With Todo", issue="my-idea.md")
         assert t.issue_ref == "my-idea.md"
 
     def test_create_ticket_auto_links_sprint_todos(self, tmp_path):
@@ -333,7 +333,7 @@ class TestSprintTickets:
             encoding="utf-8",
         )
         s = Sprint(sprint_dir, proj)
-        t = s.create_ticket("Explicit Todo", todo="explicit.md")
+        t = s.create_ticket("Explicit Todo", issue="explicit.md")
         assert t.issue_ref == "explicit.md"
 
     def test_create_ticket_no_todos_field_no_link(self, tmp_path):

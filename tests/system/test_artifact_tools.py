@@ -208,7 +208,7 @@ class TestCreateTicket:
         fm["todos"] = ["idea-a.md", "idea-b.md"]
         write_frontmatter(sprint_md, fm)
 
-        result = json.loads(create_ticket("001", "Explicit", todo="explicit.md"))
+        result = json.loads(create_ticket("001", "Explicit", issue="explicit.md"))
         ticket_fm = read_frontmatter(result["path"])
         assert ticket_fm["issue"] == "explicit.md"
 

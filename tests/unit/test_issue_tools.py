@@ -150,7 +150,7 @@ class TestMoveIssueToDone:
         assert (todo_dir / "done" / "idea.md").exists()
 
     def test_error_on_nonexistent(self, todo_dir):
-        with pytest.raises(ValueError, match="TODO not found"):
+        with pytest.raises(ValueError, match="Issue not found"):
             move_issue_to_done("nonexistent.md")
 
     def test_writes_traceability_frontmatter(self, todo_dir):
@@ -215,7 +215,7 @@ class TestMoveIssueToDone:
 
         # Create the issue and claim it
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
-        create_ticket("001", "Task", todo="idea.md")
+        create_ticket("001", "Task", issue="idea.md")
 
         # Manually move it to done/ as if it was already completed
         from pathlib import Path
@@ -264,7 +264,7 @@ class TestCreateTicketWithTodo:
         todo = self._setup_sprint(work_dir)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
-        result = json.loads(create_ticket("001", "Implement Idea", todo="my-idea.md"))
+        result = json.loads(create_ticket("001", "Implement Idea", issue="my-idea.md"))
         from pathlib import Path
         ticket_fm = read_frontmatter(result["path"])
         assert ticket_fm["issue"] == "my-idea.md"
@@ -273,7 +273,7 @@ class TestCreateTicketWithTodo:
         todo = self._setup_sprint(work_dir)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
-        create_ticket("001", "Implement Idea", todo="my-idea.md")
+        create_ticket("001", "Implement Idea", issue="my-idea.md")
 
         # TODO is now in sprint issues dir
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
@@ -288,7 +288,7 @@ class TestCreateTicketWithTodo:
         (todo / "idea-b.md").write_text("---\nstatus: pending\n---\n\n# Idea B\n")
 
         result = json.loads(
-            create_ticket("001", "Both Ideas", todo=["idea-a.md", "idea-b.md"])
+            create_ticket("001", "Both Ideas", issue=["idea-a.md", "idea-b.md"])
         )
         from pathlib import Path
         ticket_fm = read_frontmatter(result["path"])
@@ -307,8 +307,8 @@ class TestCreateTicketWithTodo:
         todo = self._setup_sprint(work_dir)
         (todo / "big-idea.md").write_text("---\nstatus: pending\n---\n\n# Big Idea\n")
 
-        create_ticket("001", "Part 1", todo="big-idea.md")
-        create_ticket("001", "Part 2", todo="big-idea.md")
+        create_ticket("001", "Part 1", issue="big-idea.md")
+        create_ticket("001", "Part 2", issue="big-idea.md")
 
         # TODO is in sprint issues dir
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
@@ -319,7 +319,7 @@ class TestCreateTicketWithTodo:
         self._setup_sprint(work_dir)
         # Don't create the TODO file -- should not raise
         result = json.loads(
-            create_ticket("001", "Orphan", todo="nonexistent.md")
+            create_ticket("001", "Orphan", issue="nonexistent.md")
         )
         assert result["id"] == "001"
 
@@ -328,7 +328,7 @@ class TestCreateTicketWithTodo:
         todo = self._setup_sprint(work_dir)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
-        create_ticket("001", "Implement Idea", todo="my-idea.md")
+        create_ticket("001", "Implement Idea", issue="my-idea.md")
 
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         # Should be in sprint issues dir, not in pending or done
@@ -368,7 +368,7 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "my-idea.md").write_text("---\nstatus: pending\n---\n\n# My Idea\n")
 
-        result = json.loads(create_ticket("001", "Task", todo="my-idea.md"))
+        result = json.loads(create_ticket("001", "Task", issue="my-idea.md"))
         ticket_path = result["path"]
 
         # Complete ticket which triggers TODO completion (file moves to done/)
@@ -387,7 +387,7 @@ class TestCloseSprintTodoHandling:
 
         result = json.loads(close_sprint("001"))
         # No bulk-move needed
-        assert "moved_todos" not in result
+        assert "moved_issues" not in result
 
     def test_close_reports_unresolved_in_progress_todos(self, work_dir):
         """In-progress TODOs are reported as unresolved, not bulk-moved."""
@@ -398,17 +398,17 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
 
-        create_ticket("001", "Task", todo="idea.md")
+        create_ticket("001", "Task", issue="idea.md")
         # Don't complete the ticket — TODO stays in-progress
         result = json.loads(close_sprint("001"))
-        assert "unresolved_todos" in result
-        assert "idea.md" in result["unresolved_todos"]
+        assert "unresolved_issues" in result
+        assert "idea.md" in result["unresolved_issues"]
 
     def test_close_without_linked_todos(self, work_dir):
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
-        assert "moved_todos" not in result
-        assert "unresolved_todos" not in result
+        assert "moved_issues" not in result
+        assert "unresolved_issues" not in result
 
     def test_unlinked_todos_not_affected(self, work_dir):
         """TODOs not linked to the sprint are not touched."""
@@ -424,7 +424,7 @@ class TestCloseSprintTodoHandling:
             "---\nstatus: pending\n---\n\n# Unlinked\n"
         )
 
-        result = json.loads(create_ticket("001", "Task", todo="linked.md"))
+        result = json.loads(create_ticket("001", "Task", issue="linked.md"))
         ticket_path = result["path"]
 
         # Complete ticket to mark linked TODO as done (file moves to done/)
@@ -456,7 +456,7 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 
-        result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
+        result = json.loads(create_ticket("001", "Partial Work", issue="umbrella.md"))
         ticket_path = result["path"]
 
         # Mark ticket as done but set completes_issue: false — deferred pattern
@@ -467,7 +467,7 @@ class TestCloseSprintTodoHandling:
 
         # Close sprint — TODO is still in-progress but deferred, so no error
         result = json.loads(close_sprint("001"))
-        assert "unresolved_todos" not in result
+        assert "unresolved_issues" not in result
         # TODO must still be in sprint issues dir (not archived)
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         assert (sprint_issues / "umbrella.md").exists()
@@ -486,7 +486,7 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "unresolved.md").write_text("---\nstatus: pending\n---\n\n# Unresolved\n")
 
-        result = json.loads(create_ticket("001", "Task", todo="unresolved.md"))
+        result = json.loads(create_ticket("001", "Task", issue="unresolved.md"))
         ticket_path = result["path"]
 
         # Mark ticket done but do NOT set completes_issue: false — default (true)
@@ -496,8 +496,8 @@ class TestCloseSprintTodoHandling:
         # Do NOT call move_ticket_to_done so the TODO stays in in-progress/
 
         result = json.loads(close_sprint("001"))
-        assert "unresolved_todos" in result
-        assert "unresolved.md" in result["unresolved_todos"]
+        assert "unresolved_issues" in result
+        assert "unresolved.md" in result["unresolved_issues"]
 
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.1")
@@ -523,7 +523,7 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 
-        result = json.loads(create_ticket("001", "Partial Work", todo="umbrella.md"))
+        result = json.loads(create_ticket("001", "Partial Work", issue="umbrella.md"))
         ticket_path = result["path"]
 
         # Set completes_issue: false before moving ticket to done
@@ -589,8 +589,8 @@ class TestCloseSprintTodoHandling:
 
         result = json.loads(close_sprint("001"))
 
-        # Close should succeed, no unresolved_todos reported
-        assert "unresolved_todos" not in result
+        # Close should succeed, no unresolved_issues reported
+        assert "unresolved_issues" not in result
         # The already-done issue should still be in done/ (now under archived sprint)
         sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
         archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
@@ -616,7 +616,7 @@ class TestCloseSprintTodoHandling:
         result = json.loads(close_sprint("001"))
 
         # No unresolved issues
-        assert "unresolved_todos" not in result
+        assert "unresolved_issues" not in result
         # File should be under archived sprint issues/done/
         sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
         archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
@@ -642,8 +642,8 @@ class TestCloseSprintTodoHandling:
         result = json.loads(close_sprint("001"))
 
         # Should have moved the pending pool issue
-        assert "moved_todos" in result
-        assert "pool-done.md" in result["moved_todos"]
+        assert "moved_issues" in result
+        assert "pool-done.md" in result["moved_issues"]
         # Issue should be under archived sprint issues/done/
         sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
         archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
@@ -654,8 +654,8 @@ class TestCloseSprintTodoHandling:
     def test_legacy_inprogress_issue_hard_fails(self, work_dir):
         """Legacy path: in-progress issue at top level that is not deferred hard-fails.
 
-        Existing behavior: sprint close returns unresolved_todos (not an error
-        dict for legacy path, but unresolved_todos key present).
+        Existing behavior: sprint close returns unresolved_issues (not an error
+        dict for legacy path, but unresolved_issues key present).
         """
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
@@ -664,12 +664,12 @@ class TestCloseSprintTodoHandling:
         todo.mkdir(parents=True, exist_ok=True)
         (todo / "blocker.md").write_text("---\nstatus: pending\n---\n\n# Blocker\n")
 
-        create_ticket("001", "Task", todo="blocker.md")
+        create_ticket("001", "Task", issue="blocker.md")
         # Do NOT complete the ticket — issue stays in-progress
 
         result = json.loads(close_sprint("001"))
-        assert "unresolved_todos" in result
-        assert "blocker.md" in result["unresolved_todos"]
+        assert "unresolved_issues" in result
+        assert "blocker.md" in result["unresolved_issues"]
 
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.2")
@@ -888,7 +888,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
             "---\nstatus: pending\n---\n\n# My Idea\n"
         )
 
-        result = json.loads(create_ticket("001", "Task", todo=todo_filename))
+        result = json.loads(create_ticket("001", "Task", issue=todo_filename))
         ticket_path = result["path"]
 
         # Mark ticket as done in frontmatter
@@ -906,8 +906,8 @@ class TestMoveTicketToDoneCompletesTodoGuard:
 
         result = json.loads(move_ticket_to_done(ticket_path))
 
-        assert "completed_todos" in result
-        assert "my-idea.md" in result["completed_todos"]
+        assert "completed_issues" in result
+        assert "my-idea.md" in result["completed_issues"]
         # File is moved to sprint issues/done/ dir
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         assert not (sprint_issues / "my-idea.md").exists()
@@ -928,7 +928,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
 
         result = json.loads(move_ticket_to_done(ticket_path))
 
-        assert "completed_todos" not in result
+        assert "completed_issues" not in result
         # TODO should still be in sprint issues dir with in-progress status
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         assert (sprint_issues / "umbrella.md").exists()
@@ -952,11 +952,11 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         (todo / "umbrella.md").write_text("---\nstatus: pending\n---\n\n# Umbrella\n")
 
         # Create ticket 001 linked to umbrella.md
-        r1 = json.loads(create_ticket("001", "Part One", todo="umbrella.md"))
+        r1 = json.loads(create_ticket("001", "Part One", issue="umbrella.md"))
         ticket1_path = r1["path"]
 
         # Create ticket 002 linked to umbrella.md
-        r2 = json.loads(create_ticket("001", "Part Two", todo="umbrella.md"))
+        r2 = json.loads(create_ticket("001", "Part Two", issue="umbrella.md"))
         ticket2_path = r2["path"]
 
         # Mark ticket 001 as done and give it completes_issue: false
@@ -974,13 +974,13 @@ class TestMoveTicketToDoneCompletesTodoGuard:
 
         # TODO must NOT be marked done because ticket 001 suppressed it
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
-        assert "completed_todos" not in result
+        assert "completed_issues" not in result
         assert (sprint_issues / "umbrella.md").exists()
         from clasi.frontmatter import read_frontmatter as rfm
         assert rfm(sprint_issues / "umbrella.md")["status"] == "in-progress"
 
-    def test_completed_todos_not_populated_for_suppressed(self, work_dir):
-        """result['completed_todos'] must not include suppressed TODOs."""
+    def test_completed_issues_not_populated_for_suppressed(self, work_dir):
+        """result['completed_issues'] must not include suppressed TODOs."""
         from clasi.tools.artifact_tools import move_ticket_to_done
 
         todo, ticket_path = self._setup_sprint_with_todo(work_dir, "umbrella.md")
@@ -992,7 +992,7 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         result = json.loads(move_ticket_to_done(ticket_path))
 
         # Key must be absent entirely (not an empty list)
-        assert "completed_todos" not in result
+        assert "completed_issues" not in result
         # TODO must still be in-progress (not marked done)
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         from clasi.frontmatter import read_frontmatter as rfm
@@ -1065,7 +1065,7 @@ class TestSplitIssue:
         )
 
         # Move to in-progress via create_ticket
-        create_ticket("001", "Task", todo="big-issue.md")
+        create_ticket("001", "Task", issue="big-issue.md")
 
         # Now the issue is in sprint-scoped dir with status in-progress
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
@@ -1104,7 +1104,7 @@ class TestSplitIssue:
         )
 
         # Move to in-progress then to done
-        create_ticket("001", "Task", todo="done-issue.md")
+        create_ticket("001", "Task", issue="done-issue.md")
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
         done_dir = sprint_issues / "done"
         done_dir.mkdir(exist_ok=True)
@@ -1385,7 +1385,7 @@ class TestAddIssueRef:
             (issues_dir / issue_filename).write_text(
                 f"---\nstatus: pending\n---\n\n# {issue_filename}\n"
             )
-            result = json.loads(create_ticket("001", "Task", todo=issue_filename))
+            result = json.loads(create_ticket("001", "Task", issue=issue_filename))
         else:
             result = json.loads(create_ticket("001", "Task"))
 
@@ -1516,7 +1516,7 @@ class TestAddIssueRef:
         (issues_dir / "x.md").write_text("---\nstatus: pending\n---\n\n# X\n")
         (issues_dir / "y.md").write_text("---\nstatus: pending\n---\n\n# Y\n")
 
-        r_a = json.loads(create_ticket("001", "Ticket A", todo="x.md"))
+        r_a = json.loads(create_ticket("001", "Ticket A", issue="x.md"))
         ticket_a_path = r_a["path"]
 
         # Path B: create_ticket without todo, then add_issue_ref

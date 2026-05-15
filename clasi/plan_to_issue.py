@@ -27,14 +27,14 @@ def _unique_path(directory: Path, slug: str) -> Path:
 
 def plan_to_issue(
     plans_dir: Path,
-    todo_dir: Path,
+    issue_dir: Path,
     plan_file: Optional[Path] = None,
 ) -> Optional[Path]:
     """Copy a plan file to the TODO directory.
 
     When plan_file is provided, use that file directly. Otherwise finds
     the newest .md in plans_dir. Adds ``status: pending`` frontmatter,
-    writes it to todo_dir, and deletes the original.
+    writes it to issue_dir, and deletes the original.
 
     Returns the path of the created issue file, or None if nothing
     was converted.
@@ -72,8 +72,8 @@ def plan_to_issue(
     if not slug:
         slug = "untitled-plan"
 
-    todo_dir.mkdir(parents=True, exist_ok=True)
-    out_path = _unique_path(todo_dir, slug)
+    issue_dir.mkdir(parents=True, exist_ok=True)
+    out_path = _unique_path(issue_dir, slug)
 
     out_path.write_text(f"---\nstatus: pending\n---\n\n{body}\n", encoding="utf-8")
 
@@ -81,7 +81,7 @@ def plan_to_issue(
     return out_path
 
 
-def plan_to_issue_from_text(text: str, todo_dir: Path) -> Optional[Path]:
+def plan_to_issue_from_text(text: str, issue_dir: Path) -> Optional[Path]:
     """Write a pending issue from raw plan *text* with content-hash deduplication.
 
     Adds ``source: codex-plan`` and ``source_hash`` to the frontmatter.
@@ -94,9 +94,9 @@ def plan_to_issue_from_text(text: str, todo_dir: Path) -> Optional[Path]:
     body = text.strip()
     h = _content_hash(body)
 
-    # De-dupe: scan todo_dir (and todo_dir/in-progress) for matching source_hash.
-    todo_dir.mkdir(parents=True, exist_ok=True)
-    for search_dir in [todo_dir, todo_dir / "in-progress"]:
+    # De-dupe: scan issue_dir (and issue_dir/in-progress) for matching source_hash.
+    issue_dir.mkdir(parents=True, exist_ok=True)
+    for search_dir in [issue_dir, issue_dir / "in-progress"]:
         if not search_dir.is_dir():
             continue
         for existing in search_dir.glob("*.md"):
@@ -118,7 +118,7 @@ def plan_to_issue_from_text(text: str, todo_dir: Path) -> Optional[Path]:
     if not slug:
         slug = "untitled-plan"
 
-    out_path = _unique_path(todo_dir, slug)
+    out_path = _unique_path(issue_dir, slug)
     frontmatter = f"---\nstatus: pending\nsource: codex-plan\nsource_hash: {h}\n---\n\n"
     out_path.write_text(frontmatter + body + "\n", encoding="utf-8")
     return out_path

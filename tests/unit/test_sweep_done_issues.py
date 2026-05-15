@@ -104,7 +104,7 @@ class TestSweepSprintScopedIssues:
         (pending_pool / "feature.md").write_text(
             "---\nstatus: pending\n---\n\n# Feature\n", encoding="utf-8"
         )
-        result = json.loads(create_ticket("001", "Implement Feature", todo="feature.md"))
+        result = json.loads(create_ticket("001", "Implement Feature", issue="feature.md"))
         ticket_path = result["path"]
 
         # Mark the ticket done
@@ -136,8 +136,8 @@ class TestSweepSprintScopedIssues:
         (pending_pool / "feature.md").write_text(
             "---\nstatus: pending\n---\n\n# Feature\n", encoding="utf-8"
         )
-        result1 = json.loads(create_ticket("001", "Part 1", todo="feature.md"))
-        json.loads(create_ticket("001", "Part 2", todo="feature.md"))
+        result1 = json.loads(create_ticket("001", "Part 1", issue="feature.md"))
+        json.loads(create_ticket("001", "Part 2", issue="feature.md"))
 
         # Only mark ticket 1 done
         _mark_ticket_done(result1["path"])
@@ -158,7 +158,7 @@ class TestSweepSprintScopedIssues:
         (pending_pool / "feature.md").write_text(
             "---\nstatus: pending\n---\n\n# Feature\n", encoding="utf-8"
         )
-        result = json.loads(create_ticket("001", "Implement Feature", todo="feature.md"))
+        result = json.loads(create_ticket("001", "Implement Feature", issue="feature.md"))
         ticket_path = result["path"]
 
         # Set completes_issue: false and mark done
@@ -225,7 +225,7 @@ class TestSweepSprintScopedIssues:
         (pending_pool / "feature.md").write_text(
             "---\nstatus: pending\n---\n\n# Feature\n", encoding="utf-8"
         )
-        result = json.loads(create_ticket("001", "Task", todo="feature.md"))
+        result = json.loads(create_ticket("001", "Task", issue="feature.md"))
         _mark_ticket_done(result["path"])
 
         sprint = proj.get_sprint("001")

@@ -201,21 +201,21 @@ class Sprint:
                     return Ticket(f, self)
         raise ValueError(f"Ticket '{ticket_id}' not found in sprint {self.id}")
 
-    def create_ticket(self, title: str, todo: str | None = None) -> Ticket:
+    def create_ticket(self, title: str, issue: str | None = None) -> Ticket:
         """Create a new ticket in this sprint's tickets/ directory.
 
-        When ``todo`` is not provided, automatically links to TODOs
+        When ``issue`` is not provided, automatically links to issues
         listed in the sprint's ``sprint.md`` frontmatter ``todos`` field.
         """
         from clasi.ticket import Ticket
         from clasi.frontmatter import read_frontmatter
 
-        # Auto-link to sprint TODOs when no explicit todo given
-        if todo is None:
-            sprint_todos = self.sprint_doc.frontmatter.get("todos")
-            if sprint_todos and isinstance(sprint_todos, list):
-                if len(sprint_todos) == 1:
-                    todo = sprint_todos[0]
+        # Auto-link to sprint issues when no explicit issue given
+        if issue is None:
+            sprint_issues = self.sprint_doc.frontmatter.get("todos")
+            if sprint_issues and isinstance(sprint_issues, list):
+                if len(sprint_issues) == 1:
+                    issue = sprint_issues[0]
 
         self.tickets_dir.mkdir(parents=True, exist_ok=True)
         self.tickets_done_dir.mkdir(exist_ok=True)
@@ -227,9 +227,9 @@ class Sprint:
         content = TICKET_TEMPLATE.format(id=ticket_id, title=title)
         path.write_text(content, encoding="utf-8")
 
-        if todo is not None:
+        if issue is not None:
             fm = read_frontmatter(path)
-            fm["issue"] = todo
+            fm["issue"] = issue
             Artifact(path).write(fm, Artifact(path).content)
 
         return Ticket(path, self)
