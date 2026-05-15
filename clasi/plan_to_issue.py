@@ -30,7 +30,7 @@ def plan_to_issue(
     issue_dir: Path,
     plan_file: Optional[Path] = None,
 ) -> Optional[Path]:
-    """Copy a plan file to the TODO directory.
+    """Copy a plan file to the issue directory.
 
     When plan_file is provided, use that file directly. Otherwise finds
     the newest .md in plans_dir. Adds ``status: pending`` frontmatter,
