@@ -141,6 +141,14 @@ def _narrow_programmer(
     # Infer sprint_id from ticket_id (format: "<sprint>-<ticket>")
     inferred_sprint_id = _infer_sprint_id(ticket_id, sprint_id)
 
+    # Build a set of acceptable ticket id strings so we match both:
+    # - full form "006-001" (what the caller passes)
+    # - bare form "001"    (what stored ticket files use)
+    bare_id = _bare_ticket_id(ticket_id)
+    ticket_id_variants: set[str] = {ticket_id}
+    if bare_id and bare_id != ticket_id:
+        ticket_id_variants.add(bare_id)
+
     # Find the parent sprint and the target ticket detail
     parent_sprint: dict | None = None
     ticket_detail: dict | None = None
@@ -150,7 +158,7 @@ def _narrow_programmer(
             parent_sprint = sprint_entry
             tickets = sprint_entry.get("tickets", {})
             for detail in tickets.get("details", []):
-                if detail.get("id") == ticket_id:
+                if detail.get("id") in ticket_id_variants:
                     ticket_detail = detail
                     break
             break
@@ -207,6 +215,19 @@ def _infer_sprint_id(ticket_id: str, hint: str | None) -> str | None:
         if len(parts) == 2 and parts[0]:
             return parts[0]
     return hint
+
+
+def _bare_ticket_id(ticket_id: str) -> str:
+    """Return the bare ticket suffix from a possibly sprint-prefixed ID.
+
+    ``"006-001"`` → ``"001"``, ``"001"`` → ``"001"``.
+
+    Used so programmer narrowing matches both the full caller-supplied form
+    (``"006-001"``) and the bare form (``"001"``) stored in ticket frontmatter.
+    """
+    if "-" in ticket_id:
+        return ticket_id.rsplit("-", 1)[-1]
+    return ticket_id
 
 
 # ---------------------------------------------------------------------------
@@ -274,11 +295,17 @@ def _build_programmer_notes(
     """Build notes focused on *ticket_id*'s transitions."""
     notes = _build_notes(project_block, sprints_block)
 
+    # Match by both the full caller-supplied ID and the bare suffix form
+    bare_id = _bare_ticket_id(ticket_id)
+    ticket_id_variants: set[str] = {ticket_id}
+    if bare_id and bare_id != ticket_id:
+        ticket_id_variants.add(bare_id)
+
     # Add a focus sentence specific to the ticket
     for sprint_entry in sprints_block:
         tickets = sprint_entry.get("tickets", {})
         for detail in tickets.get("details", []):
-            if detail.get("id") == ticket_id:
+            if detail.get("id") in ticket_id_variants:
                 t_state = detail.get("state", "unknown")
                 notes["current_focus"] = (
                     f"Ticket {ticket_id} is in state: {t_state}"
