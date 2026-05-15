@@ -153,6 +153,77 @@ def _todo_is_deferred(sprint: Sprint, todo_filename: str) -> bool:
     return False
 
 
+def _sweep_done_issues(sprint: Sprint) -> list[str]:
+    """Sweep sprint issues and complete any whose tickets are all done.
+
+    Scans two sources for in-progress issues assigned to this sprint:
+    1. Sprint-scoped issues in ``<sprint>/issues/*.md``.
+    2. Pending-pool issues in ``project.issues_dir/*.md`` with
+       ``issue.sprint == sprint.id``.
+
+    For each in-progress issue, if all entries in ``issue.tickets`` are done
+    (via ``_is_ticket_done``) and the list is non-empty, and no ticket
+    suppresses completion (via ``_any_ticket_suppresses_todo``), the issue
+    is moved to done.
+
+    Pending-pool issues are physically relocated to
+    ``<sprint>/issues/done/<filename>`` before ``move_to_done()`` is called,
+    so they end up in the sprint directory rather than the pool's done/.
+
+    Returns the list of issue filenames that were completed.
+    """
+    project = get_project()
+    completed: list[str] = []
+
+    def _try_complete(issue, filename: str) -> bool:
+        """Return True if issue was completed."""
+        if issue.status != "in-progress":
+            return False
+        ref_tickets = issue.tickets
+        if not ref_tickets:
+            return False
+        all_done = all(_is_ticket_done(t) for t in ref_tickets)
+        if not all_done:
+            return False
+        if _any_ticket_suppresses_todo(ref_tickets, filename):
+            return False
+        return True
+
+    # Source 1: sprint-scoped issues in <sprint>/issues/*.md
+    sprint_issues_dir = sprint.path / "issues"
+    if sprint_issues_dir.exists():
+        for issue_file in sorted(sprint_issues_dir.glob("*.md")):
+            from clasi.issue import Issue as _Issue
+            issue = _Issue(issue_file, project)
+            if issue.sprint != sprint.id:
+                continue
+            if _try_complete(issue, issue_file.name):
+                issue.move_to_done()
+                completed.append(issue_file.name)
+
+    # Source 2: pending-pool issues tagged with this sprint
+    pending_pool = project.issues_dir
+    if pending_pool.exists():
+        for issue_file in sorted(pending_pool.glob("*.md")):
+            from clasi.issue import Issue as _Issue
+            issue = _Issue(issue_file, project)
+            if issue.sprint != sprint.id:
+                continue
+            if _try_complete(issue, issue_file.name):
+                # Relocate to <sprint>/issues/done/ before calling move_to_done
+                target_dir = sprint.path / "issues" / "done"
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target_path = target_dir / issue_file.name
+                issue_file.rename(target_path)
+                from clasi.artifact import Artifact as _Artifact
+                issue._artifact = _Artifact(target_path)
+                # File is already in done/; move_to_done() just updates frontmatter
+                issue.move_to_done()
+                completed.append(issue_file.name)
+
+    return completed
+
+
 # --- Create tools (ticket 008) ---
 
 
