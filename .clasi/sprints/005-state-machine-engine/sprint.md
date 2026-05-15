@@ -72,5 +72,12 @@ No tracked issues are claimed here.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Define in-memory data model (Machine, State, Transition dataclasses) | — |
+| 002 | YAML loader — read state-machine YAML files into Machine objects | 001 |
+| 003 | Predicate registry — @predicate decorator, lookup, and listing | 001 |
+| 004 | Context dataclasses and StateReader protocol | 001 |
+| 005 | Implement all is_* predicates for project, sprint, and ticket machines | 003, 004 |
+| 006 | State evaluator — evaluate_state, inspect_transitions, evaluate_predicates | 002, 003, 004, 005 |
+| 007 | Public engine API — clasi/state_machine/__init__.py entry points | 006 |
 
 Tickets execute serially in the order listed.
