@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: clasi status Command
-status: roadmap
+status: planning-docs
 branch: sprint/006-clasi-status-command
 use-cases: []
 issues:
@@ -34,5 +34,13 @@ Give agents and humans a single unified command that says "here is where you are
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Implement ClasiStateReader against filesystem, git, and StateDB | — |
+| 002 | Build StatusReporter to assemble the output shape | 001 |
+| 003 | Agent-scope narrowing for sprint-planner and programmer views | 002 |
+| 004 | Inconsistency detection for declared vs computed state drift | 002 |
+| 005 | CLI command: clasi status with all flags | 003, 004 |
+| 006 | MCP tool: get_status with agent scoping | 003, 004 |
+| 007 | Hook injection: UserPromptSubmit and SubagentStart auto-inject status block | 003, 004 |
+| 008 | End-to-end verification and documentation | 005, 006, 007 |
 
 Tickets execute serially in the order listed.
