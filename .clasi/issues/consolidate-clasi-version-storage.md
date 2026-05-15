@@ -25,5 +25,5 @@ Two options to consider:
    between the two locations, but couples CLASI version tracking to
    dotconfig being present/used.
 
-Decide which approach fits better and migrate any code that currently
-reads `.agents/.clasi-version`.
+DECISION: Options 2, eliminate the separate `.agents/.clasi-version` file and rely on the version stored by dotconfig as the single source of truth for CLASI version information. This simplifies our storage and avoids potential inconsistencies between multiple version tracking locations.   
+
