@@ -82,4 +82,4 @@ where = ["."]
 include = ["clasi*", "clasr*"]
 
 [tool.uv.sources]
-dotconfig = { path = "/Users/eric/proj/code-projects/dotconfig", editable = true }
+dotconfig = { git = "https://github.com/ericbusboom/dotconfig.git" }

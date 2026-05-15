@@ -232,7 +232,7 @@ wheels = [
 
 [[package]]
 name = "clasi"
-version = "0.20260515.8"
+version = "0.20260515.10"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -258,7 +258,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
-    { name = "dotconfig", editable = "../../code-projects/dotconfig" },
+    { name = "dotconfig", git = "https://github.com/ericbusboom/dotconfig.git" },
     { name = "jinja2", specifier = ">=3.0" },
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "mcp", specifier = ">=1.0" },
@@ -488,23 +488,13 @@ wheels = [
 
 [[package]]
 name = "dotconfig"
-version = "0.20260507.2"
-source = { editable = "../../code-projects/dotconfig" }
+version = "0.20260515.4"
+source = { git = "https://github.com/ericbusboom/dotconfig.git#a63518732623fc922b98390661341f8fd42e112c" }
 dependencies = [
     { name = "click" },
     { name = "detect-secrets" },
     { name = "pyyaml" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.0" },
-    { name = "detect-secrets", specifier = ">=1.5.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "exceptiongroup"
