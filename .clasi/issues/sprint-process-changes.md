@@ -1,3 +1,6 @@
+---
+status: done
+---
 # Sprint Process Changes
 
 Two changes to how sprints are planned and executed.

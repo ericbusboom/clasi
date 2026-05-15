@@ -51,6 +51,24 @@ which handles the full lifecycle.
 3. **Report result**: On success, report the version tag and merged
    branch. On error, report the blocker and recovery steps.
 
+## Issue Preconditions
+
+Close-sprint hard-fails if any `<sprint>/issues/<filename>` (at the top
+level, not in `done/`) still has `status: in-progress`. Self-repair
+handles done-tagged files automatically, but in-progress issues require
+explicit resolution.
+
+**Resolution paths:**
+- **Tickets are done but issue not marked done**: this should not happen
+  in the happy path. Call `move_issue_to_done` explicitly.
+- **Issue has work remaining**: call `split_issue` to split the remaining
+  work into a new issue, then either defer it (it stays in the pool for
+  the next sprint) or call `create_ticket` to bring it into the current
+  sprint before closing.
+- **Issue is intentionally deferred**: set `completes_issue: false` on
+  the ticket(s) referencing this issue. Close-sprint will then skip the
+  hard-fail for that issue.
+
 ## Output
 
 - Sprint branch merged to main and deleted

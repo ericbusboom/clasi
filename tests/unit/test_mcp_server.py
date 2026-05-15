@@ -70,6 +70,7 @@ class TestToolRegistration:
         "release_execution_lock",
         "list_issues",
         "move_issue_to_done",
+        "split_issue",
         "create_github_issue",
         "close_github_issue",
         "list_github_issues",
@@ -103,7 +104,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 31
+        assert len(registered) == 32
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

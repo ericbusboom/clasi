@@ -825,20 +825,26 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     # Check in-progress TODOs — they should already be resolved individually.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
     unresolved_todos: list[str] = []
+
+    # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir = sprint.path / "issues"
-    for in_progress_todo_dir in [sprint_issues_dir]:
-        if not in_progress_todo_dir.exists():
-            continue
-        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+    if sprint_issues_dir.exists():
+        for todo_file in sorted(sprint_issues_dir.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
+                    # Self-repair: move to done/ (physically relocates file)
                     todo.move_to_done()
                 else:
                     # Check if intentionally deferred by a ticket in this sprint
                     if not _todo_is_deferred(sprint, todo_file.name):
                         unresolved_todos.append(todo_file.name)
+
+    # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
+    sprint_issues_done_dir = sprint.path / "issues" / "done"
+    if sprint_issues_done_dir.exists():
+        for _todo_file in sorted(sprint_issues_done_dir.glob("*.md")):
+            pass  # Already in done/ — no action needed
 
     # Check pending pool issues tagged with this sprint
     pending_dir = project.issues_dir
@@ -848,7 +854,15 @@ def _close_sprint_legacy(sprint_id: str) -> str:
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    todo.move_to_done()
+                    # Relocate directly to <sprint>/issues/done/ (not pool/done/)
+                    target_dir = sprint.path / "issues" / "done"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_path = target_dir / todo_file.name
+                    todo_file.rename(target_path)
+                    from clasi.artifact import Artifact as _Artifact
+                    todo._artifact = _Artifact(target_path)
+                    # Update frontmatter only (file is now in done/ — idempotent move)
+                    todo.move_to_done(sprint_id=sprint_id)
                     moved_todos.append(todo_file.name)
 
     # Archive sprint directory (updates status, copies architecture-update, moves dir)
@@ -970,15 +984,15 @@ def _close_sprint_full(
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+
+    # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir_full = sprint.path / "issues"
-    for in_progress_todo_dir in [sprint_issues_dir_full]:
-        if not in_progress_todo_dir.exists():
-            continue
-        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+    if sprint_issues_dir_full.exists():
+        for todo_file in sorted(sprint_issues_dir_full.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
+                    # Self-repair: move to done/ (physically relocates file)
                     todo.move_to_done()
                     repairs.append(f"moved TODO {todo_file.name} to done/")
                 else:
@@ -1008,6 +1022,13 @@ def _close_sprint_full(
                         "completed_steps": [],
                         "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                     }, indent=2)
+
+    # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
+    sprint_issues_done_dir_full = sprint.path / "issues" / "done"
+    if sprint_issues_done_dir_full.exists():
+        for _todo_file in sorted(sprint_issues_done_dir_full.glob("*.md")):
+            pass  # Already in done/ — no action needed
+
     # Also check pending pool issues that are tagged with this sprint
     pending_pool = project.issues_dir
     if pending_pool.exists():
@@ -1015,8 +1036,15 @@ def _close_sprint_full(
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
-                    todo.move_to_done()
+                    # Relocate directly to <sprint>/issues/done/ (not pool/done/)
+                    target_dir = sprint.path / "issues" / "done"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_path = target_dir / todo_file.name
+                    todo_file.rename(target_path)
+                    from clasi.artifact import Artifact as _Artifact
+                    todo._artifact = _Artifact(target_path)
+                    # Update frontmatter only (file is now in done/ — idempotent move)
+                    todo.move_to_done(sprint_id=sprint_id)
                     repairs.append(f"moved TODO {todo_file.name} to done/")
 
     # 1c. Check state DB phase — self-repair: advance if behind
@@ -1516,11 +1544,14 @@ def move_issue_to_done(
             sprint = project.get_sprint(sprint_id)
         except ValueError:
             raise ValueError(f"Sprint not found: {sprint_id}")
-        expected_dir = sprint.path / "issues"
-        if todo.path.parent.resolve() != expected_dir.resolve():
+        expected_dirs = {
+            (sprint.path / "issues").resolve(),
+            (sprint.path / "issues" / "done").resolve(),
+        }
+        if todo.path.parent.resolve() not in expected_dirs:
             raise ValueError(
                 f"Issue '{filename}' is not in the expected sprint issues "
-                f"directory '{expected_dir}'. "
+                f"directory or its done/ subdirectory. "
                 f"Current location: '{todo.path.parent}'. "
                 "Run move_todo_to_in_progress first."
             )
@@ -1530,6 +1561,80 @@ def move_issue_to_done(
     return json.dumps({
         "path": str(todo.path),
         "status": todo.status,
+    }, indent=2)
+
+
+@server.tool()
+def split_issue(
+    filename: str,
+    new_filename: str,
+    new_title: str,
+    new_body: str,
+    updated_body: str | None = None,
+) -> str:
+    """Split an issue into two sibling files with cross-link frontmatter.
+
+    Creates a new issue file as a sibling of the original (same directory).
+    Adds split_from to the new file and split_into to the original.
+
+    When splitting a sprint-scoped in-progress issue, the new file inherits
+    the sprint context (status: in-progress, sprint: <id>). Otherwise the
+    new file starts as pending with no sprint set.
+
+    Args:
+        filename: The original issue filename (resolved via project.get_issue).
+        new_filename: Filename for the new split-off issue (e.g., 'my-idea-part2.md').
+        new_title: Title heading for the new issue.
+        new_body: Body content for the new issue (after the heading).
+        updated_body: Optional replacement body for the original issue.
+
+    Returns JSON with {original_path, new_path}.
+    """
+    project = get_project()
+    try:
+        original = project.get_issue(filename)
+    except ValueError:
+        raise ValueError(f"Issue not found: {filename}")
+
+    new_path = original.path.parent / new_filename
+    if new_path.exists():
+        raise ValueError(f"Target file already exists: {new_path}")
+
+    # Determine frontmatter for the new file
+    new_fm: dict = {"status": "pending"}
+    if original.status == "in-progress" and original.sprint:
+        new_fm["status"] = "in-progress"
+        new_fm["sprint"] = original.sprint
+    if original.source:
+        new_fm["source"] = original.source
+    new_fm["split_from"] = filename
+
+    # Write the new file using Artifact.write (handles parent dir creation)
+    from clasi.artifact import Artifact as _Artifact
+
+    new_artifact = _Artifact(new_path)
+    new_artifact.write(new_fm, f"\n# {new_title}\n\n{new_body}")
+
+    # Update the original's split_into list
+    orig_fm, orig_body = original._artifact.read_document()
+    existing_split_into = orig_fm.get("split_into", [])
+    if isinstance(existing_split_into, str):
+        existing_split_into = [existing_split_into] if existing_split_into else []
+    else:
+        existing_split_into = list(existing_split_into)
+    if new_filename not in existing_split_into:
+        existing_split_into.append(new_filename)
+    orig_fm["split_into"] = existing_split_into
+
+    # Optionally replace the original body
+    if updated_body is not None:
+        orig_body = updated_body
+
+    original._artifact.write(orig_fm, orig_body)
+
+    return json.dumps({
+        "original_path": str(original.path),
+        "new_path": str(new_path),
     }, indent=2)
 
 

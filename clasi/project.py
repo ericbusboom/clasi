@@ -227,6 +227,9 @@ class Project:
             path = sprint.path / "issues" / filename
             if path.exists():
                 return Issue(path, self)
+            path = sprint.path / "issues" / "done" / filename
+            if path.exists():
+                return Issue(path, self)
 
         raise ValueError(f"Issue '{filename}' not found")
 

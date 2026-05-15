@@ -29,3 +29,23 @@ wants it recorded as an issue. If the user wants to discuss, explore
 options, or refine an idea before capturing it, use plan mode
 (`EnterPlanMode`) instead. The plan-to-issue hook will create the
 issue automatically when plan mode exits.
+
+## Splitting an Issue
+
+When a sprint planner discovers that only part of an issue fits in the
+current sprint, use the `split_issue` MCP tool:
+
+1. Call `split_issue(filename, new_filename, new_title, new_body)`.
+   - `filename`: the original issue file.
+   - `new_filename`: a new slug for the split-off piece.
+   - `new_title`, `new_body`: content for the new file.
+   - `updated_body` (optional): replacement body for the original.
+2. The new file is created as a sibling of the original in the same
+   directory. If the original is sprint-scoped and in-progress, the
+   new file inherits the sprint context; otherwise it starts as pending
+   in the pool.
+3. Both files get mutual cross-link frontmatter (`split_from` on the
+   new file, `split_into` appended on the original).
+4. Then call `create_ticket(todo=<new_filename>)` if you want the new
+   piece in the current sprint, or leave it in the pool for a future
+   sprint.
