@@ -53,8 +53,8 @@ planning. Multiple sprints can be planned in a single session.
 2. **Mine the issues directory**: Scan `.clasi/issues/` for ideas relevant
    to the sprint. Discuss relevant issues with the stakeholder.
 
-   For each TODO claimed by this sprint, set `sprint: "NNN"` in the
-   TODO's YAML frontmatter (using `write_artifact_frontmatter`).
+   For each issue claimed by this sprint, set `sprint: "NNN"` in the
+   issue's YAML frontmatter (using `write_artifact_frontmatter`).
 
 3. **Create sprint directory**: Use the `create_sprint` MCP tool. This
    creates the directory structure and registers the sprint.

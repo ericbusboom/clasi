@@ -41,10 +41,10 @@ handles ticket creation inline.
    moves the file into `<sprint>/issues/done/`. No manual
    `move_issue_to_done` call is needed in the happy path.
 
-5. **Propagate TODO and GitHub issue references**: When creating tickets
-   from TODOs, set the ticket's `todo` frontmatter field to the TODO
-   filename (e.g., `todo: "my-idea.md"`). This creates the back-link
-   from ticket to TODO. Also copy `github-issue` if present. After all
+5. **Propagate issue and GitHub issue references**: When creating tickets
+   from issues, set the ticket's `issue` frontmatter field to the issue
+   filename (e.g., `issue: "my-idea.md"`). This creates the back-link
+   from ticket to issue. Also copy `github-issue` if present. After all
    tickets are created, collect all `github-issue` references from the
    sprint's tickets and list them in the sprint doc's `## GitHub Issues`
    section using the format `owner/repo#N`.
