@@ -95,8 +95,8 @@ class StatusReporter:
         (for executing sprints) each ticket machine. Assembles the nested
         dict matching the canonical output shape.
 
-        The ``inconsistencies:`` key is always an empty list; population is
-        deferred to ticket 004.
+        The ``inconsistencies:`` key is populated by
+        :func:`~clasi.status.inconsistency.detect_inconsistencies`.
 
         Args:
             agent: The requesting agent name (e.g. ``"team-lead"``,
@@ -135,8 +135,12 @@ class StatusReporter:
             "sprints": sprints_block,
             "issues": issues_block,
             "notes": notes_block,
-            "inconsistencies": [],  # ticket 004 fills this in
+            "inconsistencies": [],
         }
+
+        # --- inconsistency detection ---
+        from clasi.status.inconsistency import detect_inconsistencies
+        status["inconsistencies"] = detect_inconsistencies(project, status)
 
         return status
 
