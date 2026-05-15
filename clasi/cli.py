@@ -7,6 +7,7 @@ Subcommands:
     clasi uninstall [target]        — Remove CLASI platform integration files
     clasi migrate [target]          — One-shot docs/clasi/ → .clasi/ migration
     clasi mcp                       — Run the MCP server (stdio)
+    clasi status                    — Print agent-scoped project status
     clasi tool plan-to-issue        — Convert plan file to issue
 
 Versioning is delegated to dotconfig. Use ``dotconfig version`` and
@@ -15,6 +16,8 @@ Versioning is delegated to dotconfig. Use ``dotconfig version`` and
 ``close_sprint``'s bump-and-tag step; that internal usage is targeted
 for retirement in a future sprint.
 """
+
+import os
 
 import click
 
@@ -150,6 +153,74 @@ def migrate(target):
     from clasi.migrate_command import run_migrate
 
     run_migrate(target)
+
+
+@cli.command()
+@click.option(
+    "--agent",
+    default=None,
+    metavar="ROLE",
+    help=(
+        "Agent role for scoping output.  "
+        "Defaults to $CLASI_AGENT_NAME env var, then 'team-lead'."
+    ),
+)
+@click.option(
+    "--sprint",
+    "sprint_id",
+    default=None,
+    metavar="ID",
+    help="Narrow output to a specific sprint (e.g. '006').",
+)
+@click.option(
+    "--ticket",
+    "ticket_id",
+    default=None,
+    metavar="ID",
+    help="Narrow output to a specific ticket (e.g. '006-005').",
+)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["yaml", "json"]),
+    default="yaml",
+    show_default=True,
+    help="Output format.",
+)
+def status(agent: str | None, sprint_id: str | None, ticket_id: str | None, fmt: str) -> None:
+    """Print agent-scoped CLASI project status.
+
+    Resolves the project from the current working directory.  Exits with
+    a non-zero status code if no .clasi/ directory is found.
+
+    Agent role resolution order: --agent flag > $CLASI_AGENT_NAME > 'team-lead'.
+    """
+    from pathlib import Path
+
+    from clasi.project import Project
+    from clasi.status import build_status, narrow_status
+    from clasi.status.formatting import to_json, to_yaml
+
+    cwd = Path.cwd()
+    clasi_dir = cwd / ".clasi"
+    if not clasi_dir.is_dir():
+        click.echo(
+            f"Error: No .clasi/ directory found in {cwd}. "
+            "Run 'clasi init' to initialise this project.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    resolved_agent: str = agent or os.environ.get("CLASI_AGENT_NAME") or "team-lead"
+
+    project = Project(cwd)
+    full = build_status(project, agent=resolved_agent, sprint_id=sprint_id, ticket_id=ticket_id)
+    narrowed = narrow_status(full, agent=resolved_agent, sprint_id=sprint_id, ticket_id=ticket_id)
+
+    if fmt == "json":
+        click.echo(to_json(narrowed))
+    else:
+        click.echo(to_yaml(narrowed), nl=False)
 
 
 @cli.group()
