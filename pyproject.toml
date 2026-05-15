@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
+    "dotconfig>=0.20260507.2",
     "jinja2>=3.0",
     "jsonschema>=4.0",
     "mcp>=1.0",
@@ -79,3 +80,6 @@ clasr = ["*.md", "platforms/*.md"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["clasi*", "clasr*"]
+
+[tool.uv.sources]
+dotconfig = { path = "/Users/eric/proj/code-projects/dotconfig", editable = true }
