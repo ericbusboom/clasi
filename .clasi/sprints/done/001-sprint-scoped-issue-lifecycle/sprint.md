@@ -1,16 +1,16 @@
 ---
 id: '001'
 title: Sprint-Scoped Issue Lifecycle
-status: planning-docs
+status: done
 branch: sprint/001-sprint-scoped-issue-lifecycle
 todos:
-  - plan-sprint-scoped-issue-lifecycle-sprint-issues-done-split-close-gate.md
+- plan-sprint-scoped-issue-lifecycle-sprint-issues-done-split-close-gate.md
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
-  - SUC-005
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
