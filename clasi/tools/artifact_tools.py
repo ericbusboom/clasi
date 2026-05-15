@@ -153,6 +153,77 @@ def _todo_is_deferred(sprint: Sprint, todo_filename: str) -> bool:
     return False
 
 
+def _sweep_done_issues(sprint: Sprint) -> list[str]:
+    """Sweep sprint issues and complete any whose tickets are all done.
+
+    Scans two sources for in-progress issues assigned to this sprint:
+    1. Sprint-scoped issues in ``<sprint>/issues/*.md``.
+    2. Pending-pool issues in ``project.issues_dir/*.md`` with
+       ``issue.sprint == sprint.id``.
+
+    For each in-progress issue, if all entries in ``issue.tickets`` are done
+    (via ``_is_ticket_done``) and the list is non-empty, and no ticket
+    suppresses completion (via ``_any_ticket_suppresses_todo``), the issue
+    is moved to done.
+
+    Pending-pool issues are physically relocated to
+    ``<sprint>/issues/done/<filename>`` before ``move_to_done()`` is called,
+    so they end up in the sprint directory rather than the pool's done/.
+
+    Returns the list of issue filenames that were completed.
+    """
+    project = get_project()
+    completed: list[str] = []
+
+    def _try_complete(issue, filename: str) -> bool:
+        """Return True if issue was completed."""
+        if issue.status != "in-progress":
+            return False
+        ref_tickets = issue.tickets
+        if not ref_tickets:
+            return False
+        all_done = all(_is_ticket_done(t) for t in ref_tickets)
+        if not all_done:
+            return False
+        if _any_ticket_suppresses_todo(ref_tickets, filename):
+            return False
+        return True
+
+    # Source 1: sprint-scoped issues in <sprint>/issues/*.md
+    sprint_issues_dir = sprint.path / "issues"
+    if sprint_issues_dir.exists():
+        for issue_file in sorted(sprint_issues_dir.glob("*.md")):
+            from clasi.issue import Issue as _Issue
+            issue = _Issue(issue_file, project)
+            if issue.sprint != sprint.id:
+                continue
+            if _try_complete(issue, issue_file.name):
+                issue.move_to_done()
+                completed.append(issue_file.name)
+
+    # Source 2: pending-pool issues tagged with this sprint
+    pending_pool = project.issues_dir
+    if pending_pool.exists():
+        for issue_file in sorted(pending_pool.glob("*.md")):
+            from clasi.issue import Issue as _Issue
+            issue = _Issue(issue_file, project)
+            if issue.sprint != sprint.id:
+                continue
+            if _try_complete(issue, issue_file.name):
+                # Relocate to <sprint>/issues/done/ before calling move_to_done
+                target_dir = sprint.path / "issues" / "done"
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target_path = target_dir / issue_file.name
+                issue_file.rename(target_path)
+                from clasi.artifact import Artifact as _Artifact
+                issue._artifact = _Artifact(target_path)
+                # File is already in done/; move_to_done() just updates frontmatter
+                issue.move_to_done()
+                completed.append(issue_file.name)
+
+    return completed
+
+
 # --- Create tools (ticket 008) ---
 
 
@@ -418,6 +489,71 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     return json.dumps(result, indent=2)
 
 
+@server.tool()
+def link_sprint_issues(sprint_id: str, issue_filenames: list[str]) -> str:
+    """Establish bidirectional sprint↔issue links during the roadmap phase.
+
+    For each issue filename provided, writes ``sprint: <sprint_id>`` to the
+    issue's frontmatter and ensures the sprint's ``sprint.md`` frontmatter has
+    an ``issues:`` list that includes the filename.  The operation is
+    idempotent: calling it again with the same arguments produces no change.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '017').
+        issue_filenames: List of issue filenames (e.g., ['my-feature.md']).
+
+    Returns JSON with {sprint_id, linked, already_linked, not_found}.
+    """
+    project = get_project()
+
+    try:
+        sprint = project.get_sprint(sprint_id)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    linked: list[str] = []
+    already_linked: list[str] = []
+    not_found: list[str] = []
+
+    for filename in issue_filenames:
+        try:
+            issue = project.get_issue(filename)
+        except ValueError:
+            not_found.append(filename)
+            continue
+
+        if issue.sprint == sprint_id:
+            already_linked.append(filename)
+            continue
+
+        issue._artifact.update_frontmatter(sprint=sprint_id)
+        linked.append(filename)
+
+    # Update sprint.md issues: list — merge linked filenames (no duplicates)
+    sprint_artifact = sprint.sprint_doc
+    current_issues = sprint_artifact.frontmatter.get("issues", [])
+    if isinstance(current_issues, str):
+        current_issues = [current_issues] if current_issues else []
+    else:
+        current_issues = list(current_issues) if current_issues else []
+
+    # Add newly linked filenames that aren't already in the list
+    newly_to_add = [f for f in linked if f not in current_issues]
+    if newly_to_add:
+        merged = current_issues + newly_to_add
+        sprint_artifact.update_frontmatter(issues=merged)
+
+    return json.dumps(
+        {
+            "sprint_id": sprint_id,
+            "linked": linked,
+            "already_linked": already_linked,
+            "not_found": not_found,
+        },
+        indent=2,
+    )
+
+
 def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
     """Check that a sprint is in ticketing phase or later.
 
@@ -503,6 +639,80 @@ def create_ticket(
     result = ticket.to_dict()
     result["template_content"] = TICKET_TEMPLATE.format(id=ticket.id, title=title)
     return json.dumps(result, indent=2)
+
+
+@server.tool()
+def add_issue_ref(ticket_path: str, issue_filename: str) -> str:
+    """Add a bidirectional link between a ticket and an issue post-creation.
+
+    Idempotent: if the link already exists, returns current state without error.
+
+    The ticket's ``issue:`` frontmatter field is updated (absent/empty → string;
+    string → list; list → append). The issue's ``tickets:`` frontmatter is
+    updated via ``Issue.add_ticket_ref`` (already idempotent).
+
+    Args:
+        ticket_path: Path to the ticket file (absolute or sprint-relative).
+        issue_filename: Filename of the issue (e.g., 'my-idea.md').
+
+    Returns JSON with {ticket_path, issue_filename, ticket_issue_refs, issue_ticket_refs}.
+    """
+    try:
+        resolved_path = resolve_artifact_path(ticket_path)
+    except FileNotFoundError:
+        raise ValueError(f"Ticket not found: {ticket_path}")
+
+    # Derive sprint directory from ticket path (handles tickets/done/ too)
+    tickets_dir = resolved_path.parent
+    if tickets_dir.name == "done":
+        tickets_dir = tickets_dir.parent
+    sprint_dir = tickets_dir.parent
+
+    project = get_project()
+    sprint = Sprint(sprint_dir, project)
+    ticket = Ticket(resolved_path, sprint)
+
+    # Build the full ticket ID: "<sprint_id>-<ticket.id>"
+    full_ticket_id = f"{sprint.id}-{ticket.id}"
+
+    # Read current issue: field and handle all three cases
+    current_issue = ticket._artifact.frontmatter.get("issue", "")
+    if not current_issue:
+        # absent or empty — set to single filename
+        new_issue_value: str | list[str] = issue_filename
+    elif isinstance(current_issue, str):
+        if current_issue == issue_filename:
+            # already present — idempotent, no change
+            new_issue_value = current_issue
+        else:
+            new_issue_value = [current_issue, issue_filename]
+    else:
+        # list
+        issue_list = list(current_issue)
+        if issue_filename in issue_list:
+            # already present — idempotent, no change
+            new_issue_value = issue_list
+        else:
+            issue_list.append(issue_filename)
+            new_issue_value = issue_list
+
+    # Only write if something changed
+    if new_issue_value != current_issue:
+        ticket._artifact.update_frontmatter(issue=new_issue_value)
+
+    # Write the reverse link on the issue
+    issue_obj = project.get_issue(issue_filename)
+    issue_obj.add_ticket_ref(full_ticket_id)
+
+    # Re-read updated ticket issue refs
+    updated_issue_refs = ticket._artifact.frontmatter.get("issue", "")
+
+    return json.dumps({
+        "ticket_path": str(resolved_path),
+        "issue_filename": issue_filename,
+        "ticket_issue_refs": updated_issue_refs,
+        "issue_ticket_refs": issue_obj.tickets,
+    }, indent=2)
 
 
 # --- Query tools (ticket 009) ---
@@ -716,30 +926,10 @@ def move_ticket_to_done(path: str) -> str:
     # Move the ticket and its plan file
     result = ticket.move_to_done_with_plan()
 
-    # Check if this ticket references any issues and trigger completion
-    todo_refs = ticket.issue_ref
-    if todo_refs is not None:
-        todo_list = [todo_refs] if isinstance(todo_refs, str) else list(todo_refs)
-        completed_todos: list[str] = []
-        for todo_filename in todo_list:
-            try:
-                todo = project.get_issue(todo_filename)
-            except ValueError:
-                continue
-            # Only process in-progress TODOs
-            if todo.status != "in-progress":
-                continue
-            ref_tickets = todo.tickets
-            # Check if ALL referencing tickets are done
-            all_done = all(_is_ticket_done(ref_ticket_id) for ref_ticket_id in ref_tickets)
-            if all_done and ref_tickets:
-                # Check if any referencing ticket suppresses archival for this TODO
-                any_suppressed = _any_ticket_suppresses_todo(ref_tickets, todo_filename)
-                if not any_suppressed:
-                    todo.move_to_done()
-                    completed_todos.append(todo_filename)
-        if completed_todos:
-            result["completed_todos"] = completed_todos
+    # Sweep all sprint issues and auto-complete any whose tickets are all done
+    completed = _sweep_done_issues(sprint)
+    if completed:
+        result["completed_todos"] = completed
 
     return json.dumps(result, indent=2)
 
@@ -984,6 +1174,9 @@ def _close_sprint_full(
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+
+    # Self-repair: sweep any issues whose tickets are all done before hard-fail check
+    _sweep_done_issues(sprint)
 
     # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir_full = sprint.path / "issues"

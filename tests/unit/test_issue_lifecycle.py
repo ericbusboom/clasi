@@ -208,6 +208,106 @@ class TestMoveTicketToDoneTriggersCompletion:
         move_result = json.loads(move_ticket_to_done(ticket_path))
         assert "completed_todos" not in move_result
 
+    def test_completed_todos_absent_when_issue_not_complete(self, work_dir):
+        """completed_todos key is absent when the issue is not yet fully done."""
+        _setup_sprint_with_todo(work_dir)
+
+        result1 = json.loads(create_ticket("001", "Part 1", todo="my-idea.md"))
+        json.loads(create_ticket("001", "Part 2", todo="my-idea.md"))
+
+        ticket1_path = result1["path"]
+        fm1 = read_frontmatter(ticket1_path)
+        fm1["status"] = "done"
+        write_frontmatter(ticket1_path, fm1)
+        move_result = json.loads(move_ticket_to_done(ticket1_path))
+
+        assert "completed_todos" not in move_result
+
+    def test_completes_issue_false_suppresses_completion(self, work_dir):
+        """completes_issue: false on moving ticket suppresses auto-completion."""
+        _setup_sprint_with_todo(work_dir)
+
+        result = json.loads(create_ticket("001", "Task", todo="my-idea.md"))
+        ticket_path = result["path"]
+
+        fm = read_frontmatter(ticket_path)
+        fm["status"] = "done"
+        fm["completes_issue"] = {"my-idea.md": False}
+        write_frontmatter(ticket_path, fm)
+
+        move_result = json.loads(move_ticket_to_done(ticket_path))
+
+        # Issue should NOT be completed due to the suppression flag
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        assert (sprint_issues / "my-idea.md").exists()
+        assert not (sprint_issues / "done" / "my-idea.md").exists()
+        assert "completed_todos" not in move_result
+
+
+class TestSprint001Scenario:
+    """Sprint 001 post-mortem scenario: T1 has issue: ref, T2-T4 do not.
+
+    After moving T4 to done (the last ticket), the issue should auto-complete
+    even though T4 has no issue: ref — because _sweep_done_issues is unconditional.
+    """
+
+    def test_issue_completes_when_last_ticket_has_no_issue_ref(self, work_dir):
+        """Issue auto-completes via T4 even though T4 carries no issue: ref."""
+        # Set up: create sprint with one issue in pending pool
+        create_sprint("Sprint 001 Scenario")
+        _advance_to_ticketing(work_dir, "001")
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "feature.md").write_text(
+            "---\nstatus: pending\n---\n\n# Feature\n", encoding="utf-8"
+        )
+
+        # T1: created with issue: ref — moves feature.md to sprint issues dir
+        r1 = json.loads(create_ticket("001", "T1 with ref", todo="feature.md"))
+        t1_path = r1["path"]
+
+        # T2, T3, T4: created without issue ref (simulates sprint 001 scenario)
+        r2 = json.loads(create_ticket("001", "T2 no ref"))
+        r3 = json.loads(create_ticket("001", "T3 no ref"))
+        r4 = json.loads(create_ticket("001", "T4 no ref"))
+
+        # But the issue's tickets list must include T2-T4 for the sweep to work.
+        # Manually add T2-T4 refs to the issue's tickets frontmatter.
+        sprint_issues = _sprint_issues_dir(work_dir, "001")
+        issue_fm = read_frontmatter(sprint_issues / "feature.md")
+        issue_fm["tickets"] = ["001-001", "001-002", "001-003", "001-004"]
+        write_frontmatter(sprint_issues / "feature.md", issue_fm)
+
+        # Complete T1 through T3
+        for r in [r1, r2, r3]:
+            fm = read_frontmatter(r["path"])
+            fm["status"] = "done"
+            write_frontmatter(r["path"], fm)
+            move_ticket_to_done(r["path"])
+
+        # Issue should still be in-progress (T4 not done)
+        assert (sprint_issues / "feature.md").exists()
+        assert not (sprint_issues / "done" / "feature.md").exists()
+
+        # Complete T4 (no issue: ref) — this should trigger auto-completion
+        fm4 = read_frontmatter(r4["path"])
+        fm4["status"] = "done"
+        write_frontmatter(r4["path"], fm4)
+        move_result = json.loads(move_ticket_to_done(r4["path"]))
+
+        # Issue must now be in done/ even though T4 had no issue: ref
+        assert not (sprint_issues / "feature.md").exists(), (
+            "Issue must not remain in sprint issues/ after all tickets done"
+        )
+        assert (sprint_issues / "done" / "feature.md").exists(), (
+            "Issue must be in sprint issues/done/ after all tickets done"
+        )
+        done_fm = read_frontmatter(sprint_issues / "done" / "feature.md")
+        assert done_fm["status"] == "done"
+
+        assert "completed_todos" in move_result
+        assert "feature.md" in move_result["completed_todos"]
+
 
 class TestListIssuesPendingPool:
     """list_issues returns only the pending pool (.clasi/issues/*.md)."""
