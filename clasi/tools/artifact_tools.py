@@ -1565,6 +1565,80 @@ def move_issue_to_done(
 
 
 @server.tool()
+def split_issue(
+    filename: str,
+    new_filename: str,
+    new_title: str,
+    new_body: str,
+    updated_body: str | None = None,
+) -> str:
+    """Split an issue into two sibling files with cross-link frontmatter.
+
+    Creates a new issue file as a sibling of the original (same directory).
+    Adds split_from to the new file and split_into to the original.
+
+    When splitting a sprint-scoped in-progress issue, the new file inherits
+    the sprint context (status: in-progress, sprint: <id>). Otherwise the
+    new file starts as pending with no sprint set.
+
+    Args:
+        filename: The original issue filename (resolved via project.get_issue).
+        new_filename: Filename for the new split-off issue (e.g., 'my-idea-part2.md').
+        new_title: Title heading for the new issue.
+        new_body: Body content for the new issue (after the heading).
+        updated_body: Optional replacement body for the original issue.
+
+    Returns JSON with {original_path, new_path}.
+    """
+    project = get_project()
+    try:
+        original = project.get_issue(filename)
+    except ValueError:
+        raise ValueError(f"Issue not found: {filename}")
+
+    new_path = original.path.parent / new_filename
+    if new_path.exists():
+        raise ValueError(f"Target file already exists: {new_path}")
+
+    # Determine frontmatter for the new file
+    new_fm: dict = {"status": "pending"}
+    if original.status == "in-progress" and original.sprint:
+        new_fm["status"] = "in-progress"
+        new_fm["sprint"] = original.sprint
+    if original.source:
+        new_fm["source"] = original.source
+    new_fm["split_from"] = filename
+
+    # Write the new file using Artifact.write (handles parent dir creation)
+    from clasi.artifact import Artifact as _Artifact
+
+    new_artifact = _Artifact(new_path)
+    new_artifact.write(new_fm, f"\n# {new_title}\n\n{new_body}")
+
+    # Update the original's split_into list
+    orig_fm, orig_body = original._artifact.read_document()
+    existing_split_into = orig_fm.get("split_into", [])
+    if isinstance(existing_split_into, str):
+        existing_split_into = [existing_split_into] if existing_split_into else []
+    else:
+        existing_split_into = list(existing_split_into)
+    if new_filename not in existing_split_into:
+        existing_split_into.append(new_filename)
+    orig_fm["split_into"] = existing_split_into
+
+    # Optionally replace the original body
+    if updated_body is not None:
+        orig_body = updated_body
+
+    original._artifact.write(orig_fm, orig_body)
+
+    return json.dumps({
+        "original_path": str(original.path),
+        "new_path": str(new_path),
+    }, indent=2)
+
+
+@server.tool()
 def create_github_issue(title: str, body: str, labels: list[str] | None = None) -> str:
     """Create a GitHub issue in the current repository.
 
