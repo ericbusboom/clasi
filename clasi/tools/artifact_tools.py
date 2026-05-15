@@ -926,30 +926,10 @@ def move_ticket_to_done(path: str) -> str:
     # Move the ticket and its plan file
     result = ticket.move_to_done_with_plan()
 
-    # Check if this ticket references any issues and trigger completion
-    todo_refs = ticket.issue_ref
-    if todo_refs is not None:
-        todo_list = [todo_refs] if isinstance(todo_refs, str) else list(todo_refs)
-        completed_todos: list[str] = []
-        for todo_filename in todo_list:
-            try:
-                todo = project.get_issue(todo_filename)
-            except ValueError:
-                continue
-            # Only process in-progress TODOs
-            if todo.status != "in-progress":
-                continue
-            ref_tickets = todo.tickets
-            # Check if ALL referencing tickets are done
-            all_done = all(_is_ticket_done(ref_ticket_id) for ref_ticket_id in ref_tickets)
-            if all_done and ref_tickets:
-                # Check if any referencing ticket suppresses archival for this TODO
-                any_suppressed = _any_ticket_suppresses_todo(ref_tickets, todo_filename)
-                if not any_suppressed:
-                    todo.move_to_done()
-                    completed_todos.append(todo_filename)
-        if completed_todos:
-            result["completed_todos"] = completed_todos
+    # Sweep all sprint issues and auto-complete any whose tickets are all done
+    completed = _sweep_done_issues(sprint)
+    if completed:
+        result["completed_todos"] = completed
 
     return json.dumps(result, indent=2)
 
@@ -1194,6 +1174,9 @@ def _close_sprint_full(
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+
+    # Self-repair: sweep any issues whose tickets are all done before hard-fail check
+    _sweep_done_issues(sprint)
 
     # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir_full = sprint.path / "issues"
