@@ -173,24 +173,37 @@ class TestIssueMoveToDone:
         t.move_to_done()
         assert t.status == "done"
 
-    def test_move_to_done_file_location_unchanged(self, tmp_path):
-        """move_to_done does NOT move the file — it stays in its original dir."""
+    def test_move_to_done_moves_to_done_dir(self, tmp_path):
+        """move_to_done moves the file into a done/ subdirectory."""
         proj, t = _make_issue(tmp_path, status="pending")
-        original_parent = t.path.parent
         original_name = t.path.name
         t.move_to_done()
-        assert t.path.parent == original_parent
+        assert t.path.parent.name == "done"
         assert t.path.name == original_name
         assert t.path.exists()
 
-    def test_move_to_done_no_done_dir_created(self, tmp_path):
-        """No done/ directory is created under issues_dir."""
+    def test_move_to_done_pool_issue(self, tmp_path):
+        """Issue in .clasi/issues/ moves to .clasi/issues/done/."""
         proj, t = _make_issue(tmp_path, status="pending")
+        original_name = t.path.name
         t.move_to_done()
-        assert not (proj.issues_dir / "done").exists()
+        assert t.path.parent == proj.issues_dir / "done"
+        assert t.path.name == original_name
+        assert t.path.exists()
+
+    def test_move_to_done_idempotent(self, tmp_path):
+        """Calling move_to_done twice is a no-op on second call."""
+        _, t = _make_issue(tmp_path, status="pending")
+        t.move_to_done()
+        first_path = t.path
+        assert t.path.parent.name == "done"
+        # Call again — should not raise, should stay in done/
+        t.move_to_done()
+        assert t.path == first_path
+        assert t.status == "done"
 
     def test_move_to_done_sprint_in_issues_dir(self, tmp_path):
-        """Issue in sprint issues dir stays there after move_to_done."""
+        """Issue in sprint issues/ dir moves to sprint issues/done/ on move_to_done."""
         proj, t = _make_issue(tmp_path, status="pending")
         sprint_dir = _make_sprint(proj, "001")
         t.move_to_in_progress("001", "001-001")
@@ -199,7 +212,7 @@ class TestIssueMoveToDone:
 
         t.move_to_done(sprint_id="001", ticket_ids=["001-001"])
         assert t.status == "done"
-        assert t.path.parent == sprint_issues  # file stays in sprint issues dir
+        assert t.path.parent == sprint_issues / "done"
         assert t.path.exists()
 
     def test_move_to_done_sets_sprint_frontmatter(self, tmp_path):
@@ -316,3 +329,80 @@ class TestProjectListIssues:
             assert False, "Should have raised ValueError"
         except ValueError:
             pass
+
+    def test_get_issue_finds_sprint_done_dir(self, tmp_path):
+        """get_issue finds issues in <sprint>/issues/done/ directories."""
+        proj = Project(tmp_path)
+        sprint_dir = _make_sprint(proj, "001")
+        done_dir = sprint_dir / "issues" / "done"
+        done_dir.mkdir(parents=True)
+        (done_dir / "finished.md").write_text(
+            "---\nstatus: done\nsprint: \"001\"\n---\n# Finished\n",
+            encoding="utf-8",
+        )
+        t = proj.get_issue("finished.md")
+        assert t.status == "done"
+        assert t.path.parent.name == "done"
+
+
+class TestSprintIssuesDoneDir:
+    """Tests for Sprint.issues_done_dir and list_issues scanning both dirs."""
+
+    def test_issues_done_dir_property(self, tmp_path):
+        """Sprint.issues_done_dir returns <sprint_path>/issues/done."""
+        proj = Project(tmp_path)
+        sprint_dir = _make_sprint(proj, "001")
+        sprint = proj.get_sprint("001")
+        assert sprint.issues_done_dir == sprint_dir / "issues" / "done"
+
+    def test_list_issues_includes_done_dir(self, tmp_path):
+        """Sprint.list_issues() includes issues from issues/done/."""
+        proj = Project(tmp_path)
+        sprint_dir = _make_sprint(proj, "001")
+        sprint = proj.get_sprint("001")
+
+        issues_dir = sprint_dir / "issues"
+        done_dir = issues_dir / "done"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        done_dir.mkdir(exist_ok=True)
+
+        (issues_dir / "active.md").write_text(
+            "---\nstatus: in-progress\n---\n# Active\n", encoding="utf-8"
+        )
+        (done_dir / "finished.md").write_text(
+            "---\nstatus: done\n---\n# Finished\n", encoding="utf-8"
+        )
+
+        issues = sprint.list_issues()
+        names = [i.path.name for i in issues]
+        assert "active.md" in names
+        assert "finished.md" in names
+        assert len(issues) == 2
+
+    def test_list_issues_sorted_across_dirs(self, tmp_path):
+        """Sprint.list_issues() returns issues from both dirs in sorted order within each dir."""
+        proj = Project(tmp_path)
+        sprint_dir = _make_sprint(proj, "001")
+        sprint = proj.get_sprint("001")
+
+        issues_dir = sprint_dir / "issues"
+        done_dir = issues_dir / "done"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        done_dir.mkdir(exist_ok=True)
+
+        (issues_dir / "bbb.md").write_text("---\nstatus: in-progress\n---\n# B\n", encoding="utf-8")
+        (done_dir / "aaa.md").write_text("---\nstatus: done\n---\n# A\n", encoding="utf-8")
+
+        issues = sprint.list_issues()
+        # issues_dir comes before issues_done_dir; within each dir files are sorted
+        assert issues[0].path.name == "bbb.md"
+        assert issues[1].path.name == "aaa.md"
+
+    def test_list_issues_empty_when_neither_dir_exists(self, tmp_path):
+        """Sprint.list_issues() returns [] when neither issues/ nor issues/done/ exists."""
+        proj = Project(tmp_path)
+        _make_sprint(proj, "001")
+        sprint = proj.get_sprint("001")
+        assert not sprint.issues_dir.exists()
+        assert not sprint.issues_done_dir.exists()
+        assert sprint.list_issues() == []

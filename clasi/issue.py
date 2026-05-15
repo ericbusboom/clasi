@@ -88,16 +88,22 @@ class Issue:
         sprint_id: str | None = None,
         ticket_ids: list[str] | None = None,
     ) -> None:
-        """Mark issue as done by updating frontmatter only; no file is moved.
+        """Move issue file to done/ subdirectory and update frontmatter.
 
-        The issue file stays at its current location (typically
-        ``<sprint>/issues/<filename>``). Physical relocation to an archive
-        directory happens only when the sprint itself is closed/archived.
+        If the file is already in a directory named 'done', this is
+        idempotent: frontmatter is updated but the file is not moved again.
 
         Args:
             sprint_id: Optional sprint ID to record in frontmatter.
             ticket_ids: Optional list of ticket IDs to record in frontmatter.
         """
+        if self.path.parent.name != "done":
+            done_dir = self.path.parent / "done"
+            done_dir.mkdir(parents=True, exist_ok=True)
+            new_path = done_dir / self.path.name
+            self.path.rename(new_path)
+            self._artifact = Artifact(new_path)
+
         if sprint_id is not None:
             self._artifact.update_frontmatter(sprint=sprint_id)
         if ticket_ids is not None:

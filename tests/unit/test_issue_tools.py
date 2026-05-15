@@ -119,7 +119,7 @@ class TestListIssues:
 
 
 class TestMoveIssueToDone:
-    """move_issue_to_done updates frontmatter only — no file move."""
+    """move_issue_to_done moves the file to done/ and updates frontmatter."""
 
     def test_sets_status_done(self, todo_dir):
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
@@ -127,23 +127,24 @@ class TestMoveIssueToDone:
         result = json.loads(move_issue_to_done("idea.md"))
         assert result["status"] == "done"
 
-    def test_file_stays_in_place(self, todo_dir):
-        """The file must NOT be moved — it stays at its original path."""
+    def test_file_moved_to_done_dir(self, todo_dir):
+        """The file is moved to done/ subdirectory."""
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
 
         move_issue_to_done("idea.md")
 
-        assert (todo_dir / "idea.md").exists()
-        assert not (todo_dir / "done" / "idea.md").exists()
+        assert not (todo_dir / "idea.md").exists()
+        assert (todo_dir / "done" / "idea.md").exists()
 
-    def test_no_done_directory_created(self, todo_dir):
-        """No done/ subdirectory should be created."""
+    def test_done_directory_created(self, todo_dir):
+        """done/ subdirectory is created when it doesn't exist."""
         (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
         assert not (todo_dir / "done").exists()
 
         move_issue_to_done("idea.md")
 
-        assert not (todo_dir / "done").exists()
+        assert (todo_dir / "done").exists()
+        assert (todo_dir / "done" / "idea.md").exists()
 
     def test_error_on_nonexistent(self, todo_dir):
         with pytest.raises(ValueError, match="TODO not found"):
@@ -155,7 +156,7 @@ class TestMoveIssueToDone:
 
         move_issue_to_done("idea.md", ticket_ids=["001", "002"])
 
-        content = (todo_dir / "idea.md").read_text()
+        content = (todo_dir / "done" / "idea.md").read_text()
         assert "status: done" in content
         assert "001" in content
         assert "002" in content
@@ -165,7 +166,7 @@ class TestMoveIssueToDone:
 
         move_issue_to_done("idea.md")
 
-        content = (todo_dir / "idea.md").read_text()
+        content = (todo_dir / "done" / "idea.md").read_text()
         assert "status: done" in content
 
     def test_preserves_existing_frontmatter(self, todo_dir):
@@ -175,7 +176,7 @@ class TestMoveIssueToDone:
 
         move_issue_to_done("idea.md")
 
-        content = (todo_dir / "idea.md").read_text()
+        content = (todo_dir / "done" / "idea.md").read_text()
         assert "status: done" in content
         assert "source" in content  # original frontmatter field preserved
 
@@ -190,6 +191,43 @@ class TestMoveIssueToDone:
 
         with pytest.raises(ValueError, match="not in the expected sprint issues"):
             move_issue_to_done("idea.md", sprint_id="001")
+
+    def test_sprint_id_validation_already_done_dir(self, todo_dir, tmp_path):
+        """Succeeds if sprint_id given and issue is already in sprint issues/done/."""
+        from clasi.tools.artifact_tools import create_sprint, create_ticket
+        from clasi.mcp_server import set_project
+        from clasi.state_db import advance_phase, record_gate
+
+        set_project(tmp_path)
+        create_sprint("Test Sprint")
+
+        # Advance to ticketing so we can create a ticket
+        db_path = tmp_path / ".clasi" / ".clasi.db"
+        advance_phase(db_path, "001")  # roadmap -> planning-docs
+        advance_phase(db_path, "001")  # planning-docs -> architecture-review
+        record_gate(db_path, "001", "architecture_review", "passed")
+        advance_phase(db_path, "001")  # architecture-review -> stakeholder-review
+        record_gate(db_path, "001", "stakeholder_approval", "passed")
+        advance_phase(db_path, "001")  # stakeholder-review -> ticketing
+
+        # Create the issue and claim it
+        (todo_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
+        create_ticket("001", "Task", todo="idea.md")
+
+        # Manually move it to done/ as if it was already completed
+        from pathlib import Path
+        sprints_dir = tmp_path / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.is_dir() and d.name.startswith("001-"))
+        issues_dir = sprint_dir / "issues"
+        done_dir = issues_dir / "done"
+        done_dir.mkdir(exist_ok=True)
+        (issues_dir / "idea.md").rename(done_dir / "idea.md")
+
+        # Calling move_issue_to_done with sprint_id on an already-done-dir issue
+        # should succeed (idempotent)
+        set_project(tmp_path)
+        result = json.loads(move_issue_to_done("idea.md", sprint_id="001"))
+        assert result["status"] == "done"
 
 
 class TestCreateTicketWithTodo:
@@ -330,17 +368,18 @@ class TestCloseSprintTodoHandling:
         result = json.loads(create_ticket("001", "Task", todo="my-idea.md"))
         ticket_path = result["path"]
 
-        # Complete ticket which triggers TODO completion
+        # Complete ticket which triggers TODO completion (file moves to done/)
         fm = read_frontmatter(ticket_path)
         fm["status"] = "done"
         write_frontmatter(ticket_path, fm)
         move_ticket_to_done(ticket_path)
 
-        # TODO should now have status=done in sprint issues dir (no file move)
+        # TODO should now have status=done in sprint issues/done/ dir (file moved)
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
-        assert (sprint_issues / "my-idea.md").exists()
+        assert not (sprint_issues / "my-idea.md").exists()
+        assert (sprint_issues / "done" / "my-idea.md").exists()
         from clasi.frontmatter import read_frontmatter as rfm
-        fm_todo = rfm(sprint_issues / "my-idea.md")
+        fm_todo = rfm(sprint_issues / "done" / "my-idea.md")
         assert fm_todo["status"] == "done"
 
         result = json.loads(close_sprint("001"))
@@ -385,7 +424,7 @@ class TestCloseSprintTodoHandling:
         result = json.loads(create_ticket("001", "Task", todo="linked.md"))
         ticket_path = result["path"]
 
-        # Complete ticket to mark linked TODO as done (frontmatter only)
+        # Complete ticket to mark linked TODO as done (file moves to done/)
         fm = read_frontmatter(ticket_path)
         fm["status"] = "done"
         write_frontmatter(ticket_path, fm)
@@ -393,9 +432,9 @@ class TestCloseSprintTodoHandling:
 
         close_sprint("001")
 
-        # Linked should have status=done in sprint issues dir (file not moved)
+        # Linked should have moved to sprint issues/done/ (file moved by completion)
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
-        assert (sprint_issues / "linked.md").exists()
+        assert (sprint_issues / "done" / "linked.md").exists()
         # Unlinked should still be in active todo dir, untouched
         assert (todo / "unlinked.md").exists()
         assert not (todo / "done" / "unlinked.md").exists()
@@ -570,20 +609,21 @@ class TestMoveTicketToDoneCompletesTodoGuard:
         return todo, ticket_path
 
     def test_archives_single_sprint_todo_by_default(self, work_dir):
-        """No completes_issue field → TODO is marked done (frontmatter only, file stays)."""
+        """No completes_issue field → TODO is moved to done/ and marked done."""
         from clasi.tools.artifact_tools import move_ticket_to_done
 
-        todo, ticket_path = self._setup_sprint_with_todo(work_dir, "my-idea.md")
+        _, ticket_path = self._setup_sprint_with_todo(work_dir, "my-idea.md")
 
         result = json.loads(move_ticket_to_done(ticket_path))
 
         assert "completed_todos" in result
         assert "my-idea.md" in result["completed_todos"]
-        # File stays in sprint issues dir — only frontmatter is updated
+        # File is moved to sprint issues/done/ dir
         sprint_issues = self._sprint_issues_dir(work_dir, "001")
-        assert (sprint_issues / "my-idea.md").exists()
+        assert not (sprint_issues / "my-idea.md").exists()
+        assert (sprint_issues / "done" / "my-idea.md").exists()
         from clasi.frontmatter import read_frontmatter as rfm
-        assert rfm(sprint_issues / "my-idea.md")["status"] == "done"
+        assert rfm(sprint_issues / "done" / "my-idea.md")["status"] == "done"
 
     def test_does_not_archive_when_completes_todo_scalar_false(self, work_dir):
         """completes_issue: false on the ticket → TODO is NOT marked done."""

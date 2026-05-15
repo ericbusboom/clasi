@@ -1516,11 +1516,14 @@ def move_issue_to_done(
             sprint = project.get_sprint(sprint_id)
         except ValueError:
             raise ValueError(f"Sprint not found: {sprint_id}")
-        expected_dir = sprint.path / "issues"
-        if todo.path.parent.resolve() != expected_dir.resolve():
+        expected_dirs = {
+            (sprint.path / "issues").resolve(),
+            (sprint.path / "issues" / "done").resolve(),
+        }
+        if todo.path.parent.resolve() not in expected_dirs:
             raise ValueError(
                 f"Issue '{filename}' is not in the expected sprint issues "
-                f"directory '{expected_dir}'. "
+                f"directory or its done/ subdirectory. "
                 f"Current location: '{todo.path.parent}'. "
                 "Run move_todo_to_in_progress first."
             )
