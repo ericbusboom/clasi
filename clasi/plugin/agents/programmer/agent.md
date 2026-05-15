@@ -58,7 +58,7 @@ From team-lead (via Task description):
    - Check off all acceptance criteria (`- [x]`)
    - Set frontmatter `status: done`
 8. **Commit** all changes with a message referencing the ticket ID.
-9. **Bump the version**: run `clasi version bump` and commit the result
+9. **Bump the version**: run `dotconfig version bump` and commit the result
    (`chore: bump version`). Tools are installed editable, so the
    version is how sessions tell which code is live. Do this after each
    substantive commit, not just at ticket end. Do not bump immediately

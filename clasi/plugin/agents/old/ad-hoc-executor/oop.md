@@ -40,5 +40,4 @@ That's it. No sprint, no tickets, no review gates, no architecture review.
 - Do NOT ask for stakeholder approval at process gates — there are no gates.
 - DO run tests before committing. Tests are never optional.
 - DO write a clear commit message explaining the change.
-- After committing, run `clasi version bump`. It checks the trigger
-  setting internally and skips if not applicable.
+- After committing, run `dotconfig version bump`.

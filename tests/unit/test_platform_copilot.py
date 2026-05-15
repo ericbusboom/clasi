@@ -160,7 +160,7 @@ def test_install_global_instructions_git_commits_body(tmp_path: Path) -> None:
     copilot._install_global_instructions(tmp_path)
     content = (tmp_path / ".github" / "copilot-instructions.md").read_text(encoding="utf-8")
     # Check a representative fragment from GIT_COMMITS_BODY
-    assert "clasi version bump" in content
+    assert "dotconfig version bump" in content
 
 
 def test_install_global_instructions_idempotent_preserves_user_content(tmp_path: Path) -> None:
