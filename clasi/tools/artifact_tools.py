@@ -825,20 +825,26 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     # Check in-progress TODOs — they should already be resolved individually.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
     unresolved_todos: list[str] = []
+
+    # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir = sprint.path / "issues"
-    for in_progress_todo_dir in [sprint_issues_dir]:
-        if not in_progress_todo_dir.exists():
-            continue
-        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+    if sprint_issues_dir.exists():
+        for todo_file in sorted(sprint_issues_dir.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
+                    # Self-repair: move to done/ (physically relocates file)
                     todo.move_to_done()
                 else:
                     # Check if intentionally deferred by a ticket in this sprint
                     if not _todo_is_deferred(sprint, todo_file.name):
                         unresolved_todos.append(todo_file.name)
+
+    # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
+    sprint_issues_done_dir = sprint.path / "issues" / "done"
+    if sprint_issues_done_dir.exists():
+        for _todo_file in sorted(sprint_issues_done_dir.glob("*.md")):
+            pass  # Already in done/ — no action needed
 
     # Check pending pool issues tagged with this sprint
     pending_dir = project.issues_dir
@@ -848,7 +854,15 @@ def _close_sprint_legacy(sprint_id: str) -> str:
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    todo.move_to_done()
+                    # Relocate directly to <sprint>/issues/done/ (not pool/done/)
+                    target_dir = sprint.path / "issues" / "done"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_path = target_dir / todo_file.name
+                    todo_file.rename(target_path)
+                    from clasi.artifact import Artifact as _Artifact
+                    todo._artifact = _Artifact(target_path)
+                    # Update frontmatter only (file is now in done/ — idempotent move)
+                    todo.move_to_done(sprint_id=sprint_id)
                     moved_todos.append(todo_file.name)
 
     # Archive sprint directory (updates status, copies architecture-update, moves dir)
@@ -970,15 +984,15 @@ def _close_sprint_full(
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+
+    # Part 1: scan <sprint>/issues/ top-level
     sprint_issues_dir_full = sprint.path / "issues"
-    for in_progress_todo_dir in [sprint_issues_dir_full]:
-        if not in_progress_todo_dir.exists():
-            continue
-        for todo_file in sorted(in_progress_todo_dir.glob("*.md")):
+    if sprint_issues_dir_full.exists():
+        for todo_file in sorted(sprint_issues_dir_full.glob("*.md")):
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
+                    # Self-repair: move to done/ (physically relocates file)
                     todo.move_to_done()
                     repairs.append(f"moved TODO {todo_file.name} to done/")
                 else:
@@ -1008,6 +1022,13 @@ def _close_sprint_full(
                         "completed_steps": [],
                         "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
                     }, indent=2)
+
+    # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
+    sprint_issues_done_dir_full = sprint.path / "issues" / "done"
+    if sprint_issues_done_dir_full.exists():
+        for _todo_file in sorted(sprint_issues_done_dir_full.glob("*.md")):
+            pass  # Already in done/ — no action needed
+
     # Also check pending pool issues that are tagged with this sprint
     pending_pool = project.issues_dir
     if pending_pool.exists():
@@ -1015,8 +1036,15 @@ def _close_sprint_full(
             todo = Issue(todo_file, project)
             if todo.sprint == sprint_id:
                 if todo.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/
-                    todo.move_to_done()
+                    # Relocate directly to <sprint>/issues/done/ (not pool/done/)
+                    target_dir = sprint.path / "issues" / "done"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_path = target_dir / todo_file.name
+                    todo_file.rename(target_path)
+                    from clasi.artifact import Artifact as _Artifact
+                    todo._artifact = _Artifact(target_path)
+                    # Update frontmatter only (file is now in done/ — idempotent move)
+                    todo.move_to_done(sprint_id=sprint_id)
                     repairs.append(f"moved TODO {todo_file.name} to done/")
 
     # 1c. Check state DB phase — self-repair: advance if behind

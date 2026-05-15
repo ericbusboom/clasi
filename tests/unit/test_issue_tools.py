@@ -564,6 +564,293 @@ class TestCloseSprintTodoHandling:
         # success confirms the deferred TODO did not trigger a precondition failure
         assert "error" not in result
 
+    # ── New tests for T002: done-dir awareness and legacy migration ──
+
+    def test_legacy_done_dir_issues_pass_cleanly(self, work_dir):
+        """Legacy path: issues already in <sprint>/issues/done/ pass cleanly.
+
+        An issue that was previously moved to done/ should not generate a
+        repair entry and close should succeed without error.
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        # Find the sprint directory and manually place an issue in issues/done/
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        done_dir = sprint_dir / "issues" / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        (done_dir / "already-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Already Done\n"
+        )
+
+        result = json.loads(close_sprint("001"))
+
+        # Close should succeed, no unresolved_todos reported
+        assert "unresolved_todos" not in result
+        # The already-done issue should still be in done/ (now under archived sprint)
+        sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
+        archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
+        assert (archived / "issues" / "done" / "already-done.md").exists()
+
+    def test_legacy_top_level_done_issue_migrated(self, work_dir):
+        """Legacy path: top-level done issue is self-repaired to <sprint>/issues/done/.
+
+        An issue sitting at <sprint>/issues/ with status: done (a legacy state)
+        should be moved to done/ by the self-repair logic.
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "stale-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Stale Done\n"
+        )
+
+        result = json.loads(close_sprint("001"))
+
+        # No unresolved issues
+        assert "unresolved_todos" not in result
+        # File should be under archived sprint issues/done/
+        sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
+        archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
+        assert (archived / "issues" / "done" / "stale-done.md").exists()
+        assert not (archived / "issues" / "stale-done.md").exists()
+
+    def test_legacy_pending_pool_done_issue_relocated_to_sprint_done(self, work_dir):
+        """Legacy path: pending-pool done issue is relocated to <sprint>/issues/done/.
+
+        An issue in .clasi/issues/ with sprint: '001' and status: done should
+        be relocated directly to <sprint>/issues/done/, not to .clasi/issues/done/.
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        # Place a done-tagged issue in the pending pool
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "pool-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Pool Done\n"
+        )
+
+        result = json.loads(close_sprint("001"))
+
+        # Should have moved the pending pool issue
+        assert "moved_todos" in result
+        assert "pool-done.md" in result["moved_todos"]
+        # Issue should be under archived sprint issues/done/
+        sprints_done_dir = work_dir / ".clasi" / "sprints" / "done"
+        archived = next(d for d in sprints_done_dir.iterdir() if d.name.startswith("001-"))
+        assert (archived / "issues" / "done" / "pool-done.md").exists()
+        # NOT in the pending pool's done/ dir
+        assert not (pending_pool / "done" / "pool-done.md").exists()
+
+    def test_legacy_inprogress_issue_hard_fails(self, work_dir):
+        """Legacy path: in-progress issue at top level that is not deferred hard-fails.
+
+        Existing behavior: sprint close returns unresolved_todos (not an error
+        dict for legacy path, but unresolved_todos key present).
+        """
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        todo = work_dir / ".clasi" / "issues"
+        todo.mkdir(parents=True, exist_ok=True)
+        (todo / "blocker.md").write_text("---\nstatus: pending\n---\n\n# Blocker\n")
+
+        create_ticket("001", "Task", todo="blocker.md")
+        # Do NOT complete the ticket — issue stays in-progress
+
+        result = json.loads(close_sprint("001"))
+        assert "unresolved_todos" in result
+        assert "blocker.md" in result["unresolved_todos"]
+
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.2")
+    @patch("subprocess.run")
+    def test_full_done_dir_issues_pass_cleanly(
+        self, mock_run, mock_ver, mock_tag, work_dir
+    ):
+        """Full lifecycle path: issues in <sprint>/issues/done/ pass cleanly.
+
+        An issue already in done/ should not appear in repairs and should not
+        block the precondition check.
+        """
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        done_dir = sprint_dir / "issues" / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        (done_dir / "already-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Already Done\n"
+        )
+
+        def _ok(returncode=0, stdout="", stderr=""):
+            r = MagicMock()
+            r.returncode = returncode
+            r.stdout = stdout
+            r.stderr = stderr
+            return r
+
+        mock_run.side_effect = [
+            _ok(0, "all tests passed"),  # pytest
+            _ok(0),  # git add -A
+            _ok(0),  # git commit
+            _ok(0, ""),  # git status --porcelain
+            _ok(0),  # git rev-parse (merge check)
+            _ok(0),  # git merge-base (already merged)
+            _ok(0),  # git push --tags
+            _ok(0),  # git rev-parse (delete check)
+            _ok(0),  # git branch -d
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result.get("status") == "success", f"Expected success but got: {result}"
+        # Repairs should NOT mention the already-done issue
+        repairs = result.get("repairs", [])
+        assert not any("already-done.md" in r for r in repairs), (
+            f"already-done.md should not appear in repairs: {repairs}"
+        )
+
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.3")
+    @patch("subprocess.run")
+    def test_full_top_level_done_issue_migrated(
+        self, mock_run, mock_ver, mock_tag, work_dir
+    ):
+        """Full lifecycle path: top-level done issue is self-repaired to done/.
+
+        A stale issue at <sprint>/issues/ with status: done triggers the repair
+        message and close succeeds.
+        """
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "stale-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Stale Done\n"
+        )
+
+        def _ok(returncode=0, stdout="", stderr=""):
+            r = MagicMock()
+            r.returncode = returncode
+            r.stdout = stdout
+            r.stderr = stderr
+            return r
+
+        mock_run.side_effect = [
+            _ok(0, "all tests passed"),  # pytest
+            _ok(0),  # git add -A
+            _ok(0),  # git commit
+            _ok(0, ""),  # git status --porcelain
+            _ok(0),  # git rev-parse (merge check)
+            _ok(0),  # git merge-base (already merged)
+            _ok(0),  # git push --tags
+            _ok(0),  # git rev-parse (delete check)
+            _ok(0),  # git branch -d
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result.get("status") == "success", f"Expected success but got: {result}"
+        # The repair should be logged
+        repairs = result.get("repairs", [])
+        assert any("stale-done.md" in r for r in repairs), (
+            f"Expected repair for stale-done.md in: {repairs}"
+        )
+
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.4")
+    @patch("subprocess.run")
+    def test_full_pending_pool_done_issue_relocated_to_sprint_done(
+        self, mock_run, mock_ver, mock_tag, work_dir
+    ):
+        """Full lifecycle path: pending-pool done issue relocated to <sprint>/issues/done/.
+
+        An issue in .clasi/issues/ with sprint: '001' and status: done is
+        moved to <sprint>/issues/done/ (not .clasi/issues/done/).
+        """
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "pool-done.md").write_text(
+            "---\nstatus: done\nsprint: '001'\n---\n\n# Pool Done\n"
+        )
+
+        def _ok(returncode=0, stdout="", stderr=""):
+            r = MagicMock()
+            r.returncode = returncode
+            r.stdout = stdout
+            r.stderr = stderr
+            return r
+
+        mock_run.side_effect = [
+            _ok(0, "all tests passed"),  # pytest
+            _ok(0),  # git add -A
+            _ok(0),  # git commit
+            _ok(0, ""),  # git status --porcelain
+            _ok(0),  # git rev-parse (merge check)
+            _ok(0),  # git merge-base (already merged)
+            _ok(0),  # git push --tags
+            _ok(0),  # git rev-parse (delete check)
+            _ok(0),  # git branch -d
+        ]
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result.get("status") == "success", f"Expected success but got: {result}"
+        # NOT in the pending pool's done/ dir
+        assert not (pending_pool / "done" / "pool-done.md").exists()
+        # The repair should be logged
+        repairs = result.get("repairs", [])
+        assert any("pool-done.md" in r for r in repairs), (
+            f"Expected repair for pool-done.md in: {repairs}"
+        )
+
+    def test_full_inprogress_issue_hard_fails(self, work_dir):
+        """Full lifecycle path: in-progress issue at top level that is not deferred hard-fails.
+
+        Place an in-progress issue directly in <sprint>/issues/ without any
+        ticket to reference it (so it is NOT deferred). Precondition check
+        should return a structured error with step: 'precondition'.
+
+        We use branch_name to trigger the full path, but close returns before
+        any subprocess calls (precondition fails before tests step).
+        """
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        issues_dir = sprint_dir / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        # Place in-progress issue directly — no ticket references it, so not deferred
+        (issues_dir / "blocker.md").write_text(
+            "---\nstatus: in-progress\nsprint: '001'\n---\n\n# Blocker\n"
+        )
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result.get("status") == "error"
+        assert result["error"]["step"] == "precondition"
+        assert "blocker.md" in result["error"]["message"]
+
 
 class TestMoveTicketToDoneCompletesTodoGuard:
     """Tests for move_ticket_to_done respecting completes_issue_for."""
