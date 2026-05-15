@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Issue-Ticket Linkage
-status: planning-docs
+status: done
 branch: sprint/002-issue-ticket-linkage
 use-cases: []
 issues:
