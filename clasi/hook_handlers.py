@@ -855,16 +855,16 @@ def _next_log_number(log_dir: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Plan-to-TODO — PostToolUse hook for ExitPlanMode
+# Plan-to-Issue — PostToolUse hook for ExitPlanMode
 # ---------------------------------------------------------------------------
 
 
 def handle_codex_plan_to_issue(payload: dict) -> None:
-    """Convert a Codex plan tag in last_assistant_message to a CLASI TODO.
+    """Convert a Codex plan tag in last_assistant_message to a CLASI issue.
 
     Reads ``last_assistant_message`` from the payload, extracts the content
     between ``<proposed_plan>`` and ``</proposed_plan>`` tags, and calls
-    ``plan_to_issue_from_text`` to write a pending TODO file.
+    ``plan_to_issue_from_text`` to write a pending issue file.
 
     Always exits 0 — the Codex Stop hook fires after the session has ended,
     so there is nothing to block.
@@ -879,8 +879,8 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
         sys.exit(0)
 
     plan_text = match.group(1).strip()
-    todo_dir = get_project().issues_dir
-    result = plan_to_issue_from_text(plan_text, todo_dir)
+    issue_dir = get_project().issues_dir
+    result = plan_to_issue_from_text(plan_text, issue_dir)
     if result:
         print(f"CLASI: Codex plan saved as TODO: {result}")
     sys.exit(0)
@@ -891,10 +891,10 @@ handle_codex_plan_to_todo = handle_codex_plan_to_issue
 
 
 def handle_plan_to_issue(payload: dict) -> None:
-    """Convert the most recent plan file to a CLASI TODO.
+    """Convert the most recent plan file to a CLASI issue.
 
     Calls plan_to_issue() with the standard directories and prints the
-    path of the created TODO file if one was created.
+    path of the created issue file if one was created.
     """
     from clasi.plan_to_issue import plan_to_issue
 
@@ -911,9 +911,9 @@ def handle_plan_to_issue(payload: dict) -> None:
             json.dumps({
                 "decision": "block",
                 "reason": (
-                    f"CLASI: Plan saved as TODO: {result}. "
-                    "This plan is now a pending TODO for future sprint planning. "
-                    "Do NOT implement it now. Confirm the TODO was created and stop."
+                    f"CLASI: Plan saved as issue: {result}. "
+                    "This plan is now a pending issue for future sprint planning. "
+                    "Do NOT implement it now. Confirm the issue was created and stop."
                 ),
             }),
             file=sys.stderr,

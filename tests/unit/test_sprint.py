@@ -304,11 +304,11 @@ class TestSprintTickets:
     def test_create_ticket_with_todo(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        t = s.create_ticket("With Todo", todo="my-idea.md")
+        t = s.create_ticket("With Todo", issue="my-idea.md")
         assert t.issue_ref == "my-idea.md"
 
-    def test_create_ticket_auto_links_sprint_todos(self, tmp_path):
-        """When no todo param given, auto-link from sprint.md todos field."""
+    def test_create_ticket_auto_links_sprint_issues(self, tmp_path):
+        """When no issue param given, auto-link from sprint.md todos field."""
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         # Add todos field to sprint.md frontmatter
         sprint_md = sprint_dir / "sprint.md"
@@ -322,8 +322,8 @@ class TestSprintTickets:
         t = s.create_ticket("Auto Linked")
         assert t.issue_ref == "idea-a.md"
 
-    def test_create_ticket_explicit_todo_not_overridden(self, tmp_path):
-        """Explicit todo param should NOT be overridden by sprint todos."""
+    def test_create_ticket_explicit_issue_not_overridden(self, tmp_path):
+        """Explicit issue param should NOT be overridden by sprint todos."""
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         sprint_md = sprint_dir / "sprint.md"
         sprint_md.write_text(
@@ -333,7 +333,7 @@ class TestSprintTickets:
             encoding="utf-8",
         )
         s = Sprint(sprint_dir, proj)
-        t = s.create_ticket("Explicit Todo", todo="explicit.md")
+        t = s.create_ticket("Explicit Todo", issue="explicit.md")
         assert t.issue_ref == "explicit.md"
 
     def test_create_ticket_no_todos_field_no_link(self, tmp_path):

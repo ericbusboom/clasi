@@ -41,7 +41,7 @@ This creates:
 | Path | Purpose |
 |------|---------|
 | `.claude/rules/*.md` | Always-on instructions loaded by Claude Code |
-| `.claude/skills/*/SKILL.md` | Slash-command stubs (`/next`, `/todo`, `/status`, `/project-initiation`) |
+| `.claude/skills/*/SKILL.md` | Slash-command stubs (`/next`, `/issue`, `/status`, `/project-initiation`) |
 | `.claude/settings.local.json` | MCP permission allowlist |
 | `.mcp.json` | MCP server configuration pointing to `clasi mcp` |
 
@@ -114,7 +114,7 @@ complete.
 |---------|-------------|
 | `/next` | Determine the next process step and execute it |
 | `/status` | Report current project state, progress, and next actions |
-| `/todo <description>` | Capture an idea as an issue file in `.clasi/issues/` |
+| `/issue <description>` | Capture an idea as an issue file in `.clasi/issues/` |
 | `/project-initiation` | Start a new project with a guided interview |
 
 ## Codex Integration
@@ -139,7 +139,7 @@ clasi init --claude --codex
 |------|---------|
 | `AGENTS.md` | Root marker file with the CLASI entry-point sentence (marker-managed CLASI section) |
 | `.codex/config.toml` | Codex config with `[mcp_servers.clasi]` and `codex_hooks = true` |
-| `.codex/hooks.json` | Stop hook that calls `clasi hook codex-plan-to-todo` (correct wrapper schema per the [Codex hooks spec](https://developers.openai.com/codex/hooks)) |
+| `.codex/hooks.json` | Stop hook that calls `clasi hook codex-plan-to-issue` (correct wrapper schema per the [Codex hooks spec](https://developers.openai.com/codex/hooks)); `codex-plan-to-todo` is a deprecated alias |
 | `.codex/agents/team-lead.toml` | Sub-agent definition for the team-lead role |
 | `.codex/agents/sprint-planner.toml` | Sub-agent definition for the sprint-planner role |
 | `.codex/agents/programmer.toml` | Sub-agent definition for the programmer role |
@@ -159,7 +159,7 @@ a session.
 > **Note**: As of April 2026, Codex fires Stop hooks only from
 > `~/.codex/hooks.json`, not from a repo-local `.codex/hooks.json`
 > ([openai/codex#17532](https://github.com/openai/codex/issues/17532)).
-> To enable plan-to-todo capture, copy `.codex/hooks.json` to
+> To enable plan-to-issue capture, copy `.codex/hooks.json` to
 > `~/.codex/hooks.json` after install:
 >
 > ```bash

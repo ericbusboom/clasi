@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Finish TODO to Issue Rename
-status: roadmap
+status: done
 branch: sprint/003-finish-todo-to-issue-rename
 use-cases: []
 issues:
@@ -28,7 +28,8 @@ The following are explicitly excluded to preserve backward compatibility with th
 - **Hook registry keys** `"plan-to-todo"` and `"codex-plan-to-todo"` in `clasi/hook_handlers.py:980, 982` — pinned-MCP compatibility.
 - **Path strings referring to `docs/clasi/todo/`** — deferred to the self-migration sprint; don't update these here.
 - **Historical sprint archives** in `docs/clasi/sprints/done/**` — archives are never mutated.
-- The `create_sprint` tool's `todo` parameter rename and the `moved_todos`/`unresolved_todos` JSON key rename in `close_sprint` output — these are MCP surface changes coordinated with the MCP-pin upgrade, not this sprint.
+- The `create_sprint` tool's `todo` parameter rename — this is an MCP tool schema change coordinated with the MCP-pin upgrade, not this sprint.
+- Note: the `moved_todos`/`unresolved_todos` JSON keys in `close_sprint` output **are** renamed in this sprint (to `moved_issues`/`unresolved_issues`) — they are produced by the current source, not the pinned binary.
 
 ## Notes / open questions
 
@@ -38,5 +39,11 @@ None. The issue contains a detailed file-by-file audit with exact line numbers f
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Rename production-code identifiers from todo to issue | — |
+| 002 | Rename docstring prose from todo to issue | 001 |
+| 003 | Rename agent instruction prose from todo to issue | 002 |
+| 004 | Rename documentation references from todo to issue | 003 |
+| 005 | Rename test class and method names from todo to issue | 001 |
+| 006 | Grep verification — confirm only allowed todo residuals remain | 001, 002, 003, 004, 005 |
 
 Tickets execute serially in the order listed.

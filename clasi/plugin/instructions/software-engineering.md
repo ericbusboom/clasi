@@ -208,8 +208,8 @@ status: open | in-progress | done
 use-cases: [SUC-001, SUC-002]
 depends-on: ["NNN"]
 github-issue: ""
-todo: ""
-completes_todo: true
+issue: ""
+completes_issue: true
 ---
 ```
 
@@ -226,8 +226,8 @@ implementation notes.
 | `use-cases` | list | Sprint use-case IDs this ticket satisfies. |
 | `depends-on` | list | Ticket IDs that must be done before this one starts. |
 | `github-issue` | string | Linked GitHub issue number or URL, if any. |
-| `todo` | string | Filename of the issue in `.clasi/issues/` that this ticket addresses, if any. |
-| `completes_todo` | bool or map | Controls whether linked TODOs are archived when this ticket is moved to done. **Default: `true`** — the TODO is archived once all tickets that reference it are done. Set to `false` (scalar) to suppress archival for **all** TODOs linked to this ticket. Set to a mapping `{filename.md: false}` to suppress archival for specific TODOs by filename. Use `false` when this ticket only partially addresses a long-lived multi-sprint umbrella TODO that should survive the sprint close. |
+| `issue` | string | Filename of the issue in `.clasi/issues/` that this ticket addresses, if any. |
+| `completes_issue` | bool or map | Controls whether linked issues are archived when this ticket is moved to done. **Default: `true`** — the issue is archived once all tickets that reference it are done. Set to `false` (scalar) to suppress archival for **all** issues linked to this ticket. Set to a mapping `{filename.md: false}` to suppress archival for specific issues by filename. Use `false` when this ticket only partially addresses a long-lived multi-sprint umbrella issue that should survive the sprint close. |
 
 ### 6. Ticket Plans (`tickets/NNN-slug-plan.md`)
 

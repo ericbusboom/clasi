@@ -39,9 +39,9 @@ Bootstrap a new project from a stakeholder's specification.
 
 1. Invoke the `project-initiation` skill to produce `overview.md`,
    `specification.md`, and `usecases.md`.
-2. If TODOs exist, read them and produce impact assessments (difficulty,
+2. If issues exist, read them and produce impact assessments (difficulty,
    dependencies, affected code).
-3. Invoke the `sprint-roadmap` skill to group TODOs into lightweight
+3. Invoke the `sprint-roadmap` skill to group issues into lightweight
    sprint plans.
 4. Present the roadmap to the stakeholder for feedback.
 

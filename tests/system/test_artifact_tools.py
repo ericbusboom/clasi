@@ -181,8 +181,8 @@ class TestCreateTicket:
         with pytest.raises(ValueError, match="roadmap.*phase"):
             create_ticket("001", "Too Early")
 
-    def test_auto_links_sprint_todos_when_no_todo_param(self, work_dir):
-        """create_ticket without todo param auto-links from sprint.md todos."""
+    def test_auto_links_sprint_issues_when_no_issue_param(self, work_dir):
+        """create_ticket without issue param auto-links from sprint.md todos."""
         create_sprint("My Sprint")
         _advance_to_ticketing(work_dir, "001")
         # Add todos field to sprint.md frontmatter
@@ -197,8 +197,8 @@ class TestCreateTicket:
         ticket_fm = read_frontmatter(result["path"])
         assert ticket_fm["issue"] == ["idea-a.md", "idea-b.md"]
 
-    def test_explicit_todo_not_overridden_by_sprint_todos(self, work_dir):
-        """Explicit todo param takes priority over sprint.md todos."""
+    def test_explicit_issue_not_overridden_by_sprint_todos(self, work_dir):
+        """Explicit issue param takes priority over sprint.md todos."""
         create_sprint("My Sprint")
         _advance_to_ticketing(work_dir, "001")
         sprint_md = (
@@ -208,7 +208,7 @@ class TestCreateTicket:
         fm["todos"] = ["idea-a.md", "idea-b.md"]
         write_frontmatter(sprint_md, fm)
 
-        result = json.loads(create_ticket("001", "Explicit", todo="explicit.md"))
+        result = json.loads(create_ticket("001", "Explicit", issue="explicit.md"))
         ticket_fm = read_frontmatter(result["path"])
         assert ticket_fm["issue"] == "explicit.md"
 
@@ -218,8 +218,8 @@ class TestCreateTicket:
         _advance_to_ticketing(work_dir, "001")
         result = json.loads(create_ticket("001", "No Link"))
         ticket_fm = read_frontmatter(result["path"])
-        # todo field should be empty string (from template default)
-        assert not ticket_fm.get("todo")
+        # issue field should be absent or empty (no auto-link occurred)
+        assert not ticket_fm.get("issue")
 
 
 class TestListSprints:
