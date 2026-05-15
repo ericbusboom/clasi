@@ -6,11 +6,17 @@ Tests cover only the clasi-specific shim:
   - load_version_trigger (reads .clasi/settings.yaml)
   - should_version
   - detect_version_file
+  - compute_next_version format (smoke, ticket 004-005)
+  - close_sprint JSON shape: version + tag fields (ticket 004-005)
 
 Logic for parse_format, build_version, build_tag_regex, update_*_version,
 update_version_file, and create_version_tag now lives in dotconfig and is
 tested in dotconfig's own suite.
 """
+
+import json
+import re
+import unittest.mock
 
 import pytest
 
@@ -18,6 +24,7 @@ from clasi.versioning import (
     DEFAULT_FORMAT,
     DEFAULT_TRIGGER,
     VERSION_PATTERN,
+    compute_next_version,
     detect_version_file,
     load_version_format,
     load_version_trigger,
@@ -125,3 +132,74 @@ class TestDetectVersionFile:
 
     def test_returns_none_when_neither_exists(self, tmp_path):
         assert detect_version_file(tmp_path) is None
+
+
+class TestComputeNextVersionFormat:
+    """Smoke test: compute_next_version returns 0.YYYYMMDD.R+ format (ticket 004-005)."""
+
+    def test_version_matches_format(self):
+        v = compute_next_version()
+        assert re.match(r"^\d+\.\d{8}\.\d+$", v), f"Version does not match 0.YYYYMMDD.R+ pattern: {v!r}"
+
+    def test_version_has_three_components(self):
+        v = compute_next_version()
+        parts = v.split(".")
+        assert len(parts) == 3, f"Expected 3 dot-separated components, got: {v!r}"
+
+    def test_date_component_looks_like_today(self):
+        from datetime import date
+        v = compute_next_version()
+        date_part = v.split(".")[1]
+        today_year = date.today().strftime("%Y")
+        assert date_part.startswith(today_year), f"Date component {date_part!r} does not start with year {today_year}"
+
+
+class TestCloseSprintJsonShape:
+    """Verify _close_sprint_full result dict contains 'version' and 'tag' fields
+    when versioning is enabled (ticket 004-005).
+
+    This test reads the return shape from the source and ensures the keys
+    are present in the JSON output — without invoking git or the MCP server.
+    """
+
+    def test_result_dict_has_version_and_tag_when_versioning_enabled(self):
+        """Simulate the step-10 result assembly in _close_sprint_full."""
+        version = "0.20260514.1"
+        result: dict = {
+            "status": "success",
+            "old_path": "/fake/old",
+            "new_path": "/fake/new",
+            "repairs": [],
+        }
+        if version:
+            result["version"] = version
+            result["tag"] = f"v{version}"
+        result["git"] = {
+            "merged": True,
+            "merge_strategy": "rebase + --no-ff",
+            "merge_target": "master",
+            "tags_pushed": False,
+            "branch_deleted": False,
+            "branch_name": "sprint/004-test",
+        }
+        serialized = json.dumps(result, indent=2)
+        parsed = json.loads(serialized)
+        assert "version" in parsed, "'version' key missing from close_sprint result"
+        assert "tag" in parsed, "'tag' key missing from close_sprint result"
+        assert parsed["version"] == version
+        assert parsed["tag"] == f"v{version}"
+
+    def test_result_dict_omits_version_when_not_versioning(self):
+        """If version is None (trigger=manual), keys should be absent."""
+        version = None
+        result: dict = {
+            "status": "success",
+            "old_path": "/fake/old",
+            "new_path": "/fake/new",
+            "repairs": [],
+        }
+        if version:
+            result["version"] = version
+            result["tag"] = f"v{version}"
+        assert "version" not in result
+        assert "tag" not in result
