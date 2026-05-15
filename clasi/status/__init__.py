@@ -52,14 +52,30 @@ def build_status(
     )
 
 
-def narrow_status(full: dict, agent: str, sprint_id: str | None = None, ticket_id: str | None = None) -> dict:  # noqa: ARG001
+def narrow_status(
+    full: dict,
+    agent: str,
+    sprint_id: str | None = None,
+    ticket_id: str | None = None,
+) -> dict:
     """Narrow a full status dict to the scope appropriate for *agent*.
 
-    .. note::
-        Stub implementation — returns the input dict unchanged.
-        Sprint 006 ticket 003 (agent-scope narrowing) provides the real implementation.
+    Delegates to :func:`clasi.status.narrowing.narrow_status`.
+
+    Args:
+        full: The complete status dict produced by :func:`build_status`.
+        agent: The requesting agent role.  One of ``"team-lead"``,
+            ``"sprint-planner"``, or ``"programmer"``.
+        sprint_id: Required for ``sprint-planner``; used as a fallback
+            hint for ``programmer`` when ``ticket_id`` is absent.
+        ticket_id: Required for ``programmer``.
+
+    Returns:
+        A new dict scoped to the agent's view.  Never mutates the input.
     """
-    return full
+    from clasi.status.narrowing import narrow_status as _narrow_status
+
+    return _narrow_status(full, agent, sprint_id=sprint_id, ticket_id=ticket_id)
 
 
 __all__ = ["build_status", "narrow_status"]
