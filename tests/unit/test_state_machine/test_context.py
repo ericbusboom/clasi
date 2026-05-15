@@ -62,6 +62,36 @@ class TestNullStateReader:
     def test_programmer_dispatched_returns_false(self):
         assert self.reader.programmer_dispatched("001", "001-001") is False
 
+    def test_sprint_flag_returns_empty_string(self):
+        assert self.reader.sprint_flag("001", "pre_flight_review") == ""
+
+    def test_branch_merged_returns_false(self):
+        assert self.reader.branch_merged("001") is False
+
+    def test_dependencies_done_returns_false(self):
+        assert self.reader.dependencies_done("001", "001-001") is False
+
+    def test_acceptance_criteria_met_returns_false(self):
+        assert self.reader.acceptance_criteria_met("001", "001-001") is False
+
+    def test_tests_passing_returns_false(self):
+        assert self.reader.tests_passing() is False
+
+    def test_blocker_identified_returns_false(self):
+        assert self.reader.blocker_identified("001", "001-001") is False
+
+    def test_blocker_resolved_returns_false(self):
+        assert self.reader.blocker_resolved("001", "001-001") is False
+
+    def test_reopen_requested_returns_false(self):
+        assert self.reader.reopen_requested("001", "001-001") is False
+
+    def test_any_sprint_in_phase_returns_false(self):
+        assert self.reader.any_sprint_in_phase("executing") is False
+
+    def test_ticket_count_returns_zero(self):
+        assert self.reader.ticket_count("001") == 0
+
     def test_satisfies_state_reader_protocol(self):
         """NullStateReader must satisfy the StateReader protocol at runtime."""
         assert isinstance(self.reader, StateReader)
@@ -215,6 +245,36 @@ class TestProtocolCompliance:
 
             def programmer_dispatched(self, sprint_id: str, ticket_id: str) -> bool:
                 return True
+
+            def sprint_flag(self, sprint_id: str, flag: str) -> str:
+                return ""
+
+            def branch_merged(self, sprint_id: str) -> bool:
+                return False
+
+            def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
+            def acceptance_criteria_met(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
+            def tests_passing(self) -> bool:
+                return False
+
+            def blocker_identified(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
+            def blocker_resolved(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
+            def reopen_requested(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
+            def any_sprint_in_phase(self, phase: str) -> bool:
+                return False
+
+            def ticket_count(self, sprint_id: str) -> int:
+                return 0
 
         reader = CustomReader()
         assert isinstance(reader, StateReader)
