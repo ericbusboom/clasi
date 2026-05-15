@@ -2,9 +2,15 @@
 
 Read-only tools that serve agent, skill, and instruction content
 from the installed package.
+
+MCP tools registered here:
+- get_use_case_coverage — report use case coverage across sprints.
+- get_version — return the installed CLASI package version.
+- get_status — return narrowed project/sprint/ticket status for an agent.
 """
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -559,3 +565,58 @@ def get_version() -> str:
         "metadata_version": metadata_version,
         "source_path": source_path,
     }, indent=2)
+
+
+@server.tool()
+def get_status(
+    agent: str = "team-lead",
+    sprint_id: str | None = None,
+    ticket_id: str | None = None,
+) -> str:
+    """Return narrowed project/sprint/ticket status for the requesting agent.
+
+    Builds the full status report from the real filesystem/git/StateDB
+    then narrows it to the agent's scope.  Returns a JSON string with the
+    same shape as ``clasi status --format json``.
+
+    Args:
+        agent: Agent role.  Defaults to ``$CLASI_AGENT_NAME`` env var,
+            then ``"team-lead"``.  Accepts ``"team-lead"``,
+            ``"sprint-planner"``, or ``"programmer"``.
+        sprint_id: Sprint ID hint (e.g. ``"006"``).  Required for
+            ``sprint-planner`` narrowing; used as a fallback hint for
+            ``programmer`` when ``ticket_id`` is absent.
+        ticket_id: Ticket ID hint (e.g. ``"006-003"``).  Required for
+            ``programmer`` narrowing.
+
+    Returns:
+        A JSON string.  On success: the narrowed status dict.
+        On error: ``{"error": "<message>"}``.
+    """
+    from clasi.status import build_status, narrow_status
+    from clasi.status.formatting import to_json
+
+    try:
+        project = get_project()
+
+        if not project.clasi_dir.is_dir():
+            return json.dumps({"error": "not a CLASI project"})
+
+        resolved_agent: str = agent or os.environ.get("CLASI_AGENT_NAME") or "team-lead"
+
+        full = build_status(
+            project,
+            agent=resolved_agent,
+            sprint_id=sprint_id,
+            ticket_id=ticket_id,
+        )
+        narrowed = narrow_status(
+            full,
+            agent=resolved_agent,
+            sprint_id=sprint_id,
+            ticket_id=ticket_id,
+        )
+        return to_json(narrowed)
+
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": str(exc)})
