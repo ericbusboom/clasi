@@ -641,6 +641,80 @@ def create_ticket(
     return json.dumps(result, indent=2)
 
 
+@server.tool()
+def add_issue_ref(ticket_path: str, issue_filename: str) -> str:
+    """Add a bidirectional link between a ticket and an issue post-creation.
+
+    Idempotent: if the link already exists, returns current state without error.
+
+    The ticket's ``issue:`` frontmatter field is updated (absent/empty → string;
+    string → list; list → append). The issue's ``tickets:`` frontmatter is
+    updated via ``Issue.add_ticket_ref`` (already idempotent).
+
+    Args:
+        ticket_path: Path to the ticket file (absolute or sprint-relative).
+        issue_filename: Filename of the issue (e.g., 'my-idea.md').
+
+    Returns JSON with {ticket_path, issue_filename, ticket_issue_refs, issue_ticket_refs}.
+    """
+    try:
+        resolved_path = resolve_artifact_path(ticket_path)
+    except FileNotFoundError:
+        raise ValueError(f"Ticket not found: {ticket_path}")
+
+    # Derive sprint directory from ticket path (handles tickets/done/ too)
+    tickets_dir = resolved_path.parent
+    if tickets_dir.name == "done":
+        tickets_dir = tickets_dir.parent
+    sprint_dir = tickets_dir.parent
+
+    project = get_project()
+    sprint = Sprint(sprint_dir, project)
+    ticket = Ticket(resolved_path, sprint)
+
+    # Build the full ticket ID: "<sprint_id>-<ticket.id>"
+    full_ticket_id = f"{sprint.id}-{ticket.id}"
+
+    # Read current issue: field and handle all three cases
+    current_issue = ticket._artifact.frontmatter.get("issue", "")
+    if not current_issue:
+        # absent or empty — set to single filename
+        new_issue_value: str | list[str] = issue_filename
+    elif isinstance(current_issue, str):
+        if current_issue == issue_filename:
+            # already present — idempotent, no change
+            new_issue_value = current_issue
+        else:
+            new_issue_value = [current_issue, issue_filename]
+    else:
+        # list
+        issue_list = list(current_issue)
+        if issue_filename in issue_list:
+            # already present — idempotent, no change
+            new_issue_value = issue_list
+        else:
+            issue_list.append(issue_filename)
+            new_issue_value = issue_list
+
+    # Only write if something changed
+    if new_issue_value != current_issue:
+        ticket._artifact.update_frontmatter(issue=new_issue_value)
+
+    # Write the reverse link on the issue
+    issue_obj = project.get_issue(issue_filename)
+    issue_obj.add_ticket_ref(full_ticket_id)
+
+    # Re-read updated ticket issue refs
+    updated_issue_refs = ticket._artifact.frontmatter.get("issue", "")
+
+    return json.dumps({
+        "ticket_path": str(resolved_path),
+        "issue_filename": issue_filename,
+        "ticket_issue_refs": updated_issue_refs,
+        "issue_ticket_refs": issue_obj.tickets,
+    }, indent=2)
+
+
 # --- Query tools (ticket 009) ---
 
 

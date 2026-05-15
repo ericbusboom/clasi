@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clasi.tools.artifact_tools import (
+    add_issue_ref,
     close_sprint,
     create_sprint,
     create_ticket,
@@ -1354,3 +1355,189 @@ class TestLinkSprintIssues:
         sprint_fm = read_frontmatter(self._sprint_dir(work_dir) / "sprint.md")
         assert sprint_fm["issues"].count("item-a.md") == 1
         assert sprint_fm["issues"].count("item-b.md") == 1
+
+
+class TestAddIssueRef:
+    """Tests for the add_issue_ref MCP tool (ticket 002-002)."""
+
+    @pytest.fixture
+    def work_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        set_project(tmp_path)
+        issues = tmp_path / ".clasi" / "issues"
+        issues.mkdir(parents=True)
+        return tmp_path
+
+    def _setup_sprint_with_ticket(self, work_dir, issue_filename: str | None = None):
+        """Create sprint 001, advance to ticketing, create a ticket.
+
+        If issue_filename is given, also create that issue in the pending pool
+        and create the ticket linked to it. Otherwise create an unlinked ticket.
+
+        Returns (sprint_dir, ticket_path, issues_dir).
+        """
+        create_sprint("Test Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        issues_dir = work_dir / ".clasi" / "issues"
+
+        if issue_filename:
+            (issues_dir / issue_filename).write_text(
+                f"---\nstatus: pending\n---\n\n# {issue_filename}\n"
+            )
+            result = json.loads(create_ticket("001", "Task", todo=issue_filename))
+        else:
+            result = json.loads(create_ticket("001", "Task"))
+
+        ticket_path = result["path"]
+
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
+        return sprint_dir, ticket_path, issues_dir
+
+    def _sprint_issues_dir(self, work_dir, sprint_id: str = "001"):
+        """Return the sprint-scoped issues directory."""
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for d in sorted(sprints_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                return d / "issues"
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
+
+    def test_empty_issue_field_set_to_filename(self, work_dir):
+        """Ticket with absent/empty issue: -> after add_issue_ref, issue: 'filename.md'."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(work_dir)
+
+        # Create a separate issue in the pending pool (not linked to ticket)
+        (issues_dir / "my-idea.md").write_text(
+            "---\nstatus: pending\n---\n\n# My Idea\n"
+        )
+
+        result = json.loads(add_issue_ref(ticket_path, "my-idea.md"))
+
+        assert result["issue_filename"] == "my-idea.md"
+        assert result["ticket_issue_refs"] == "my-idea.md"
+
+        ticket_fm = read_frontmatter(ticket_path)
+        assert ticket_fm["issue"] == "my-idea.md"
+
+    def test_string_issue_field_becomes_list(self, work_dir):
+        """Ticket with issue: 'a.md' -> after add_issue_ref(_, 'b.md'), issue: ['a.md', 'b.md']."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(
+            work_dir, "a.md"
+        )
+
+        # Create second issue
+        (issues_dir / "b.md").write_text("---\nstatus: pending\n---\n\n# B\n")
+
+        result = json.loads(add_issue_ref(ticket_path, "b.md"))
+
+        assert result["ticket_issue_refs"] == ["a.md", "b.md"]
+        ticket_fm = read_frontmatter(ticket_path)
+        assert ticket_fm["issue"] == ["a.md", "b.md"]
+
+    def test_list_issue_field_appended(self, work_dir):
+        """Ticket with issue: ['a.md', 'b.md'] -> after add_issue_ref(_, 'c.md'), list has all three."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(
+            work_dir, "a.md"
+        )
+
+        (issues_dir / "b.md").write_text("---\nstatus: pending\n---\n\n# B\n")
+        (issues_dir / "c.md").write_text("---\nstatus: pending\n---\n\n# C\n")
+
+        # Manually set issue: ['a.md', 'b.md'] on the ticket
+        fm = read_frontmatter(ticket_path)
+        fm["issue"] = ["a.md", "b.md"]
+        write_frontmatter(ticket_path, fm)
+
+        result = json.loads(add_issue_ref(ticket_path, "c.md"))
+
+        assert result["ticket_issue_refs"] == ["a.md", "b.md", "c.md"]
+        ticket_fm = read_frontmatter(ticket_path)
+        assert ticket_fm["issue"] == ["a.md", "b.md", "c.md"]
+
+    def test_idempotent_string_ref_already_present(self, work_dir):
+        """Calling twice with same pair -> no duplicate, returns same result."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(
+            work_dir, "a.md"
+        )
+
+        r1 = json.loads(add_issue_ref(ticket_path, "a.md"))
+        r2 = json.loads(add_issue_ref(ticket_path, "a.md"))
+
+        assert r1["ticket_issue_refs"] == r2["ticket_issue_refs"]
+
+        ticket_fm = read_frontmatter(ticket_path)
+        # Still a single string, not a list with duplicates
+        assert ticket_fm["issue"] == "a.md"
+
+    def test_idempotent_list_ref_already_present(self, work_dir):
+        """Calling add_issue_ref twice with same filename in list -> no duplicate."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(
+            work_dir, "a.md"
+        )
+        (issues_dir / "b.md").write_text("---\nstatus: pending\n---\n\n# B\n")
+
+        add_issue_ref(ticket_path, "b.md")
+        add_issue_ref(ticket_path, "b.md")
+
+        ticket_fm = read_frontmatter(ticket_path)
+        issue_list = ticket_fm["issue"]
+        assert isinstance(issue_list, list)
+        assert issue_list.count("b.md") == 1
+
+    def test_issue_tickets_field_gains_ticket_id(self, work_dir):
+        """Issue's tickets: frontmatter gains the full ticket ID after add_issue_ref."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(work_dir)
+        (issues_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
+
+        result = json.loads(add_issue_ref(ticket_path, "idea.md"))
+
+        assert "001-001" in result["issue_ticket_refs"]
+
+        # Verify on disk
+        idea_path = issues_dir / "idea.md"
+        if idea_path.exists():
+            idea_fm = read_frontmatter(idea_path)
+        else:
+            sprint_issues = self._sprint_issues_dir(work_dir)
+            idea_fm = read_frontmatter(sprint_issues / "idea.md")
+        assert "001-001" in idea_fm.get("tickets", [])
+
+    def test_end_state_equivalence_with_create_ticket_todo(self, work_dir):
+        """create_ticket(todo=X) vs create_ticket() + add_issue_ref(_, X) -> same frontmatter state.
+
+        Both paths must produce issue: 'x.md' on the ticket.
+        """
+        create_sprint("Test Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        issues_dir = work_dir / ".clasi" / "issues"
+
+        # Path A: create_ticket with todo= linked
+        (issues_dir / "x.md").write_text("---\nstatus: pending\n---\n\n# X\n")
+        (issues_dir / "y.md").write_text("---\nstatus: pending\n---\n\n# Y\n")
+
+        r_a = json.loads(create_ticket("001", "Ticket A", todo="x.md"))
+        ticket_a_path = r_a["path"]
+
+        # Path B: create_ticket without todo, then add_issue_ref
+        r_b = json.loads(create_ticket("001", "Ticket B"))
+        ticket_b_path = r_b["path"]
+        add_issue_ref(ticket_b_path, "y.md")
+
+        fm_a = read_frontmatter(ticket_a_path)
+        fm_b = read_frontmatter(ticket_b_path)
+
+        assert fm_a["issue"] == "x.md"
+        assert fm_b["issue"] == "y.md"
+
+    def test_ticket_not_found_raises(self, work_dir):
+        """Raises ValueError when ticket_path does not exist."""
+        with pytest.raises(ValueError, match="Ticket not found"):
+            add_issue_ref("/nonexistent/path/ticket.md", "idea.md")
+
+    def test_missing_issue_raises(self, work_dir):
+        """Raises ValueError when issue_filename does not exist in project."""
+        sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(work_dir)
+
+        with pytest.raises((ValueError, Exception)):
+            add_issue_ref(ticket_path, "nonexistent-issue.md")
