@@ -28,6 +28,15 @@ agent during planning, but can also be used standalone.
    - Description and acceptance criteria (checkboxes)
    - Implementation plan: approach, files to create/modify, testing plan,
      documentation updates
+
+   **Issue lifecycle:** When you call `create_ticket(sprint_id, title,
+   todo=<filename>)`, the referenced issue file is physically moved from
+   `.clasi/issues/` into `<sprint>/issues/` and its frontmatter is updated
+   to `status: in-progress`. When all tickets referencing that issue are
+   moved to done, `Issue.move_to_done()` is called automatically, which
+   moves the file into `<sprint>/issues/done/`. No manual
+   `move_issue_to_done` call is needed in the happy path.
+
 5. **Propagate references**: Copy TODO and GitHub issue references to
    ticket frontmatter. List GitHub issues in the sprint doc's
    `## GitHub Issues` section.

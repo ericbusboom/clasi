@@ -132,6 +132,14 @@ planning artifacts for one sprint at a time.
 11. **Advance to ticketing**: If stakeholder approved, call
     `advance_sprint_phase` to move to `ticketing`.
 
+11b. **Split partial-scope issues**: Before creating tickets, review
+    each issue claimed by this sprint. If an issue covers more work than
+    fits in this sprint, call `split_issue(filename, new_filename,
+    new_title, new_body)` to carve out the in-scope piece. The new file
+    is a sibling of the original in the same directory. Then reference
+    `new_filename` in the ticket's `todo` field. The original issue
+    retains the out-of-scope portion for a future sprint.
+
 12. **Create tickets**: Create tickets inline. Tickets are created in
     the sprint's `tickets/` directory with per-sprint numbering (001, 002, ...).
 
