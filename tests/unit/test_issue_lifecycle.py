@@ -314,9 +314,9 @@ class TestListIssuesPendingPool:
 
     def test_lists_pending_issues(self, work_dir):
         """list_issues returns pending issues from the pending pool."""
-        todo = work_dir / ".clasi" / "issues"
-        todo.mkdir(parents=True, exist_ok=True)
-        (todo / "pending.md").write_text("---\nstatus: pending\n---\n\n# Pending\n")
+        issues_dir = work_dir / ".clasi" / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "pending.md").write_text("---\nstatus: pending\n---\n\n# Pending\n")
 
         result = json.loads(list_issues())
         assert len(result) == 1
@@ -326,10 +326,10 @@ class TestListIssuesPendingPool:
 
     def test_excludes_done(self, work_dir):
         """list_issues excludes files in subdirectories (done/, in-progress/)."""
-        todo = work_dir / ".clasi" / "issues"
-        todo.mkdir(parents=True, exist_ok=True)
-        (todo / "active.md").write_text("# Active\n")
-        done = todo / "done"
+        issues_dir = work_dir / ".clasi" / "issues"
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "active.md").write_text("# Active\n")
+        done = issues_dir / "done"
         done.mkdir()
         (done / "finished.md").write_text("# Finished\n")
 

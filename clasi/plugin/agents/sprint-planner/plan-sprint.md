@@ -137,7 +137,7 @@ planning artifacts for one sprint at a time.
     fits in this sprint, call `split_issue(filename, new_filename,
     new_title, new_body)` to carve out the in-scope piece. The new file
     is a sibling of the original in the same directory. Then reference
-    `new_filename` in the ticket's `todo` field. The original issue
+    `new_filename` in the ticket's `issue` field. The original issue
     retains the out-of-scope portion for a future sprint.
 
 12. **Create tickets**: Create tickets inline. Tickets are created in

@@ -827,7 +827,7 @@ def test_docs_clasi_todo_agents_md_created(tmp_path: Path) -> None:
     issues_agents = tmp_path / ".clasi" / "issues" / "AGENTS.md"
     assert issues_agents.exists(), ".clasi/issues/AGENTS.md must exist after install"
     content = issues_agents.read_text(encoding="utf-8")
-    assert "todo" in content.lower() or "move_todo_to_done" in content
+    assert "move_issue_to_done" in content or "issue" in content.lower()
 
 
 def test_docs_clasi_todo_agents_md_removed_on_uninstall(tmp_path: Path) -> None:
@@ -902,9 +902,9 @@ def test_codex_install_full_agents_md_footprint(tmp_path: Path) -> None:
     # --- .clasi/issues/AGENTS.md: issues-dir content ---
     issues_agents = tmp_path / ".clasi" / "issues" / "AGENTS.md"
     assert issues_agents.exists(), ".clasi/issues/AGENTS.md must exist after codex install"
-    todo_content = issues_agents.read_text(encoding="utf-8")
+    issues_agents_content = issues_agents.read_text(encoding="utf-8")
 
-    assert "move_todo_to_done" in todo_content or "todo" in todo_content.lower(), (
+    assert "move_issue_to_done" in issues_agents_content or "issue" in issues_agents_content.lower(), (
         ".clasi/issues/AGENTS.md: must contain issues-dir rule content"
     )
 

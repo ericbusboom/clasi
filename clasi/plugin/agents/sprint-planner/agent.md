@@ -173,7 +173,7 @@ Detail Mode. Otherwise, start in Roadmap Mode.
     - Each ticket traces to at least one use case.
     - Every use case is covered by at least one ticket.
 11. For each ticket, create a file in `tickets/NNN-slug.md` with:
-    - YAML frontmatter: id, title, status (todo), use-cases, depends-on
+    - YAML frontmatter: id, title, status (open), use-cases, depends-on
     - Description and acceptance criteria (checkboxes)
     - Implementation plan: approach, files to create/modify, testing plan,
       documentation updates

@@ -79,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook plan-to-todo"
+            "command": "clasi hook plan-to-issue"
           }
         ]
       }
