@@ -49,15 +49,13 @@ class TestStatusDefaultOutput:
 
     def _invoke(self, extra_args: list[str] | None = None) -> "click.testing.Result":
         runner = CliRunner()
-        with runner.isolated_filesystem(temp_dir=REPO_ROOT):
-            # Change into repo root so .clasi/ is visible.
-            import os
-            orig = os.getcwd()
-            os.chdir(REPO_ROOT)
-            try:
-                return runner.invoke(cli, ["status"] + (extra_args or []))
-            finally:
-                os.chdir(orig)
+        import os
+        orig = os.getcwd()
+        os.chdir(REPO_ROOT)
+        try:
+            return runner.invoke(cli, ["status"] + (extra_args or []))
+        finally:
+            os.chdir(orig)
 
     def test_exit_code_zero(self) -> None:
         result = self._invoke()
