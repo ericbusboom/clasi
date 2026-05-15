@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: clasi status Command
-status: planning-docs
+status: done
 branch: sprint/006-clasi-status-command
 use-cases: []
 issues:
