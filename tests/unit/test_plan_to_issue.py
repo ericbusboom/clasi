@@ -19,10 +19,10 @@ class TestPlanToIssueBasic:
     def test_no_debug_block_in_output(self, tmp_path):
         """Output issue should not contain any debug block."""
         plans_dir = tmp_path / "plans"
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
         _make_plan_file(plans_dir)
 
-        result = plan_to_issue(plans_dir, todo_dir)
+        result = plan_to_issue(plans_dir, issue_dir)
 
         assert result is not None
         content = result.read_text(encoding="utf-8")
@@ -31,9 +31,9 @@ class TestPlanToIssueBasic:
     def test_returns_none_when_plans_dir_missing(self, tmp_path):
         """Returns None when the plans directory does not exist."""
         plans_dir = tmp_path / "nonexistent"
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
-        result = plan_to_issue(plans_dir, todo_dir)
+        result = plan_to_issue(plans_dir, issue_dir)
 
         assert result is None
 
@@ -43,7 +43,7 @@ class TestPlanToIssuePlanFileParam:
         """When plan_file is provided, that specific file is used regardless of mtime."""
         plans_dir = tmp_path / "plans"
         plans_dir.mkdir(parents=True)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
         older = plans_dir / "older-plan.md"
         older.write_text("# Older Plan\n\nOlder content.", encoding="utf-8")
@@ -52,7 +52,7 @@ class TestPlanToIssuePlanFileParam:
         newer = plans_dir / "newer-plan.md"
         newer.write_text("# Newer Plan\n\nNewer content.", encoding="utf-8")
 
-        result = plan_to_issue(plans_dir, todo_dir, plan_file=older)
+        result = plan_to_issue(plans_dir, issue_dir, plan_file=older)
 
         assert result is not None
         content = result.read_text(encoding="utf-8")
@@ -63,12 +63,12 @@ class TestPlanToIssuePlanFileParam:
         """The specific plan_file is deleted after conversion."""
         plans_dir = tmp_path / "plans"
         plans_dir.mkdir(parents=True)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
         plan = plans_dir / "specific.md"
         plan.write_text("# Specific Plan\n\nContent.", encoding="utf-8")
 
-        result = plan_to_issue(plans_dir, todo_dir, plan_file=plan)
+        result = plan_to_issue(plans_dir, issue_dir, plan_file=plan)
 
         assert result is not None
         assert not plan.exists()
@@ -77,10 +77,10 @@ class TestPlanToIssuePlanFileParam:
         """Returns None when plan_file points to a non-existent file."""
         plans_dir = tmp_path / "plans"
         plans_dir.mkdir(parents=True)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
         nonexistent = tmp_path / "ghost.md"
 
-        result = plan_to_issue(plans_dir, todo_dir, plan_file=nonexistent)
+        result = plan_to_issue(plans_dir, issue_dir, plan_file=nonexistent)
 
         assert result is None
 
@@ -88,7 +88,7 @@ class TestPlanToIssuePlanFileParam:
         """When plan_file=None, the newest file in plans_dir is used."""
         plans_dir = tmp_path / "plans"
         plans_dir.mkdir(parents=True)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
         older = plans_dir / "alpha.md"
         older.write_text("# Alpha Plan\n\nOlder.", encoding="utf-8")
@@ -96,7 +96,7 @@ class TestPlanToIssuePlanFileParam:
         newer = plans_dir / "beta.md"
         newer.write_text("# Beta Plan\n\nNewer.", encoding="utf-8")
 
-        result = plan_to_issue(plans_dir, todo_dir, plan_file=None)
+        result = plan_to_issue(plans_dir, issue_dir, plan_file=None)
 
         assert result is not None
         content = result.read_text(encoding="utf-8")
@@ -107,12 +107,12 @@ class TestPlanToIssuePlanFileParam:
         """When plan_file is outside plans_dir, it is still converted correctly."""
         plans_dir = tmp_path / "plans"
         plans_dir.mkdir(parents=True)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
         outside = tmp_path / "external-plan.md"
         outside.write_text("# External Plan\n\nContent from outside.", encoding="utf-8")
 
-        result = plan_to_issue(plans_dir, todo_dir, plan_file=outside)
+        result = plan_to_issue(plans_dir, issue_dir, plan_file=outside)
 
         assert result is not None
         content = result.read_text(encoding="utf-8")
@@ -142,8 +142,8 @@ class TestPlanToIssueFromText:
 
     def test_from_text_creates_issue(self, tmp_path):
         """Plan text with a heading creates an issue file with correct frontmatter."""
-        todo_dir = tmp_path / "todo"
-        result = plan_to_issue_from_text(self._PLAN, todo_dir)
+        issue_dir = tmp_path / "issues"
+        result = plan_to_issue_from_text(self._PLAN, issue_dir)
 
         assert result is not None
         assert result.exists()
@@ -155,42 +155,42 @@ class TestPlanToIssueFromText:
 
     def test_from_text_empty_is_noop(self, tmp_path):
         """Empty text returns None and creates no file."""
-        todo_dir = tmp_path / "todo"
-        result = plan_to_issue_from_text("", todo_dir)
+        issue_dir = tmp_path / "issues"
+        result = plan_to_issue_from_text("", issue_dir)
         assert result is None
 
     def test_from_text_whitespace_only_is_noop(self, tmp_path):
         """Whitespace-only text returns None."""
-        todo_dir = tmp_path / "todo"
-        result = plan_to_issue_from_text("   \n  ", todo_dir)
+        issue_dir = tmp_path / "issues"
+        result = plan_to_issue_from_text("   \n  ", issue_dir)
         assert result is None
 
     def test_from_text_dedup(self, tmp_path):
         """Calling twice with the same text returns None on the second call."""
-        todo_dir = tmp_path / "todo"
-        first = plan_to_issue_from_text(self._PLAN, todo_dir)
+        issue_dir = tmp_path / "issues"
+        first = plan_to_issue_from_text(self._PLAN, issue_dir)
         assert first is not None
 
-        second = plan_to_issue_from_text(self._PLAN, todo_dir)
+        second = plan_to_issue_from_text(self._PLAN, issue_dir)
         assert second is None
 
     def test_from_text_different_content_not_deduped(self, tmp_path):
         """Different text creates a second file (no false dedup)."""
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
         plan_a = "# Plan A\n\nContent A."
         plan_b = "# Plan B\n\nContent B."
 
-        result_a = plan_to_issue_from_text(plan_a, todo_dir)
-        result_b = plan_to_issue_from_text(plan_b, todo_dir)
+        result_a = plan_to_issue_from_text(plan_a, issue_dir)
+        result_b = plan_to_issue_from_text(plan_b, issue_dir)
 
         assert result_a is not None
         assert result_b is not None
         assert result_a != result_b
 
     def test_from_text_dedup_scans_in_progress(self, tmp_path):
-        """Dedup also checks todo_dir/in-progress/ for duplicates."""
-        todo_dir = tmp_path / "todo"
-        in_progress = todo_dir / "in-progress"
+        """Dedup also checks issue_dir/in-progress/ for duplicates."""
+        issue_dir = tmp_path / "issues"
+        in_progress = issue_dir / "in-progress"
         in_progress.mkdir(parents=True)
 
         # Manually place a file with the hash in in-progress
@@ -201,13 +201,13 @@ class TestPlanToIssueFromText:
             encoding="utf-8",
         )
 
-        result = plan_to_issue_from_text(self._PLAN, todo_dir)
+        result = plan_to_issue_from_text(self._PLAN, issue_dir)
         assert result is None
 
     def test_from_text_no_heading_uses_untitled(self, tmp_path):
         """Text without a # heading produces a file named untitled-plan.md."""
-        todo_dir = tmp_path / "todo"
-        result = plan_to_issue_from_text("No heading here.", todo_dir)
+        issue_dir = tmp_path / "issues"
+        result = plan_to_issue_from_text("No heading here.", issue_dir)
         assert result is not None
         assert result.name.startswith("untitled-plan")
 
@@ -215,9 +215,9 @@ class TestPlanToIssueFromText:
         """plan_to_issue still works correctly after the rename."""
         plans_dir = tmp_path / "plans"
         _make_plan_file(plans_dir)
-        todo_dir = tmp_path / "todo"
+        issue_dir = tmp_path / "issues"
 
-        result = plan_to_issue(plans_dir, todo_dir)
+        result = plan_to_issue(plans_dir, issue_dir)
         assert result is not None
         content = result.read_text(encoding="utf-8")
         assert "status: pending" in content
