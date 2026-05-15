@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clasi"
-version = "0.20260514.16"
+version = "0.20260514.22"
 description = "MCP server for AI-driven software engineering process — agents, skills, instructions, and artifact management"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
+    "dotconfig>=0.20260507.2",
     "jinja2>=3.0",
     "jsonschema>=4.0",
     "mcp>=1.0",
@@ -79,3 +80,6 @@ clasr = ["*.md", "platforms/*.md"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["clasi*", "clasr*"]
+
+[tool.uv.sources]
+dotconfig = { path = "/Users/eric/proj/code-projects/dotconfig", editable = true }

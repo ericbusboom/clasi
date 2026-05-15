@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Versioning Consolidation
-status: roadmap
+status: done
 branch: sprint/004-versioning-consolidation
 use-cases: []
 issues:
@@ -39,5 +39,12 @@ The chosen implementation path is Option 2 (thin shim): `clasi.yaml` keeps `load
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Add dotconfig as runtime dependency and verify import surface | — |
+| 002 | Shrink clasi/versioning.py to thin shim re-exporting from dotconfig | 001 |
+| 003 | Eliminate .agents/.clasi-version — verify no write path remains, update docs | 001 |
+| 004 | Migrate tests/unit/test_versioning.py — rewrite against shim | 002 |
+| 005 | Update MCP hot-reload list and verify close_sprint end-to-end JSON shape | 002, 004 |
 
-Tickets execute serially in the order listed.
+Tickets execute serially in the order listed. Tickets 002 and 003 both depend on
+001 only; they may be executed in either order. Ticket 005 is the final integration
+gate and must follow both 002 and 004.
