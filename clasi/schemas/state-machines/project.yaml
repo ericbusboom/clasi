@@ -1,0 +1,70 @@
+machine: project
+context: ProjectContext
+initial: uninitialized
+
+states:
+
+  uninitialized:
+    description: The project has not yet been bootstrapped — no overview exists.
+    invariants:
+      - is_overview_absent
+    transitions:
+      initialize:
+        to: planning
+        conditions: []
+        action: write_overview
+
+  planning:
+    description: |
+      The project has been bootstrapped and is currently between sprints.
+      HEAD is on the default branch; no sprint is executing.
+    invariants:
+      - is_overview_present
+      - is_on_default_branch
+      - is_execution_lock_released
+    transitions:
+      enter-sprint:
+        to: in-sprint
+        conditions:
+          - is_any_sprint_ticketed
+        action: enter_sprint_branch
+
+  in-sprint:
+    description: |
+      Exactly one sprint is currently executing. HEAD is on that sprint's
+      branch and the execution lock is held.
+    invariants:
+      - is_on_sprint_branch
+      - is_execution_lock_held
+      - is_any_sprint_executing
+    transitions:
+      exit-sprint:
+        to: planning
+        conditions: []
+        action: return_to_default_branch
+
+predicates:
+  is_overview_absent:
+    description: Returns True iff docs/clasi/overview.md does not exist.
+  is_overview_present:
+    description: Returns True iff docs/clasi/overview.md exists.
+  is_on_default_branch:
+    description: Returns True iff git HEAD is on the project's default branch (master/main).
+  is_on_sprint_branch:
+    description: Returns True iff git HEAD matches `sprint/<id>-<slug>`.
+  is_execution_lock_held:
+    description: Returns True iff the state DB has an active execution lock.
+  is_execution_lock_released:
+    description: Returns True iff no execution lock is currently held.
+  is_any_sprint_ticketed:
+    description: Returns True iff at least one sprint is in the `ticketed` state, ready to execute.
+  is_any_sprint_executing:
+    description: Returns True iff some sprint is in the `executing` state.
+
+actions:
+  write_overview:
+    description: Generates docs/clasi/overview.md from stakeholder input. Idempotent.
+  enter_sprint_branch:
+    description: Checks out the sprint branch and records the project's in-sprint marker.
+  return_to_default_branch:
+    description: Checks out the default branch and clears the project's in-sprint marker.
