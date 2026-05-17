@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
-    "dotconfig>=0.20260507.2",
+    "dotconfig @ git+https://github.com/ericbusboom/dotconfig.git",
     "jinja2>=3.0",
     "jsonschema>=4.0",
     "mcp>=1.0",
@@ -81,5 +81,3 @@ clasr = ["*.md", "platforms/*.md"]
 where = ["."]
 include = ["clasi*", "clasr*"]
 
-[tool.uv.sources]
-dotconfig = { git = "https://github.com/ericbusboom/dotconfig.git" }
