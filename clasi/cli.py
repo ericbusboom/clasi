@@ -9,6 +9,7 @@ Subcommands:
     clasi mcp                       — Run the MCP server (stdio)
     clasi status                    — Print agent-scoped project status
     clasi tool plan-to-issue        — Convert plan file to issue
+    clasi sprint close <sprint_id>  — Close a sprint
 
 Versioning is delegated to dotconfig. Use ``dotconfig version`` and
 ``dotconfig version bump`` for the user-facing commands. The
@@ -244,6 +245,37 @@ def schema_validate(path: str) -> None:
     except FileNotFoundError:
         click.echo(f"File not found: {path}", err=True)
         raise SystemExit(1)
+
+
+@cli.group()
+def sprint() -> None:
+    """Sprint lifecycle commands."""
+
+
+@sprint.command("close")
+@click.argument("sprint_id")
+@click.option("--branch", "branch_name", default=None,
+              help="Sprint branch name. When provided, enables full lifecycle with git operations.")
+@click.option("--main-branch", default="master", show_default=True,
+              help="Target branch for merge.")
+@click.option("--push-tags/--no-push-tags", default=True, show_default=True,
+              help="Whether to push tags after tagging.")
+@click.option("--delete-branch/--no-delete-branch", default=True, show_default=True,
+              help="Whether to delete the sprint branch after merge.")
+@click.option("--test-command", default=None,
+              help="Shell command to run tests. Pass empty string to skip.")
+def sprint_close(
+    sprint_id: str,
+    branch_name: str | None,
+    main_branch: str,
+    push_tags: bool,
+    delete_branch: bool,
+    test_command: str | None,
+) -> None:
+    """Close a sprint, running tests and git lifecycle operations."""
+    from clasi.tools.artifact_tools import close_sprint
+    click.echo(close_sprint(sprint_id, branch_name, main_branch,
+                            push_tags, delete_branch, test_command))
 
 
 @cli.command()
