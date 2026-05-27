@@ -1,8 +1,9 @@
 ---
-status: in-progress
+status: done
 sprint: '007'
 tickets:
 - 007-001
+- 007-002
 ---
 
 # `close_sprint` arrives with empty params from Claude Code VS Code extension

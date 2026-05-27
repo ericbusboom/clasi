@@ -1,14 +1,14 @@
-pwd---
+---
 id: '007'
-title: "close_sprint MCP Workaround — finalize_sprint Alias and CLI"
-status: planning-docs
+title: "close_sprint MCP Workaround \u2014 finalize_sprint Alias and CLI"
+status: done
 branch: sprint/007-close-sprint-mcp-workaround-finalize-sprint-alias-and-cli
 use-cases:
-  - SUC-001
-  - SUC-002
+- SUC-001
+- SUC-002
 issues: []
 todos:
-  - /Volumes/Proj/proj/code-projects/dotconfig/docs/clasi/todo/vscode-extension-close-sprint-empty-params.md
+- /Volumes/Proj/proj/code-projects/dotconfig/docs/clasi/todo/vscode-extension-close-sprint-empty-params.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
