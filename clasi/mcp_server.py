@@ -145,6 +145,49 @@ class Clasi:
 
         tool_count = len(self.server._tool_manager._tools)
         logger.info("  tools registered: %d", tool_count)
+
+        # Diagnostic: dump every registered tool's input schema, one tool
+        # per log line. Lets us confirm exactly what schema the server
+        # advertises to clients (and the client passes to the model).
+        # See docs/clasi/todo/vscode-extension-close-sprint-empty-params.md
+        for _tool_name in sorted(self.server._tool_manager._tools):
+            _tool = self.server._tool_manager._tools[_tool_name]
+            _schema = getattr(_tool, "parameters", None)
+            if _schema is None:
+                _fn = getattr(_tool, "fn", None)
+                _schema = getattr(_fn, "__schema__", None) if _fn else None
+            try:
+                _schema_json = json.dumps(_schema, sort_keys=True) if _schema else "<no-schema>"
+            except (TypeError, ValueError):
+                _schema_json = repr(_schema)
+            logger.info("SCHEMA %s %s", _tool_name, _schema_json)
+
+        # Diagnostic: monkey-patch JSONRPCMessage.model_validate_json so
+        # we log every raw incoming JSON-RPC envelope BEFORE Pydantic
+        # parses it. Distinguishes "client sent {} on the wire" from
+        # "something in our Python mcp library stripped the args between
+        # the wire and call_tool". The existing call_tool wrapper below
+        # only sees the parsed dict — by then we've lost the wire truth.
+        try:
+            import mcp.types as _mt
+            _orig_validate = _mt.JSONRPCMessage.model_validate_json
+
+            def _logged_validate(json_data, *a, **kw):
+                try:
+                    if isinstance(json_data, (bytes, bytearray)):
+                        text = bytes(json_data).decode("utf-8", errors="replace")
+                    else:
+                        text = str(json_data)
+                    logger.info("RAW_RPC_IN %s", text[:2000].rstrip())
+                except Exception:
+                    pass
+                return _orig_validate(json_data, *a, **kw)
+
+            _mt.JSONRPCMessage.model_validate_json = _logged_validate
+            logger.info("  raw-rpc tap: installed on JSONRPCMessage.model_validate_json")
+        except Exception as _exc:
+            logger.warning("  raw-rpc tap: failed to install (%s)", _exc)
+
         logger.info("CLASI MCP server ready")
 
         # Wrap _tool_manager.call_tool to log every invocation
