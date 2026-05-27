@@ -1,1 +1,1 @@
-/Users/eric/proj/ai-project/clasi/.agents/skills/execute-sprint/SKILL.md
+/Volumes/Proj/proj/ai-projects/clasi/.agents/skills/execute-sprint/SKILL.md

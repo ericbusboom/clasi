@@ -19,10 +19,10 @@ to the user and stop — do not execute any skill.
 | `/se issue <text>` | Create an issue file from the description | Invoke the `issue` skill |
 | `/se init` | Start a new project with a guided interview | Invoke the `project-initiation` skill |
 | `/se report` | Report a bug with the CLASI tools | Invoke the `report` skill |
-| `/se gh-import [repo] [--labels L]` | Import GitHub issues as TODOs | Invoke the `gh-import` skill |
+| `/se gh-import [repo] [--labels L]` | Import GitHub issues as issues | Invoke the `gh-import` skill |
 | `/se knowledge <description>` | Capture hard-won technical understanding | Invoke the `project-knowledge` skill |
 | `/se oop` | Make a quick out-of-process change | Invoke the `oop` skill |
-| `/se plan` | Enter plan mode for a discussed TODO | Enter plan mode via `EnterPlanMode` |
+| `/se plan` | Enter plan mode for a discussed issue | Enter plan mode via `EnterPlanMode` |
 
 Pass any remaining text after the subcommand as the argument to the
 skill (e.g., `/se issue fix the login bug` passes "fix the login bug"

@@ -46,6 +46,6 @@ current sprint, use the `split_issue` MCP tool:
    in the pool.
 3. Both files get mutual cross-link frontmatter (`split_from` on the
    new file, `split_into` appended on the original).
-4. Then call `create_ticket(todo=<new_filename>)` if you want the new
+4. Then call `create_ticket(issue=<new_filename>)` if you want the new
    piece in the current sprint, or leave it in the pool for a future
    sprint.
