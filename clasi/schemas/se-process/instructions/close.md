@@ -18,7 +18,13 @@ which handles the full lifecycle.
    If the stakeholder chooses to review, invoke the `sprint-review`
    skill first.
 
-2. **Call close_sprint**: Invoke the `close_sprint` MCP tool:
+2. **Load the tool schema**: Call `ToolSearch` with query
+   `select:mcp__clasi__close_sprint` to load the tool's parameter schema.
+   This is required because CLASI MCP tools are deferred — calling them
+   without first loading their schema causes all parameters to be silently
+   dropped.
+
+3. **Call close_sprint**: Invoke the `close_sprint` MCP tool:
    ```
    close_sprint(
        sprint_id="NNN",
@@ -43,7 +49,7 @@ which handles the full lifecycle.
    - Version bump and git tag
    - Merge to master, push tags, delete branch
 
-3. **Report result**: On success, report the version tag and merged
+4. **Report result**: On success, report the version tag and merged
    branch. On error, report the blocker and recovery steps.
 
 ## Issue Preconditions
