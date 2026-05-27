@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,20 @@ if TYPE_CHECKING:
     from clasi.sprint import Sprint
     from clasi.state_db_class import StateDB
     from clasi.issue import Issue
+
+log = logging.getLogger(__name__)
+
+
+class SprintNotFoundError(ValueError):
+    """Raised when no sprint directory matches the requested sprint ID."""
+
+
+class SprintFrontmatterError(ValueError):
+    """Raised when a sprint directory exists but its frontmatter is malformed."""
+
+
+class SprintIdMismatchError(ValueError):
+    """Raised when a sprint's frontmatter is valid but the id field is absent or wrong."""
 
 
 class Project:
@@ -70,9 +85,21 @@ class Project:
     # --- Sprint management ---
 
     def get_sprint(self, sprint_id: str) -> Sprint:
-        """Find a sprint by its ID (checks active and done directories)."""
+        """Find a sprint by its ID (checks active and done directories).
+
+        When a directory whose name starts with ``{sprint_id}-`` is found, the
+        frontmatter is validated strictly: a malformed fence raises
+        ``SprintFrontmatterError`` and an absent or mismatched ``id:`` field
+        raises ``SprintIdMismatchError``.  Directories that clearly belong to a
+        different sprint (different name prefix) are skipped silently.
+
+        Raises:
+            SprintFrontmatterError: If the candidate sprint.md has malformed frontmatter.
+            SprintIdMismatchError: If frontmatter parses but id is absent or wrong.
+            SprintNotFoundError: If no sprint directory with the given ID exists.
+        """
         from clasi.sprint import Sprint
-        from clasi.frontmatter import read_frontmatter
+        from clasi.frontmatter import read_frontmatter, MalformedFrontmatterError
 
         for location in [self.sprints_dir, self.sprints_dir / "done"]:
             if not location.exists():
@@ -83,15 +110,52 @@ class Project:
                 sprint_file = d / "sprint.md"
                 if not sprint_file.exists():
                     continue
-                fm = read_frontmatter(sprint_file)
+
+                # Determine whether this directory is the candidate for sprint_id.
+                # Directory names follow the pattern "{id}-{slug}", so a directory
+                # whose name starts with "{sprint_id}-" (or equals sprint_id) is the
+                # candidate.  Others are silently skipped.
+                dir_name = d.name
+                is_candidate = dir_name == sprint_id or dir_name.startswith(f"{sprint_id}-")
+
+                try:
+                    fm = read_frontmatter(sprint_file)
+                except MalformedFrontmatterError as exc:
+                    if is_candidate:
+                        raise SprintFrontmatterError(
+                            f"Malformed frontmatter in {sprint_file}: {exc}"
+                        ) from exc
+                    # Not our candidate — skip
+                    continue
+
+                if is_candidate:
+                    found_id = fm.get("id")
+                    if not found_id:
+                        raise SprintIdMismatchError(
+                            f"Sprint file {sprint_file!r} has no 'id' field in frontmatter"
+                        )
+                    if found_id != sprint_id:
+                        raise SprintIdMismatchError(
+                            f"Sprint file {sprint_file!r} has id {found_id!r}, "
+                            f"but requested id {sprint_id!r}"
+                        )
+                    return Sprint(d, self)
+
+                # Not a candidate — check for exact id match as fallback
+                # (handles directories not following the naming convention).
                 if fm.get("id") == sprint_id:
                     return Sprint(d, self)
-        raise ValueError(f"Sprint '{sprint_id}' not found")
+
+        raise SprintNotFoundError(f"Sprint '{sprint_id}' not found")
 
     def list_sprints(self, status: str | None = None) -> list[Sprint]:
-        """List all sprints, optionally filtered by status."""
+        """List all sprints, optionally filtered by status.
+
+        Corrupt sprint files (malformed frontmatter) are logged as warnings
+        and skipped rather than halting iteration.
+        """
         from clasi.sprint import Sprint
-        from clasi.frontmatter import read_frontmatter
+        from clasi.frontmatter import read_frontmatter, MalformedFrontmatterError
 
         results: list[Sprint] = []
         for location in [self.sprints_dir, self.sprints_dir / "done"]:
@@ -103,7 +167,11 @@ class Project:
                 sprint_file = d / "sprint.md"
                 if not sprint_file.exists():
                     continue
-                fm = read_frontmatter(sprint_file)
+                try:
+                    fm = read_frontmatter(sprint_file)
+                except MalformedFrontmatterError as exc:
+                    log.warning("Skipping sprint file with malformed frontmatter: %s (%s)", sprint_file, exc)
+                    continue
                 sprint_status = fm.get("status", "unknown")
                 if status and sprint_status != status:
                     continue

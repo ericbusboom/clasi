@@ -3,7 +3,12 @@
 import pytest
 from pathlib import Path
 
-from clasi.frontmatter import read_document, read_frontmatter, write_frontmatter
+from clasi.frontmatter import (
+    MalformedFrontmatterError,
+    read_document,
+    read_frontmatter,
+    write_frontmatter,
+)
 
 
 @pytest.fixture
@@ -64,6 +69,57 @@ class TestReadFrontmatter:
     def test_no_frontmatter(self, tmp_md):
         p = tmp_md("No front matter here.\n")
         assert read_frontmatter(p) == {}
+
+
+class TestMalformedFrontmatter:
+    """Tests for MalformedFrontmatterError raised on corrupted fence."""
+
+    def test_malformed_fence_raises(self, tmp_md):
+        """A file whose first line starts with '-' but is not '---' should raise."""
+        p = tmp_md("---bad\nsome content\n")
+        with pytest.raises(MalformedFrontmatterError) as exc_info:
+            read_frontmatter(p)
+        assert str(p) in str(exc_info.value)
+
+    def test_malformed_fence_message_contains_first_line(self, tmp_md):
+        """Error message includes the actual first-line text found."""
+        p = tmp_md("---x\nsome content\n")
+        with pytest.raises(MalformedFrontmatterError) as exc_info:
+            read_frontmatter(p)
+        assert "---x" in str(exc_info.value)
+
+    def test_malformed_fence_single_dash(self, tmp_md):
+        """A single '-' at start also raises."""
+        p = tmp_md("-not-frontmatter\ncontent\n")
+        with pytest.raises(MalformedFrontmatterError):
+            read_frontmatter(p)
+
+    def test_no_frontmatter_returns_empty(self, tmp_md):
+        """File whose first character is not '-' returns {} without raising."""
+        p = tmp_md("# Just a body\nNo frontmatter here.\n")
+        assert read_frontmatter(p) == {}
+
+    def test_no_frontmatter_space_first(self, tmp_md):
+        """File starting with space also returns {}."""
+        p = tmp_md(" ---\nstatus: draft\n---\n")
+        assert read_frontmatter(p) == {}
+
+    def test_valid_frontmatter_parses(self, tmp_md):
+        """Well-formed frontmatter is parsed correctly."""
+        p = tmp_md('---\nid: "001"\n---\n')
+        assert read_frontmatter(p) == {"id": "001"}
+
+    def test_malformed_error_is_value_error_subclass(self, tmp_md):
+        """MalformedFrontmatterError is a subclass of ValueError for backwards compat."""
+        p = tmp_md("---bad\ncontent\n")
+        with pytest.raises(ValueError):
+            read_frontmatter(p)
+
+    def test_read_document_malformed_raises(self, tmp_md):
+        """read_document also raises MalformedFrontmatterError for corrupted fence."""
+        p = tmp_md("---xyz\ncontent\n")
+        with pytest.raises(MalformedFrontmatterError):
+            read_document(p)
 
 
 class TestWriteFrontmatter:
