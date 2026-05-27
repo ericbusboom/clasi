@@ -1,10 +1,16 @@
 """Tests for the Project class."""
 
+import logging
 from pathlib import Path
 
 import pytest
 
-from clasi.project import Project
+from clasi.project import (
+    Project,
+    SprintFrontmatterError,
+    SprintIdMismatchError,
+    SprintNotFoundError,
+)
 
 
 class TestProject:
@@ -174,3 +180,129 @@ class TestGetAgent:
         assert "programmer" in msg
         assert "sprint-planner" in msg
         assert "team-lead" in msg
+
+
+def _make_sprint_dir(
+    proj: Project,
+    dir_name: str,
+    sprint_md_content: str,
+) -> Path:
+    """Helper: create a sprint directory with the given sprint.md content."""
+    sprint_dir = proj.sprints_dir / dir_name
+    sprint_dir.mkdir(parents=True, exist_ok=True)
+    (sprint_dir / "sprint.md").write_text(sprint_md_content, encoding="utf-8")
+    return sprint_dir
+
+
+class TestGetSprintTypedExceptions:
+    """Test that Project.get_sprint raises typed exceptions for each failure mode."""
+
+    def test_get_sprint_not_found_raises(self, tmp_path):
+        """No sprint directories → SprintNotFoundError."""
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(SprintNotFoundError, match="001"):
+            proj.get_sprint("001")
+
+    def test_get_sprint_not_found_is_value_error(self, tmp_path):
+        """SprintNotFoundError is a subclass of ValueError."""
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ValueError):
+            proj.get_sprint("001")
+
+    def test_get_sprint_malformed_frontmatter_raises(self, tmp_path):
+        """Candidate directory with corrupted sprint.md → SprintFrontmatterError."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(proj, "001-bad-sprint", "---bad\nmalformed content\n")
+        with pytest.raises(SprintFrontmatterError) as exc_info:
+            proj.get_sprint("001")
+        assert "sprint.md" in str(exc_info.value)
+
+    def test_get_sprint_frontmatter_error_is_value_error(self, tmp_path):
+        """SprintFrontmatterError is a subclass of ValueError."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(proj, "001-bad-sprint", "---bad-fence\nmalformed\n")
+        with pytest.raises(ValueError):
+            proj.get_sprint("001")
+
+    def test_get_sprint_id_mismatch_raises(self, tmp_path):
+        """Candidate directory with valid frontmatter but wrong id → SprintIdMismatchError."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(
+            proj,
+            "001-wrong-id",
+            '---\nid: "999"\ntitle: "Wrong"\nstatus: draft\n---\n',
+        )
+        with pytest.raises(SprintIdMismatchError) as exc_info:
+            proj.get_sprint("001")
+        msg = str(exc_info.value)
+        assert "999" in msg
+        assert "001" in msg
+
+    def test_get_sprint_id_absent_raises(self, tmp_path):
+        """Candidate directory whose frontmatter has no id field → SprintIdMismatchError."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(
+            proj,
+            "001-no-id",
+            '---\ntitle: "No ID"\nstatus: draft\n---\n',
+        )
+        with pytest.raises(SprintIdMismatchError, match="no 'id' field"):
+            proj.get_sprint("001")
+
+    def test_get_sprint_id_mismatch_is_value_error(self, tmp_path):
+        """SprintIdMismatchError is a subclass of ValueError."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(
+            proj,
+            "001-wrong-id",
+            '---\nid: "999"\ntitle: "Wrong"\nstatus: draft\n---\n',
+        )
+        with pytest.raises(ValueError):
+            proj.get_sprint("001")
+
+    def test_get_sprint_success_with_multiple_dirs(self, tmp_path):
+        """Correct sprint is found among multiple directories."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(
+            proj,
+            "001-first",
+            '---\nid: "001"\ntitle: "First"\nstatus: done\n---\n',
+        )
+        _make_sprint_dir(
+            proj,
+            "002-second",
+            '---\nid: "002"\ntitle: "Second"\nstatus: active\n---\n',
+        )
+        sprint = proj.get_sprint("002")
+        assert sprint.path.name == "002-second"
+
+
+class TestListSprintsCorruptFile:
+    """Test that list_sprints skips corrupt files with a warning."""
+
+    def test_list_sprints_continues_past_corrupt_file(self, tmp_path, caplog):
+        """One corrupt sprint dir and one valid: only valid sprint is returned."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(proj, "001-corrupt", "---bad-fence\nmalformed fence\n")
+        _make_sprint_dir(
+            proj,
+            "002-valid",
+            '---\nid: "002"\ntitle: "Valid"\nstatus: active\n---\n',
+        )
+        with caplog.at_level(logging.WARNING, logger="clasi.project"):
+            results = proj.list_sprints()
+
+        assert len(results) == 1
+        assert results[0].path.name == "002-valid"
+        # Warning was logged naming the corrupt file
+        assert any("001-corrupt" in r.message for r in caplog.records)
+
+    def test_list_sprints_no_exception_propagates(self, tmp_path):
+        """Corrupt sprint files do not raise — iteration completes."""
+        proj = Project(tmp_path)
+        _make_sprint_dir(proj, "001-corrupt", "---xyz\nbad content\n")
+        # Should not raise
+        results = proj.list_sprints()
+        assert results == []

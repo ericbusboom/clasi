@@ -19,24 +19,55 @@ import frontmatter as _fm
 import yaml
 
 
+class MalformedFrontmatterError(ValueError):
+    """Raised when a file's frontmatter fence is present but malformed.
+
+    This is a subclass of ``ValueError`` for backwards compatibility with
+    callers that already catch ``ValueError``.
+    """
+
+
 def read_document(path: str | Path) -> tuple[dict[str, Any], str]:
     """Read a markdown file and return (frontmatter_dict, body_str).
 
     If the file has no frontmatter, returns ({}, full_content).
+
+    Raises:
+        MalformedFrontmatterError: If the file has content whose first line
+            starts with ``-`` but is not exactly ``---``.
     """
     path = Path(path)
     content = path.read_text(encoding="utf-8")
-    return _parse(content)
+    return _parse(content, source_path=path)
 
 
-def _parse(content: str) -> tuple[dict[str, Any], str]:
+def _parse(
+    content: str, source_path: str | Path | None = None
+) -> tuple[dict[str, Any], str]:
     """Parse a string and return (frontmatter_dict, body_str).
 
     Preserves the exact body text as it appears in the file after the
     closing ``---`` delimiter.
+
+    Args:
+        content: Raw file content to parse.
+        source_path: Optional path used in error messages.
+
+    Raises:
+        MalformedFrontmatterError: If content starts with ``-`` but the
+            first line is not exactly ``---``.
     """
-    if not content.startswith("---"):
+    if not content.startswith("-"):
+        # Genuine no-frontmatter: first character is not '-'.
         return {}, content
+
+    first_line = content.split("\n", 1)[0].rstrip("\r")
+    if first_line != "---":
+        path_label = str(source_path) if source_path is not None else "<unknown>"
+        raise MalformedFrontmatterError(
+            f"Malformed frontmatter fence in {path_label!r}: "
+            f"expected '---' but got {first_line!r}"
+        )
 
     # Use python-frontmatter to extract metadata
     post = _fm.loads(content)
