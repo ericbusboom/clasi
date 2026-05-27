@@ -7,6 +7,61 @@ tickets:
 
 # `close_sprint` arrives with empty params from Claude Code VS Code extension
 
+## Status update — 2026-05-26: alias result is in
+
+Sprint 007 shipped both workarounds. The affected user reinstalled
+clasi and reran the diagnostic. **Result: `finalize_sprint` fails
+identically to `close_sprint` — both arrive with `input_value={}`.**
+
+**The tool name is NOT the trigger.** Two tools with different names
+and identical Python signatures fail in exactly the same way. The
+cause is structural — something in the schema fingerprint.
+
+Remaining candidates, in order of distinctiveness vs. working tools
+(per the upstream agent's analysis in the updated bug report):
+
+1. **Boolean optionals with `default: true`** (`push_tags`,
+   `delete_branch`). Unique to the failing schema — no working tool
+   has any boolean params.
+2. **String optionals with a non-null default** (`main_branch="master"`).
+   Also unique to the failing schema. Working tools' string optionals
+   are all `anyOf [string, null]` with `default: null`.
+3. **Total optional-param count** — 5 optionals here vs ≤2 on working
+   tools.
+4. **Mixed `anyOf [string, null]` defaults and plain-type defaults**
+   coexisting in the same schema.
+
+### Next experiment (proposed)
+
+A single cleanly-shaped alias that matches `get_status`'s shape would
+test the schema-fingerprint hypothesis from the other direction:
+
+```python
+@server.tool()
+def finalize_sprint_min(
+    sprint_id: str,
+    branch_name: Optional[str] = None,
+    test_command: Optional[str] = None,
+) -> str:
+    """Minimal-schema alias for close_sprint."""
+    return close_sprint(sprint_id, branch_name=branch_name,
+                        test_command=test_command)
+```
+
+- **If this succeeds** → the cause is "one or more of booleans /
+  non-null string default / count". Bisect with two more aliases (one
+  re-adding the booleans, one re-adding `main_branch`) to localize.
+- **If this fails too** → the trigger is something even more basic
+  than expected. Fall back to the wire-trace ask in the bug report.
+
+The CLI subcommand (`clasi sprint close`) remains the unconditional
+unblock path regardless of how this resolves.
+
+The CLI subcommand (`clasi sprint close`) remains the unconditional
+unblock path regardless of how the structural diagnostic resolves.
+
+---
+
 Downstream CLASI user (inventory project) reports that
 `mcp__clasi__close_sprint` calls from the Claude Code VS Code extension
 arrive at the MCP server with `input_value={}`, producing a Pydantic

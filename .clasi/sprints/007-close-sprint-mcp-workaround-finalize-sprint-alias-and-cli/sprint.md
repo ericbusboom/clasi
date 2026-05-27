@@ -1,4 +1,4 @@
----
+pwd---
 id: '007'
 title: "close_sprint MCP Workaround — finalize_sprint Alias and CLI"
 status: planning-docs
