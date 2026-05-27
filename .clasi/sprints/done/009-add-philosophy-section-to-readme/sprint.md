@@ -1,12 +1,12 @@
 ---
 id: 009
 title: Add Philosophy Section to README
-status: planning-docs
+status: done
 branch: sprint/009-add-philosophy-section-to-readme
 use-cases:
-  - SUC-001
+- SUC-001
 issues:
-  - add-philosophy-section-to-readme.md
+- add-philosophy-section-to-readme.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
