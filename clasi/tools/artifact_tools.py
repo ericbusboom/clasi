@@ -19,6 +19,7 @@ from typing import Optional
 from clasi.artifact import Artifact
 from clasi.frontmatter import read_document, read_frontmatter
 from clasi.mcp_server import server, get_project
+from clasi.project import SprintNotFoundError, SprintFrontmatterError, SprintIdMismatchError
 from clasi.sprint import MergeConflictError, Sprint
 from clasi.state_db import (
     PHASES as _PHASES,
@@ -1141,8 +1142,47 @@ def _close_sprint_full(
     try:
         sprint = project.get_sprint(sprint_id)
         sprint_dir = sprint.path
-    except ValueError:
-        # Sprint dir might already be archived (idempotent retry)
+    except SprintFrontmatterError as e:
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "step": "precondition",
+                "message": str(e),
+                "recovery": {
+                    "recorded": False,
+                    "allowed_paths": [],
+                    "instruction": (
+                        "The sprint.md file has malformed frontmatter. "
+                        "Fix the opening '---' fence in the file named in "
+                        "the message, then call close_sprint again."
+                    ),
+                },
+            },
+            "completed_steps": [],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+        }, indent=2)
+    except SprintIdMismatchError as e:
+        return json.dumps({
+            "status": "error",
+            "error": {
+                "step": "precondition",
+                "message": str(e),
+                "recovery": {
+                    "recorded": False,
+                    "allowed_paths": [],
+                    "instruction": (
+                        "The sprint.md file has a missing or incorrect 'id:' field. "
+                        "Correct the id field in the file named in the message, "
+                        "then call close_sprint again."
+                    ),
+                },
+            },
+            "completed_steps": [],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+        }, indent=2)
+    except (SprintNotFoundError, ValueError):
+        # Sprint dir might already be archived (idempotent retry), or an
+        # unanticipated ValueError sub-class.
         return json.dumps({
             "status": "error",
             "error": {

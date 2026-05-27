@@ -1173,3 +1173,59 @@ class TestCloseSprintLockAndDbGuard:
         db_path_str = str(work_dir / ".clasi" / ".clasi.db")
         db_commit_calls = [c for c in calls if c.args[0][:3] == ["git", "commit", "-m"] and "chore: update .clasi.db" in c.args[0]]
         assert len(db_commit_calls) == 0, "Guard must not commit when not on sprint branch"
+
+
+class TestCloseSprintPreconditionSubcases:
+    """Tests for _close_sprint_full precondition sub-case discrimination (ticket 008-002)."""
+
+    def test_close_sprint_malformed_frontmatter_error(self, work_dir):
+        """Malformed sprint.md frontmatter returns specific error naming the file."""
+        create_sprint("Sprint")
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-sprint"
+        sprint_md = sprint_dir / "sprint.md"
+        # Corrupt the opening fence so frontmatter is unparseable
+        sprint_md.write_text("--- BROKEN FENCE\nid: '001'\n---\n\n# Sprint\n", encoding="utf-8")
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        # Message must name the file path
+        assert str(sprint_md) in result["error"]["message"]
+        # Instruction must say to fix the frontmatter, not to create/restore directory
+        instruction = result["error"]["recovery"]["instruction"]
+        assert "frontmatter" in instruction.lower()
+        assert "create or restore" not in instruction.lower()
+
+    def test_close_sprint_id_mismatch_error(self, work_dir):
+        """Sprint.md with mismatched id field returns specific error naming file and ids."""
+        create_sprint("Sprint")
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-sprint"
+        sprint_md = sprint_dir / "sprint.md"
+        # Valid frontmatter fence but wrong id
+        sprint_md.write_text(
+            "---\nid: '999'\ntitle: Sprint\nstatus: roadmap\n---\n\n# Sprint\n",
+            encoding="utf-8",
+        )
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        # Message must name the found id and the requested id
+        assert "999" in result["error"]["message"]
+        assert "001" in result["error"]["message"]
+        # Instruction must say to correct the id field, not to create/restore directory
+        instruction = result["error"]["recovery"]["instruction"]
+        assert "id" in instruction.lower()
+        assert "create or restore" not in instruction.lower()
+
+    def test_close_sprint_not_found_error(self, work_dir):
+        """Missing sprint directory returns the existing not-found message."""
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        assert "not found" in result["error"]["message"].lower()
+        instruction = result["error"]["recovery"]["instruction"]
+        assert "create or restore" in instruction.lower()
