@@ -6,6 +6,16 @@ that guide an AI assistant through the full lifecycle of a project: from
 requirements through architecture, sprint planning, implementation, and
 release.
 
+## Philosophy
+
+> "It is good to have an end to journey toward; but it is the journey that matters, in the end."
+>
+> — Ursula K. Le Guin, *The Wave in the Mind* (2004)
+
+CLASI is built on the belief that a reliable process is what makes
+good outcomes repeatable. The journey — planning, reviewing, iterating —
+is the work.
+
 ## Installation
 
 Install with [pipx](https://pipx.pypa.io/) directly from GitHub:
