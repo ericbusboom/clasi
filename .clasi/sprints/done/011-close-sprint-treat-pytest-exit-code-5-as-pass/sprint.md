@@ -1,12 +1,12 @@
 ---
 id: '011'
 title: close_sprint treat pytest exit code 5 as pass
-status: planning-docs
+status: done
 branch: sprint/011-close-sprint-treat-pytest-exit-code-5-as-pass
 use-cases:
-  - SUC-001
+- SUC-001
 issues:
-  - close-sprint-fails-on-pytest-exit-code-5.md
+- close-sprint-fails-on-pytest-exit-code-5.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
