@@ -1354,7 +1354,10 @@ def _close_sprint_full(
                 text=True,
                 timeout=300,
             )
-            if test_result.returncode != 0:
+            # Pytest exit codes: 0=all passed, 1=some failed, 2=interrupted,
+            # 3=internal error, 4=usage error, 5=no tests collected.
+            # Exit code 5 is not a failure — repos with no test suite are fine.
+            if test_result.returncode not in (0, 5):
                 error_msg = f"Tests failed (exit code {test_result.returncode})"
                 test_output = test_result.stdout[-2000:] if test_result.stdout else ""
                 if test_result.stderr:

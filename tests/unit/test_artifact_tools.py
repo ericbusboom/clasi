@@ -1,11 +1,19 @@
 """Unit tests for clasi.tools.artifact_tools — focused on update_ticket_status and throw_ticket_exception."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from clasi.tools.artifact_tools import update_ticket_status, throw_ticket_exception
+from clasi.tools.artifact_tools import (
+    close_sprint,
+    create_sprint,
+    update_ticket_status,
+    throw_ticket_exception,
+)
 from clasi.artifact import Artifact
+from clasi.mcp_server import set_project
+from clasi.state_db import acquire_lock, advance_phase, record_gate
 
 
 def _make_ticket(tmp_path, status="open"):
@@ -160,3 +168,57 @@ class TestThrowTicketException:
         artifact = Artifact(path)
         assert artifact.frontmatter["exception"]["thrown_by"] == "sprint-planner"
         assert artifact.frontmatter["exception"]["surface"] == "user-visible"
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by TestCloseSprintExitCode5
+# ---------------------------------------------------------------------------
+
+
+def _advance_to_executing(work_dir, sprint_id: str = "001") -> None:
+    """Advance a sprint through all review gates to executing phase."""
+    db_path = work_dir / ".clasi" / ".clasi.db"
+    advance_phase(db_path, sprint_id)  # roadmap -> planning-docs
+    advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
+    record_gate(db_path, sprint_id, "architecture_review", "passed")
+    advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+    record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
+    advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
+    acquire_lock(db_path, sprint_id)   # lock must be held before ticketing -> executing
+    advance_phase(db_path, sprint_id)  # ticketing -> executing
+
+
+@pytest.fixture
+def work_dir(tmp_path, monkeypatch):
+    """Minimal CLASI project in a temp directory."""
+    monkeypatch.chdir(tmp_path)
+    set_project(tmp_path)
+    return tmp_path
+
+
+def _make_subprocess_result(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
+    """Return a fake subprocess.CompletedProcess-like MagicMock."""
+    result = MagicMock()
+    result.returncode = returncode
+    result.stdout = stdout
+    result.stderr = stderr
+    return result
+
+
+class TestCloseSprintExitCode5:
+    """Pytest exit code 5 (no tests collected) must not be treated as a failure."""
+
+    def test_exit_code_5_does_not_produce_test_failure_error(self, work_dir):
+        """When subprocess returns exit code 5, close_sprint continues past the test step."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+
+        with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run:
+            mock_run.return_value = _make_subprocess_result(5)
+            result = json.loads(close_sprint("001"))
+
+        # The response must NOT be a test-failure error.
+        assert result.get("status") != "error" or result.get("error", {}).get("step") != "tests", (
+            "Exit code 5 (no tests collected) must not be reported as a test failure. "
+            f"Got: {result}"
+        )
