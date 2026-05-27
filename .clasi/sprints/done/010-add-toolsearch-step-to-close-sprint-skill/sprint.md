@@ -1,7 +1,7 @@
 ---
 id: '010'
 title: Add ToolSearch step to close-sprint skill
-status: planning-docs
+status: done
 branch: sprint/010-add-toolsearch-step-to-close-sprint-skill
 use-cases: []
 issues: []
