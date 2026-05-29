@@ -269,7 +269,7 @@ relevant issues into tickets; issues that are not yet scheduled remain open.
 3. **Consume**: When an issue is incorporated into a sprint, it is closed
    via the MCP tool (frontmatter `status: done`).
 
-### 8. Knowledge Directory (`.clasi/knowledge/`)
+### 8. Knowledge Directory (`docs/knowledge/`)
 
 Captures hard-won technical understanding from difficult debugging sessions,
 non-obvious fixes, and solutions that required significant trial and error.
