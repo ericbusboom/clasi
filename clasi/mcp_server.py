@@ -195,6 +195,9 @@ class Clasi:
         _original_call_tool = _tm.call_tool
 
         async def _logged_call_tool(name, arguments, **kwargs):
+            # Strip "NONE" sentinel — agents use this string for optional params
+            # to avoid the Claude Code bug where any empty arg drops all args.
+            arguments = {k: (None if v == "NONE" else v) for k, v in arguments.items()}
             args_summary = {}
             for k, v in arguments.items():
                 s = str(v)
