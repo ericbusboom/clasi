@@ -127,6 +127,9 @@ def write_section(
     label = file_path.name
 
     if not file_path.exists():
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        if file_path.is_symlink():
+            file_path.unlink()
         file_path.write_text(section, encoding="utf-8")
         click.echo(f"  Created: {label}")
         return True
