@@ -1,5 +1,6 @@
 ---
 status: pending
+sprint: '014'
 ---
 
 # Remove finalize_sprint MCP tool alias

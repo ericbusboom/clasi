@@ -1,5 +1,6 @@
 ---
 status: pending
+sprint: '015'
 ---
 
 # Plan: Document the Empty-Argument Tool Call Bug

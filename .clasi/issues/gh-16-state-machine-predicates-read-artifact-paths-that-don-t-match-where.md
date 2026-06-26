@@ -1,6 +1,7 @@
 ---
 status: pending
-github-issue: "ericbusboom/clasi#16"
+github-issue: ericbusboom/clasi#16
+sprint: '012'
 ---
 
 # State-machine predicates read artifact paths that don't match where writers create them (blocks all transitions)

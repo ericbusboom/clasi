@@ -1,6 +1,7 @@
 ---
 status: pending
-github-issue: "ericbusboom/clasi#13"
+github-issue: ericbusboom/clasi#13
+sprint: '014'
 ---
 
 # close_sprint MCP tool lacks test_command parameter (documented but not exposed in schema)

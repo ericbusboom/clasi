@@ -1,6 +1,7 @@
 ---
 status: pending
-github-issue: "ericbusboom/clasi#14"
+github-issue: ericbusboom/clasi#14
+sprint: '014'
 ---
 
 # Cleanup work trees after sprint

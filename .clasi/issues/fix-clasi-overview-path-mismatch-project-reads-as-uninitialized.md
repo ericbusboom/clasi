@@ -1,5 +1,6 @@
 ---
 status: pending
+sprint: '012'
 ---
 
 # Fix CLASI overview path mismatch (project reads as uninitialized)

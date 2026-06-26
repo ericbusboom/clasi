@@ -1,5 +1,6 @@
 ---
 status: pending
+sprint: '014'
 ---
 
 # close_sprint: auto-detect sprint_id from current git branch when not provided

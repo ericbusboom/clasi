@@ -1,6 +1,7 @@
 ---
 status: pending
-github-issue: "ericbusboom/clasi#18"
+github-issue: ericbusboom/clasi#18
+sprint: '012'
 ---
 
 # Predicates read legacy docs/clasi/ bare-ID paths while writers use .clasi/ slugged paths → permanent gate blocks + state_drift

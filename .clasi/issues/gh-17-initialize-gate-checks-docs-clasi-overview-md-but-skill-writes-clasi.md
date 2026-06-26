@@ -1,6 +1,7 @@
 ---
 status: pending
-github-issue: "ericbusboom/clasi#17"
+github-issue: ericbusboom/clasi#17
+sprint: '012'
 ---
 
 # initialize gate checks docs/clasi/overview.md but skill writes .clasi/design/overview.md (path inconsistency strands new projects in 'uninitialized')
