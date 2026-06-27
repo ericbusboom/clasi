@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: Update plugin prompts to new default paths
-status: in-progress
+status: done
 use-cases:
 - SUC-006
 depends-on: []
@@ -38,14 +38,14 @@ run in parallel, but must be committed before the sprint is closed.
 
 ## Acceptance Criteria
 
-- [ ] `grep -r "\.clasi/issues" clasi/plugin/ .claude/` returns no results
+- [x] `grep -r "\.clasi/issues" clasi/plugin/ .claude/` returns no results
       (except comments explaining the migration).
-- [ ] `grep -r "\.clasi/sprints" clasi/plugin/ .claude/` returns no results.
-- [ ] `grep -r "\.clasi/reflections" clasi/plugin/ .claude/` returns no results.
-- [ ] `grep -r "\.clasi/architecture" clasi/plugin/ .claude/` returns no results.
-- [ ] `grep -r "\.clasi/log" clasi/plugin/ .claude/` result count is unchanged
+- [x] `grep -r "\.clasi/sprints" clasi/plugin/ .claude/` returns no results.
+- [x] `grep -r "\.clasi/reflections" clasi/plugin/ .claude/` returns no results.
+- [x] `grep -r "\.clasi/architecture" clasi/plugin/ .claude/` returns no results.
+- [x] `grep -r "\.clasi/log" clasi/plugin/ .claude/` result count is unchanged
       (these references are correct and must NOT be changed).
-- [ ] `uv run pytest` passes (markdown changes should not affect tests).
+- [x] `uv run pytest` passes (markdown changes should not affect tests).
 
 ## Implementation Plan
 
