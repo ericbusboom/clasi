@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Add unit tests for auto-link field fix and non-blocking close
-status: in-progress
+status: done
 use-cases:
 - SUC-001
 - SUC-002
@@ -24,12 +24,12 @@ the existing test files identified in the sprint success criteria.
 
 ## Acceptance Criteria
 
-- [ ] New test case in `tests/unit/test_issue_lifecycle.py` (or `test_issue_tools.py`): `create_ticket` with no `issue=` argument and a sprint that has `issues: [filename]` in frontmatter results in the ticket being linked to that filename.
-- [ ] New test case: `create_ticket` with no `issue=` argument and a sprint that has only `todos: [filename]` (no `issues:` field) still auto-links via the fallback.
-- [ ] New test case in `tests/unit/test_sweep_done_issues.py` (or `test_mcp_server.py`): `close_sprint` (full path) with an in-progress unresolved sprint issue returns a success result (not an error) and includes `unresolved_issues` in the result.
-- [ ] New test case: `close_sprint` (full path) with a deferred issue still closes cleanly (deferred-issue guard still works).
-- [ ] Full test suite passes: `pytest tests/unit/test_sweep_done_issues.py tests/unit/test_issue_lifecycle.py tests/unit/test_issue_tools.py tests/unit/test_mcp_server.py -q`
-- [ ] `pytest -q` (full suite) passes.
+- [x] New test case in `tests/unit/test_issue_lifecycle.py` (or `test_issue_tools.py`): `create_ticket` with no `issue=` argument and a sprint that has `issues: [filename]` in frontmatter results in the ticket being linked to that filename.
+- [x] New test case: `create_ticket` with no `issue=` argument and a sprint that has only `todos: [filename]` (no `issues:` field) still auto-links via the fallback.
+- [x] New test case in `tests/unit/test_sweep_done_issues.py` (or `test_mcp_server.py`): `close_sprint` (full path) with an in-progress unresolved sprint issue returns a success result (not an error) and includes `unresolved_issues` in the result.
+- [x] New test case: `close_sprint` (full path) with a deferred issue still closes cleanly (deferred-issue guard still works).
+- [x] Full test suite passes: `pytest tests/unit/test_sweep_done_issues.py tests/unit/test_issue_lifecycle.py tests/unit/test_issue_tools.py tests/unit/test_mcp_server.py -q`
+- [x] `pytest -q` (full suite) passes.
 
 ## Implementation Plan
 
