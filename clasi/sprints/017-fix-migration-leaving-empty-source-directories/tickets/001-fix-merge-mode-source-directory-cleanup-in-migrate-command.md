@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Fix merge-mode source directory cleanup in migrate_command
-status: in-progress
+status: done
 use-cases:
 - SUC-017-001
 - SUC-017-002
@@ -38,18 +38,18 @@ This ticket applies both fixes to `src/clasi/migrate_command.py`:
 
 ## Acceptance Criteria
 
-- [ ] In `detect_moves`, a destination directory containing only `.gitkeep`
+- [x] In `detect_moves`, a destination directory containing only `.gitkeep`
       causes `mode="move"` to be returned (not `mode="merge"`).
-- [ ] In `detect_moves`, a destination directory containing at least one real
+- [x] In `detect_moves`, a destination directory containing at least one real
       artifact file still causes `mode="merge"` (no-clobber guarantee
       preserved).
-- [ ] In `execute_moves` merge branch, after moving real artifact files, any
+- [x] In `execute_moves` merge branch, after moving real artifact files, any
       `.gitkeep` or `.gitignore` files remaining in the source tree are deleted
       with `unlink()`.
-- [ ] `_cleanup_empty_parents` is called unchanged; no modifications to that
+- [x] `_cleanup_empty_parents` is called unchanged; no modifications to that
       function.
-- [ ] No real artifact files are deleted or clobbered by either fix.
-- [ ] All existing tests in `tests/unit/test_migrate_command.py` and
+- [x] No real artifact files are deleted or clobbered by either fix.
+- [x] All existing tests in `tests/unit/test_migrate_command.py` and
       `tests/unit/test_relocate.py` pass without modification.
 
 ## Implementation Plan

@@ -251,7 +251,12 @@ def detect_moves(project: Project) -> list[Move]:
         if is_file:
             mode = "merge" if dst.exists() else "move"
         else:
-            mode = "merge" if (dst.exists() and any(dst.iterdir())) else "move"
+            dst_artifact_files = (
+                [f for f in dst.iterdir() if f.name not in _NON_ARTIFACT_NAMES]
+                if dst.exists()
+                else []
+            )
+            mode = "merge" if dst_artifact_files else "move"
 
         moves.append(Move(category=category, src=src, dst=dst, mode=mode, is_file=is_file))
 
@@ -333,8 +338,15 @@ def execute_moves(
                 db_moved = True
                 _cleanup_empty_parents(src.parent, root)
         elif move.mode == "move":
-            # Simple directory move — destination is empty or absent.
+            # Simple directory move — destination has no real artifact files.
             dst.mkdir(parents=True, exist_ok=True)
+            # Remove any residual non-artifact housekeeping files (e.g. .gitkeep
+            # placed by init's scaffold) so the destination directory can be
+            # rmdir'd before the wholesale rename.
+            if dst.exists():
+                for _f in list(dst.iterdir()):
+                    if _f.is_file() and _f.name in _NON_ARTIFACT_NAMES:
+                        _f.unlink()
             if is_git:
                 # git mv can move the directory wholesale.
                 click.echo(f"  Moving (git mv): {src} → {dst}")
@@ -367,6 +379,11 @@ def execute_moves(
                         _git_mv(item, target_file, root)
                     else:
                         shutil.move(str(item), str(target_file))
+            # Remove residual non-artifact files (e.g. .gitkeep) so that
+            # _cleanup_empty_parents can rmdir the source directory.
+            for item in sorted(src.rglob("*")):
+                if item.is_file() and item.name in _NON_ARTIFACT_NAMES:
+                    item.unlink()
             # Clean up (now potentially empty) source tree.
             _cleanup_empty_parents(src, root)
 
