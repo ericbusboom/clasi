@@ -1236,6 +1236,7 @@ def _close_sprint_full(
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
     # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
+    unresolved_issues: list[str] = []
 
     # Self-repair: sweep any issues whose tickets are all done before hard-fail check
     _sweep_done_issues(sprint)
@@ -1256,27 +1257,8 @@ def _close_sprint_full(
                         # At least one ticket in this sprint has completes_issue: false
                         # for this issue — it spans future sprints; allow close to proceed
                         continue
-                    # Issue is unresolved and not deferred — unrepairable
-                    error_msg = f"Issue {issue_file.name} is still in-progress for sprint {sprint_id}"
-                    if db.path.exists():
-                        db.write_recovery_state(
-                            sprint_id, "precondition",
-                            [str(issue_file)], error_msg,
-                        )
-                    return json.dumps({
-                        "status": "error",
-                        "error": {
-                            "step": "precondition",
-                            "message": error_msg,
-                            "recovery": {
-                                "recorded": db.path.exists(),
-                                "allowed_paths": [str(issue_file)],
-                                "instruction": f"Complete all tickets referencing {issue_file.name}, then call close_sprint again.",
-                            },
-                        },
-                        "completed_steps": [],
-                        "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
-                    }, indent=2)
+                    # Issue is unresolved and not deferred — collect, do not block
+                    unresolved_issues.append(issue_file.name)
 
     # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
     sprint_issues_done_dir_full = sprint.path / "issues" / "done"
@@ -1579,6 +1561,8 @@ def _close_sprint_full(
         "new_path": str(new_path),
         "repairs": repairs,
     }
+    if unresolved_issues:
+        result["unresolved_issues"] = unresolved_issues
     if version:
         result["version"] = version
         result["tag"] = f"v{version}"

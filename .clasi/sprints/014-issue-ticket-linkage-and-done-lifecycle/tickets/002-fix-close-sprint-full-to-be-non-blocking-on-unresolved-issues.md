@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Fix _close_sprint_full to be non-blocking on unresolved issues
-status: in-progress
+status: done
 use-cases:
 - SUC-002
 depends-on: []
@@ -28,11 +28,11 @@ pass cleanly as before.
 
 ## Acceptance Criteria
 
-- [ ] `_close_sprint_full` does not return an error JSON when in-progress (non-deferred) sprint issues are present.
-- [ ] The success result includes `unresolved_issues: [...]` with the filenames of any unresolved issues.
-- [ ] Deferred issues (where `_issue_is_deferred` returns true) still pass cleanly — no change to that path.
-- [ ] Resolved issues (status: done/complete/completed) are still moved to `done/` via the self-repair path.
-- [ ] `_close_sprint_full` and `_close_sprint_legacy` exhibit identical behavior for unresolved issues.
+- [x] `_close_sprint_full` does not return an error JSON when in-progress (non-deferred) sprint issues are present.
+- [x] The success result includes `unresolved_issues: [...]` with the filenames of any unresolved issues.
+- [x] Deferred issues (where `_issue_is_deferred` returns true) still pass cleanly — no change to that path.
+- [x] Resolved issues (status: done/complete/completed) are still moved to `done/` via the self-repair path.
+- [x] `_close_sprint_full` and `_close_sprint_legacy` exhibit identical behavior for unresolved issues.
 
 ## Implementation Plan
 
