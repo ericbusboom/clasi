@@ -1,7 +1,7 @@
 ---
 id: '012'
 title: State-machine path consistency
-status: planning-docs
+status: done
 branch: sprint/012-state-machine-path-consistency
 use-cases: []
 issues:
