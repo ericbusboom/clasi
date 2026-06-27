@@ -176,28 +176,56 @@ def handle_role_guard(payload: dict) -> None:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
 
-    # Team-lead (tier 0 or unset) can write to .clasi/ for planning
-    # artifacts (todo, reflections, log, overview, architecture) but CANNOT
-    # directly edit sprint artifacts — those must go through MCP tools.
+    # Build allow/block prefix sets from live Project properties.
+    # Each prefix is root-relative so it matches the file_path strings
+    # Claude Code sends (which are also root-relative).
     _proj = get_project()
-    _clasi_prefix = str(_proj.clasi_dir.relative_to(_proj.root)) + "/"
-    _sprints_prefix = str(_proj.sprints_dir.relative_to(_proj.root)) + "/"
-    if agent_tier in ("", "0") and file_path.startswith(_clasi_prefix):
-        if file_path.startswith(_sprints_prefix):
-            # Sprint artifacts are owned by sprint-planner (tier 1) and
-            # managed via MCP tools. Direct edits are blocked to prevent
-            # process violations (e.g. bypassing ticket status transitions).
-            print(
-                "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
-                "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
-                file=sys.stderr,
-            )
-            _exit_hook("role-guard", payload, 2, "blk-sprint")
-        # .clasi/ non-sprint paths (todo/, log/, reflections/, etc.) — ALLOW
-        _exit_hook("role-guard", payload, 0, "clasi-docs")
+
+    def _prefix(p: Path) -> str:
+        """Return root-relative directory prefix with trailing slash.
+
+        Falls back to the string representation of the path if it is not
+        under the project root (e.g. the user configured an absolute path
+        outside the repo).
+        """
+        try:
+            return str(p.relative_to(_proj.root)) + "/"
+        except ValueError:
+            return str(p) + "/"
+
+    _allow_prefixes = [
+        _prefix(_proj.issues_dir),
+        _prefix(_proj.reflections_dir),
+        _prefix(_proj.architecture_dir),
+        _prefix(_proj.design_dir),
+        _prefix(_proj.clasi_dir),   # state files: config.yaml, log/, .clasi.db
+        _prefix(_proj.log_dir),
+    ]
+    _block_prefixes = [
+        _prefix(_proj.sprints_dir),
+    ]
+
+    if agent_tier in ("", "0"):
+        # Check block list first: sprints_dir is owned by sprint-planner/MCP.
+        for blk in _block_prefixes:
+            if file_path.startswith(blk):
+                # Sprint artifacts are owned by sprint-planner (tier 1) and
+                # managed via MCP tools. Direct edits are blocked to prevent
+                # process violations (e.g. bypassing ticket status transitions).
+                print(
+                    "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
+                    "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
+                    file=sys.stderr,
+                )
+                _exit_hook("role-guard", payload, 2, "blk-sprint")
+        # Check allow list: issues, reflections, architecture, design, clasi state.
+        for alw in _allow_prefixes:
+            if file_path.startswith(alw):
+                _exit_hook("role-guard", payload, 0, "artifact-dir")
 
     # Sprint-planner (tier 1) can write to sprint directories they own.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
+    _sprints_prefix = _block_prefixes[0]
     if agent_tier == "1" and file_path.startswith(_sprints_prefix):
         _exit_hook("role-guard", payload, 0, "tier-1")
 

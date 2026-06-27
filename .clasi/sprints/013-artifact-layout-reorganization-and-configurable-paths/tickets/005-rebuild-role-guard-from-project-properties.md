@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: Rebuild role-guard from Project properties
-status: in-progress
+status: done
 use-cases:
 - SUC-005
 depends-on:
@@ -30,19 +30,19 @@ no code changes when paths are customized.
 
 ## Acceptance Criteria
 
-- [ ] The role-guard allow set for tier 0 is built from `Project` properties:
+- [x] The role-guard allow set for tier 0 is built from `Project` properties:
       `issues_dir`, `reflections_dir`, `architecture_dir`, `design_dir`,
       `clasi_dir`, `log_dir`.
-- [ ] The role-guard block set for tier 0 includes `sprints_dir`.
-- [ ] The safe-prefix list (`.claude/`, `CLAUDE.md`, `AGENTS.md`) is unchanged.
-- [ ] Tier-1 (sprint-planner) may still write under `sprints_dir`.
-- [ ] On this repo (with the config pin from ticket 004), a write to
+- [x] The role-guard block set for tier 0 includes `sprints_dir`.
+- [x] The safe-prefix list (`.claude/`, `CLAUDE.md`, `AGENTS.md`) is unchanged.
+- [x] Tier-1 (sprint-planner) may still write under `sprints_dir`.
+- [x] On this repo (with the config pin from ticket 004), a write to
       `.clasi/issues/x.md` is allowed for tier 0 (issues_dir resolves to
       `.clasi/issues`).
-- [ ] A write to `.clasi/sprints/013-.../sprint.md` is blocked for tier 0.
-- [ ] On a fresh install, a write to `clasi/issues/x.md` is allowed (new
+- [x] A write to `.clasi/sprints/013-.../sprint.md` is blocked for tier 0.
+- [x] On a fresh install, a write to `clasi/issues/x.md` is allowed (new
       default).
-- [ ] `uv run pytest` passes.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 
