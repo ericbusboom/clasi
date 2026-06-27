@@ -1,6 +1,8 @@
 ---
-status: pending
+status: in-progress
 sprint: '013'
+tickets:
+- 013-001
 ---
 
 # Reorganize CLASI files: visible `clasi/` artifacts, `docs/` documents, `src/` code, configurable + self-migrating

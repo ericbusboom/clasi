@@ -54,11 +54,11 @@ def _log_hook_event(
     try/except so logging never causes a hook to fail.
     """
     try:
-        base = get_project().clasi_dir
-        if not base.exists():
+        _proj = get_project()
+        if not _proj.clasi_dir.exists():
             return
-        log_dir = base / "log"
-        log_dir.mkdir(exist_ok=True)
+        log_dir = _proj.log_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
         reason_fixed = f"{reason:<12.12}"
@@ -137,7 +137,7 @@ def handle_role_guard(payload: dict) -> None:
     # If no env var, check the DB for the active agent tier
     if not agent_tier:
         try:
-            db_path_tier = get_project().clasi_dir / ".clasi.db"
+            db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
                 agent_tier = get_active_tier(str(db_path_tier))
@@ -156,7 +156,7 @@ def handle_role_guard(payload: dict) -> None:
 
     # Recovery state bypass: allows specific paths during sprint recovery
     # (e.g. resolving merge conflicts) when recorded in the state DB.
-    db_path = get_project().clasi_dir / ".clasi.db"
+    db_path = get_project().db_path
     if db_path.exists():
         try:
             from clasi.state_db import get_recovery_state
@@ -176,28 +176,56 @@ def handle_role_guard(payload: dict) -> None:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
 
-    # Team-lead (tier 0 or unset) can write to .clasi/ for planning
-    # artifacts (todo, reflections, log, overview, architecture) but CANNOT
-    # directly edit sprint artifacts — those must go through MCP tools.
+    # Build allow/block prefix sets from live Project properties.
+    # Each prefix is root-relative so it matches the file_path strings
+    # Claude Code sends (which are also root-relative).
     _proj = get_project()
-    _clasi_prefix = str(_proj.clasi_dir.relative_to(_proj.root)) + "/"
-    _sprints_prefix = str(_proj.sprints_dir.relative_to(_proj.root)) + "/"
-    if agent_tier in ("", "0") and file_path.startswith(_clasi_prefix):
-        if file_path.startswith(_sprints_prefix):
-            # Sprint artifacts are owned by sprint-planner (tier 1) and
-            # managed via MCP tools. Direct edits are blocked to prevent
-            # process violations (e.g. bypassing ticket status transitions).
-            print(
-                "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
-                "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
-                file=sys.stderr,
-            )
-            _exit_hook("role-guard", payload, 2, "blk-sprint")
-        # .clasi/ non-sprint paths (todo/, log/, reflections/, etc.) — ALLOW
-        _exit_hook("role-guard", payload, 0, "clasi-docs")
+
+    def _prefix(p: Path) -> str:
+        """Return root-relative directory prefix with trailing slash.
+
+        Falls back to the string representation of the path if it is not
+        under the project root (e.g. the user configured an absolute path
+        outside the repo).
+        """
+        try:
+            return str(p.relative_to(_proj.root)) + "/"
+        except ValueError:
+            return str(p) + "/"
+
+    _allow_prefixes = [
+        _prefix(_proj.issues_dir),
+        _prefix(_proj.reflections_dir),
+        _prefix(_proj.architecture_dir),
+        _prefix(_proj.design_dir),
+        _prefix(_proj.clasi_dir),   # state files: config.yaml, log/, .clasi.db
+        _prefix(_proj.log_dir),
+    ]
+    _block_prefixes = [
+        _prefix(_proj.sprints_dir),
+    ]
+
+    if agent_tier in ("", "0"):
+        # Check block list first: sprints_dir is owned by sprint-planner/MCP.
+        for blk in _block_prefixes:
+            if file_path.startswith(blk):
+                # Sprint artifacts are owned by sprint-planner (tier 1) and
+                # managed via MCP tools. Direct edits are blocked to prevent
+                # process violations (e.g. bypassing ticket status transitions).
+                print(
+                    "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
+                    "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
+                    file=sys.stderr,
+                )
+                _exit_hook("role-guard", payload, 2, "blk-sprint")
+        # Check allow list: issues, reflections, architecture, design, clasi state.
+        for alw in _allow_prefixes:
+            if file_path.startswith(alw):
+                _exit_hook("role-guard", payload, 0, "artifact-dir")
 
     # Sprint-planner (tier 1) can write to sprint directories they own.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
+    _sprints_prefix = _block_prefixes[0]
     if agent_tier == "1" and file_path.startswith(_sprints_prefix):
         _exit_hook("role-guard", payload, 0, "tier-1")
 
@@ -246,7 +274,7 @@ def handle_mcp_guard(payload: dict) -> None:
     # If no env var, check the DB for the active agent tier
     if not agent_tier:
         try:
-            db_path_tier = get_project().clasi_dir / ".clasi.db"
+            db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
                 agent_tier = get_active_tier(str(db_path_tier))
@@ -280,13 +308,13 @@ def _get_sprint_context() -> tuple[Optional[Path], str]:
     Otherwise log_dir is .clasi/log.
     sprint_id is the active sprint ID string, or empty string if none.
     """
-    base = get_project().clasi_dir
-    if not base.exists():
+    _proj = get_project()
+    if not _proj.clasi_dir.exists():
         return None, ""
-    log_base = base / "log"
-    log_base.mkdir(exist_ok=True)
+    log_base = _proj.log_dir
+    log_base.mkdir(parents=True, exist_ok=True)
 
-    db_path = get_project().clasi_dir / ".clasi.db"
+    db_path = _proj.db_path
     if db_path.exists():
         try:
             from clasi.state_db import get_lock_holder
@@ -483,7 +511,7 @@ def handle_subagent_start(payload: dict) -> None:
     # Register in DB so stop hook can find the log file and tier guard can check tier
     marker_id = agent_id or session_id or "unknown"
     try:
-        db_path = get_project().clasi_dir / ".clasi.db"
+        db_path = get_project().db_path
         if db_path.exists() or (db_path.parent.exists()):
             from clasi.state_db import register_active_agent
             register_active_agent(
@@ -521,7 +549,7 @@ def handle_subagent_stop(payload: dict) -> None:
     log_file = None
     started_at = None
     try:
-        db_path = get_project().clasi_dir / ".clasi.db"
+        db_path = get_project().db_path
         if db_path.exists():
             from clasi.state_db import get_active_agent, remove_active_agent
             record = get_active_agent(str(db_path), marker_id)
@@ -633,7 +661,7 @@ def handle_task_created(payload: dict) -> None:
     # Register in DB so task_completed can find the log file
     task_marker_id = f"task-{task_id}"
     try:
-        db_path = get_project().clasi_dir / ".clasi.db"
+        db_path = get_project().db_path
         if db_path.exists() or (db_path.parent.exists()):
             from clasi.state_db import register_active_agent
             register_active_agent(
@@ -664,7 +692,7 @@ def handle_task_completed(payload: dict) -> None:
     log_file = None
     started_at = None
     try:
-        db_path = get_project().clasi_dir / ".clasi.db"
+        db_path = get_project().db_path
         if db_path.exists():
             from clasi.state_db import get_active_agent, remove_active_agent
             record = get_active_agent(str(db_path), task_marker_id)

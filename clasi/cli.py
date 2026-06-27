@@ -52,7 +52,14 @@ def cli():
     show_default=True,
     help="SE process variant to activate (se or solo).",
 )
-def init(target, plugin, install_claude, install_codex, install_copilot, copy, migrate, process):
+@click.option(
+    "--yes", "--relocate",
+    "yes",
+    is_flag=True,
+    default=False,
+    help="Relocate legacy artifact files without prompting (unattended opt-in).",
+)
+def init(target, plugin, install_claude, install_codex, install_copilot, copy, migrate, process, yes):
     """Initialize a repository for the CLASI SE process.
 
     By default (no --claude, --codex, or --copilot flag), behavior depends on context:
@@ -69,7 +76,8 @@ def init(target, plugin, install_claude, install_codex, install_copilot, copy, m
     Code (plugin mode).  With --copy, alias operations use file copy instead of
     symlink (useful on Windows without Developer Mode).  With --migrate,
     converts legacy direct-copy installs to symlinks.  With --process, selects
-    the SE process variant (se or solo; default: se).
+    the SE process variant (se or solo; default: se).  With --yes/--relocate,
+    relocates any legacy artifact files without interactive prompting.
     """
     from clasi.init_command import run_init
 
@@ -82,6 +90,7 @@ def init(target, plugin, install_claude, install_codex, install_copilot, copy, m
         copy=copy,
         migrate=migrate,
         process=process,
+        yes=yes,
     )
 
 
@@ -140,20 +149,29 @@ def tool_plan_to_issue(plans_dir, issues_dir):
 
 @cli.command()
 @click.argument("target", default=".", type=click.Path(exists=True))
-def migrate(target):
-    """Migrate a project from docs/clasi/ to .clasi/.
+@click.option(
+    "--yes", "--relocate",
+    "yes",
+    is_flag=True,
+    default=False,
+    help="Relocate legacy artifact files without prompting (unattended opt-in).",
+)
+def migrate(target, yes):
+    """Migrate CLASI artifacts from legacy locations to configured paths.
 
-    Moves docs/clasi/ to .clasi/ (using git mv when inside a git repo),
-    updates .gitignore, and re-runs clasi install to refresh rule files
-    and agent prompts.
+    Detects artifact files at legacy locations (e.g. .clasi/issues, docs/clasi/)
+    and moves them to the locations defined in .clasi/config.yaml (or the
+    built-in defaults for new installs).  Uses git mv when inside a git repo.
 
-    Guards:
-      - Exits with an error if .clasi/ already exists (already migrated).
-      - Exits with an error if an execution lock is held.
+    In interactive mode (TTY), lists proposed moves and asks for confirmation.
+    In non-interactive mode (no TTY), warns only and does not move anything
+    unless --yes/--relocate is given.
+
+    Also re-runs clasi install to refresh rule files and agent prompts.
     """
     from clasi.migrate_command import run_migrate
 
-    run_migrate(target)
+    run_migrate(target, yes=yes)
 
 
 @cli.command()

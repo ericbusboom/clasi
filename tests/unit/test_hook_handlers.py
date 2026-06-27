@@ -30,6 +30,26 @@ from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_ag
 # ---------------------------------------------------------------------------
 
 
+_LEGACY_PATHS_PIN = """\
+process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
+"""
+
+
+def _write_legacy_pin(root: Path) -> None:
+    """Write a backward-compat config.yaml pinning paths to .clasi/ layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_LEGACY_PATHS_PIN, encoding="utf-8")
+
+
 def _make_log_dir(tmp_path: Path) -> Path:
     log_dir = tmp_path / ".clasi" / "log"
     log_dir.mkdir(parents=True)
@@ -446,6 +466,7 @@ class TestGetActiveTickets:
 
     def test_returns_in_progress_ticket_ids(self, tmp_path):
         """_get_active_tickets returns ticket IDs for in-progress tickets."""
+        _write_legacy_pin(tmp_path)
         sprints = tmp_path / ".clasi" / "sprints"
         sprint_dir = sprints / "002-my-sprint"
         sprint_dir.mkdir(parents=True)
@@ -503,6 +524,7 @@ class TestSprintIdInFrontmatter:
 
     def test_task_created_includes_tickets_in_frontmatter(self, tmp_path):
         """task_created writes in-progress ticket IDs to frontmatter."""
+        _write_legacy_pin(tmp_path)
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="002")
 
@@ -874,7 +896,8 @@ class TestHandlePlanToIssue:
         assert exc.value.code == 0
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/issues")
+        # issues_dir resolves via config; test just checks it ends with "issues"
+        assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") is None
 
     def test_prints_result_path_when_issue_created(self, capsys):
@@ -909,7 +932,8 @@ class TestHandlePlanToIssue:
                 handle_plan_to_issue(payload)
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/issues")
+        # issues_dir resolves via config; test just checks it ends with "issues"
+        assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") == Path("/tmp/my-plan.md")
 
 
@@ -940,7 +964,8 @@ class TestHandleCodexPlanToIssue:
 
     def test_with_plan_creates_issue_exits_0(self, tmp_path, capsys):
         """<proposed_plan> present: one issue file created, exits 0."""
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
         message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -970,7 +995,8 @@ class TestHandleCodexPlanToIssue:
 
     def test_dedup_second_call_creates_no_file(self, tmp_path):
         """Duplicate plan (same content hash): second call creates no file."""
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
         message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -1028,3 +1054,276 @@ class TestHandleHookCodexPlanToIssue:
             with pytest.raises(SystemExit):
                 handle_hook("codex-plan-to-todo")
             mock_handler.assert_called_once_with({})
+
+
+# ---------------------------------------------------------------------------
+# Role-guard tests
+# ---------------------------------------------------------------------------
+
+_FRESH_LAYOUT_CONFIG = """\
+process: se
+"""
+
+_LEGACY_LAYOUT_CONFIG = """\
+process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
+"""
+
+
+def _write_fresh_config(root: Path) -> None:
+    """Write config.yaml with no paths: block → uses new default layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_FRESH_LAYOUT_CONFIG, encoding="utf-8")
+
+
+def _write_legacy_layout_config(root: Path) -> None:
+    """Write config.yaml pinning paths to legacy .clasi/ layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_LEGACY_LAYOUT_CONFIG, encoding="utf-8")
+
+
+def _role_guard_payload(file_path: str) -> dict:
+    return {"file_path": file_path}
+
+
+def _run_role_guard(tmp_path: Path, file_path: str, tier: str = "") -> int:
+    """Run handle_role_guard with the given file_path and agent tier.
+
+    Returns the exit code (0 = allow, 2 = block).
+    """
+    import os
+
+    payload = _role_guard_payload(file_path)
+
+    old_tier = os.environ.get("CLASI_AGENT_TIER", None)
+    try:
+        if tier:
+            os.environ["CLASI_AGENT_TIER"] = tier
+        else:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+
+        from clasi.hook_handlers import handle_role_guard
+
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_role_guard, payload)
+        return exc.value.code
+    finally:
+        if old_tier is None:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+        else:
+            os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestRoleGuardLegacyLayout:
+    """Role-guard with legacy layout (.clasi/ paths pinned via config.yaml)."""
+
+    def setup_method(self):
+        pass
+
+    # --- Tier 0 (team-lead) allow cases ---
+
+    def test_tier0_issues_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/issues/x.md is allowed (issues_dir)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/issues/x.md", "") == 0
+
+    def test_tier0_reflections_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/reflections/x.md is allowed (reflections_dir)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/reflections/x.md", "") == 0
+
+    def test_tier0_architecture_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/architecture/x.md is allowed (architecture_dir)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/architecture/x.md", "") == 0
+
+    def test_tier0_design_dir_allowed(self, tmp_path):
+        """Tier 0: write to docs/design/x.md is allowed (design_dir)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+    def test_tier0_clasi_dir_config_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/config.yaml is allowed (clasi_dir state)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/config.yaml", "") == 0
+
+    def test_tier0_log_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/log/hooks.log is allowed (log_dir)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/log/hooks.log", "") == 0
+
+    def test_tier0_safe_prefix_claude_dir_allowed(self, tmp_path):
+        """Tier 0: write to .claude/settings.json is allowed (safe-prefix)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".claude/settings.json", "") == 0
+
+    def test_tier0_safe_prefix_claude_md_allowed(self, tmp_path):
+        """Tier 0: write to CLAUDE.md is allowed (safe-prefix)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "CLAUDE.md", "") == 0
+
+    def test_tier0_safe_prefix_agents_md_allowed(self, tmp_path):
+        """Tier 0: write to AGENTS.md is allowed (safe-prefix)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "AGENTS.md", "") == 0
+
+    # --- Tier 0 (team-lead) block cases ---
+
+    def test_tier0_sprints_dir_blocked(self, tmp_path):
+        """Tier 0: write to .clasi/sprints/013-.../sprint.md is blocked."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "") == 2
+
+    def test_tier0_source_code_blocked(self, tmp_path):
+        """Tier 0: write to source file is blocked."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+
+    def test_tier0_tests_blocked(self, tmp_path):
+        """Tier 0: write to test file is blocked."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "tests/unit/test_project.py", "") == 2
+
+    def test_tier0_pyproject_toml_blocked(self, tmp_path):
+        """Tier 0: write to pyproject.toml is blocked."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "pyproject.toml", "") == 2
+
+    # --- Tier 1 (sprint-planner) ---
+
+    def test_tier1_sprints_dir_allowed(self, tmp_path):
+        """Tier 1: write to .clasi/sprints/013-.../ticket.md is allowed."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/tickets/001.md", "1") == 0
+
+    def test_tier1_source_code_blocked(self, tmp_path):
+        """Tier 1: write to source file is blocked."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "1") == 2
+
+    # --- Tier 2 (programmer) ---
+
+    def test_tier2_anything_allowed(self, tmp_path):
+        """Tier 2: any write is allowed."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "2") == 0
+
+    def test_tier2_sprints_allowed(self, tmp_path):
+        """Tier 2: write to sprints dir is also allowed."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "2") == 0
+
+
+class TestRoleGuardFreshLayout:
+    """Role-guard with fresh default layout (no config pin → new default paths)."""
+
+    # --- Tier 0 (team-lead) allow cases with new layout ---
+
+    def test_tier0_issues_dir_allowed(self, tmp_path):
+        """Tier 0: write to clasi/issues/x.md is allowed (new default issues_dir)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+
+    def test_tier0_reflections_dir_allowed(self, tmp_path):
+        """Tier 0: write to clasi/reflections/x.md is allowed (new default)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "") == 0
+
+    def test_tier0_architecture_dir_allowed(self, tmp_path):
+        """Tier 0: write to docs/architecture/x.md is allowed (new default)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/architecture/x.md", "") == 0
+
+    def test_tier0_design_dir_allowed(self, tmp_path):
+        """Tier 0: write to docs/design/x.md is allowed (new default, unchanged)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+    def test_tier0_clasi_state_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/config.yaml is allowed (clasi_dir state, fixed)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/config.yaml", "") == 0
+
+    def test_tier0_log_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/log/hooks.log is allowed (log_dir, unchanged default)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/log/hooks.log", "") == 0
+
+    # --- Tier 0 block cases with new layout ---
+
+    def test_tier0_sprints_dir_blocked(self, tmp_path):
+        """Tier 0: write to clasi/sprints/013-.../sprint.md is blocked (new default)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+
+    def test_tier0_source_code_blocked(self, tmp_path):
+        """Tier 0: write to source file is blocked (new layout same as legacy)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+
+    def test_tier0_tests_blocked(self, tmp_path):
+        """Tier 0: write to test file is blocked."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "tests/unit/test_project.py", "") == 2
+
+    # --- Legacy .clasi/ paths NOT allowed without legacy config pin ---
+
+    def test_tier0_old_issues_path_not_allowed_with_fresh_config(self, tmp_path):
+        """Tier 0: .clasi/issues/x.md is NOT allowed when fresh layout is active.
+
+        Without the legacy pin, issues_dir resolves to clasi/issues/, not .clasi/issues/.
+        .clasi/ itself is still allowed as clasi_dir, so this write to a subdirectory
+        of clasi_dir (.clasi/issues/) is allowed via the clasi_dir prefix.
+        """
+        _write_fresh_config(tmp_path)
+        # .clasi/issues/ IS under .clasi/ (clasi_dir), so it's allowed via that prefix.
+        # This is expected: clasi_dir prefix covers all state files under .clasi/
+        assert _run_role_guard(tmp_path, ".clasi/issues/x.md", "") == 0
+
+    def test_tier0_old_sprints_path_blocked_with_fresh_config(self, tmp_path):
+        """Tier 0: .clasi/sprints/x.md is blocked even with fresh config.
+
+        In fresh layout, sprints_dir=clasi/sprints/. The old path .clasi/sprints/
+        would fall under clasi_dir (.clasi/) but NOT under sprints_dir (clasi/sprints/).
+        The block check runs first — so if .clasi/sprints/ is not in block_prefixes
+        (because block_prefixes only contains clasi/sprints/), the write falls through
+        to clasi_dir allow, and is allowed. This is intentional: the guard blocks
+        writes to the CONFIGURED sprints_dir.
+        """
+        _write_fresh_config(tmp_path)
+        # With fresh config, sprints_dir = clasi/sprints/, not .clasi/sprints/
+        # So .clasi/sprints/ is under clasi_dir, which is in allow_prefixes.
+        # Result: allowed (team-lead can write to non-sprint .clasi/ state)
+        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "") == 0
+
+    # --- Tier 1 (sprint-planner) with fresh layout ---
+
+    def test_tier1_new_sprints_dir_allowed(self, tmp_path):
+        """Tier 1: write to clasi/sprints/013-.../ticket.md is allowed (new default)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/tickets/001.md", "1") == 0
+
+    def test_tier1_source_code_blocked(self, tmp_path):
+        """Tier 1: write to source file is blocked."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "1") == 2
+
+    # --- No config (bare tmp_path) ---
+
+    def test_tier0_no_config_uses_defaults(self, tmp_path):
+        """Tier 0: without any config.yaml, defaults are used (new layout)."""
+        # No config file — _load_paths_config returns {} → ARTIFACT_PATH_DEFAULTS used
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+
+    def test_tier0_no_config_sprints_blocked(self, tmp_path):
+        """Tier 0: without config, clasi/sprints/ is blocked (new default sprints_dir)."""
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2

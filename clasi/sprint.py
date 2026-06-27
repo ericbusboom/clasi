@@ -498,7 +498,7 @@ class Sprint:
 
         # Copy architecture-update to the architecture directory
         if self.architecture_update_md.exists():
-            arch_dir = project.clasi_dir / "architecture"
+            arch_dir = project.architecture_dir
             arch_dir.mkdir(parents=True, exist_ok=True)
             dest = arch_dir / f"architecture-update-{self.id}.md"
             shutil.copy2(str(self.architecture_update_md), str(dest))

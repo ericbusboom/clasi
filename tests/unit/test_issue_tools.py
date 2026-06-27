@@ -1,6 +1,7 @@
 """Unit tests for issue management MCP tools."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,13 +25,34 @@ from clasi.state_db import (
 )
 
 
+_LEGACY_PATHS_PIN = """\
+process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
+"""
+
+
+def _write_legacy_pin(root: Path) -> None:
+    """Write a backward-compat config.yaml pinning paths to .clasi/ layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_LEGACY_PATHS_PIN, encoding="utf-8")
+
+
 @pytest.fixture
 def issue_dir(tmp_path, monkeypatch):
     """Set up a temporary working directory with .clasi/issues/ (pending pool)."""
+    _write_legacy_pin(tmp_path)
     monkeypatch.chdir(tmp_path)
     set_project(tmp_path)
     issue = tmp_path / ".clasi" / "issues"
-    issue.mkdir(parents=True)
+    issue.mkdir(parents=True, exist_ok=True)
     return issue
 
 
@@ -238,6 +260,7 @@ class TestCreateTicketWithIssue:
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         return tmp_path
@@ -342,6 +365,7 @@ class TestCloseSprintIssueHandling:
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         return tmp_path
@@ -860,6 +884,7 @@ class TestMoveTicketToDoneCompletesIssueGuard:
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         return tmp_path
@@ -1005,19 +1030,21 @@ class TestSplitIssue:
     @pytest.fixture
     def issue_dir(self, tmp_path, monkeypatch):
         """Set up a temporary working directory with .clasi/issues/ (pending pool)."""
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         issues = tmp_path / ".clasi" / "issues"
-        issues.mkdir(parents=True)
+        issues.mkdir(parents=True, exist_ok=True)
         return issues
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
         """Set up a working directory suitable for sprint operations."""
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         issues = tmp_path / ".clasi" / "issues"
-        issues.mkdir(parents=True)
+        issues.mkdir(parents=True, exist_ok=True)
         return tmp_path
 
     def _sprint_issues_dir(self, work_dir, sprint_id: str = "001"):
@@ -1237,10 +1264,11 @@ class TestLinkSprintIssues:
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         issues = tmp_path / ".clasi" / "issues"
-        issues.mkdir(parents=True)
+        issues.mkdir(parents=True, exist_ok=True)
         return tmp_path
 
     def _sprint_dir(self, work_dir, sprint_id: str = "001"):
@@ -1362,10 +1390,11 @@ class TestAddIssueRef:
 
     @pytest.fixture
     def work_dir(self, tmp_path, monkeypatch):
+        _write_legacy_pin(tmp_path)
         monkeypatch.chdir(tmp_path)
         set_project(tmp_path)
         issues = tmp_path / ".clasi" / "issues"
-        issues.mkdir(parents=True)
+        issues.mkdir(parents=True, exist_ok=True)
         return tmp_path
 
     def _setup_sprint_with_ticket(self, work_dir, issue_filename: str | None = None):

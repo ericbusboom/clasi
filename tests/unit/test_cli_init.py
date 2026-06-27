@@ -37,9 +37,10 @@ def _has_codex_artifacts(target):
 
 def _has_shared_artifacts(target):
     """True when shared scaffolding is present."""
+    from clasi.project import ARTIFACT_PATH_DEFAULTS
     return (
-        (target / ".clasi" / "issues").exists()
-        and (target / ".clasi" / "log").exists()
+        (target / ARTIFACT_PATH_DEFAULTS["issues"]).exists()
+        and (target / ARTIFACT_PATH_DEFAULTS["logs"]).exists()
         and (target / ".mcp.json").exists()
     )
 

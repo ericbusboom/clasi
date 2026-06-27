@@ -234,7 +234,7 @@ def _find_latest_architecture() -> Path | None:
     Looks for the top-level file in docs/clasi/architecture/ (most recent
     version). Returns None if no architecture documents exist.
     """
-    arch_dir = get_project().clasi_dir / "architecture"
+    arch_dir = get_project().architecture_dir
     if not arch_dir.exists():
         return None
 
@@ -1473,7 +1473,7 @@ def _close_sprint_full(
     completed_steps.append("version_bump")
 
     # ── Step 5b: Commit .clasi.db if still dirty after version_bump ──
-    db_file = project.clasi_dir / ".clasi.db"
+    db_file = project.db_path
     if db_file.exists():
         status_result = subprocess.run(
             ["git", "status", "--porcelain", str(db_file)],

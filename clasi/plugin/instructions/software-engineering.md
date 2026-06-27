@@ -14,12 +14,12 @@ Two distinct concepts govern how work is tracked:
 
 - An **issue** is a proposed change to the system — an idea, bug report,
   enhancement request, or task captured before sprint planning. Issues live
-  in `.clasi/issues/`. They are the raw material that sprint planning draws
+  in `clasi/issues/`. They are the raw material that sprint planning draws
   from. A single issue may spawn one or more tickets, or be deferred
   indefinitely.
 
 - A **ticket** is a concrete implementation step within a sprint. Tickets
-  live in `.clasi/sprints/<sprint-id>/tickets/`. A ticket is derived from
+  live in `clasi/sprints/<sprint-id>/tickets/`. A ticket is derived from
   (and often closes) an issue, but it is scoped to what can be done in a
   single sprint and carries acceptance criteria, a plan, and a status that
   the SE process enforces.
@@ -89,7 +89,7 @@ Contents:
 - Sprint roadmap (rough plan of sprints)
 - Out of scope
 
-### 2. Architecture (`.clasi/architecture/`)
+### 2. Architecture (`docs/architecture/`)
 
 Each sprint contains an `architecture-update.md` in its sprint directory.
 This file is a **planning-time artifact**: the architect authors it at the
@@ -102,14 +102,14 @@ architecture; the per-sprint updates are the record of structural intent over
 time. Canonical design documents (`design/overview.md`, etc.) are
 project-initiation artifacts, frozen after the project is initiated.
 
-The optional `.clasi/architecture/` directory holds **consolidated** architecture
+The optional `docs/architecture/` directory holds **consolidated** architecture
 documents produced by the `consolidate-architecture` skill. These merge
 multiple sprint updates into a single coherent view. They are distinct from
 the per-sprint `architecture-update.md` files and are not required for every
 project:
 
 ```
-.clasi/architecture/
+docs/architecture/
   architecture-014.md   # Consolidated architecture through sprint 014
   architecture-015.md   # Consolidated architecture through sprint 015
   ...
@@ -160,14 +160,14 @@ at the end of the sprint.
 - Label edges with the relationship (calls, depends-on, produces)
 - One diagram per concern; do not overload a single diagram
 
-### 4. Sprints (`.clasi/sprints/NNN-slug/`)
+### 4. Sprints (`clasi/sprints/NNN-slug/`)
 
 Each sprint is a **directory** containing its planning documents and tickets.
 Ticket numbering is per-sprint (starts at 001 within each sprint).
 
 Directory structure:
 ```
-.clasi/sprints/NNN-slug/
+clasi/sprints/NNN-slug/
 ├── sprint.md              # Sprint goals, scope, problem, solution, test strategy
 ├── usecases.md            # Sprint-level use cases (SUC-NNN)
 ├── architecture-update.md # Sprint architecture update (focused diff)
@@ -189,8 +189,8 @@ use-cases: [UC-XXX, ...]
 ---
 ```
 
-Active sprints live in `.clasi/sprints/`. Completed sprints live in
-`.clasi/sprints/done/`.
+Active sprints live in `clasi/sprints/`. Completed sprints live in
+`clasi/sprints/done/`.
 
 ### 5. Tickets (within sprint: `tickets/NNN-slug.md`)
 
@@ -226,7 +226,7 @@ implementation notes.
 | `use-cases` | list | Sprint use-case IDs this ticket satisfies. |
 | `depends-on` | list | Ticket IDs that must be done before this one starts. |
 | `github-issue` | string | Linked GitHub issue number or URL, if any. |
-| `issue` | string | Filename of the issue in `.clasi/issues/` that this ticket addresses, if any. |
+| `issue` | string | Filename of the issue in `clasi/issues/` that this ticket addresses, if any. |
 | `completes_issue` | bool or map | Controls whether linked issues are archived when this ticket is moved to done. **Default: `true`** — the issue is archived once all tickets that reference it are done. Set to `false` (scalar) to suppress archival for **all** issues linked to this ticket. Set to a mapping `{filename.md: false}` to suppress archival for specific issues by filename. Use `false` when this ticket only partially addresses a long-lived multi-sprint umbrella issue that should survive the sprint close. |
 
 ### 6. Ticket Plans (`tickets/NNN-slug-plan.md`)
@@ -247,15 +247,15 @@ Every ticket plan must include:
 A ticket plan without a testing section and a documentation section is
 incomplete.
 
-### 7. Issues Directory (`.clasi/issues/`)
+### 7. Issues Directory (`clasi/issues/`)
 
 A lightweight capture area for proposed changes — ideas, bug reports,
 enhancements, and tasks. Stakeholders and developers add issues here at any
 time, especially when the AI agent is busy with other work.
 
 **Issues vs Tickets** — An issue is a *proposed* change (lives in
-`.clasi/issues/`). A ticket is a *concrete implementation step* within a
-sprint (lives in `.clasi/sprints/<id>/tickets/`). Sprint planning converts
+`clasi/issues/`). A ticket is a *concrete implementation step* within a
+sprint (lives in `clasi/sprints/<id>/tickets/`). Sprint planning converts
 relevant issues into tickets; issues that are not yet scheduled remain open.
 
 **File format:**
@@ -263,7 +263,7 @@ relevant issues into tickets; issues that are not yet scheduled remain open.
 - Each file has a single level-1 heading (`# Title`) followed by description.
 
 **Lifecycle:**
-1. **Capture**: Create a `.md` file in `.clasi/issues/` with the idea.
+1. **Capture**: Create a `.md` file in `clasi/issues/` with the idea.
 2. **Mine**: During sprint planning, the team-lead scans the issues
    directory and discusses relevant items with the stakeholder.
 3. **Consume**: When an issue is incorporated into a sprint, it is closed
@@ -302,7 +302,7 @@ After Stages 1a and 1b are complete, all work is organized into sprints.
 A sprint is a focused batch of work with its own lifecycle, branch, and
 ticket set.
 
-**Sprint directories** live in `.clasi/sprints/NNN-slug/`. Each sprint
+**Sprint directories** live in `clasi/sprints/NNN-slug/`. Each sprint
 directory contains `sprint.md`, `usecases.md`, `architecture-update.md`,
 and a `tickets/` subdirectory (see Artifacts §4 above).
 
@@ -321,13 +321,13 @@ and a `tickets/` subdirectory (see Artifacts §4 above).
    This is an atomic operation — all steps must be completed together:
    a. Merge the sprint branch to main.
    b. Update sprint status to `done` in `sprint.md` frontmatter.
-   c. Move the sprint directory to `.clasi/sprints/done/`.
+   c. Move the sprint directory to `clasi/sprints/done/`.
    d. Delete the sprint branch.
    e. Commit the closure.
    **Never merge the branch without also archiving the sprint directory.**
 
-Active sprints live in `.clasi/sprints/`. Completed sprints live in
-`.clasi/sprints/done/`.
+Active sprints live in `clasi/sprints/`. Completed sprints live in
+`clasi/sprints/done/`.
 
 ### Sprint State Database
 
@@ -545,10 +545,12 @@ each exception in isolation.
 ├── brief.md                     # Top-level brief (legacy)
 ├── usecases.md                  # Top-level use cases (legacy)
 ├── technical-plan.md            # Top-level technical plan (legacy, pre-sprint 016)
-├── architecture/                # Versioned architecture documents
-│   ├── architecture-014.md      # Architecture at end of sprint 014
-│   ├── architecture-015.md      # Architecture at end of sprint 015
-│   └── ...
+docs/
+└── architecture/                # Versioned architecture documents
+    ├── architecture-014.md      # Architecture at end of sprint 014
+    ├── architecture-015.md      # Architecture at end of sprint 015
+    └── ...
+clasi/
 ├── issues/                      # Proposed changes (ideas, bugs, enhancements)
 │   └── some-idea.md             # One issue per file
 ├── knowledge/                   # Hard-won technical understanding

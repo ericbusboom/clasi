@@ -17,11 +17,11 @@ them into sprints.
 
 - `.clasi/design/overview.md` (must exist)
 - Current architecture (if available)
-- Issue files in `.clasi/issues/`
+- Issue files in `clasi/issues/`
 
 ## Process
 
-1. **Read issues**: Scan `.clasi/issues/` for pending issue files.
+1. **Read issues**: Scan `clasi/issues/` for pending issue files.
    Read each to understand the work requested.
 
 2. **Group into sprints** based on:
