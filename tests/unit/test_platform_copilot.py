@@ -285,7 +285,7 @@ def test_install_calls_print_cloud_mcp_notice(tmp_path: Path, capsys: pytest.Cap
 _EXPECTED_PATH_RULES = [
     ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
     ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
-    ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
+    ("source-code.instructions.md", "{src/clasi/**,src/clasr/**}", SOURCE_CODE_BODY),
 ]
 
 

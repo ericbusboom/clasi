@@ -10,11 +10,14 @@ from pathlib import Path
 
 import pytest
 
+import clasi.schemas as _schemas_pkg
 from clasi.schemas import loader
 from clasi.schemas.models import WorkflowSchema
 
-# Path relative to repo root; loader.load() accepts Path or str.
-_SCHEMA_PATH = Path("clasi/schemas/se-process/schema.yaml")
+# Derive the schema path from the installed package so the test is
+# robust regardless of the current working directory.
+_SCHEMAS_DIR = Path(_schemas_pkg.__file__).resolve().parent
+_SCHEMA_PATH = _SCHEMAS_DIR / "se-process" / "schema.yaml"
 
 _EXPECTED_ORDER = [
     "roadmap",
@@ -70,7 +73,11 @@ class TestSeSchemaLoads:
     def test_all_instruction_stubs_exist(self):
         """All 8 instruction stub files referenced in the schema exist on disk."""
         schema = loader.load(_SCHEMA_PATH)
+        _PREFIX = "clasi/schemas/"
         for artifact in schema.artifacts:
             if artifact.instruction is not None:
-                stub = Path(artifact.instruction)
+                rel = artifact.instruction
+                if rel.startswith(_PREFIX):
+                    rel = rel[len(_PREFIX):]
+                stub = _SCHEMAS_DIR / rel
                 assert stub.exists(), f"Missing instruction stub: {stub}"
