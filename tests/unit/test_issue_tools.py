@@ -851,15 +851,16 @@ class TestCloseSprintIssueHandling:
             f"Expected repair for pool-done.md in: {repairs}"
         )
 
-    def test_full_inprogress_issue_hard_fails(self, work_dir):
-        """Full lifecycle path: in-progress issue at top level that is not deferred hard-fails.
+    def test_full_inprogress_issue_non_blocking(self, work_dir):
+        """Full lifecycle path: in-progress issue at top level that is not deferred
+        is non-blocking — close succeeds and includes the filename in unresolved_issues.
 
         Place an in-progress issue directly in <sprint>/issues/ without any
-        ticket to reference it (so it is NOT deferred). Precondition check
-        should return a structured error with step: 'precondition'.
+        ticket to reference it (so it is NOT deferred). The full path should
+        collect it in unresolved_issues and continue to a success result.
 
         We use branch_name to trigger the full path, but close returns before
-        any subprocess calls (precondition fails before tests step).
+        any subprocess calls (tests step runs but git is mocked by the tmp env).
         """
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -874,9 +875,8 @@ class TestCloseSprintIssueHandling:
         )
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
-        assert result.get("status") == "error"
-        assert result["error"]["step"] == "precondition"
-        assert "blocker.md" in result["error"]["message"]
+        assert result.get("status") == "success"
+        assert "blocker.md" in result.get("unresolved_issues", [])
 
 
 class TestMoveTicketToDoneCompletesIssueGuard:

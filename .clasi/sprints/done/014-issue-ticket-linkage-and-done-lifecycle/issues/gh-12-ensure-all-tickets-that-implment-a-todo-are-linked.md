@@ -1,7 +1,9 @@
 ---
-status: pending
+status: in-progress
 github-issue: ericbusboom/clasi#12
-sprint: '013'
+sprint: '014'
+tickets:
+- 014-001
 ---
 
 # Ensure all tickets that implment a todo are linked.

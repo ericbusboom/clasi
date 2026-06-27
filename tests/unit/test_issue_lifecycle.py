@@ -653,3 +653,114 @@ class TestSprintIssuesDirUnit:
         issues = sprint.list_issues()
         assert len(issues) == 3
         assert [i.path.name for i in issues] == ["aaa.md", "bbb.md", "ccc.md"]
+
+
+# ---------------------------------------------------------------------------
+# Auto-link field fix tests (Sprint 014 ticket 003, A1)
+# ---------------------------------------------------------------------------
+
+
+class TestCreateTicketAutoLinkField:
+    """create_ticket auto-link reads issues: field first, falls back to todos:.
+
+    Tests for the Sprint 014 fix: the auto-link block in create_ticket was
+    reading sprint frontmatter's todos: field, but link_sprint_issues writes
+    issues: instead. The fix reads issues: first and falls back to todos: for
+    legacy sprint compatibility.
+    """
+
+    def _find_sprint_dir(self, work_dir, sprint_id: str = "001") -> Path:
+        sprints_dir = work_dir / ".clasi" / "sprints"
+        for d in sorted(sprints_dir.iterdir()):
+            if d.is_dir() and d.name.startswith(sprint_id + "-"):
+                return d
+        raise ValueError(f"Sprint dir for {sprint_id!r} not found")
+
+    def test_auto_link_reads_issues_field(self, work_dir):
+        """create_ticket with no issue= argument auto-links when sprint has issues: field.
+
+        When the sprint frontmatter has issues: [filename] (as written by
+        link_sprint_issues), calling create_ticket without an explicit issue=
+        argument should auto-link the ticket to that issue filename.
+        """
+        create_sprint("Auto-Link Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        # Create an issue in the pending pool
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "linked-idea.md").write_text(
+            "---\nstatus: pending\n---\n\n# Linked Idea\n", encoding="utf-8"
+        )
+
+        # Write issues: [filename] directly to sprint frontmatter (simulating
+        # what link_sprint_issues would write)
+        sprint_dir = self._find_sprint_dir(work_dir, "001")
+        sprint_doc = sprint_dir / "sprint.md"
+        fm = read_frontmatter(sprint_doc)
+        fm["issues"] = ["linked-idea.md"]
+        write_frontmatter(sprint_doc, fm)
+
+        # Call create_ticket without issue= — auto-link should fire via issues: field
+        result = json.loads(create_ticket("001", "Implement Linked Idea"))
+
+        ticket_path = result["path"]
+        ticket_fm = read_frontmatter(ticket_path)
+
+        # Ticket must have issue: set from the auto-link
+        assert ticket_fm.get("issue") == "linked-idea.md", (
+            f"Expected ticket issue: 'linked-idea.md', got: {ticket_fm.get('issue')!r}"
+        )
+
+        # Issue must have been moved to sprint issues dir with status in-progress
+        sprint_issues_dir = sprint_dir / "issues"
+        assert (sprint_issues_dir / "linked-idea.md").exists(), (
+            "Issue must be in sprint issues dir after auto-link"
+        )
+        issue_fm = read_frontmatter(sprint_issues_dir / "linked-idea.md")
+        assert issue_fm["status"] == "in-progress"
+
+    def test_auto_link_falls_back_to_todos_field(self, work_dir):
+        """create_ticket auto-link uses todos: as fallback when issues: is absent.
+
+        Legacy sprints may have todos: in their frontmatter. When issues: is
+        absent (or empty), the auto-link should fall back to todos: to preserve
+        backward compatibility.
+        """
+        create_sprint("Legacy Auto-Link Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        # Create an issue in the pending pool
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "legacy-idea.md").write_text(
+            "---\nstatus: pending\n---\n\n# Legacy Idea\n", encoding="utf-8"
+        )
+
+        # Write ONLY todos: to sprint frontmatter (legacy sprint format, no issues:)
+        sprint_dir = self._find_sprint_dir(work_dir, "001")
+        sprint_doc = sprint_dir / "sprint.md"
+        fm = read_frontmatter(sprint_doc)
+        # Ensure issues: is absent or empty, and todos: is set
+        fm.pop("issues", None)
+        fm["todos"] = ["legacy-idea.md"]
+        write_frontmatter(sprint_doc, fm)
+
+        # Call create_ticket without issue= — auto-link should fire via todos: fallback
+        result = json.loads(create_ticket("001", "Implement Legacy Idea"))
+
+        ticket_path = result["path"]
+        ticket_fm = read_frontmatter(ticket_path)
+
+        # Ticket must have issue: set from the todos: fallback
+        assert ticket_fm.get("issue") == "legacy-idea.md", (
+            f"Expected ticket issue: 'legacy-idea.md', got: {ticket_fm.get('issue')!r}"
+        )
+
+        # Issue must have been moved to sprint issues dir
+        sprint_issues_dir = sprint_dir / "issues"
+        assert (sprint_issues_dir / "legacy-idea.md").exists(), (
+            "Issue must be in sprint issues dir after todos: fallback auto-link"
+        )
+        issue_fm = read_frontmatter(sprint_issues_dir / "legacy-idea.md")
+        assert issue_fm["status"] == "in-progress"
