@@ -69,8 +69,29 @@ def _mark_ticket_done(ticket_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+_LEGACY_PATHS_PIN = """\
+process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
+"""
+
+
+def _write_legacy_pin(root: Path) -> None:
+    """Write a backward-compat config.yaml pinning paths to .clasi/ layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_LEGACY_PATHS_PIN, encoding="utf-8")
+
+
 @pytest.fixture
 def work_dir(tmp_path, monkeypatch):
+    _write_legacy_pin(tmp_path)
     monkeypatch.chdir(tmp_path)
     set_project(tmp_path)
     return tmp_path

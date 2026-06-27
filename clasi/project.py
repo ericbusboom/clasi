@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
+
 if TYPE_CHECKING:
     from clasi.agent import Agent
     from clasi.sprint import Sprint
@@ -13,6 +15,41 @@ if TYPE_CHECKING:
     from clasi.issue import Issue
 
 log = logging.getLogger(__name__)
+
+# Default root-relative paths for each artifact category.
+# These are the NEW visible layout defaults for fresh installs.
+# Existing installs can override any entry via .clasi/config.yaml paths: map.
+ARTIFACT_PATH_DEFAULTS: dict[str, str] = {
+    "issues": "clasi/issues",
+    "sprints": "clasi/sprints",
+    "reflections": "clasi/reflections",
+    "architecture": "docs/architecture",
+    "design": "docs/design",
+    "logs": ".clasi/log",
+    "db": ".clasi/.clasi.db",
+}
+
+
+def _load_paths_config(root: Path) -> dict:
+    """Read .clasi/config.yaml and return the paths: mapping.
+
+    Returns data["paths"] when it is a dict[str, str], returns {} on
+    FileNotFoundError, YAMLError, or wrong type. Never raises.
+    """
+    config_path = root / ".clasi" / "config.yaml"
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            paths = data.get("paths")
+            if isinstance(paths, dict):
+                return paths
+        return {}
+    except FileNotFoundError:
+        return {}
+    except yaml.YAMLError:
+        return {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 class SprintNotFoundError(ValueError):
@@ -33,6 +70,7 @@ class Project:
     def __init__(self, root: str | Path):
         self._root = Path(root).resolve()
         self._db: StateDB | None = None
+        self._paths: dict | None = None
 
     @property
     def root(self) -> Path:
@@ -40,33 +78,59 @@ class Project:
 
     @property
     def clasi_dir(self) -> Path:
-        """.clasi/ directory — root for all CLASI artifacts."""
+        """.clasi/ directory — fixed hidden state anchor; not configurable."""
         return self._root / ".clasi"
 
-    @property
-    def design_dir(self) -> Path:
-        """docs/design/ directory — overview, specification, usecases."""
-        return self._root / "docs" / "design"
+    # --- Configurable path resolution ---
 
-    @property
-    def sprints_dir(self) -> Path:
-        """.clasi/sprints/ directory."""
-        return self.clasi_dir / "sprints"
+    def _path_config(self) -> dict:
+        """Return the paths: mapping from .clasi/config.yaml (lazy, cached)."""
+        if self._paths is None:
+            self._paths = _load_paths_config(self._root)
+        return self._paths
+
+    def _resolve_dir(self, key: str) -> Path:
+        """Return the root-relative path for *key* honoring config overrides."""
+        override = self._path_config().get(key)
+        rel = override if override else ARTIFACT_PATH_DEFAULTS[key]
+        return self._root / rel
+
+    # --- Category path properties ---
 
     @property
     def issues_dir(self) -> Path:
-        """.clasi/issues/ pending pool directory."""
-        return self.clasi_dir / "issues"
+        """Pending pool directory (default: clasi/issues/)."""
+        return self._resolve_dir("issues")
 
     @property
-    def log_dir(self) -> Path:
-        """.clasi/log/ directory."""
-        return self.clasi_dir / "log"
+    def sprints_dir(self) -> Path:
+        """Sprints directory (default: clasi/sprints/)."""
+        return self._resolve_dir("sprints")
+
+    @property
+    def reflections_dir(self) -> Path:
+        """Reflections directory (default: clasi/reflections/)."""
+        return self._resolve_dir("reflections")
 
     @property
     def architecture_dir(self) -> Path:
-        """.clasi/architecture/ directory."""
-        return self.clasi_dir / "architecture"
+        """Architecture documents directory (default: docs/architecture/)."""
+        return self._resolve_dir("architecture")
+
+    @property
+    def design_dir(self) -> Path:
+        """Design documents directory (default: docs/design/)."""
+        return self._resolve_dir("design")
+
+    @property
+    def log_dir(self) -> Path:
+        """Log directory (default: .clasi/log/)."""
+        return self._resolve_dir("logs")
+
+    @property
+    def db_path(self) -> Path:
+        """Path to the SQLite database file (default: .clasi/.clasi.db)."""
+        return self._resolve_dir("db")
 
     @property
     def mcp_config_path(self) -> Path:
@@ -79,7 +143,7 @@ class Project:
         if self._db is None:
             from clasi.state_db_class import StateDB
 
-            self._db = StateDB(self.clasi_dir / ".clasi.db")
+            self._db = StateDB(self.db_path)
         return self._db
 
     # --- Sprint management ---

@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Configurable path layer in Project
-status: open
+status: done
 use-cases:
 - SUC-001
 - SUC-003
@@ -36,30 +36,30 @@ ticket 002.
 
 ## Acceptance Criteria
 
-- [ ] `ARTIFACT_PATH_DEFAULTS` dict is defined at module level in
+- [x] `ARTIFACT_PATH_DEFAULTS` dict is defined at module level in
       `clasi/project.py` with keys: `issues`, `sprints`, `reflections`,
       `architecture`, `design`, `logs`, `db`. Values are: `clasi/issues`,
       `clasi/sprints`, `clasi/reflections`, `docs/architecture`, `docs/design`,
       `.clasi/log`, `.clasi/.clasi.db`.
-- [ ] `_load_paths_config(root: Path) -> dict` is a module-level function that
+- [x] `_load_paths_config(root: Path) -> dict` is a module-level function that
       reads `root/.clasi/config.yaml`, returns `data["paths"]` when it is a
       `dict[str, str]`, returns `{}` on `FileNotFoundError`, `YAMLError`, or
       wrong type. Never raises.
-- [ ] `Project.__init__` initialises `self._paths: dict | None = None`.
-- [ ] `Project._path_config()` lazily calls `_load_paths_config` on first call
+- [x] `Project.__init__` initialises `self._paths: dict | None = None`.
+- [x] `Project._path_config()` lazily calls `_load_paths_config` on first call
       and caches the result as `self._paths`.
-- [ ] `Project._resolve_dir(key: str) -> Path` returns
+- [x] `Project._resolve_dir(key: str) -> Path` returns
       `self._root / (self._path_config().get(key) or ARTIFACT_PATH_DEFAULTS[key])`.
-- [ ] `issues_dir`, `sprints_dir`, `architecture_dir`, `design_dir`, `log_dir`
+- [x] `issues_dir`, `sprints_dir`, `architecture_dir`, `design_dir`, `log_dir`
       all delegate to `_resolve_dir`.
-- [ ] `reflections_dir` is a new property delegating to `_resolve_dir("reflections")`.
-- [ ] `db_path` is a new property delegating to `_resolve_dir("db")` (returns a
+- [x] `reflections_dir` is a new property delegating to `_resolve_dir("reflections")`.
+- [x] `db_path` is a new property delegating to `_resolve_dir("db")` (returns a
       `Path` to the SQLite file).
-- [ ] `db` property uses `self.db_path` instead of `self.clasi_dir / ".clasi.db"`.
-- [ ] `clasi_dir` is unchanged (still `.clasi/`).
-- [ ] With no `paths:` key, each property returns the new default.
-- [ ] With a `paths:` override, the override is returned.
-- [ ] Malformed `paths:` (non-dict, bad YAML) falls back to defaults silently.
+- [x] `db` property uses `self.db_path` instead of `self.clasi_dir / ".clasi.db"`.
+- [x] `clasi_dir` is unchanged (still `.clasi/`).
+- [x] With no `paths:` key, each property returns the new default.
+- [x] With a `paths:` override, the override is returned.
+- [x] Malformed `paths:` (non-dict, bad YAML) falls back to defaults silently.
 
 ## Implementation Plan
 

@@ -368,6 +368,12 @@ class TestInconsistencyDetection:
         clasi_dir = tmp_path / ".clasi"
         clasi_dir.mkdir()
 
+        # Write legacy paths pin so Project resolves sprints_dir to .clasi/sprints
+        (clasi_dir / "config.yaml").write_text(
+            "process: se\npaths:\n  sprints: .clasi/sprints\n",
+            encoding="utf-8",
+        )
+
         # Write a minimal state DB so sprint lookup works
         sprints_dir = clasi_dir / "sprints" / "099-test-sprint"
         sprints_dir.mkdir(parents=True)
@@ -413,6 +419,12 @@ class TestInconsistencyDetection:
 
         clasi_dir = tmp_path / ".clasi"
         clasi_dir.mkdir()
+
+        # Write legacy paths pin so Project resolves sprints_dir to .clasi/sprints
+        (clasi_dir / "config.yaml").write_text(
+            "process: se\npaths:\n  sprints: .clasi/sprints\n",
+            encoding="utf-8",
+        )
 
         sprints_dir = clasi_dir / "sprints" / "098-test-sprint"
         sprints_dir.mkdir(parents=True)

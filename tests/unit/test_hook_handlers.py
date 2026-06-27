@@ -30,6 +30,26 @@ from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_ag
 # ---------------------------------------------------------------------------
 
 
+_LEGACY_PATHS_PIN = """\
+process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
+"""
+
+
+def _write_legacy_pin(root: Path) -> None:
+    """Write a backward-compat config.yaml pinning paths to .clasi/ layout."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text(_LEGACY_PATHS_PIN, encoding="utf-8")
+
+
 def _make_log_dir(tmp_path: Path) -> Path:
     log_dir = tmp_path / ".clasi" / "log"
     log_dir.mkdir(parents=True)
@@ -446,6 +466,7 @@ class TestGetActiveTickets:
 
     def test_returns_in_progress_ticket_ids(self, tmp_path):
         """_get_active_tickets returns ticket IDs for in-progress tickets."""
+        _write_legacy_pin(tmp_path)
         sprints = tmp_path / ".clasi" / "sprints"
         sprint_dir = sprints / "002-my-sprint"
         sprint_dir.mkdir(parents=True)
@@ -503,6 +524,7 @@ class TestSprintIdInFrontmatter:
 
     def test_task_created_includes_tickets_in_frontmatter(self, tmp_path):
         """task_created writes in-progress ticket IDs to frontmatter."""
+        _write_legacy_pin(tmp_path)
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="002")
 
@@ -874,7 +896,8 @@ class TestHandlePlanToIssue:
         assert exc.value.code == 0
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/issues")
+        # issues_dir resolves via config; test just checks it ends with "issues"
+        assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") is None
 
     def test_prints_result_path_when_issue_created(self, capsys):
@@ -909,7 +932,8 @@ class TestHandlePlanToIssue:
                 handle_plan_to_issue(payload)
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
-        assert str(args[1]).endswith(".clasi/issues")
+        # issues_dir resolves via config; test just checks it ends with "issues"
+        assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") == Path("/tmp/my-plan.md")
 
 
@@ -940,7 +964,8 @@ class TestHandleCodexPlanToIssue:
 
     def test_with_plan_creates_issue_exits_0(self, tmp_path, capsys):
         """<proposed_plan> present: one issue file created, exits 0."""
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
         message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
         payload = self._payload(message)
 
@@ -970,7 +995,8 @@ class TestHandleCodexPlanToIssue:
 
     def test_dedup_second_call_creates_no_file(self, tmp_path):
         """Duplicate plan (same content hash): second call creates no file."""
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
         message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
         payload = self._payload(message)
 

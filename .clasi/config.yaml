@@ -1,1 +1,9 @@
 process: se
+paths:
+  issues: .clasi/issues
+  sprints: .clasi/sprints
+  reflections: .clasi/reflections
+  architecture: .clasi/architecture
+  design: docs/design
+  logs: .clasi/log
+  db: .clasi/.clasi.db
