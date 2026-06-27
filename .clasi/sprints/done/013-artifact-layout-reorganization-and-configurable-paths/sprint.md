@@ -1,7 +1,7 @@
 ---
 id: '013'
 title: Artifact layout reorganization and configurable paths
-status: roadmap
+status: done
 branch: sprint/013-artifact-layout-reorganization-and-configurable-paths
 use-cases:
 - SUC-001
