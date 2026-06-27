@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Remove finalize_sprint alias
-status: open
+status: in-progress
 use-cases:
 - SUC-015-003
 depends-on: []
