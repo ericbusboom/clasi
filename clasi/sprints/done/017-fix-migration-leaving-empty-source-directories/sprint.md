@@ -1,7 +1,7 @@
 ---
 id: '017'
 title: Fix migration leaving empty source directories
-status: planning-docs
+status: done
 branch: sprint/017-fix-migration-leaving-empty-source-directories
 use-cases:
 - SUC-017-001
