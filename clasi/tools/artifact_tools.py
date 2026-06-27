@@ -1011,25 +1011,6 @@ def close_sprint(
     return _close_sprint_legacy(sprint_id)
 
 
-@server.tool()
-def finalize_sprint(
-    sprint_id: str,
-    branch_name: Optional[str] = None,
-    main_branch: str = "master",
-    push_tags: bool = True,
-    delete_branch: bool = True,
-    test_command: Optional[str] = None,
-) -> str:
-    """Alias for close_sprint. See close_sprint for full documentation.
-
-    This alias exists to isolate the tool name as a diagnostic variable
-    for a VS Code extension bug where close_sprint params are dropped.
-    If this tool succeeds where close_sprint fails, the name is the trigger.
-    """
-    return close_sprint(sprint_id, branch_name, main_branch,
-                        push_tags, delete_branch, test_command)
-
-
 def _close_sprint_legacy(sprint_id: str) -> str:
     """Original close_sprint behavior: archive + state, no git."""
     project = get_project()

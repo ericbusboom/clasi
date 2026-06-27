@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Remove finalize_sprint alias
-status: in-progress
+status: done
 use-cases:
 - SUC-015-003
 depends-on: []
@@ -24,12 +24,12 @@ Remove the alias and all associated test/registry entries.
 
 ## Acceptance Criteria
 
-- [ ] The `finalize_sprint` function (lines ~1014–1030 in `clasi/tools/artifact_tools.py`) is deleted.
-- [ ] `tests/unit/test_finalize_sprint_alias.py` is deleted entirely.
-- [ ] `tests/unit/test_mcp_server.py`: `"finalize_sprint"` is removed from `EXPECTED_ARTIFACT_TOOLS` and the expected tool count is decremented accordingly.
-- [ ] `clasi/plugin/skills/close-sprint/SKILL.md` contains no references to `finalize_sprint`.
-- [ ] `uv run pytest -q` passes with no regressions.
-- [ ] `close_sprint` behavior is unchanged.
+- [x] The `finalize_sprint` function (lines ~1014–1030 in `clasi/tools/artifact_tools.py`) is deleted.
+- [x] `tests/unit/test_finalize_sprint_alias.py` is deleted entirely.
+- [x] `tests/unit/test_mcp_server.py`: `"finalize_sprint"` is removed from `EXPECTED_ARTIFACT_TOOLS` and the expected tool count is decremented accordingly.
+- [x] `clasi/plugin/skills/close-sprint/SKILL.md` contains no references to `finalize_sprint`.
+- [x] `uv run pytest -q` passes with no regressions.
+- [x] `close_sprint` behavior is unchanged.
 
 ## Implementation Plan
 

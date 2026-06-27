@@ -83,7 +83,6 @@ class TestToolRegistration:
         "review_sprint_pre_execution",
         "review_sprint_pre_close",
         "review_sprint_post_close",
-        "finalize_sprint",
     }
 
     EXPECTED_DISPATCH_TOOLS: set[str] = set()
@@ -108,7 +107,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 36
+        assert len(registered) == 35
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
