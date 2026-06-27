@@ -552,7 +552,7 @@ def test_source_dir_immutable(workspace: dict) -> None:
 
 def test_no_clasi_imports() -> None:
     """Verify clasr.platforms.codex has no 'from clasi' or 'import clasi' imports."""
-    module_path = Path(__file__).parent.parent.parent / "clasr" / "platforms" / "codex.py"
+    module_path = Path(__file__).parent.parent.parent / "src" / "clasr" / "platforms" / "codex.py"
     source = module_path.read_text(encoding="utf-8")
     for line in source.splitlines():
         stripped = line.strip()

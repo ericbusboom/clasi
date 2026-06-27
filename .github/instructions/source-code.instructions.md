@@ -1,5 +1,5 @@
 ---
-applyTo: "clasi/**"
+applyTo: "{src/clasi/**,src/clasr/**}"
 ---
 
 You are modifying source code or tests. Before writing code:

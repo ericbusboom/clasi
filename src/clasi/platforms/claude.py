@@ -52,7 +52,7 @@ RULES: Dict[str, str] = {
         "---\npaths:\n  - .clasi/**\n---\n\n" + CLASI_ARTIFACTS_BODY
     ),
     "source-code.md": (
-        "---\npaths:\n  - clasi/**\n  - tests/**\n---\n\n" + SOURCE_CODE_BODY
+        "---\npaths:\n  - src/clasi/**\n  - src/clasr/**\n  - tests/**\n---\n\n" + SOURCE_CODE_BODY
     ),
     "todo-dir.md": (
         "---\npaths:\n  - .clasi/issues/**\n---\n\n" + TODO_DIR_BODY

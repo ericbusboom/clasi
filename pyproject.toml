@@ -51,10 +51,10 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 branch = true
 source = ["clasi", "clasr"]
 omit = [
-    "clasi/plugin/hooks/role_guard.py",
-    "clasi/cli.py",
-    "clasi/hook_handlers.py",
-    "clasi/mcp_server.py",
+    "*/clasi/plugin/hooks/role_guard.py",
+    "*/clasi/cli.py",
+    "*/clasi/hook_handlers.py",
+    "*/clasi/mcp_server.py",
 ]
 
 [tool.coverage.report]
@@ -78,6 +78,6 @@ clasi = [
 clasr = ["*.md", "platforms/*.md"]
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["clasi*", "clasr*"]
 

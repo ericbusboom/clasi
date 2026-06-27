@@ -207,7 +207,7 @@ def _uninstall_global_instructions(target: Path) -> None:
 _PATH_RULES: list[tuple[str, str, str]] = [
     ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
     ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
-    ("source-code.instructions.md", "clasi/**", SOURCE_CODE_BODY),
+    ("source-code.instructions.md", "{src/clasi/**,src/clasr/**}", SOURCE_CODE_BODY),
 ]
 
 
