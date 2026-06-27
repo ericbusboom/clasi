@@ -1038,7 +1038,7 @@ class TestSprintArchive:
         arch_update.write_text("---\nstatus: final\n---\n# Update\n", encoding="utf-8")
         s = Sprint(sprint_dir, proj)
         s.archive()
-        arch_dir = proj.clasi_dir / "architecture"
+        arch_dir = proj.architecture_dir
         dest = arch_dir / "architecture-update-001.md"
         assert dest.exists()
 
