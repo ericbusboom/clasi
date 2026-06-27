@@ -1,7 +1,7 @@
 ---
 id: '016'
 title: Security and housekeeping
-status: planning-docs
+status: done
 branch: sprint/016-security-and-housekeeping
 use-cases: []
 issues:
