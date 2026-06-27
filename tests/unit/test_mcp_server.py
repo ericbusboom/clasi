@@ -29,6 +29,13 @@ class TestContentPath:
     def test_resolves_rules_directory(self):
         assert content_path("plugin", "rules").is_dir()
 
+    def test_tool_call_empty_args_rule_exists(self):
+        rule = content_path("plugin", "rules", "tool-call-empty-args.md")
+        assert rule.is_file()
+        content = rule.read_text(encoding="utf-8")
+        assert 'paths: ["**"]' in content
+        assert "NONE" in content
+
 
 class TestServer:
     def test_server_instance_exists(self):

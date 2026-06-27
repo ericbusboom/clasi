@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Create tool-call-empty-args rule file in plugin/rules
-status: in-progress
+status: done
 use-cases:
 - SUC-016-005
 depends-on:
@@ -30,14 +30,14 @@ Depends on ticket 002 because the rule must accurately describe the extraction o
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/rules/tool-call-empty-args.md` exists.
-- [ ] Frontmatter contains `paths: ["**"]` so the file loads in all sessions.
-- [ ] File documents the confirmed bug: empty or null argument in a tool call causes all arguments to be silently dropped; the tool receives `input_value={}`.
-- [ ] File documents the mitigation: pass `"NONE"` (literal string) for any optional parameter instead of empty/null.
-- [ ] File documents server-side stripping: `_strip_none_sentinel` in `clasi/mcp_server.py` converts `"NONE"` to `None` before dispatch, so tool functions receive `None` and apply their defaults.
-- [ ] File documents the ToolSearch-first requirement: deferred MCP tools must have their schema fetched via `ToolSearch` before they can be called.
-- [ ] `clasi init` installs this file into `.claude/rules/` in the target project (verify that the Claude platform installer already copies all `plugin/rules/*.md` files; no installer code change needed if so).
-- [ ] `uv run pytest` is green (no new test required for this ticket, but existing tests must pass — including the content smoke test if one covers `plugin/rules/`).
+- [x] `clasi/plugin/rules/tool-call-empty-args.md` exists.
+- [x] Frontmatter contains `paths: ["**"]` so the file loads in all sessions.
+- [x] File documents the confirmed bug: empty or null argument in a tool call causes all arguments to be silently dropped; the tool receives `input_value={}`.
+- [x] File documents the mitigation: pass `"NONE"` (literal string) for any optional parameter instead of empty/null.
+- [x] File documents server-side stripping: `_strip_none_sentinel` in `clasi/mcp_server.py` converts `"NONE"` to `None` before dispatch, so tool functions receive `None` and apply their defaults.
+- [x] File documents the ToolSearch-first requirement: deferred MCP tools must have their schema fetched via `ToolSearch` before they can be called.
+- [x] `clasi init` installs this file into `.claude/rules/` in the target project (installer did not automatically copy `plugin/rules/*.md`; added `tool-call-empty-args.md` to the `RULES` dict in `claude.py` and `TOOL_CALL_EMPTY_ARGS_BODY` to `_rules.py` — same pattern as all other rules).
+- [x] `uv run pytest` is green (no new test required for this ticket, but existing tests must pass — including the content smoke test if one covers `plugin/rules/`).
 
 ## Implementation Plan
 
