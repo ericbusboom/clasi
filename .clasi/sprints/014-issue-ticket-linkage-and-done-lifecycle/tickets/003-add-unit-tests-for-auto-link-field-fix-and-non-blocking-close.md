@@ -1,11 +1,15 @@
 ---
-id: "003"
-title: "Add unit tests for auto-link field fix and non-blocking close"
-status: open
-use-cases: [SUC-001, SUC-002]
-depends-on: ["001", "002"]
-github-issue: ""
-issue: ""
+id: '003'
+title: Add unit tests for auto-link field fix and non-blocking close
+status: in-progress
+use-cases:
+- SUC-001
+- SUC-002
+depends-on:
+- '001'
+- '002'
+github-issue: ''
+issue: ''
 completes_issue: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
