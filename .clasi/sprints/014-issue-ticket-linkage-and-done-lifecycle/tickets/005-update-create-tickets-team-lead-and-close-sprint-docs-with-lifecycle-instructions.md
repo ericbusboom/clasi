@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: Update create-tickets, team-lead, and close-sprint docs with lifecycle instructions
-status: in-progress
+status: done
 use-cases:
 - SUC-003
 depends-on:
@@ -31,10 +31,10 @@ Note: all edits target `clasi/plugin/` only. Do not edit `.claude/` copies.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/skills/create-tickets/SKILL.md` reinforces that every ticket implementing an issue must carry `issue:` in its frontmatter; programmer verifies back-refs before closing a ticket.
-- [ ] `clasi/plugin/agents/team-lead/agent.md` contains a new "Issue Lifecycle Responsibility" section with these four checkpoints: (1) link at roadmap via `link_sprint_issues`; (2) confirm tickets carry `issue:` back-refs after sprint planning; (3) after close, confirm resolved issues landed in `<sprint>/issues/done/`; (4) address any `unresolved_issues` from the close result.
-- [ ] `clasi/plugin/skills/close-sprint/SKILL.md` documents: (a) that `_sweep_done_issues` is called automatically at close and moves resolved sprint issues to `<sprint>/issues/done/`; (b) that `unresolved_issues` in the result is non-blocking; (c) instruction to read `unresolved_issues` from the close result and surface them to the team-lead for mop-up.
-- [ ] No references to manual frontmatter writes for issue lifecycle remain in any of these three files.
+- [x] `clasi/plugin/skills/create-tickets/SKILL.md` reinforces that every ticket implementing an issue must carry `issue:` in its frontmatter; programmer verifies back-refs before closing a ticket.
+- [x] `clasi/plugin/agents/team-lead/agent.md` contains a new "Issue Lifecycle Responsibility" section with these four checkpoints: (1) link at roadmap via `link_sprint_issues`; (2) confirm tickets carry `issue:` back-refs after sprint planning; (3) after close, confirm resolved issues landed in `<sprint>/issues/done/`; (4) address any `unresolved_issues` from the close result.
+- [x] `clasi/plugin/skills/close-sprint/SKILL.md` documents: (a) that `_sweep_done_issues` is called automatically at close and moves resolved sprint issues to `<sprint>/issues/done/`; (b) that `unresolved_issues` in the result is non-blocking; (c) instruction to read `unresolved_issues` from the close result and surface them to the team-lead for mop-up.
+- [x] No references to manual frontmatter writes for issue lifecycle remain in any of these three files.
 
 ## Implementation Plan
 
