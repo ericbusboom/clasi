@@ -1,11 +1,12 @@
 ---
-id: "002"
-title: "Fix _close_sprint_full to be non-blocking on unresolved issues"
-status: open
-use-cases: [SUC-002]
+id: '002'
+title: Fix _close_sprint_full to be non-blocking on unresolved issues
+status: in-progress
+use-cases:
+- SUC-002
 depends-on: []
-github-issue: ""
-issue: ""
+github-issue: ''
+issue: ''
 completes_issue: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
