@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Config-driven detect-and-migrate tool
-status: in-progress
+status: done
 use-cases:
 - SUC-004
 depends-on:
@@ -41,10 +41,10 @@ only against scratch `tmp_path` directories.
 
 ## Acceptance Criteria
 
-- [ ] `Move` dataclass (or NamedTuple) with fields: `category: str`,
+- [x] `Move` dataclass (or NamedTuple) with fields: `category: str`,
       `src: Path`, `dst: Path`, `mode: str` (`"move"` or `"merge"`),
       `is_file: bool`.
-- [ ] `CANDIDATE_LOCATIONS: dict[str, list[str]]` is module-level in
+- [x] `CANDIDATE_LOCATIONS: dict[str, list[str]]` is module-level in
       `migrate_command.py`. Keys: all `ARTIFACT_PATH_DEFAULTS` keys.
       Each value is a list of root-relative paths to probe in order:
       - `issues`: `[".clasi/issues", "docs/clasi/issues"]`
@@ -54,7 +54,7 @@ only against scratch `tmp_path` directories.
       - `design`: `[".clasi/design", "docs/clasi/design"]`
       - `logs`: `[".clasi/log", "docs/clasi/log"]`
       - `db`: `[".clasi/.clasi.db", "docs/clasi/.clasi.db"]`
-- [ ] `detect_moves(project) -> list[Move]`:
+- [x] `detect_moves(project) -> list[Move]`:
       - For each category, resolves destination from `project`.
       - Probes `CANDIDATE_LOCATIONS[category]` in order; uses the first
         existing path as `src`.
@@ -64,7 +64,7 @@ only against scratch `tmp_path` directories.
         `mode="move"` otherwise.
       - Sets `is_file=True` for `db` category.
       - Returns `[]` if nothing to do.
-- [ ] `execute_moves(project, moves, dry_run=False)`:
+- [x] `execute_moves(project, moves, dry_run=False)`:
       - For each `Move`, ensures `dst.parent` exists before moving.
       - Uses `git mv` if in a git repo, else `shutil.move`.
       - For `mode="merge"`: skips individual files that already exist at dst
@@ -76,13 +76,13 @@ only against scratch `tmp_path` directories.
       - Dry-run mode prints proposed actions without performing them.
       - Checks no execution lock is held before any moves (scan all candidate
         db locations + configured db_path).
-- [ ] `run_migrate` is rewritten as: `detect_moves → if empty, report nothing
+- [x] `run_migrate` is rewritten as: `detect_moves → if empty, report nothing
       to do; else execute_moves(dry_run=False) → run_init → restart notice`.
-- [ ] The old `if dst.exists(): raise SystemExit(1)` guard is removed from
+- [x] The old `if dst.exists(): raise SystemExit(1)` guard is removed from
       `run_migrate`.
-- [ ] `tests/unit/test_migrate_command.py` is updated: remove tests that
+- [x] `tests/unit/test_migrate_command.py` is updated: remove tests that
       assert the old `dst.exists()` guard exits; add tests for the new flow.
-- [ ] `uv run pytest tests/unit/test_migrate_command.py` passes.
+- [x] `uv run pytest tests/unit/test_migrate_command.py` passes.
 
 ## Implementation Plan
 
