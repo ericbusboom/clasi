@@ -1152,6 +1152,61 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
+    """Prune git worktrees associated with the closing sprint branch.
+
+    Parses ``git worktree list --porcelain`` output and removes any worktree
+    whose ``branch`` field matches ``refs/heads/<branch_name>``.
+
+    Returns a tuple of ``(pruned_paths, failed_paths)`` where each element is
+    a list of absolute worktree paths.  The main worktree (the first entry in
+    the porcelain output, which has no ``branch`` field when in detached-HEAD
+    state, or whose path matches the repo root) is never touched.
+    """
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+    )
+
+    target_ref = f"refs/heads/{branch_name}"
+    pruned: list[str] = []
+    failed: list[str] = []
+
+    # Parse porcelain blocks separated by blank lines.
+    # Each block looks like:
+    #   worktree /path/to/wt
+    #   HEAD <sha>
+    #   branch refs/heads/sprint/NNN-slug
+    current_path: Optional[str] = None
+    is_main: bool = True  # first block is always the main worktree
+
+    for line in result.stdout.splitlines():
+        line = line.rstrip()
+        if line.startswith("worktree "):
+            current_path = line[len("worktree "):]
+        elif line == "":
+            # Blank line separates blocks; reset is_main after first block.
+            if is_main:
+                is_main = False
+            current_path = None
+        elif line.startswith("branch ") and not is_main and current_path is not None:
+            ref = line[len("branch "):]
+            if ref == target_ref:
+                # Remove this worktree.
+                rm_result = subprocess.run(
+                    ["git", "worktree", "remove", "--force", current_path],
+                    capture_output=True,
+                    text=True,
+                )
+                if rm_result.returncode == 0:
+                    pruned.append(current_path)
+                else:
+                    failed.append(current_path)
+
+    return pruned, failed
+
+
 def _close_sprint_full(
     sprint_id: str,
     branch_name: str,
@@ -1189,7 +1244,7 @@ def _close_sprint_full(
                 },
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
     except SprintIdMismatchError as e:
         return json.dumps({
@@ -1208,7 +1263,7 @@ def _close_sprint_full(
                 },
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
     except (SprintNotFoundError, ValueError):
         # Sprint dir might already be archived (idempotent retry), or an
@@ -1221,7 +1276,7 @@ def _close_sprint_full(
                 "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
 
     if sprint.tickets_dir.exists():
@@ -1258,7 +1313,7 @@ def _close_sprint_full(
                         },
                     },
                     "completed_steps": [],
-                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
                 }, indent=2)
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
@@ -1347,7 +1402,7 @@ def _close_sprint_full(
     completed_steps.append("precondition_verification")
 
     # ── Step 2: Run tests ──
-    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"]
+    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"]
 
     if test_command == "":
         # Explicitly skip tests (non-Python projects, etc.)
@@ -1574,20 +1629,35 @@ def _close_sprint_full(
 
     completed_steps.append("delete_branch")
 
-    # ── Step 9: Clear recovery state ──
+    # ── Step 9: Prune sprint worktrees ──
+    worktrees_pruned: list[str] = []
+    worktrees_failed: list[str] = []
+    pruned, failed = _prune_sprint_worktrees(branch_name)
+    worktrees_pruned = pruned
+    worktrees_failed = failed
+    if worktrees_failed:
+        for wt_path in worktrees_failed:
+            repairs.append(f"failed to remove worktree: {wt_path}")
+    if worktrees_pruned:
+        completed_steps.append("prune_worktrees")
+
+    # ── Step 10: Clear recovery state ──
     if db.path.exists():
         try:
             db.clear_recovery_state()
         except Exception:
             pass
 
-    # ── Step 10: Return structured result ──
+    # ── Step 11: Return structured result ──
     result: dict = {
         "status": "success",
         "old_path": old_path_str,
         "new_path": str(new_path),
         "repairs": repairs,
+        "worktrees_pruned": worktrees_pruned,
     }
+    if worktrees_failed:
+        result["worktrees_failed"] = worktrees_failed
     if unresolved_issues:
         result["unresolved_issues"] = unresolved_issues
     if version:

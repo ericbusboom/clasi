@@ -749,6 +749,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(0),  # git rev-parse --verify branch (delete check)
             self._make_subprocess_result(0),  # git branch -d
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain (no sprint worktrees)
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -840,6 +841,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, merge check)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, delete check)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -881,6 +883,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -909,6 +912,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -950,6 +954,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -1066,6 +1071,7 @@ class TestCloseSprintLockAndDbGuard:
             self._make_subprocess_result(0),            # git commit
             self._make_subprocess_result(1),            # git rev-parse --verify (branch gone)
             self._make_subprocess_result(1),            # git rev-parse --verify (delete, branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -1107,6 +1113,7 @@ class TestCloseSprintLockAndDbGuard:
             self._make_subprocess_result(1),        # git rev-parse --verify (branch gone)
             self._make_subprocess_result(0),        # git push --tags
             self._make_subprocess_result(1),        # git rev-parse --verify (delete, gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -1183,6 +1190,7 @@ class TestCloseSprintLockAndDbGuard:
             # Guard skipped — no git add or git commit for .clasi.db
             self._make_subprocess_result(1),            # git rev-parse --verify (branch gone)
             self._make_subprocess_result(1),            # git rev-parse --verify (delete, branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))

@@ -580,6 +580,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git push --tags
             _ok(0),  # git rev-parse --verify branch (delete check)
             _ok(0),  # git branch -d
+            _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -737,6 +738,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git push --tags
             _ok(0),  # git rev-parse (delete check)
             _ok(0),  # git branch -d
+            _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -789,6 +791,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git push --tags
             _ok(0),  # git rev-parse (delete check)
             _ok(0),  # git branch -d
+            _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
@@ -839,6 +842,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git push --tags
             _ok(0),  # git rev-parse (delete check)
             _ok(0),  # git branch -d
+            _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))

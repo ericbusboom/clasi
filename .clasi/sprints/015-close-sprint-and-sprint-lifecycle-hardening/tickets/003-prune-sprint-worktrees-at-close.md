@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Prune sprint worktrees at close
-status: in-progress
+status: done
 use-cases:
 - SUC-015-002
 depends-on:
@@ -23,18 +23,18 @@ associated with the closing sprint immediately after branch deletion.
 
 ## Acceptance Criteria
 
-- [ ] A private `_prune_sprint_worktrees(sprint_id: str, branch_name: str) -> list[str]` helper
+- [x] A private `_prune_sprint_worktrees(sprint_id: str, branch_name: str) -> list[str]` helper
   is added to `clasi/tools/artifact_tools.py`.
-- [ ] The helper parses `git worktree list --porcelain` and identifies worktrees whose `branch`
+- [x] The helper parses `git worktree list --porcelain` and identifies worktrees whose `branch`
   field matches `refs/heads/<branch_name>` (where `branch_name` is the sprint branch, e.g.,
   `sprint/015-close-sprint-and-sprint-lifecycle-hardening`).
-- [ ] Each matching worktree is removed via `git worktree remove --force <path>`.
-- [ ] The helper is called as the final step of `_close_sprint_full`, after `delete_branch`.
-- [ ] The result JSON includes `worktrees_pruned: [...]` (list of paths, empty if none found).
-- [ ] A single failed worktree removal does not abort the close — failure is appended to
+- [x] Each matching worktree is removed via `git worktree remove --force <path>`.
+- [x] The helper is called as the final step of `_close_sprint_full`, after `delete_branch`.
+- [x] The result JSON includes `worktrees_pruned: [...]` (list of paths, empty if none found).
+- [x] A single failed worktree removal does not abort the close — failure is appended to
   `repairs` and the path is included in a `worktrees_failed` list in the result JSON.
-- [ ] `close_sprint` succeeds and returns `status: closed` when no worktrees exist.
-- [ ] `uv run pytest -q` passes with no regressions.
+- [x] `close_sprint` succeeds and returns `status: closed` when no worktrees exist.
+- [x] `uv run pytest -q` passes with no regressions.
 
 ## Implementation Plan
 
