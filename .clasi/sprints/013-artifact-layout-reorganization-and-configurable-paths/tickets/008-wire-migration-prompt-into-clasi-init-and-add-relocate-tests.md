@@ -1,7 +1,7 @@
 ---
 id: 008
 title: Wire migration prompt into clasi init and add relocate tests
-status: in-progress
+status: done
 use-cases:
 - SUC-004
 depends-on:
@@ -36,18 +36,18 @@ The interactive prompt behavior:
 
 ## Acceptance Criteria
 
-- [ ] `clasi init` in an interactive scratch dir with legacy files at
+- [x] `clasi init` in an interactive scratch dir with legacy files at
       `.clasi/issues/` prompts `"Your files are not in the right spot. Move them
       to these locations? [y/N]"` and lists the proposed moves.
-- [ ] Answering `y` calls `execute_moves`; files land at the configured
+- [x] Answering `y` calls `execute_moves`; files land at the configured
       destination; re-running `clasi init` shows no further moves.
-- [ ] Answering `N` (or no TTY) leaves files untouched; a warning is printed.
-- [ ] `clasi init --yes` relocates without prompting.
-- [ ] `clasi migrate --yes` (or `--relocate`) relocates without prompting.
-- [ ] `clasi/cli.py` exposes `--yes/--relocate` on both `init` and `migrate`
+- [x] Answering `N` (or no TTY) leaves files untouched; a warning is printed.
+- [x] `clasi init --yes` relocates without prompting.
+- [x] `clasi migrate --yes` (or `--relocate`) relocates without prompting.
+- [x] `clasi/cli.py` exposes `--yes/--relocate` on both `init` and `migrate`
       commands.
-- [ ] `uv run pytest tests/unit/test_relocate.py` passes.
-- [ ] `uv run pytest` passes (full suite).
+- [x] `uv run pytest tests/unit/test_relocate.py` passes.
+- [x] `uv run pytest` passes (full suite).
 
 ## Implementation Plan
 

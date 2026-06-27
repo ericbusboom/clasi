@@ -120,6 +120,7 @@ def run_init(
     copy: bool = False,
     migrate: bool = False,
     process: str = "se",
+    yes: bool = False,
 ) -> None:
     """Initialize a repository for the CLASI SE process.
 
@@ -140,6 +141,7 @@ def run_init(
         migrate: If True, convert legacy direct-copy installs to symlinks.
         process: SE process variant to activate; one of ``"se"`` or ``"solo"``.
             Written to ``.clasi/config.yaml`` as the ``process:`` key.
+        yes: If True, relocate legacy files without prompting (unattended opt-in).
     """
     from clasi.platforms.claude import install as claude_install
     from clasi.platforms.codex import install as codex_install
@@ -234,3 +236,33 @@ def run_init(
 
     click.echo()
     click.echo("Done! The CLASI SE process is now configured.")
+
+    # ── Detect and optionally relocate legacy artifacts ────────────────────
+    from clasi.migrate_command import detect_moves, execute_moves
+    from clasi.project import Project
+
+    project = Project(target_path)
+    moves = detect_moves(project)
+
+    if moves:
+        if yes:
+            click.echo()
+            click.echo("Relocating legacy artifacts (--yes flag set):")
+            execute_moves(project, moves)
+        elif sys.stdin.isatty() and sys.stdout.isatty():
+            click.echo()
+            click.echo("Your files are not in the right spot. Proposed moves:")
+            for m in moves:
+                click.echo(f"  {m.src} → {m.dst}")
+            if click.confirm("Move them?", default=False):
+                execute_moves(project, moves)
+            else:
+                click.echo(
+                    "Hint: run `clasi migrate` to relocate files when ready.",
+                )
+        else:
+            click.echo(
+                "WARNING: Files found at legacy locations. "
+                "Run `clasi migrate` to relocate.",
+                err=True,
+            )

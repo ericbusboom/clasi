@@ -69,6 +69,13 @@ CANDIDATE_LOCATIONS: dict[str, list[str]] = {
     "db": [".clasi/.clasi.db", "docs/clasi/.clasi.db"],
 }
 
+# Filenames that are platform-specific instruction or housekeeping files,
+# never user-created CLASI artifacts.  Directories containing only these
+# files are treated as "empty" by ``detect_moves`` so that platform
+# installers writing rule files into legacy candidate dirs do not
+# spuriously trigger migration.
+_NON_ARTIFACT_NAMES: frozenset[str] = frozenset({"AGENTS.md", ".gitkeep", ".gitignore"})
+
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -212,9 +219,15 @@ def detect_moves(project: Project) -> list[Move]:
             candidate = root / rel
             if not candidate.exists():
                 continue
-            # For directories: skip if empty.
+            # For directories: skip if empty or contains only platform/housekeeping
+            # files (AGENTS.md, .gitkeep, .gitignore).  These are not user artifacts
+            # and should not trigger migration.
             if not is_file and candidate.is_dir():
-                if not any(candidate.iterdir()):
+                artifact_files = [
+                    f for f in candidate.iterdir()
+                    if f.name not in _NON_ARTIFACT_NAMES
+                ]
+                if not artifact_files:
                     continue
             src = candidate
             break
@@ -380,13 +393,15 @@ def execute_moves(
 # ---------------------------------------------------------------------------
 
 
-def run_migrate(target: str) -> None:
+def run_migrate(target: str, yes: bool = False) -> None:
     """Detect and execute all pending CLASI artifact relocations.
 
     Parameters
     ----------
     target:
         Path to the project root (string; resolved internally).
+    yes:
+        When ``True``, relocate without prompting (non-interactive / unattended).
 
     This function replaces the old hard-coded ``docs/clasi/ → .clasi/``
     migration with a config-driven detect-and-move approach.  It is
@@ -412,7 +427,25 @@ def run_migrate(target: str) -> None:
         click.echo(f"  Planned {action}: {move.src} → {move.dst}")
     click.echo()
 
-    execute_moves(project, moves)
+    import sys
+
+    if yes or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        # Non-interactive mode or --yes flag: execute without prompting.
+        # (In non-interactive mode, the user explicitly invoked `clasi migrate`,
+        # so we proceed without asking.  `--yes` skips the TTY prompt too.)
+        execute_moves(project, moves)
+    else:
+        # Interactive TTY without --yes: ask for confirmation before moving.
+        click.echo("Your files are not in the right spot. Proposed moves:")
+        for m in moves:
+            click.echo(f"  {m.src} → {m.dst}")
+        if click.confirm("Move them?", default=False):
+            execute_moves(project, moves)
+        else:
+            click.echo(
+                "Hint: run `clasi migrate --yes` to relocate without prompting.",
+            )
+            return
 
     # ── Refresh rule files and agent prompts ──────────────────────────────
     click.echo()
