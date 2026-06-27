@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Prune sprint worktrees at close
-status: open
+status: in-progress
 use-cases:
 - SUC-015-002
 depends-on:
