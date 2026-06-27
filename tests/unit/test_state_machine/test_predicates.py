@@ -107,6 +107,9 @@ def _mock_reader(**kwargs) -> MagicMock:
     reader.reopen_requested.return_value = False
     reader.any_sprint_in_phase.return_value = False
     reader.ticket_count.return_value = 0
+    reader.overview_exists.return_value = False
+    reader.sprint_artifact_exists.return_value = False
+    reader.ticket_file_present.return_value = False
 
     # Apply any overrides from kwargs
     for attr, val in kwargs.items():
@@ -121,13 +124,13 @@ def _mock_reader(**kwargs) -> MagicMock:
 
 class TestIsOverviewAbsent:
     def test_true_when_overview_missing(self):
-        reader = _mock_reader(file_exists=False)
+        reader = _mock_reader(overview_exists=False)
         ctx = _project_ctx(reader)
         from clasi.state_machine.predicates.project import is_overview_absent
         assert is_overview_absent(ctx) is True
 
     def test_false_when_overview_present(self):
-        reader = _mock_reader(file_exists=True)
+        reader = _mock_reader(overview_exists=True)
         ctx = _project_ctx(reader)
         from clasi.state_machine.predicates.project import is_overview_absent
         assert is_overview_absent(ctx) is False
@@ -135,13 +138,13 @@ class TestIsOverviewAbsent:
 
 class TestIsOverviewPresent:
     def test_true_when_overview_exists(self):
-        reader = _mock_reader(file_exists=True)
+        reader = _mock_reader(overview_exists=True)
         ctx = _project_ctx(reader)
         from clasi.state_machine.predicates.project import is_overview_present
         assert is_overview_present(ctx) is True
 
     def test_false_when_overview_missing(self):
-        reader = _mock_reader(file_exists=False)
+        reader = _mock_reader(overview_exists=False)
         ctx = _project_ctx(reader)
         from clasi.state_machine.predicates.project import is_overview_present
         assert is_overview_present(ctx) is False
@@ -291,8 +294,7 @@ class TestIsAnySprintExecuting:
 
 class TestIsSprintDocPresent:
     def test_true_when_file_exists(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_sprint_doc_present
         assert is_sprint_doc_present(ctx) is True
@@ -302,19 +304,17 @@ class TestIsSprintDocPresent:
         from clasi.state_machine.predicates.sprint import is_sprint_doc_present
         assert is_sprint_doc_present(ctx) is False
 
-    def test_uses_sprint_id_in_path(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+    def test_uses_sprint_id_and_artifact_name(self):
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(sprint_id="007", reader=reader)
         from clasi.state_machine.predicates.sprint import is_sprint_doc_present
         is_sprint_doc_present(ctx)
-        reader.file_exists.assert_called_once_with("docs/clasi/sprints/007/sprint.md")
+        reader.sprint_artifact_exists.assert_called_once_with("007", "sprint.md")
 
 
 class TestIsArchitecturePresent:
     def test_true_when_file_exists(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_architecture_present
         assert is_architecture_present(ctx) is True
@@ -324,21 +324,19 @@ class TestIsArchitecturePresent:
         from clasi.state_machine.predicates.sprint import is_architecture_present
         assert is_architecture_present(ctx) is False
 
-    def test_uses_sprint_id_in_path(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+    def test_uses_sprint_id_and_artifact_name(self):
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(sprint_id="003", reader=reader)
         from clasi.state_machine.predicates.sprint import is_architecture_present
         is_architecture_present(ctx)
-        reader.file_exists.assert_called_once_with(
-            "docs/clasi/sprints/003/architecture-update.md"
+        reader.sprint_artifact_exists.assert_called_once_with(
+            "003", "architecture-update.md"
         )
 
 
 class TestIsUsecasesPresent:
     def test_true_when_file_exists(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_usecases_present
         assert is_usecases_present(ctx) is True
@@ -347,6 +345,13 @@ class TestIsUsecasesPresent:
         ctx = _sprint_ctx()
         from clasi.state_machine.predicates.sprint import is_usecases_present
         assert is_usecases_present(ctx) is False
+
+    def test_uses_usecases_md_not_hyphenated(self):
+        reader = _mock_reader(sprint_artifact_exists=True)
+        ctx = _sprint_ctx(sprint_id="005", reader=reader)
+        from clasi.state_machine.predicates.sprint import is_usecases_present
+        is_usecases_present(ctx)
+        reader.sprint_artifact_exists.assert_called_once_with("005", "usecases.md")
 
 
 class TestIsArchitectureReviewRecorded:
@@ -504,8 +509,7 @@ class TestIsReviewSatisfied:
 
 class TestIsCloseReportPresent:
     def test_true_when_file_exists(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_close_report_present
         assert is_close_report_present(ctx) is True
@@ -515,14 +519,13 @@ class TestIsCloseReportPresent:
         from clasi.state_machine.predicates.sprint import is_close_report_present
         assert is_close_report_present(ctx) is False
 
-    def test_uses_sprint_id_in_path(self):
-        reader = _mock_reader()
-        reader.file_exists.return_value = True
+    def test_uses_sprint_id_and_artifact_name(self):
+        reader = _mock_reader(sprint_artifact_exists=True)
         ctx = _sprint_ctx(sprint_id="009", reader=reader)
         from clasi.state_machine.predicates.sprint import is_close_report_present
         is_close_report_present(ctx)
-        reader.file_exists.assert_called_once_with(
-            "docs/clasi/sprints/009/close-report.md"
+        reader.sprint_artifact_exists.assert_called_once_with(
+            "009", "close-report.md"
         )
 
 
@@ -547,30 +550,20 @@ class TestIsBranchMerged:
 
 
 class TestIsTicketFilePresent:
-    def test_true_when_active_ticket_file_exists(self):
-        reader = _mock_reader()
-
-        def file_exists_active(path):
-            return "tickets/005-001.md" in path and "done" not in path
-
-        reader.file_exists.side_effect = file_exists_active
+    def test_true_when_ticket_exists(self):
+        reader = _mock_reader(ticket_file_present=True)
         ctx = _ticket_ctx(reader=reader)
         from clasi.state_machine.predicates.ticket import is_ticket_file_present
         assert is_ticket_file_present(ctx) is True
 
-    def test_true_when_done_ticket_file_exists(self):
-        reader = _mock_reader()
-
-        def file_exists_done(path):
-            return "done" in path
-
-        reader.file_exists.side_effect = file_exists_done
+    def test_false_when_ticket_missing(self):
+        reader = _mock_reader(ticket_file_present=False)
         ctx = _ticket_ctx(reader=reader)
         from clasi.state_machine.predicates.ticket import is_ticket_file_present
-        assert is_ticket_file_present(ctx) is True
+        assert is_ticket_file_present(ctx) is False
 
-    def test_false_when_neither_file_exists(self):
-        ctx = _ticket_ctx()  # NullStateReader returns False for all paths
+    def test_false_when_null_reader(self):
+        ctx = _ticket_ctx()  # NullStateReader returns False
         from clasi.state_machine.predicates.ticket import is_ticket_file_present
         assert is_ticket_file_present(ctx) is False
 

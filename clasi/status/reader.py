@@ -40,6 +40,9 @@ Data sources per method
 | reopen_requested           | ticket FM        |
 | any_sprint_in_phase        | StateDB          |
 | ticket_count               | Filesystem       |
+| overview_exists            | Filesystem       |
+| sprint_artifact_exists     | Filesystem       |
+| ticket_file_present        | Filesystem       |
 +----------------------------+------------------+
 """
 
@@ -79,6 +82,38 @@ class ClasiStateReader:
             return (self._project.root / path).exists()
         except Exception:
             return False
+
+    def overview_exists(self) -> bool:
+        """Return True iff the project overview file exists.
+
+        Source: filesystem. Derives path from project.design_dir so that
+        changing design_dir propagates automatically.
+        """
+        try:
+            return (self._project.design_dir / "overview.md").exists()
+        except Exception:
+            return False
+
+    def sprint_artifact_exists(self, sprint_id: str, artifact_name: str) -> bool:
+        """Return True iff artifact_name exists in the sprint directory.
+
+        Source: filesystem. Resolves the sprint dir via project.get_sprint()
+        which uses ID-prefix glob (<id>-*), matching the write side exactly.
+        Returns False if the sprint is not found or on any error.
+        """
+        try:
+            sprint = self._project.get_sprint(sprint_id)
+            return (sprint.path / artifact_name).exists()
+        except Exception:
+            return False
+
+    def ticket_file_present(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True iff a ticket file for ticket_id exists in the sprint's tickets tree.
+
+        Source: filesystem. Delegates to _find_ticket_path which searches
+        both tickets/ and tickets/done/ with slug-aware glob + frontmatter confirm.
+        """
+        return self._find_ticket_path(sprint_id, ticket_id) is not None
 
     # ------------------------------------------------------------------
     # Git methods

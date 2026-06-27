@@ -10,7 +10,7 @@ is *any* sprint branch (``sprint/*``).  When called with a
 HEAD is *this sprint's* specific branch.
 
 StateReader methods used:
-- ``file_exists(path)`` — checks for docs/clasi/overview.md
+- ``overview_exists()`` — checks for the project overview at the canonical design path
 - ``git_branch()`` — current HEAD branch name
 - ``default_branch()`` — repository default branch name
 - ``sprint_branch(sprint_id)`` — expected branch name for a specific sprint
@@ -26,14 +26,14 @@ from clasi.state_machine.registry import predicate
 
 @predicate("is_overview_absent")
 def is_overview_absent(ctx: ProjectContext) -> bool:
-    """Return True iff docs/clasi/overview.md does not exist."""
-    return not ctx.reader.file_exists("docs/clasi/overview.md")
+    """Return True iff the project overview is absent."""
+    return not ctx.reader.overview_exists()
 
 
 @predicate("is_overview_present")
 def is_overview_present(ctx: ProjectContext) -> bool:
-    """Return True iff docs/clasi/overview.md exists."""
-    return ctx.reader.file_exists("docs/clasi/overview.md")
+    """Return True iff the project overview exists."""
+    return ctx.reader.overview_exists()
 
 
 @predicate("is_on_default_branch")

@@ -104,11 +104,11 @@ states:
 
 predicates:
   is_sprint_doc_present:
-    description: Returns True iff docs/clasi/sprints/<id>/sprint.md exists with id and title set.
+    description: Returns True iff .clasi/sprints/<id>-<slug>/sprint.md exists with id and title set.
   is_architecture_present:
-    description: Returns True iff docs/clasi/sprints/<id>/architecture-update.md exists.
+    description: Returns True iff .clasi/sprints/<id>-<slug>/architecture-update.md exists.
   is_usecases_present:
-    description: Returns True iff the sprint's use-cases artifact exists.
+    description: Returns True iff .clasi/sprints/<id>-<slug>/usecases.md exists.
   is_architecture_review_recorded:
     description: Returns True iff the state DB has an `architecture_review` gate record for this sprint.
   is_pre_flight_satisfied:
@@ -117,7 +117,7 @@ predicates:
       gate record for this sprint, OR the sprint's `pre_flight_review`
       flag is set to `skip`. Encodes the pause-or-bump semantics.
   is_at_least_one_ticket:
-    description: Returns True iff docs/clasi/sprints/<id>/tickets/ contains at least one ticket file.
+    description: Returns True iff .clasi/sprints/<id>-<slug>/tickets/ contains at least one ticket file.
   is_no_other_sprint_executing:
     description: Returns True iff no other sprint holds the execution lock.
   is_on_sprint_branch:
@@ -132,17 +132,17 @@ predicates:
       record marked passed, OR the sprint's `post_review` flag is set
       to `skip`.
   is_close_report_present:
-    description: Returns True iff docs/clasi/sprints/<id>/close-report.md exists.
+    description: Returns True iff .clasi/sprints/<id>-<slug>/close-report.md exists.
   is_branch_merged:
     description: Returns True iff the sprint branch has been merged into the default branch.
 
 actions:
   write_planning_docs:
-    description: Writes the sprint's planning artifacts (architecture-update.md, use-cases) from the sprint.md outline.
+    description: Writes the sprint's planning artifacts (architecture-update.md, usecases.md) from the sprint.md outline.
   record_architecture_review:
     description: Records the `architecture_review` gate result in the state DB.
   write_tickets:
-    description: Generates ticket files in docs/clasi/sprints/<id>/tickets/ from the architecture and use cases.
+    description: Generates ticket files in .clasi/sprints/<id>-<slug>/tickets/ from the architecture and use cases.
   acquire_execution_lock:
     description: |
       Acquires the project-wide execution lock and binds it to this

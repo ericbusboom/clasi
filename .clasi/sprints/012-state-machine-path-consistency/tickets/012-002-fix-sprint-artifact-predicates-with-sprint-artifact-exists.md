@@ -1,7 +1,7 @@
 ---
 id: "012-002"
 title: Fix sprint artifact predicates via sprint_artifact_exists protocol method
-status: open
+status: done
 use-cases: [SUC-002]
 depends-on: ["012-001"]
 issue:
@@ -27,15 +27,15 @@ this named method instead of `file_exists()` with a hardcoded path.
 
 ## Acceptance Criteria
 
-- [ ] `StateReader` protocol has `sprint_artifact_exists(sprint_id: str, artifact_name: str) -> bool`.
-- [ ] `ClasiStateReader.sprint_artifact_exists()` resolves via `project.get_sprint(sprint_id).path / artifact_name` (uses `get_sprint`'s ID-prefix glob).
-- [ ] `NullStateReader.sprint_artifact_exists()` returns False.
-- [ ] `is_sprint_doc_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "sprint.md")`.
-- [ ] `is_architecture_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "architecture-update.md")`.
-- [ ] `is_usecases_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "usecases.md")` (no hyphen).
-- [ ] `is_close_report_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "close-report.md")`.
-- [ ] Module docstring in `predicates/sprint.py` updated: remove `file_exists` from the StateReader methods list; add `sprint_artifact_exists`.
-- [ ] `pytest tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
+- [x] `StateReader` protocol has `sprint_artifact_exists(sprint_id: str, artifact_name: str) -> bool`.
+- [x] `ClasiStateReader.sprint_artifact_exists()` resolves via `project.get_sprint(sprint_id).path / artifact_name` (uses `get_sprint`'s ID-prefix glob).
+- [x] `NullStateReader.sprint_artifact_exists()` returns False.
+- [x] `is_sprint_doc_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "sprint.md")`.
+- [x] `is_architecture_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "architecture-update.md")`.
+- [x] `is_usecases_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "usecases.md")` (no hyphen).
+- [x] `is_close_report_present` calls `ctx.reader.sprint_artifact_exists(ctx.sprint_id, "close-report.md")`.
+- [x] Module docstring in `predicates/sprint.py` updated: remove `file_exists` from the StateReader methods list; add `sprint_artifact_exists`.
+- [x] `pytest tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
 
 ## Implementation Plan
 

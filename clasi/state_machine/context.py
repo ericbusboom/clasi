@@ -128,6 +128,26 @@ class StateReader(Protocol):
         """Return the number of ticket files in *sprint_id*'s tickets directory."""
         ...
 
+    def overview_exists(self) -> bool:
+        """Return True iff the project overview exists at the canonical design path."""
+        ...
+
+    def sprint_artifact_exists(self, sprint_id: str, artifact_name: str) -> bool:
+        """Return True iff artifact_name exists in the sprint's root directory.
+
+        Resolves the sprint directory by ID-prefix match (<id>-*) as the
+        writers do, not by bare sprint ID.
+        """
+        ...
+
+    def ticket_file_present(self, sprint_id: str, ticket_id: str) -> bool:
+        """Return True iff the ticket file exists anywhere in the sprint's tickets tree.
+
+        Searches both tickets/ and tickets/done/ using slug-aware glob,
+        matching the filename pattern the write tools create.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # NullStateReader — safe defaults for unit tests
@@ -212,6 +232,15 @@ class NullStateReader:
 
     def ticket_count(self, sprint_id: str) -> int:
         return 0
+
+    def overview_exists(self) -> bool:
+        return False
+
+    def sprint_artifact_exists(self, sprint_id: str, artifact_name: str) -> bool:
+        return False
+
+    def ticket_file_present(self, sprint_id: str, ticket_id: str) -> bool:
+        return False
 
 
 # ---------------------------------------------------------------------------

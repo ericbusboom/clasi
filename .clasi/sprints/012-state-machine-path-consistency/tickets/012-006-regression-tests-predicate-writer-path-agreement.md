@@ -1,7 +1,7 @@
 ---
 id: "012-006"
 title: Add regression tests confirming predicate/writer path agreement
-status: open
+status: done
 use-cases: [SUC-006]
 depends-on: ["012-002", "012-003"]
 issue:
@@ -25,19 +25,19 @@ ensures the full predicate test suite consistently uses the named mock methods
 
 ## Acceptance Criteria
 
-- [ ] New file `tests/unit/test_state_machine/test_predicate_path_agreement.py` exists.
-- [ ] The new test creates a real `.clasi/sprints/001-my-sprint/` directory with `sprint.md`, `usecases.md`, `architecture-update.md`, `close-report.md` in `tmp_path`.
-- [ ] The new test creates `tickets/001-001-my-ticket.md` with correct frontmatter under that sprint.
-- [ ] The new test creates `.clasi/design/overview.md`.
-- [ ] Asserts `is_overview_present` returns True (via `ClasiStateReader`).
-- [ ] Asserts `is_sprint_doc_present` returns True.
-- [ ] Asserts `is_usecases_present` returns True (file is `usecases.md`, not `use-cases.md`).
-- [ ] Asserts `is_architecture_present` returns True.
-- [ ] Asserts `is_close_report_present` returns True.
-- [ ] Asserts `is_ticket_file_present` returns True (active dir).
-- [ ] Asserts `is_ticket_file_present` returns True when ticket moved to `tickets/done/`.
-- [ ] `_mock_reader` in `test_predicates.py` has `overview_exists`, `sprint_artifact_exists`, and `ticket_file_present` as named defaults (False).
-- [ ] `pytest tests/unit/` passes fully.
+- [x] New file `tests/unit/test_state_machine/test_predicate_path_agreement.py` exists.
+- [x] The new test creates a real `.clasi/sprints/001-my-sprint/` directory with `sprint.md`, `usecases.md`, `architecture-update.md`, `close-report.md` in `tmp_path`.
+- [x] The new test creates `tickets/001-001-my-ticket.md` with correct frontmatter under that sprint.
+- [x] The new test creates `.clasi/design/overview.md`.
+- [x] Asserts `is_overview_present` returns True (via `ClasiStateReader`).
+- [x] Asserts `is_sprint_doc_present` returns True.
+- [x] Asserts `is_usecases_present` returns True (file is `usecases.md`, not `use-cases.md`).
+- [x] Asserts `is_architecture_present` returns True.
+- [x] Asserts `is_close_report_present` returns True.
+- [x] Asserts `is_ticket_file_present` returns True (active dir).
+- [x] Asserts `is_ticket_file_present` returns True when ticket moved to `tickets/done/`.
+- [x] `_mock_reader` in `test_predicates.py` has `overview_exists`, `sprint_artifact_exists`, and `ticket_file_present` as named defaults (False).
+- [x] `pytest tests/unit/` passes fully.
 
 ## Implementation Plan
 

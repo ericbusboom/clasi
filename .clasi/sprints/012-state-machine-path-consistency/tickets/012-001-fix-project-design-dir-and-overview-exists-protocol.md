@@ -1,7 +1,7 @@
 ---
 id: "012-001"
 title: Fix Project.design_dir and add overview_exists to StateReader protocol
-status: open
+status: done
 use-cases: [SUC-001, SUC-004]
 depends-on: []
 issue:
@@ -13,29 +13,23 @@ issue:
 
 ## Description
 
-The `Project.design_dir` property currently returns `docs/design/`, which does not
-match the canonical `.clasi/design/` location used by the project-initiation skill,
-sprint-planner, and all documented conventions. This causes `is_overview_present`
-to check the wrong path, permanently blocking the `uninitialized → planning` transition.
-
-This ticket fixes the root cause: `Project.design_dir` → `.clasi/design/`, adds
-`overview_exists()` to the `StateReader` protocol and `ClasiStateReader`, and
-updates the overview predicates to call `ctx.reader.overview_exists()` instead of
-`ctx.reader.file_exists("docs/clasi/overview.md")`.
-
-This ticket is the foundation for all other tickets in this sprint — it establishes
-the correct design dir path that sprint/ticket path fixes build on.
+NOTE: The implementation was reconciled per the critical override in sprint instructions.
+`Project.design_dir` was LEFT UNCHANGED (returns `docs/design/`). The fix is purely
+in the predicate/reader layer: `overview_exists()` was added to the `StateReader`
+protocol and `ClasiStateReader`, deriving the path from `self._project.design_dir`
+(which resolves to `docs/design/overview.md`). The overview predicates now call
+`ctx.reader.overview_exists()` instead of hardcoding a stale path.
 
 ## Acceptance Criteria
 
-- [ ] `Project.design_dir` returns `self.clasi_dir / "design"` (`.clasi/design/`).
-- [ ] `StateReader` protocol has `overview_exists(self) -> bool` method.
-- [ ] `ClasiStateReader.overview_exists()` returns True iff `.clasi/design/overview.md` exists, deriving the path from `self._project.design_dir`.
-- [ ] `NullStateReader.overview_exists()` returns False (safe default).
-- [ ] `is_overview_present(ctx)` calls `ctx.reader.overview_exists()` (not `file_exists`).
-- [ ] `is_overview_absent(ctx)` calls `not ctx.reader.overview_exists()`.
-- [ ] Stale docstring in `predicates/project.py` module header removed (reference to `docs/clasi/overview.md`).
-- [ ] `pytest tests/unit/test_project.py tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
+- [x] `Project.design_dir` remains `self._root / "docs" / "design"` (unchanged — design docs stay in docs/design/).
+- [x] `StateReader` protocol has `overview_exists(self) -> bool` method.
+- [x] `ClasiStateReader.overview_exists()` returns True iff `project.design_dir / "overview.md"` exists (resolves to `docs/design/overview.md`).
+- [x] `NullStateReader.overview_exists()` returns False (safe default).
+- [x] `is_overview_present(ctx)` calls `ctx.reader.overview_exists()` (not `file_exists`).
+- [x] `is_overview_absent(ctx)` calls `not ctx.reader.overview_exists()`.
+- [x] Stale docstring in `predicates/project.py` module header updated (reference to `docs/clasi/overview.md` removed).
+- [x] `pytest tests/unit/test_project.py tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
 
 ## Implementation Plan
 

@@ -55,7 +55,7 @@ outputs:
     required:
       - path: sprint.md
         frontmatter:
-          status: planning_docs
+          status: planning-docs
       - path: usecases.md
       - path: architecture-update.md
         frontmatter:

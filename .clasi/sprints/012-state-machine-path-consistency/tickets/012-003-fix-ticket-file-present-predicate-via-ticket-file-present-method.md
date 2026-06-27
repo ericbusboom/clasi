@@ -1,7 +1,7 @@
 ---
 id: "012-003"
 title: Fix is_ticket_file_present predicate via ticket_file_present protocol method
-status: open
+status: done
 use-cases: [SUC-003]
 depends-on: ["012-001"]
 issue:
@@ -28,13 +28,13 @@ concurrently with 002 but both depend on 001.)
 
 ## Acceptance Criteria
 
-- [ ] `StateReader` protocol has `ticket_file_present(sprint_id: str, ticket_id: str) -> bool`.
-- [ ] `ClasiStateReader.ticket_file_present()` returns `self._find_ticket_path(sprint_id, ticket_id) is not None`.
-- [ ] `NullStateReader.ticket_file_present()` returns False.
-- [ ] `is_ticket_file_present` calls `ctx.reader.ticket_file_present(ctx.sprint_id, ctx.ticket_id)` (no hardcoded paths).
-- [ ] The predicate handles both active (`tickets/`) and done (`tickets/done/`) locations — already covered by `_find_ticket_path`.
-- [ ] Module docstring in `predicates/ticket.py` updated to reference `ticket_file_present` instead of `file_exists`.
-- [ ] `pytest tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
+- [x] `StateReader` protocol has `ticket_file_present(sprint_id: str, ticket_id: str) -> bool`.
+- [x] `ClasiStateReader.ticket_file_present()` returns `self._find_ticket_path(sprint_id, ticket_id) is not None`.
+- [x] `NullStateReader.ticket_file_present()` returns False.
+- [x] `is_ticket_file_present` calls `ctx.reader.ticket_file_present(ctx.sprint_id, ctx.ticket_id)` (no hardcoded paths).
+- [x] The predicate handles both active (`tickets/`) and done (`tickets/done/`) locations — already covered by `_find_ticket_path`.
+- [x] Module docstring in `predicates/ticket.py` updated to reference `ticket_file_present` instead of `file_exists`.
+- [x] `pytest tests/unit/test_state_machine/test_predicates.py tests/unit/test_status/test_reader.py` passes.
 
 ## Implementation Plan
 

@@ -1,7 +1,7 @@
 ---
 id: "012-004"
 title: Reconcile planning-docs vocabulary in plugin docs and sprint state machine YAML
-status: open
+status: done
 use-cases: [SUC-005]
 depends-on: ["012-001"]
 issue:
@@ -27,12 +27,12 @@ already have `planning-docs` correctly. Only the agent/skill docs need fixing.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/agents/sprint-planner/dispatch-template.md.j2` line 55: `planning_docs` → `planning-docs`.
-- [ ] `clasi/plugin/agents/sprint-planner/contract.yaml` line 58: `planning_docs` → `planning-docs`.
-- [ ] `clasi/plugin/agents/sprint-planner/plan-sprint.md`: all `planning_docs` (underscore) occurrences changed to `planning-docs` (hyphen).
-- [ ] Sprint state machine YAML `clasi/schemas/state-machines/sprint.yaml` predicate/action descriptions: `docs/clasi/sprints/<id>/` references updated to `.clasi/sprints/<id>-<slug>/`.
-- [ ] After fix, a sprint in `planning-docs` DB phase does not generate a `state_drift` inconsistency due to vocabulary mismatch.
-- [ ] `pytest` passes (no regressions).
+- [x] `clasi/plugin/agents/sprint-planner/dispatch-template.md.j2` line 55: `planning_docs` → `planning-docs`.
+- [x] `clasi/plugin/agents/sprint-planner/contract.yaml` line 58: `planning_docs` → `planning-docs`.
+- [x] `clasi/plugin/agents/sprint-planner/plan-sprint.md`: all `planning_docs` (underscore) occurrences changed to `planning-docs` (hyphen).
+- [x] Sprint state machine YAML `clasi/schemas/state-machines/sprint.yaml` predicate/action descriptions: `docs/clasi/sprints/<id>/` references updated to `.clasi/sprints/<id>-<slug>/`.
+- [x] After fix, a sprint in `planning-docs` DB phase does not generate a `state_drift` inconsistency due to vocabulary mismatch.
+- [x] `pytest` passes (no regressions).
 
 ## Implementation Plan
 

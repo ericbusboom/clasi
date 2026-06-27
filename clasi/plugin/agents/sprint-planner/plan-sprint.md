@@ -86,7 +86,7 @@ planning artifacts for one sprint at a time.
    should already exist from Phase 1.
 
 2. **Update sprint.md**: Update the existing `sprint.md` with full
-   details. Set frontmatter `status: planning_docs`.
+   details. Set frontmatter `status: planning-docs`.
 
 3. **Write usecases.md**: Sprint-level use cases (SUC-NNN).
 

@@ -9,7 +9,7 @@ in ``clasi.state_machine.predicates.project``.  When passed a
 match against ``reader.sprint_branch(sprint_id)``.
 
 StateReader methods used:
-- ``file_exists(path)`` — checks for sprint.md, architecture-update.md, use-cases, close-report
+- ``sprint_artifact_exists(sprint_id, artifact_name)`` — resolves sprint dir by ID-prefix glob
 - ``sprint_gate(sprint_id, gate)`` — gate result dict or None (architecture_review, sprint_review)
 - ``sprint_flag(sprint_id, flag)`` — sprint flag value (pre_flight_review, post_review)
 - ``ticket_count(sprint_id)`` — number of ticket files in the sprint
@@ -29,25 +29,19 @@ from clasi.state_machine.registry import predicate
 @predicate("is_sprint_doc_present")
 def is_sprint_doc_present(ctx: SprintContext) -> bool:
     """Return True iff the sprint document exists for this sprint."""
-    return ctx.reader.file_exists(
-        f"docs/clasi/sprints/{ctx.sprint_id}/sprint.md"
-    )
+    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "sprint.md")
 
 
 @predicate("is_architecture_present")
 def is_architecture_present(ctx: SprintContext) -> bool:
     """Return True iff the sprint's architecture-update.md exists."""
-    return ctx.reader.file_exists(
-        f"docs/clasi/sprints/{ctx.sprint_id}/architecture-update.md"
-    )
+    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "architecture-update.md")
 
 
 @predicate("is_usecases_present")
 def is_usecases_present(ctx: SprintContext) -> bool:
-    """Return True iff the sprint's use-cases artifact exists."""
-    return ctx.reader.file_exists(
-        f"docs/clasi/sprints/{ctx.sprint_id}/use-cases.md"
-    )
+    """Return True iff the sprint's use cases artifact exists."""
+    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "usecases.md")
 
 
 @predicate("is_architecture_review_recorded")
@@ -119,9 +113,7 @@ def is_review_satisfied(ctx: SprintContext) -> bool:
 @predicate("is_close_report_present")
 def is_close_report_present(ctx: SprintContext) -> bool:
     """Return True iff the sprint's close-report.md exists."""
-    return ctx.reader.file_exists(
-        f"docs/clasi/sprints/{ctx.sprint_id}/close-report.md"
-    )
+    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "close-report.md")
 
 
 @predicate("is_branch_merged")

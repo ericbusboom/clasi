@@ -4,7 +4,7 @@ Machine: ticket
 Context: :class:`~clasi.state_machine.context.TicketContext`
 
 StateReader methods used:
-- ``file_exists(path)`` — checks ticket file presence
+- ``ticket_file_present(sprint_id, ticket_id)`` — slug-aware ticket presence check
 - ``ticket_in_done_dir(sprint_id, ticket_id)`` — True if ticket is in done/ directory
 - ``exception_block(sprint_id, ticket_id)`` — exception block dict or None
 - ``programmer_dispatched(sprint_id, ticket_id)`` — True if programmer was dispatched
@@ -26,10 +26,7 @@ from clasi.state_machine.registry import predicate
 @predicate("is_ticket_file_present")
 def is_ticket_file_present(ctx: TicketContext) -> bool:
     """Return True iff the ticket file exists somewhere under the sprint's tickets/ tree."""
-    # Check both the active tickets dir and the done dir.
-    active = f"docs/clasi/sprints/{ctx.sprint_id}/tickets/{ctx.ticket_id}.md"
-    done = f"docs/clasi/sprints/{ctx.sprint_id}/tickets/done/{ctx.ticket_id}.md"
-    return ctx.reader.file_exists(active) or ctx.reader.file_exists(done)
+    return ctx.reader.ticket_file_present(ctx.sprint_id, ctx.ticket_id)
 
 
 @predicate("is_ticket_in_done_dir")

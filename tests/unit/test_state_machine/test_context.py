@@ -276,6 +276,15 @@ class TestProtocolCompliance:
             def ticket_count(self, sprint_id: str) -> int:
                 return 0
 
+            def overview_exists(self) -> bool:
+                return False
+
+            def sprint_artifact_exists(self, sprint_id: str, artifact_name: str) -> bool:
+                return False
+
+            def ticket_file_present(self, sprint_id: str, ticket_id: str) -> bool:
+                return False
+
         reader = CustomReader()
         assert isinstance(reader, StateReader)
 

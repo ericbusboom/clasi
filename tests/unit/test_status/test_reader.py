@@ -564,6 +564,72 @@ class TestAnySprintInPhase:
 
 
 # ---------------------------------------------------------------------------
+# overview_exists
+# ---------------------------------------------------------------------------
+
+
+class TestOverviewExists:
+    def test_true_when_overview_present(self, project: Project, reader: ClasiStateReader) -> None:
+        design_dir = project.design_dir
+        design_dir.mkdir(parents=True, exist_ok=True)
+        (design_dir / "overview.md").write_text("# Overview\n")
+        assert reader.overview_exists() is True
+
+    def test_false_when_overview_absent(self, reader: ClasiStateReader) -> None:
+        # design dir doesn't exist by default in fixture
+        assert reader.overview_exists() is False
+
+    def test_false_when_design_dir_missing(self, project: Project, reader: ClasiStateReader) -> None:
+        # Ensure no design dir at all
+        assert not project.design_dir.exists()
+        assert reader.overview_exists() is False
+
+
+# ---------------------------------------------------------------------------
+# sprint_artifact_exists
+# ---------------------------------------------------------------------------
+
+
+class TestSprintArtifactExists:
+    def test_true_when_artifact_present(self, project: Project, reader: ClasiStateReader) -> None:
+        sprint_dir = project.sprints_dir / "001-my-sprint"
+        sprint_dir.mkdir(parents=True)
+        fm = "---\nid: '001'\ntitle: My Sprint\nstatus: open\nbranch: sprint/001-my-sprint\n---\n"
+        (sprint_dir / "sprint.md").write_text(fm)
+        assert reader.sprint_artifact_exists("001", "sprint.md") is True
+
+    def test_false_when_artifact_missing(self, project: Project, reader: ClasiStateReader) -> None:
+        sprint_dir = project.sprints_dir / "001-my-sprint"
+        sprint_dir.mkdir(parents=True)
+        fm = "---\nid: '001'\ntitle: My Sprint\nstatus: open\nbranch: sprint/001-my-sprint\n---\n"
+        (sprint_dir / "sprint.md").write_text(fm)
+        assert reader.sprint_artifact_exists("001", "architecture-update.md") is False
+
+    def test_false_when_sprint_not_found(self, reader: ClasiStateReader) -> None:
+        assert reader.sprint_artifact_exists("999", "sprint.md") is False
+
+
+# ---------------------------------------------------------------------------
+# ticket_file_present
+# ---------------------------------------------------------------------------
+
+
+class TestTicketFilePresent:
+    def test_true_when_ticket_in_active_dir(self, project: Project, reader: ClasiStateReader) -> None:
+        sprint_dir = project.sprints_dir / "001-my-sprint"
+        tickets_dir = sprint_dir / "tickets"
+        tickets_dir.mkdir(parents=True)
+        fm_sprint = "---\nid: '001'\ntitle: My Sprint\nstatus: open\nbranch: sprint/001-my-sprint\n---\n"
+        (sprint_dir / "sprint.md").write_text(fm_sprint)
+        fm_ticket = "---\nid: '001-001'\ntitle: My Ticket\nstatus: open\n---\n"
+        (tickets_dir / "001-001-my-ticket.md").write_text(fm_ticket)
+        assert reader.ticket_file_present("001", "001-001") is True
+
+    def test_false_when_ticket_missing(self, reader: ClasiStateReader) -> None:
+        assert reader.ticket_file_present("001", "001-001") is False
+
+
+# ---------------------------------------------------------------------------
 # ticket_count
 # ---------------------------------------------------------------------------
 
