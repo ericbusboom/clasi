@@ -1,11 +1,13 @@
 ---
-id: "005"
-title: "Update create-tickets, team-lead, and close-sprint docs with lifecycle instructions"
-status: open
-use-cases: [SUC-003]
-depends-on: ["004"]
-github-issue: ""
-issue: ""
+id: '005'
+title: Update create-tickets, team-lead, and close-sprint docs with lifecycle instructions
+status: in-progress
+use-cases:
+- SUC-003
+depends-on:
+- '004'
+github-issue: ''
+issue: ''
 completes_issue: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
