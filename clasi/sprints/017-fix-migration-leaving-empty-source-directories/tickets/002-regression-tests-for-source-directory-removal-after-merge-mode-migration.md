@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Regression tests for source-directory removal after merge-mode migration
-status: in-progress
+status: done
 use-cases:
 - SUC-017-001
 - SUC-017-002
@@ -34,23 +34,23 @@ src_dir.exists()`.
 
 ## Acceptance Criteria
 
-- [ ] A new test class `TestMergeModeCleansUpSourceDir` exists in
+- [x] A new test class `TestMergeModeCleansUpSourceDir` exists in
       `tests/unit/test_migrate_command.py`.
-- [ ] Test `test_source_dir_removed_when_dest_has_only_gitkeep`: seeds
+- [x] Test `test_source_dir_removed_when_dest_has_only_gitkeep`: seeds
       `.clasi/issues/` with `idea.md`, pre-creates `clasi/issues/.gitkeep`,
       runs `detect_moves` + `execute_moves`, asserts `src_dir.exists()` is
       False.
-- [ ] Test `test_detect_moves_treats_gitkeep_only_dest_as_move_mode`:
+- [x] Test `test_detect_moves_treats_gitkeep_only_dest_as_move_mode`:
       verifies `detect_moves` returns `mode="move"` (not `mode="merge"`) when
       destination contains only `.gitkeep`.
-- [ ] Test `test_no_clobber_preserved_in_merge_with_real_dst_file`: seeds
+- [x] Test `test_no_clobber_preserved_in_merge_with_real_dst_file`: seeds
       `.clasi/issues/conflict.md` and `clasi/issues/conflict.md` (both real
       files), verifies `detect_moves` still returns `mode="merge"` and the
       existing destination file is not overwritten.
-- [ ] The existing test `test_file_moved_to_destination` is updated: replace
+- [x] The existing test `test_file_moved_to_destination` is updated: replace
       `not src_dir.exists() or not any(src_dir.iterdir())` with
       `not src_dir.exists()`.
-- [ ] `uv run pytest tests/unit/test_migrate_command.py tests/unit/test_relocate.py -q`
+- [x] `uv run pytest tests/unit/test_migrate_command.py tests/unit/test_relocate.py -q`
       exits 0.
 
 ## Implementation Plan

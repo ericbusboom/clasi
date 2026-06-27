@@ -395,7 +395,7 @@ class TestExecuteMovesPerformsMove:
 
         dst_dir = project.issues_dir
         assert (dst_dir / "issue1.md").exists()
-        assert not src_dir.exists() or not any(src_dir.iterdir())
+        assert not src_dir.exists()
 
     def test_idempotent(self, tmp_path):
         """Second detect_moves call returns [] after successful execute_moves."""
@@ -497,6 +497,140 @@ class TestExecuteMovesPerformsMove:
 
         content = gitignore.read_text(encoding="utf-8")
         assert "clasi/log/" in content
+
+
+# ---------------------------------------------------------------------------
+# TestMergeModeCleansUpSourceDir — regression tests for sprint 017
+# ---------------------------------------------------------------------------
+
+
+class TestMergeModeCleansUpSourceDir:
+    """Regression tests for the merge-mode source-directory cleanup fix.
+
+    The bug: ``clasi init`` pre-creates destination dirs with ``.gitkeep``.
+    The old ``detect_moves`` saw a non-empty destination and chose
+    ``mode="merge"``, which left a ``.gitkeep`` in the source after moving
+    real files.  ``_cleanup_empty_parents`` then failed to ``rmdir`` the
+    non-empty source, leaving it behind.
+
+    Fix 1 (detect_moves): treat a ``.gitkeep``-only destination as empty
+    → ``mode="move"``.
+    Fix 2 (execute_moves merge branch): unlink residual non-artifact files
+    before calling ``_cleanup_empty_parents`` so the source is removed even
+    when merge mode does fire.
+    """
+
+    def test_source_dir_removed_when_dest_has_only_gitkeep(self, tmp_path):
+        """Exact bug scenario: init pre-creates dest with .gitkeep, forcing
+        merge mode; after migration the source dir must be completely gone."""
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / "idea.md").write_text("# My idea", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        dst_dir = project.issues_dir
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        (dst_dir / ".gitkeep").touch()  # simulates what clasi init scaffolds
+
+        moves = detect_moves(project)
+        assert any(m.category == "issues" for m in moves), "Expected an issues move"
+
+        with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            execute_moves(project, moves)
+
+        assert (dst_dir / "idea.md").exists(), "Artifact must reach destination"
+        assert not src_dir.exists(), "Source dir must be fully removed"
+
+    def test_detect_moves_treats_gitkeep_only_dest_as_move_mode(self, tmp_path):
+        """detect_moves returns mode='move' when dest contains only .gitkeep."""
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / "idea.md").write_text("# idea", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        dst_dir = project.issues_dir
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        (dst_dir / ".gitkeep").touch()
+
+        moves = detect_moves(project)
+        issues_move = next(m for m in moves if m.category == "issues")
+        assert issues_move.mode == "move", (
+            f"Expected mode='move' for gitkeep-only dest; got '{issues_move.mode}'"
+        )
+
+    def test_no_clobber_preserved_in_merge_with_real_dst_file(self, tmp_path):
+        """A real artifact in dest still triggers merge mode (no-clobber)."""
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / "conflict.md").write_text("from src", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        dst_dir = project.issues_dir
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        (dst_dir / "conflict.md").write_text("original", encoding="utf-8")
+
+        moves = detect_moves(project)
+        issues_move = next(m for m in moves if m.category == "issues")
+        assert issues_move.mode == "merge", (
+            "Real dst artifact must force merge mode"
+        )
+
+        with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            execute_moves(project, moves)
+
+        assert (dst_dir / "conflict.md").read_text(encoding="utf-8") == "original", (
+            "Existing dst file must not be clobbered"
+        )
+
+    def test_docs_category_source_removed_when_dest_has_only_gitkeep(self, tmp_path):
+        """Regression for a docs/-target category (architecture): source dir
+        removed after merge-mode migration when dest has only .gitkeep."""
+        src_dir = tmp_path / ".clasi" / "architecture"
+        src_dir.mkdir(parents=True)
+        (src_dir / "arch.md").write_text("# Architecture", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        dst_dir = project.architecture_dir
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        (dst_dir / ".gitkeep").touch()
+
+        moves = detect_moves(project)
+        assert any(m.category == "architecture" for m in moves), (
+            "Expected an architecture move"
+        )
+
+        with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            execute_moves(project, moves)
+
+        assert (dst_dir / "arch.md").exists(), "Artifact must reach destination"
+        assert not src_dir.exists(), "Source dir must be fully removed"
+
+    def test_dot_clasi_itself_still_exists_after_migration(self, tmp_path):
+        """The .clasi/ root must survive even after its issues/ sub-dir is cleaned
+        up, provided .clasi/ has other content (e.g. a config.yaml)."""
+        import yaml
+
+        # Write a config so .clasi/ is non-empty after issues/ is removed.
+        dot_clasi = tmp_path / ".clasi"
+        dot_clasi.mkdir(parents=True, exist_ok=True)
+        config_file = dot_clasi / "config.yaml"
+        config_file.write_text(yaml.dump({"process": "se", "paths": {}}), encoding="utf-8")
+
+        src_dir = dot_clasi / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / "x.md").write_text("# x", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        dst_dir = project.issues_dir
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        (dst_dir / ".gitkeep").touch()
+
+        moves = detect_moves(project)
+        with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            execute_moves(project, moves)
+
+        assert not src_dir.exists(), "Source issues/ sub-dir must be removed"
+        assert dot_clasi.exists(), ".clasi/ root must still exist (config.yaml is there)"
 
 
 # ---------------------------------------------------------------------------
