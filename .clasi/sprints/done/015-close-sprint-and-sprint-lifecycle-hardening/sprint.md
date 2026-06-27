@@ -1,7 +1,7 @@
 ---
 id: '015'
 title: close_sprint and sprint-lifecycle hardening
-status: planning-docs
+status: done
 branch: sprint/015-close-sprint-and-sprint-lifecycle-hardening
 use-cases: []
 issues:
