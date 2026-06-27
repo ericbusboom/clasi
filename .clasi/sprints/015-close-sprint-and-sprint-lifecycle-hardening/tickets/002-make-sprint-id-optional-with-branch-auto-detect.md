@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Make sprint_id optional with branch auto-detect
-status: open
+status: in-progress
 use-cases:
 - SUC-015-001
 depends-on:
