@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from clasi.mcp_server import server, content_path
+from clasi.mcp_server import server, content_path, _strip_none_sentinel
 
 # Trigger lazy tool registration (normally done by run_server)
 import clasi.tools.process_tools  # noqa: F401
@@ -28,6 +28,13 @@ class TestContentPath:
 
     def test_resolves_rules_directory(self):
         assert content_path("plugin", "rules").is_dir()
+
+    def test_tool_call_empty_args_rule_exists(self):
+        rule = content_path("plugin", "rules", "tool-call-empty-args.md")
+        assert rule.is_file()
+        content = rule.read_text(encoding="utf-8")
+        assert 'paths: ["**"]' in content
+        assert "NONE" in content
 
 
 class TestServer:
@@ -118,3 +125,28 @@ class TestToolRegistration:
         registered = self._registered_tool_names()
         missing = self.EXPECTED_ARTIFACT_TOOLS - registered
         assert not missing, f"Missing artifact tools: {missing}"
+
+
+class TestNoneSentinelStripping:
+    """Unit tests for _strip_none_sentinel — the NONE-sentinel stripping helper."""
+
+    def test_strips_none_sentinel_value(self):
+        result = _strip_none_sentinel({"notes": "NONE"})
+        assert result == {"notes": None}
+
+    def test_passes_through_real_value(self):
+        result = _strip_none_sentinel({"notes": "real value"})
+        assert result == {"notes": "real value"}
+
+    def test_strips_only_none_sentinel_in_mixed_dict(self):
+        result = _strip_none_sentinel({"sprint_id": "016", "gate": "NONE", "notes": "NONE"})
+        assert result == {"sprint_id": "016", "gate": None, "notes": None}
+
+    def test_empty_dict_unchanged(self):
+        result = _strip_none_sentinel({})
+        assert result == {}
+
+    def test_does_not_mutate_input(self):
+        original = {"notes": "NONE"}
+        _strip_none_sentinel(original)
+        assert original == {"notes": "NONE"}

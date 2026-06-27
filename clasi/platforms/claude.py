@@ -30,6 +30,7 @@ from clasi.platforms._rules import (
     MCP_REQUIRED_BODY,
     SOURCE_CODE_BODY,
     TODO_DIR_BODY,
+    TOOL_CALL_EMPTY_ARGS_BODY,
 )
 
 # The plugin directory is bundled inside the clasi package.
@@ -58,6 +59,10 @@ RULES: Dict[str, str] = {
     ),
     "git-commits.md": (
         '---\npaths:\n  - "**/*.py"\n  - "**/*.md"\n---\n\n' + GIT_COMMITS_BODY
+    ),
+    "tool-call-empty-args.md": (
+        '---\npaths:\n  - "**"\n---\n\n# Tool Call Empty-Argument Bug\n\n'
+        + TOOL_CALL_EMPTY_ARGS_BODY
     ),
 }
 

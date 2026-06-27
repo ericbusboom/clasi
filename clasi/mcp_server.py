@@ -18,6 +18,19 @@ from clasi.project import Project
 logger = logging.getLogger("clasi.mcp")
 
 
+def _strip_none_sentinel(arguments: dict) -> dict:
+    """Return a new dict with every value equal to the string ``"NONE"`` replaced by ``None``.
+
+    Agents pass the literal string ``"NONE"`` for optional parameters to work
+    around the Claude Code harness bug that silently drops all arguments when any
+    argument is empty or null.  This helper converts that sentinel back to
+    ``None`` so tool functions receive the expected Python value.
+
+    The input dict is never mutated; a new dict is always returned.
+    """
+    return {k: (None if v == "NONE" else v) for k, v in arguments.items()}
+
+
 class Clasi:
     """Top-level CLASI object. Owns the MCP server and the active project.
 
@@ -197,7 +210,7 @@ class Clasi:
         async def _logged_call_tool(name, arguments, **kwargs):
             # Strip "NONE" sentinel — agents use this string for optional params
             # to avoid the Claude Code bug where any empty arg drops all args.
-            arguments = {k: (None if v == "NONE" else v) for k, v in arguments.items()}
+            arguments = _strip_none_sentinel(arguments)
             args_summary = {}
             for k, v in arguments.items():
                 s = str(v)

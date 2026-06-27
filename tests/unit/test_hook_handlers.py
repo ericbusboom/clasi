@@ -17,6 +17,7 @@ from clasi.hook_handlers import (
     handle_codex_plan_to_issue,
     handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
+    _ensure_log_gitignore,
     _get_log_dir,
     _get_active_tickets,
     _render_transcript_lines,
@@ -1327,3 +1328,53 @@ class TestRoleGuardFreshLayout:
     def test_tier0_no_config_sprints_blocked(self, tmp_path):
         """Tier 0: without config, clasi/sprints/ is blocked (new default sprints_dir)."""
         assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+
+
+# ---------------------------------------------------------------------------
+# _ensure_log_gitignore
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureLogGitignore:
+    def test_creates_gitignore_when_absent(self, tmp_path):
+        """_ensure_log_gitignore writes .gitignore if one does not exist."""
+        log_dir = tmp_path / "log"
+        log_dir.mkdir()
+        _ensure_log_gitignore(log_dir)
+        gitignore = log_dir / ".gitignore"
+        assert gitignore.exists()
+        content = gitignore.read_text(encoding="utf-8")
+        assert "*" in content
+        assert "!.gitignore" in content
+
+    def test_idempotent_when_gitignore_exists(self, tmp_path):
+        """_ensure_log_gitignore does not overwrite an existing .gitignore."""
+        log_dir = tmp_path / "log"
+        log_dir.mkdir()
+        custom_content = "# custom\n*.txt\n"
+        (log_dir / ".gitignore").write_text(custom_content, encoding="utf-8")
+        _ensure_log_gitignore(log_dir)
+        content = (log_dir / ".gitignore").read_text(encoding="utf-8")
+        assert content == custom_content
+
+    def test_gitignore_content_exact(self, tmp_path):
+        """_ensure_log_gitignore writes the expected content exactly."""
+        log_dir = tmp_path / "log"
+        log_dir.mkdir()
+        _ensure_log_gitignore(log_dir)
+        content = (log_dir / ".gitignore").read_text(encoding="utf-8")
+        assert content == "*\n!.gitignore\n"
+
+    def test_hook_invocation_creates_gitignore(self, tmp_path):
+        """A hook invocation that creates the log dir also writes .gitignore."""
+        # Set up a .clasi dir without pre-creating the log dir so hook creates it
+        _write_legacy_pin(tmp_path)
+        payload = _task_created_payload(task_id="t-gitignore-test")
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_task_created, payload)
+        log_dir = tmp_path / ".clasi" / "log"
+        gitignore = log_dir / ".gitignore"
+        assert gitignore.exists(), ".gitignore was not created in log dir by hook"
+        content = gitignore.read_text(encoding="utf-8")
+        assert "*" in content
+        assert "!.gitignore" in content
