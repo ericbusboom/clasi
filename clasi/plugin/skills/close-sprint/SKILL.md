@@ -5,6 +5,8 @@ description: Validates and closes a completed sprint — verifies tickets, merge
 
 Closes a completed sprint by invoking the close_sprint MCP tool, which merges the branch, archives the sprint directory, bumps the version, and pushes tags.
 
+`close_sprint()` with no arguments auto-detects the sprint from the current git branch (`sprint/NNN-*`). The `sprint_id` parameter is optional — omit it when already on the sprint branch. Provide it explicitly in scripted or CI contexts.
+
 ## Instructions
 
 Load from: `clasi/schemas/se-process/instructions/close.md`
@@ -20,3 +22,14 @@ If any sprint issues remain unresolved at close, the close still succeeds.
 The result JSON will contain an `unresolved_issues` list with the filenames.
 Read this list and surface it to the team-lead for mop-up — these issues were
 not resolved in the sprint and need follow-up.
+
+## Worktree Pruning at Close
+
+As the final step of `close_sprint`, the tool prunes any git worktrees
+associated with the closing sprint branch. Sprint execution creates one
+worktree per ticket via `acquire_execution_lock`; this step removes them all.
+
+The result JSON includes a `worktrees_pruned` list of absolute paths removed.
+If any removal failed, a `worktrees_failed` list is also present and the
+failure is appended to `repairs`. A failed worktree removal does not abort the
+close — the sprint is still archived successfully.

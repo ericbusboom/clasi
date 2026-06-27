@@ -357,6 +357,7 @@ _FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS = [
     _mock_ok(0),                       # git push --tags
     _mock_ok(0),                       # git rev-parse --verify branch (delete check)
     _mock_ok(0),                       # git branch -d
+    _mock_ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain (main only)
 ]
 
 

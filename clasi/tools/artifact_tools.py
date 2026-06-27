@@ -973,9 +973,29 @@ def reopen_ticket(path: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _detect_sprint_from_branch() -> tuple[str, str] | None:
+    """Detect sprint_id and branch_name from the current git branch.
+
+    Returns (sprint_id, branch_name) if the current branch matches
+    sprint/NNN-*, or None if not on a sprint branch (including detached HEAD).
+    """
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+    )
+    branch = result.stdout.strip()
+    if not branch:
+        return None
+    m = re.match(r"^sprint/(\d+)-", branch)
+    if m is None:
+        return None
+    return (m.group(1), branch)
+
+
 @server.tool()
 def close_sprint(
-    sprint_id: str,
+    sprint_id: Optional[str] = None,
     branch_name: Optional[str] = None,
     main_branch: str = "master",
     push_tags: bool = True,
@@ -984,15 +1004,20 @@ def close_sprint(
 ) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
 
-    When branch_name is provided, executes the full lifecycle including
-    pre-condition verification with self-repair, test run, archive, state
-    DB update, version bump, git merge, push tags, and branch deletion.
+    When sprint_id is omitted or empty, auto-detects it from the current git
+    branch (must be on a sprint/NNN-* branch).
+
+    When branch_name is provided (or auto-detected), executes the full
+    lifecycle including pre-condition verification with self-repair, test run,
+    archive, state DB update, version bump, git merge, push tags, and branch
+    deletion.
 
     When branch_name is omitted, falls back to legacy behavior (archive
     + state only, no git operations).
 
     Args:
-        sprint_id: The sprint ID (e.g., '001')
+        sprint_id: The sprint ID (e.g., '001'). When omitted or empty,
+            auto-detected from the current git branch (sprint/NNN-*).
         branch_name: Sprint branch name (e.g., 'sprint/001-my-sprint').
             When provided, enables full lifecycle with git operations.
         main_branch: Target branch for merge (default: 'master')
@@ -1003,31 +1028,33 @@ def close_sprint(
 
     Returns JSON with structured result (success or error).
     """
+    if not sprint_id:
+        detected = _detect_sprint_from_branch()
+        if detected is None:
+            current = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip() or "(detached HEAD)"
+            return json.dumps({
+                "status": "error",
+                "error": {
+                    "step": "auto-detect",
+                    "message": (
+                        "Not on a sprint branch. Provide sprint_id explicitly"
+                        " or check out the sprint branch."
+                    ),
+                    "current_branch": current,
+                },
+            }, indent=2)
+        sprint_id, branch_name = detected
+
     if branch_name is not None:
         return _close_sprint_full(
             sprint_id, branch_name, main_branch, push_tags, delete_branch,
             test_command=test_command,
         )
     return _close_sprint_legacy(sprint_id)
-
-
-@server.tool()
-def finalize_sprint(
-    sprint_id: str,
-    branch_name: Optional[str] = None,
-    main_branch: str = "master",
-    push_tags: bool = True,
-    delete_branch: bool = True,
-    test_command: Optional[str] = None,
-) -> str:
-    """Alias for close_sprint. See close_sprint for full documentation.
-
-    This alias exists to isolate the tool name as a diagnostic variable
-    for a VS Code extension bug where close_sprint params are dropped.
-    If this tool succeeds where close_sprint fails, the name is the trigger.
-    """
-    return close_sprint(sprint_id, branch_name, main_branch,
-                        push_tags, delete_branch, test_command)
 
 
 def _close_sprint_legacy(sprint_id: str) -> str:
@@ -1125,6 +1152,61 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
+    """Prune git worktrees associated with the closing sprint branch.
+
+    Parses ``git worktree list --porcelain`` output and removes any worktree
+    whose ``branch`` field matches ``refs/heads/<branch_name>``.
+
+    Returns a tuple of ``(pruned_paths, failed_paths)`` where each element is
+    a list of absolute worktree paths.  The main worktree (the first entry in
+    the porcelain output, which has no ``branch`` field when in detached-HEAD
+    state, or whose path matches the repo root) is never touched.
+    """
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+    )
+
+    target_ref = f"refs/heads/{branch_name}"
+    pruned: list[str] = []
+    failed: list[str] = []
+
+    # Parse porcelain blocks separated by blank lines.
+    # Each block looks like:
+    #   worktree /path/to/wt
+    #   HEAD <sha>
+    #   branch refs/heads/sprint/NNN-slug
+    current_path: Optional[str] = None
+    is_main: bool = True  # first block is always the main worktree
+
+    for line in result.stdout.splitlines():
+        line = line.rstrip()
+        if line.startswith("worktree "):
+            current_path = line[len("worktree "):]
+        elif line == "":
+            # Blank line separates blocks; reset is_main after first block.
+            if is_main:
+                is_main = False
+            current_path = None
+        elif line.startswith("branch ") and not is_main and current_path is not None:
+            ref = line[len("branch "):]
+            if ref == target_ref:
+                # Remove this worktree.
+                rm_result = subprocess.run(
+                    ["git", "worktree", "remove", "--force", current_path],
+                    capture_output=True,
+                    text=True,
+                )
+                if rm_result.returncode == 0:
+                    pruned.append(current_path)
+                else:
+                    failed.append(current_path)
+
+    return pruned, failed
+
+
 def _close_sprint_full(
     sprint_id: str,
     branch_name: str,
@@ -1162,7 +1244,7 @@ def _close_sprint_full(
                 },
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
     except SprintIdMismatchError as e:
         return json.dumps({
@@ -1181,7 +1263,7 @@ def _close_sprint_full(
                 },
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
     except (SprintNotFoundError, ValueError):
         # Sprint dir might already be archived (idempotent retry), or an
@@ -1194,7 +1276,7 @@ def _close_sprint_full(
                 "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
             },
             "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
 
     if sprint.tickets_dir.exists():
@@ -1231,7 +1313,7 @@ def _close_sprint_full(
                         },
                     },
                     "completed_steps": [],
-                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"],
+                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
                 }, indent=2)
 
     # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
@@ -1320,7 +1402,7 @@ def _close_sprint_full(
     completed_steps.append("precondition_verification")
 
     # ── Step 2: Run tests ──
-    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch"]
+    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"]
 
     if test_command == "":
         # Explicitly skip tests (non-Python projects, etc.)
@@ -1547,20 +1629,35 @@ def _close_sprint_full(
 
     completed_steps.append("delete_branch")
 
-    # ── Step 9: Clear recovery state ──
+    # ── Step 9: Prune sprint worktrees ──
+    worktrees_pruned: list[str] = []
+    worktrees_failed: list[str] = []
+    pruned, failed = _prune_sprint_worktrees(branch_name)
+    worktrees_pruned = pruned
+    worktrees_failed = failed
+    if worktrees_failed:
+        for wt_path in worktrees_failed:
+            repairs.append(f"failed to remove worktree: {wt_path}")
+    if worktrees_pruned:
+        completed_steps.append("prune_worktrees")
+
+    # ── Step 10: Clear recovery state ──
     if db.path.exists():
         try:
             db.clear_recovery_state()
         except Exception:
             pass
 
-    # ── Step 10: Return structured result ──
+    # ── Step 11: Return structured result ──
     result: dict = {
         "status": "success",
         "old_path": old_path_str,
         "new_path": str(new_path),
         "repairs": repairs,
+        "worktrees_pruned": worktrees_pruned,
     }
+    if worktrees_failed:
+        result["worktrees_failed"] = worktrees_failed
     if unresolved_issues:
         result["unresolved_issues"] = unresolved_issues
     if version:
