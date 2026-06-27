@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Add NONE-sentinel stripping unit tests to test_mcp_server
-status: open
+status: in-progress
 use-cases:
 - SUC-016-004
 depends-on: []

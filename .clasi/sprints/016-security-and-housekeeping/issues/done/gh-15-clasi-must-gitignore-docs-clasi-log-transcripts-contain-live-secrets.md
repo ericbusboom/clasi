@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 github-issue: ericbusboom/clasi#15
 sprint: '016'
 tickets:
