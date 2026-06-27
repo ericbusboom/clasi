@@ -1,7 +1,7 @@
 ---
 id: '016'
 title: Security and housekeeping
-status: roadmap
+status: planning-docs
 branch: sprint/016-security-and-housekeeping
 use-cases: []
 issues:
@@ -116,5 +116,8 @@ precedes the first log write.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Ensure log-dir gitignore on runtime hook_handlers mkdir | — |
+| 002 | Add NONE-sentinel stripping unit tests to test_mcp_server | — |
+| 003 | Create tool-call-empty-args rule file in plugin/rules | 002 |
 
 Tickets execute serially in the order listed.

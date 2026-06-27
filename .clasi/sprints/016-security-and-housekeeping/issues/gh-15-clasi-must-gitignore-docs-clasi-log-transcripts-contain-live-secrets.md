@@ -1,7 +1,9 @@
 ---
-status: pending
+status: in-progress
 github-issue: ericbusboom/clasi#15
-sprint: '015'
+sprint: '016'
+tickets:
+- 016-001
 ---
 
 # CLASI must gitignore docs/clasi/log/ — transcripts contain live secrets

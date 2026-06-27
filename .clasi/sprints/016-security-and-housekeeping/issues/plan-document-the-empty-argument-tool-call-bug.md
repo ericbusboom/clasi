@@ -1,6 +1,9 @@
 ---
-status: pending
-sprint: '015'
+status: in-progress
+sprint: '016'
+tickets:
+- 016-002
+- 016-003
 ---
 
 # Plan: Document the Empty-Argument Tool Call Bug
