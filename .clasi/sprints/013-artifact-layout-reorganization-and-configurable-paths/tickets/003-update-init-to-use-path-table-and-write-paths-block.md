@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Update init to use path table and write paths block
-status: in-progress
+status: done
 use-cases:
 - SUC-002
 depends-on:
@@ -36,17 +36,17 @@ After this ticket:
 
 ## Acceptance Criteria
 
-- [ ] `init_command.py` no longer contains hardcoded `"issues"`, `"sprints"`,
+- [x] `init_command.py` no longer contains hardcoded `"issues"`, `"sprints"`,
       `"architecture"`, `"reflections"` directory names in the scaffold section.
-- [ ] `ARTIFACT_PATH_DEFAULTS` is imported from `clasi.project` and used for
+- [x] `ARTIFACT_PATH_DEFAULTS` is imported from `clasi.project` and used for
       directory creation.
-- [ ] `clasi init` in a scratch dir creates `clasi/issues/`, `clasi/sprints/`,
+- [x] `clasi init` in a scratch dir creates `clasi/issues/`, `clasi/sprints/`,
       `clasi/reflections/`, `docs/architecture/`, `docs/design/`, `.clasi/log/`.
-- [ ] Each directory gets a `.gitkeep` (when empty); `log/` gets a `.gitignore`.
-- [ ] `paths:` block is written to `.clasi/config.yaml`.
-- [ ] Re-running `clasi init` on a project with a custom `paths:` key does NOT
+- [x] Each directory gets a `.gitkeep` (when empty); `log/` gets a `.gitignore`.
+- [x] `paths:` block is written to `.clasi/config.yaml`.
+- [x] Re-running `clasi init` on a project with a custom `paths:` key does NOT
       overwrite the custom values (setdefault semantics).
-- [ ] `uv run pytest` passes.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 

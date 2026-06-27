@@ -31,6 +31,7 @@ _PLUGIN_DIR = Path(__file__).parent / "plugin"
 # Re-export RULES for backward compatibility with existing tests that import
 # RULES from clasi.init_command.
 from clasi.platforms.claude import RULES  # noqa: E402,F401
+from clasi.project import ARTIFACT_PATH_DEFAULTS  # noqa: E402
 
 
 def _detect_mcp_command(target: Path) -> dict:
@@ -196,35 +197,27 @@ def run_init(
     _update_mcp_json(target_path / ".mcp.json", target_path)
     click.echo()
 
-    # Create .clasi/ directory structure (shared setup).
-    click.echo(".clasi/ directories:")
+    # Create directory structure from ARTIFACT_PATH_DEFAULTS (shared setup).
+    click.echo("CLASI directories:")
     clasi_dir = target_path / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
 
-    # Issues directory: pending pool only — no in-progress/ or done/ subdirs.
-    issues_dir = clasi_dir / "issues"
-    issues_dir.mkdir(parents=True, exist_ok=True)
-    gitkeep = issues_dir / ".gitkeep"
-    if not gitkeep.exists() and not any(issues_dir.iterdir()):
-        gitkeep.touch()
-    click.echo("  Created: .clasi/issues/ (pending pool)")
+    for key, rel in ARTIFACT_PATH_DEFAULTS.items():
+        if key == "db":
+            continue  # db is a file; created by StateDB on first use
+        dir_path = target_path / rel
+        dir_path.mkdir(parents=True, exist_ok=True)
+        if key == "logs":
+            gitignore = dir_path / ".gitignore"
+            gitignore.write_text("# Ignore all log files\n*\n!.gitignore\n", encoding="utf-8")
+            click.echo(f"  Created: {rel}/ (with .gitignore)")
+        else:
+            gk = dir_path / ".gitkeep"
+            if not gk.exists() and not any(dir_path.iterdir()):
+                gk.touch()
+            click.echo(f"  Created: {rel}/")
 
-    # Other standard .clasi/ subdirectories.
-    for subdir_name in ("sprints", "architecture", "reflections"):
-        subdir = clasi_dir / subdir_name
-        subdir.mkdir(parents=True, exist_ok=True)
-        gk = subdir / ".gitkeep"
-        if not gk.exists() and not any(subdir.iterdir()):
-            gk.touch()
-    click.echo("  Created: .clasi/sprints/, .clasi/architecture/, .clasi/reflections/")
-
-    # Log directory with .gitignore.
-    log_dir = clasi_dir / "log"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_gitignore = log_dir / ".gitignore"
-    log_gitignore.write_text("# Ignore all log files\n*\n!.gitignore\n", encoding="utf-8")
-    click.echo("  Created: .clasi/log/ (with .gitignore)")
-
-    # Write (or update) .clasi/config.yaml with the chosen process.
+    # Write (or update) .clasi/config.yaml with the chosen process and paths.
     config_path = clasi_dir / "config.yaml"
     config_data: dict = {}
     if config_path.exists():
@@ -235,6 +228,7 @@ def run_init(
         except yaml.YAMLError:
             pass  # overwrite a corrupt config
     config_data["process"] = process
+    config_data.setdefault("paths", dict(ARTIFACT_PATH_DEFAULTS))
     config_path.write_text(yaml.safe_dump(config_data, default_flow_style=False), encoding="utf-8")
     click.echo(f"  Written: .clasi/config.yaml (process: {process})")
 

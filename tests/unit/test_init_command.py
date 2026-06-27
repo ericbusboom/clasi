@@ -214,11 +214,11 @@ class TestRunInit:
         assert "CLASI:START" in content
 
     def test_creates_issues_directory_pending_pool_only(self, target_dir):
-        """clasi init creates .clasi/issues/ (pending pool) with no subdirs."""
+        """clasi init creates clasi/issues/ (pending pool) with no subdirs."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        issues_dir = target_dir / ".clasi" / "issues"
+        issues_dir = target_dir / "clasi" / "issues"
         assert issues_dir.exists()
         # No in-progress/ or done/ subdirectories at root issues level
         assert not (issues_dir / "in-progress").exists()
@@ -233,19 +233,22 @@ class TestRunInit:
         assert not docs_clasi.exists()
 
     def test_creates_clasi_subdirectories(self, target_dir):
-        """clasi init creates .clasi/sprints/, .clasi/architecture/, .clasi/reflections/."""
+        """clasi init creates directories from ARTIFACT_PATH_DEFAULTS."""
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        clasi_dir = target_dir / ".clasi"
-        for subdir in ("sprints", "architecture", "reflections"):
-            assert (clasi_dir / subdir).exists(), f".clasi/{subdir}/ not created"
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+        for key, rel in ARTIFACT_PATH_DEFAULTS.items():
+            if key == "db":
+                continue  # db is a file, not a directory
+            assert (target_dir / rel).exists(), f"{rel}/ not created"
 
     def test_creates_log_directory_with_gitignore(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        log_dir = target_dir / ".clasi" / "log"
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+        log_dir = target_dir / ARTIFACT_PATH_DEFAULTS["logs"]
         assert log_dir.exists()
 
         gitignore = log_dir / ".gitignore"
@@ -259,7 +262,8 @@ class TestRunInit:
         run_init(str(target_dir))
         run_init(str(target_dir))
 
-        gitignore = target_dir / ".clasi" / "log" / ".gitignore"
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+        gitignore = target_dir / ARTIFACT_PATH_DEFAULTS["logs"] / ".gitignore"
         assert gitignore.exists()
         content = gitignore.read_text(encoding="utf-8")
         assert "*" in content
@@ -846,3 +850,106 @@ class TestCopilotFlag:
         assert (tmp_path / ".claude" / "skills" / "se" / "SKILL.md").exists()
         assert (tmp_path / ".codex" / "config.toml").exists()
         assert (tmp_path / ".github" / "copilot-instructions.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Ticket 013-003: path table and paths: config block
+# ---------------------------------------------------------------------------
+
+
+class TestPathTableAndPathsBlock:
+    """Tests for ticket 013-003: init uses ARTIFACT_PATH_DEFAULTS and writes paths: block."""
+
+    def test_creates_issues_at_new_default_path(self, target_dir):
+        """clasi init creates clasi/issues/ (new default, not .clasi/issues/)."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        assert (target_dir / "clasi" / "issues").exists()
+
+    def test_creates_architecture_at_new_default_path(self, target_dir):
+        """clasi init creates docs/architecture/ (new default)."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        assert (target_dir / "docs" / "architecture").exists()
+
+    def test_creates_all_default_directories(self, target_dir):
+        """clasi init creates every non-db entry in ARTIFACT_PATH_DEFAULTS."""
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        for key, rel in ARTIFACT_PATH_DEFAULTS.items():
+            if key == "db":
+                continue
+            assert (target_dir / rel).is_dir(), f"Expected directory: {rel}"
+
+    def test_paths_block_written_to_config(self, target_dir):
+        """clasi init writes paths: block to .clasi/config.yaml."""
+        import yaml
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        config_path = target_dir / ".clasi" / "config.yaml"
+        assert config_path.exists()
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert "paths" in data
+        assert data["paths"] == ARTIFACT_PATH_DEFAULTS
+
+    def test_paths_block_not_overwritten_on_rerun(self, target_dir):
+        """Re-running clasi init does NOT overwrite a customized paths: block."""
+        import yaml
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        # Simulate user customizing the issues path.
+        config_path = target_dir / ".clasi" / "config.yaml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["paths"]["issues"] = "my/custom/issues"
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        # Re-run init — custom value must be preserved.
+        run_init(str(target_dir))
+
+        data_after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert data_after["paths"]["issues"] == "my/custom/issues"
+
+    def test_init_command_no_longer_hardcodes_old_dirs(self, target_dir):
+        """The hardcoded .clasi/architecture and .clasi/sprints dirs are NOT created."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        # Old default paths should NOT exist; new defaults should.
+        assert not (target_dir / ".clasi" / "architecture").exists()
+        assert not (target_dir / ".clasi" / "sprints").exists()
+        assert (target_dir / "docs" / "architecture").exists()
+        assert (target_dir / "clasi" / "sprints").exists()
+
+    def test_gitkeep_placed_in_empty_dirs(self, target_dir):
+        """Non-log directories get a .gitkeep when empty."""
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        for key, rel in ARTIFACT_PATH_DEFAULTS.items():
+            if key in ("db", "logs"):
+                continue
+            gk = target_dir / rel / ".gitkeep"
+            assert gk.exists(), f".gitkeep missing in {rel}/"
+
+    def test_log_dir_gets_gitignore_not_gitkeep(self, target_dir):
+        """logs directory gets .gitignore, not .gitkeep."""
+        from clasi.project import ARTIFACT_PATH_DEFAULTS
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        log_dir = target_dir / ARTIFACT_PATH_DEFAULTS["logs"]
+        assert (log_dir / ".gitignore").exists()
+        assert not (log_dir / ".gitkeep").exists()
