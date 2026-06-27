@@ -1,7 +1,7 @@
 ---
 id: '015'
 title: close_sprint and sprint-lifecycle hardening
-status: roadmap
+status: planning-docs
 branch: sprint/015-close-sprint-and-sprint-lifecycle-hardening
 use-cases: []
 issues:
@@ -101,5 +101,8 @@ a replacement for explicit `sprint_id` in normal operation.
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 015-001 | Remove finalize_sprint alias | — |
+| 015-002 | Make sprint_id optional with branch auto-detect | 015-001 |
+| 015-003 | Prune sprint worktrees at close | 015-002 |
 
 Tickets execute serially in the order listed.
