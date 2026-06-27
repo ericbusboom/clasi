@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Create tool-call-empty-args rule file in plugin/rules
-status: open
+status: in-progress
 use-cases:
 - SUC-016-005
 depends-on:
