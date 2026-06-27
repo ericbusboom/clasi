@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Ensure log-dir gitignore on runtime hook_handlers mkdir
-status: open
+status: in-progress
 use-cases:
 - SUC-016-002
 - SUC-016-003
