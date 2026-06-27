@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Ensure log-dir gitignore on runtime hook_handlers mkdir
-status: in-progress
+status: done
 use-cases:
 - SUC-016-002
 - SUC-016-003
@@ -27,11 +27,11 @@ ticket closes the runtime gap in `hook_handlers.py`.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/hook_handlers.py` contains a module-level helper `_ensure_log_gitignore(log_dir: Path) -> None` that writes `<log_dir>/.gitignore` with content `*\n!.gitignore\n` if the file does not already exist.
-- [ ] `_ensure_log_gitignore` is called immediately after every `log_dir.mkdir(...)` call in `hook_handlers.py` (currently two call sites: lines ~61 and ~315).
-- [ ] If `.gitignore` already exists in the log directory, `_ensure_log_gitignore` does not overwrite it (idempotent).
-- [ ] New unit tests in `tests/unit/test_hook_handlers.py` (or a new `test_hook_handlers_gitignore.py`) verify that after a hook invocation that creates the log directory, the `.gitignore` is present with correct content.
-- [ ] `uv run pytest` is green.
+- [x] `clasi/hook_handlers.py` contains a module-level helper `_ensure_log_gitignore(log_dir: Path) -> None` that writes `<log_dir>/.gitignore` with content `*\n!.gitignore\n` if the file does not already exist.
+- [x] `_ensure_log_gitignore` is called immediately after every `log_dir.mkdir(...)` call in `hook_handlers.py` (currently two call sites: lines ~61 and ~315).
+- [x] If `.gitignore` already exists in the log directory, `_ensure_log_gitignore` does not overwrite it (idempotent).
+- [x] New unit tests in `tests/unit/test_hook_handlers.py` (or a new `test_hook_handlers_gitignore.py`) verify that after a hook invocation that creates the log directory, the `.gitignore` is present with correct content.
+- [x] `uv run pytest` is green.
 
 ## Implementation Plan
 

@@ -38,6 +38,22 @@ def read_payload() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Log directory protection
+# ---------------------------------------------------------------------------
+
+
+def _ensure_log_gitignore(log_dir: Path) -> None:
+    """Write a .gitignore in log_dir if one does not already exist.
+
+    Prevents transcript logs (which may contain live secrets) from being
+    accidentally committed. Idempotent — preserves any existing .gitignore.
+    """
+    gitignore = log_dir / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text("*\n!.gitignore\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Hook activity log
 # ---------------------------------------------------------------------------
 
@@ -59,6 +75,7 @@ def _log_hook_event(
             return
         log_dir = _proj.log_dir
         log_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_log_gitignore(log_dir)
 
         timestamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
         reason_fixed = f"{reason:<12.12}"
@@ -313,6 +330,7 @@ def _get_sprint_context() -> tuple[Optional[Path], str]:
         return None, ""
     log_base = _proj.log_dir
     log_base.mkdir(parents=True, exist_ok=True)
+    _ensure_log_gitignore(log_base)
 
     db_path = _proj.db_path
     if db_path.exists():
