@@ -973,9 +973,29 @@ def reopen_ticket(path: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _detect_sprint_from_branch() -> tuple[str, str] | None:
+    """Detect sprint_id and branch_name from the current git branch.
+
+    Returns (sprint_id, branch_name) if the current branch matches
+    sprint/NNN-*, or None if not on a sprint branch (including detached HEAD).
+    """
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+    )
+    branch = result.stdout.strip()
+    if not branch:
+        return None
+    m = re.match(r"^sprint/(\d+)-", branch)
+    if m is None:
+        return None
+    return (m.group(1), branch)
+
+
 @server.tool()
 def close_sprint(
-    sprint_id: str,
+    sprint_id: Optional[str] = None,
     branch_name: Optional[str] = None,
     main_branch: str = "master",
     push_tags: bool = True,
@@ -984,15 +1004,20 @@ def close_sprint(
 ) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
 
-    When branch_name is provided, executes the full lifecycle including
-    pre-condition verification with self-repair, test run, archive, state
-    DB update, version bump, git merge, push tags, and branch deletion.
+    When sprint_id is omitted or empty, auto-detects it from the current git
+    branch (must be on a sprint/NNN-* branch).
+
+    When branch_name is provided (or auto-detected), executes the full
+    lifecycle including pre-condition verification with self-repair, test run,
+    archive, state DB update, version bump, git merge, push tags, and branch
+    deletion.
 
     When branch_name is omitted, falls back to legacy behavior (archive
     + state only, no git operations).
 
     Args:
-        sprint_id: The sprint ID (e.g., '001')
+        sprint_id: The sprint ID (e.g., '001'). When omitted or empty,
+            auto-detected from the current git branch (sprint/NNN-*).
         branch_name: Sprint branch name (e.g., 'sprint/001-my-sprint').
             When provided, enables full lifecycle with git operations.
         main_branch: Target branch for merge (default: 'master')
@@ -1003,6 +1028,27 @@ def close_sprint(
 
     Returns JSON with structured result (success or error).
     """
+    if not sprint_id:
+        detected = _detect_sprint_from_branch()
+        if detected is None:
+            current = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip() or "(detached HEAD)"
+            return json.dumps({
+                "status": "error",
+                "error": {
+                    "step": "auto-detect",
+                    "message": (
+                        "Not on a sprint branch. Provide sprint_id explicitly"
+                        " or check out the sprint branch."
+                    ),
+                    "current_branch": current,
+                },
+            }, indent=2)
+        sprint_id, branch_name = detected
+
     if branch_name is not None:
         return _close_sprint_full(
             sprint_id, branch_name, main_branch, push_tags, delete_branch,

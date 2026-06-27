@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Make sprint_id optional with branch auto-detect
-status: in-progress
+status: done
 use-cases:
 - SUC-015-001
 depends-on:
@@ -24,12 +24,12 @@ correct sprint branch.
 
 ## Acceptance Criteria
 
-- [ ] `close_sprint` signature changes to `sprint_id: Optional[str] = None`.
-- [ ] When `sprint_id` is `None` or empty string, the function calls `git branch --show-current`
+- [x] `close_sprint` signature changes to `sprint_id: Optional[str] = None`.
+- [x] When `sprint_id` is `None` or empty string, the function calls `git branch --show-current`
   and parses the output against `sprint/NNN-*` to extract `sprint_id` and `branch_name`.
-- [ ] When auto-detect succeeds, behavior is identical to passing `sprint_id` and `branch_name`
+- [x] When auto-detect succeeds, behavior is identical to passing `sprint_id` and `branch_name`
   explicitly.
-- [ ] When not on a sprint branch, `close_sprint()` returns a structured error JSON:
+- [x] When not on a sprint branch, `close_sprint()` returns a structured error JSON:
   ```json
   {
     "status": "error",
@@ -40,8 +40,8 @@ correct sprint branch.
     }
   }
   ```
-- [ ] When `sprint_id` is provided explicitly, behavior is identical to pre-sprint-015 behavior.
-- [ ] `uv run pytest -q` passes with no regressions.
+- [x] When `sprint_id` is provided explicitly, behavior is identical to pre-sprint-015 behavior.
+- [x] `uv run pytest -q` passes with no regressions.
 
 ## Implementation Plan
 
