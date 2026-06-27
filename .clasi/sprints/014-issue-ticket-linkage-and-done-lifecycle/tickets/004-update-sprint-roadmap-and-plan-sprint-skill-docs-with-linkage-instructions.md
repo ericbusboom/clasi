@@ -1,11 +1,13 @@
 ---
-id: "004"
-title: "Update sprint-roadmap and plan-sprint skill docs with linkage instructions"
-status: open
-use-cases: [SUC-003]
-depends-on: ["003"]
-github-issue: ""
-issue: ""
+id: '004'
+title: Update sprint-roadmap and plan-sprint skill docs with linkage instructions
+status: in-progress
+use-cases:
+- SUC-003
+depends-on:
+- '003'
+github-issue: ''
+issue: ''
 completes_issue: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
