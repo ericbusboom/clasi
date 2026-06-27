@@ -609,7 +609,10 @@ def create_ticket(
 
     # Auto-link to sprint issues when no explicit issue parameter given
     if issue is None:
-        sprint_issues = sprint.sprint_doc.frontmatter.get("todos")
+        sprint_issues = (
+            sprint.sprint_doc.frontmatter.get("issues")
+            or sprint.sprint_doc.frontmatter.get("todos")
+        )
         if sprint_issues and isinstance(sprint_issues, list):
             issue = sprint_issues
 

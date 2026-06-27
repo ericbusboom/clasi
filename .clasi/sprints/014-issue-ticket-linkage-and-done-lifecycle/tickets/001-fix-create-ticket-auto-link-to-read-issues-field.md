@@ -1,13 +1,14 @@
 ---
-id: "001"
-title: "Fix create_ticket auto-link to read issues: field"
-status: open
-use-cases: [SUC-001]
+id: '001'
+title: 'Fix create_ticket auto-link to read issues: field'
+status: done
+use-cases:
+- SUC-001
 depends-on: []
-github-issue: "ericbusboom/clasi#12"
+github-issue: ericbusboom/clasi#12
 issue:
-  - issue-done-and-linkage-front-matter-not-updated.md
-  - gh-12-ensure-all-tickets-that-implment-a-todo-are-linked.md
+- issue-done-and-linkage-front-matter-not-updated.md
+- gh-12-ensure-all-tickets-that-implment-a-todo-are-linked.md
 completes_issue: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -28,10 +29,10 @@ Fix: in the auto-link block (find `create_ticket` and the line that reads
 
 ## Acceptance Criteria
 
-- [ ] When `create_ticket(sprint_id, title)` is called with no `issue=` argument and the sprint's `sprint.md` has `issues: [some-issue.md]`, the ticket is auto-linked to `some-issue.md`.
-- [ ] When `issues:` is absent or empty but `todos:` is present, the ticket is auto-linked via `todos:` (legacy fallback preserved).
-- [ ] When both `issues:` and `todos:` are absent, no auto-link occurs (existing behavior preserved).
-- [ ] The issue file is physically moved to `<sprint>/issues/` and its frontmatter updated to `status: in-progress` as before.
+- [x] When `create_ticket(sprint_id, title)` is called with no `issue=` argument and the sprint's `sprint.md` has `issues: [some-issue.md]`, the ticket is auto-linked to `some-issue.md`.
+- [x] When `issues:` is absent or empty but `todos:` is present, the ticket is auto-linked via `todos:` (legacy fallback preserved).
+- [x] When both `issues:` and `todos:` are absent, no auto-link occurs (existing behavior preserved).
+- [x] The issue file is physically moved to `<sprint>/issues/` and its frontmatter updated to `status: in-progress` as before.
 
 ## Implementation Plan
 
