@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Update sprint-roadmap and plan-sprint skill docs with linkage instructions
-status: in-progress
+status: done
 use-cases:
 - SUC-003
 depends-on:
@@ -27,10 +27,10 @@ merges, the installer regenerates the `.claude/` copies.
 
 ## Acceptance Criteria
 
-- [ ] `clasi/plugin/skills/sprint-roadmap/SKILL.md` step 4 instructs calling `link_sprint_issues(sprint_id, [filenames])` for every issue claimed in the roadmap, replacing the old "Update TODOs: set sprint: NNN" instruction.
-- [ ] `clasi/plugin/skills/plan-sprint/SKILL.md` (or the instruction source it delegates to) instructs calling `link_sprint_issues` explicitly during the planning-docs phase — not writing `issues:` manually via `write_artifact_frontmatter`.
-- [ ] The instructions specify the correct tool signature: `link_sprint_issues(sprint_id, issue_filenames)`.
-- [ ] No references to setting `todos:` frontmatter remain in these two files.
+- [x] `clasi/plugin/skills/sprint-roadmap/SKILL.md` step 4 instructs calling `link_sprint_issues(sprint_id, [filenames])` for every issue claimed in the roadmap, replacing the old "Update TODOs: set sprint: NNN" instruction.
+- [x] `clasi/plugin/skills/plan-sprint/SKILL.md` (or the instruction source it delegates to) instructs calling `link_sprint_issues` explicitly during the planning-docs phase — not writing `issues:` manually via `write_artifact_frontmatter`.
+- [x] The instructions specify the correct tool signature: `link_sprint_issues(sprint_id, issue_filenames)`.
+- [x] No references to setting `todos:` frontmatter remain in these two files.
 
 ## Implementation Plan
 
