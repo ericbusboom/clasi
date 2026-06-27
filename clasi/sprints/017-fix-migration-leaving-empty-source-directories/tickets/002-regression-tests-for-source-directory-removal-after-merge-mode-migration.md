@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Regression tests for source-directory removal after merge-mode migration
-status: open
+status: in-progress
 use-cases:
 - SUC-017-001
 - SUC-017-002
