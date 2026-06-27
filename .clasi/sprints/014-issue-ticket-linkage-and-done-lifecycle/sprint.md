@@ -1,7 +1,7 @@
 ---
 id: '014'
 title: Issue-ticket linkage and done lifecycle
-status: roadmap
+status: planning-docs
 branch: sprint/014-issue-ticket-linkage-and-done-lifecycle
 use-cases: []
 issues:
@@ -112,5 +112,10 @@ workflows depend on.)
 
 | # | Title | Depends On |
 |---|-------|------------|
+| 001 | Fix create_ticket auto-link to read issues: field | — |
+| 002 | Fix _close_sprint_full to be non-blocking on unresolved issues | — |
+| 003 | Add unit tests for auto-link field fix and non-blocking close | 001, 002 |
+| 004 | Update sprint-roadmap and plan-sprint skill docs with linkage instructions | 003 |
+| 005 | Update create-tickets, team-lead, and close-sprint docs with lifecycle instructions | 004 |
 
 Tickets execute serially in the order listed.
