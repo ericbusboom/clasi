@@ -1,8 +1,8 @@
 ---
-id: '013'
+id: '014'
 title: Issue-ticket linkage and done lifecycle
 status: roadmap
-branch: sprint/013-issue-ticket-linkage-and-done-lifecycle
+branch: sprint/014-issue-ticket-linkage-and-done-lifecycle
 use-cases: []
 issues:
 - issue-done-and-linkage-front-matter-not-updated.md
@@ -10,7 +10,7 @@ issues:
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
-# Sprint 013: Issue-ticket linkage and done lifecycle
+# Sprint 014: Issue-ticket linkage and done lifecycle
 
 ## Goals
 

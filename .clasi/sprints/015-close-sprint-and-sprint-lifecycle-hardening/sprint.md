@@ -1,8 +1,8 @@
 ---
-id: '014'
+id: '015'
 title: close_sprint and sprint-lifecycle hardening
 status: roadmap
-branch: sprint/014-close-sprint-and-sprint-lifecycle-hardening
+branch: sprint/015-close-sprint-and-sprint-lifecycle-hardening
 use-cases: []
 issues:
 - gh-13-close-sprint-mcp-tool-lacks-test-command-parameter-documented-but-not.md
@@ -12,7 +12,7 @@ issues:
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
-# Sprint 014: close_sprint and sprint-lifecycle hardening
+# Sprint 015: close_sprint and sprint-lifecycle hardening
 
 ## Goals
 

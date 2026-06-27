@@ -1,8 +1,8 @@
 ---
-id: '015'
+id: '016'
 title: Security and housekeeping
 status: roadmap
-branch: sprint/015-security-and-housekeeping
+branch: sprint/016-security-and-housekeeping
 use-cases: []
 issues:
 - gh-15-clasi-must-gitignore-docs-clasi-log-transcripts-contain-live-secrets.md
@@ -10,7 +10,7 @@ issues:
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
-# Sprint 015: Security and housekeeping
+# Sprint 016: Security and housekeeping
 
 ## Goals
 
@@ -31,7 +31,7 @@ contained live secrets (Google OAuth Client ID + Client Secret, Anthropic API ke
 API key). The push was stopped only by GitHub Push Protection.
 
 **Stakeholder flag:** the security item (gh-15) may warrant pulling forward ahead of
-013/014 given the confirmed incident and ongoing exposure risk. Sprint 015 is ordered last
+013/014 given the confirmed incident and ongoing exposure risk. Sprint 016 is ordered last
 per the team-lead's grouping; surface this to the stakeholder before execution planning.
 
 ### Documentation
