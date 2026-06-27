@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Fix merge-mode source directory cleanup in migrate_command
-status: open
+status: in-progress
 use-cases:
 - SUC-017-001
 - SUC-017-002
