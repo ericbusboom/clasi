@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 github-issue: ericbusboom/clasi#17
 sprint: '012'
 ---
