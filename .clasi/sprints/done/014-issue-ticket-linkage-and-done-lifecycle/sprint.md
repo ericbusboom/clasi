@@ -1,7 +1,7 @@
 ---
 id: '014'
 title: Issue-ticket linkage and done lifecycle
-status: planning-docs
+status: done
 branch: sprint/014-issue-ticket-linkage-and-done-lifecycle
 use-cases: []
 issues:
