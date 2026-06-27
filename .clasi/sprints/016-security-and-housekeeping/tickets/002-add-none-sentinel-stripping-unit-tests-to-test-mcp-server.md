@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Add NONE-sentinel stripping unit tests to test_mcp_server
-status: in-progress
+status: done
 use-cases:
 - SUC-016-004
 depends-on: []
@@ -30,12 +30,12 @@ when ticket 003 is done.
 
 ## Acceptance Criteria
 
-- [ ] `tests/unit/test_mcp_server.py` contains a `TestNoneSentinelStripping` class.
-- [ ] Test: passing `{"notes": "NONE"}` to `_logged_call_tool` results in the underlying `call_tool` receiving `{"notes": None}`.
-- [ ] Test: passing `{"notes": "real value"}` passes through unchanged as `{"notes": "real value"}`.
-- [ ] Test: mixed dict `{"sprint_id": "016", "gate": "NONE", "notes": "NONE"}` strips only the `"NONE"` values.
-- [ ] Test: an empty `arguments` dict `{}` is passed through unchanged (no KeyError or mutation).
-- [ ] `uv run pytest` is green.
+- [x] `tests/unit/test_mcp_server.py` contains a `TestNoneSentinelStripping` class.
+- [x] Test: passing `{"notes": "NONE"}` to `_logged_call_tool` results in the underlying `call_tool` receiving `{"notes": None}`.
+- [x] Test: passing `{"notes": "real value"}` passes through unchanged as `{"notes": "real value"}`.
+- [x] Test: mixed dict `{"sprint_id": "016", "gate": "NONE", "notes": "NONE"}` strips only the `"NONE"` values.
+- [x] Test: an empty `arguments` dict `{}` is passed through unchanged (no KeyError or mutation).
+- [x] `uv run pytest` is green.
 
 ## Implementation Plan
 
