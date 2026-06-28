@@ -32,9 +32,13 @@ echo ""
 
 # --- Run ---
 echo "=== Starting container '$CONTAINER_NAME'... ==="
+# Volume mount for persistent project data (bind mount to tests/e2e/project/)
+mkdir -p "$SCRIPT_DIR/project"
+
 docker run -d \
     --name "$CONTAINER_NAME" \
-    -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+    -e ANTHROPIC_API_KEY=*** \
+    -v "$SCRIPT_DIR/project:/project" \
     "$IMAGE_NAME"
 
 # --- Wait for Claude to be ready ---

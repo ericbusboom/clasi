@@ -103,6 +103,19 @@ check      "No uncommitted changes" \
            "cd /project && git diff --quiet && git diff --cached --quiet"
 
 echo ""
+echo "--- OOP Change Resilience ---"
+check      "OOP 1: menu uses title case (Guess My Favorite Number)" \
+           "grep -q 'Guess My Favorite Number' /project/guessing_game/menu.py"
+check      "OOP 2: __version__ present in __init__.py" \
+           "grep -q '__version__' /project/guessing_game/__init__.py"
+check      "OOP 3: TODO comment present in number_game.py" \
+           "grep -q 'difficulty levels' /project/guessing_game/number_game.py"
+check      "OOP 1: 'Guess My Favorite Color' also title case" \
+           "grep -q 'Guess My Favorite Color' /project/guessing_game/menu.py"
+check      "OOP 1: 'Guess Where I Live' also title case" \
+           "grep -q 'Guess Where I Live' /project/guessing_game/menu.py"
+
+echo ""
 echo "============================================"
 echo "  Results: $PASS / $TOTAL passed"
 if [ "$FAIL" -eq 0 ]; then

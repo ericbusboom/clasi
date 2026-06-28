@@ -1,192 +1,242 @@
-# Guessing Game — CLASI E2E Test
+# Guessing Game — CLASI E2E Test (Agent Instructions)
 
-Drive a **Claude Code** agent through the full CLASI software engineering process
-to build the Guessing Game CLI from spec.
+**This file is instructions for an AI agent.** You are the agent. You will read
+this document, follow the steps, and execute the full test autonomously. No
+human is involved — you drive everything.
 
 ## What You're Testing
 
 CLASI (`clasi`) is a spec-driven development system for AI coding agents. It
 defines a structured process: overview → sprint plan → tickets → execute →
-close. This test validates that an AI agent (Claude Code) follows that process
-correctly when driven by a human-like conductor (you).
+close. This test validates that the full pipeline works correctly end-to-end:
+artifacts are produced in the right places, tickets progress through their
+lifecycle, sprints close cleanly, and out-of-process changes are handled
+gracefully.
 
 The target project is a trivial Python CLI with 3 guessing games, split across
 4 sprints. The spec is at `guessing-game-spec.md`.
 
-## Quick Start
+## Architecture
+
+```
+┌──────────┐     claude -p      ┌──────────────────┐     docker exec      ┌──────────────┐
+│  Agent   │ ────────────────── │  Docker container │ ──────────────────── │  clasi MCP   │
+│  (you)   │                    │  (clasi-e2e)      │                      │  server      │
+│          │                    │  /project/        │                      │  + Claude    │
+│  reads   │                    │  claude + clasi   │                      │  sub-agents  │
+│  this    │                    └──────────────────┘                      └──────────────┘
+│  file    │
+└──────────┘
+```
+
+The agent (you) runs on the host. Claude Code runs inside a Docker container
+with a bind mount at `project/`. You send sprint prompts via
+`docker exec clasi-e2e claude -p "..."` (print mode). Print mode uses the
+API key from the environment, needs no OAuth, and produces no interactive
+dialogs.
+
+Data persists on the host at `project/` via the bind mount. You can inspect
+files, run tests, and make OOP changes directly on the host filesystem.
+
+## Prerequisites
+
+- Docker running (OrbStack or Docker Desktop)
+- `ANTHROPIC_API_KEY` set in your environment
+- The Docker image built: `docker build -t clasi-e2e .`
+
+## Agent Workflow (the step-by-step script you follow)
+
+### Step 1: Build and launch the environment
 
 ```bash
-# 1. Build and launch the Docker environment
 ./start.sh
+```
 
-# 2. In a separate terminal, connect to Claude Code
-./connect.sh
+This builds the Docker image (if needed), creates the `project/` bind mount,
+runs `clasi init` inside the container, and launches Claude Code's MCP server.
+Wait for the container to be running (`docker ps` shows `clasi-e2e`).
 
-# 3. Drive the process (see "Driving the Process" below)
+### Step 2: Sprint 001 — Project structure and menu
 
-# 4. When all 4 sprints are done, validate
+Send the sprint prompt to Claude Code inside the container:
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 50 \
+  "Sprint 001: Project structure and menu. Read docs/guessing-game-spec.md.
+   ... [full sprint prompt below] ..."
+```
+
+**EXACT prompt to use:**
+
+> Sprint 001: Project structure and menu. Read docs/guessing-game-spec.md.
+> 1. Write docs/design/overview.md with a high-level project description.
+> 2. Write a sprint plan in clasi/sprints/001-*/planning-docs/.
+> 3. Create implementation tickets in clasi/sprints/001-*/tickets/.
+> 4. Execute each ticket: in-progress → implement → test → done.
+> 5. Write a close-report.md in the sprint directory.
+> 6. Create branch sprint/001, commit all work.
+> The menu shows: 1=Number, 2=Color, 3=City, q=Quit. Games 1-3 print
+> 'Coming soon!' and return to menu. Install pytest if needed.
+> Do NOT ask for confirmation. Say SPRINT_001_COMPLETE when done.
+
+**Wait for completion.** Print mode will return when Claude finishes (can
+take 10–20 minutes). Look for `SPRINT_001_COMPLETE` in the output.
+
+### Step 3: Out-of-Process change 1
+
+The driving agent sends an OOP prompt to Claude (print mode). Claude makes the
+edit directly — no sprint, no tickets. The prompt is in `oop.sh`:
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  "$(./oop.sh 1)"
+```
+
+This tells Claude to fix menu.py title capitalization as a direct edit.
+
+### Step 4: Sprint 002 — Number guessing game
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 40 \
+  "Sprint 002: Number Guessing Game. Secret is 7 (hardcoded). 3 guesses.
+   Non-numeric shows 'Please enter a number' (does not count as guess).
+   Correct: Correct! You got it!. Wrong: Nope, try again. 3 wrong:
+   Sorry! The answer was 7. Wire to menu choice 1. Sprint plan, tickets,
+   execute, close, commit on sprint/002. Do NOT ask for confirmation.
+   Say SPRINT_002_COMPLETE."
+```
+
+### Step 5: Out-of-Process change 2
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  "$(./oop.sh 2)"
+```
+
+Tells Claude to add `__version__` to `__init__.py` as a bypassed edit.
+
+### Step 6: Sprint 003 — Color guessing game
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 35 \
+  "Sprint 003: Color Guessing Game. Secret: blue (case-insensitive, strip
+   whitespace). 3 guesses. Correct: Correct! You got it!. Wrong: Nope,
+   try again. 3 wrong: Sorry! The answer was blue. Wire to menu choice 2.
+   Plan, ticket, execute, close, merge. No confirmation.
+   Say SPRINT_003_COMPLETE."
+```
+
+### Step 7: Out-of-Process change 3
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  "$(./oop.sh 3)"
+```
+
+Tells Claude to add a TODO comment to number_game.py as a quick bypass.
+
+### Step 8: Sprint 004 — City guessing game
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 30 \
+  "Sprint 004 (FINAL): City Guessing Game. Secret: Paris (case-insensitive,
+   strip whitespace). 3 guesses. Correct: Correct! You got it!. Wrong:
+   Nope, try again. 3 wrong: Sorry! The answer was Paris. Wire to menu
+   choice 3. Plan, ticket, execute, close, merge. No confirmation.
+   Say SPRINT_004_COMPLETE."
+```
+
+### Step 9: Validate
+
+```bash
 ./validate.sh
+```
 
-# 5. Clean up
+All checks must pass. If the close was interrupted by `max-turns`, run a
+short catch-up command:
+
+```bash
+docker exec clasi-e2e claude -p \
+  --dangerously-skip-permissions --output-format text --max-turns 20 \
+  "Close sprint 004: write close-report, merge to master, tag. Code + tests
+   are DONE. Do NOT re-implement anything. SPRINT_004_COMPLETE."
+```
+
+### Step 10: Clean up
+
+```bash
 ./stop.sh
 ```
 
-## The CLASI Solo Process
+## OOP Change Details
 
-Claude Code has been initialized with `clasi init` and the guessing-game spec
-is at `docs/guessing-game-spec.md`. The expected artifact tree after a complete
-run:
+| After sprint | Script | What it changes | What it tests |
+|-------------|--------|-----------------|---------------|
+| 001 | `./oop.sh 1` | Fix menu title capitalization | Next sprint doesn't revert the fix |
+| 002 | `./oop.sh 2` | Add `__version__` to package init | Next sprint preserves the version |
+| 003 | `./oop.sh 3` | Add TODO comment to number_game.py | Next sprint doesn't strip comments |
 
-```
-docs/
-├── clasi/
-│   ├── overview.md                    # High-level project description
-│   └── sprints/
-│       ├── 001/
-│       │   ├── planning-docs/         # Sprint plan documents
-│       │   ├── tickets/               # Implementation tickets
-│       │   │   ├── 001-001-*.md       # Ticket files
-│       │   │   └── ...
-│       │   └── close-report.md        # Sprint close summary
-│       ├── 002/
-│       │   ├── planning-docs/
-│       │   ├── tickets/
-│       │   └── close-report.md
-│       ├── 003/
-│       │   ├── planning-docs/
-│       │   ├── tickets/
-│       │   └── close-report.md
-│       └── 004/
-│           ├── planning-docs/
-│           ├── tickets/
-│           └── close-report.md
-```
+## What To Do If Things Go Wrong
 
-## Driving the Process
-
-### Connection
-
-After running `./connect.sh`, you're attached to a tmux session with Claude
-Code running inside the container. The working directory is `/project`.
-
-### Dialog Handling
-
-On first connection, Claude Code may show a **workspace trust dialog**:
-
-```
-❯ 1. Yes, I trust this folder
-  2. No, exit
-```
-
-Press **Enter** to accept (the default). If you see a permissions dialog that
-defaults to "No, exit", press **Down** then **Enter** to accept.
-
-If Claude ever asks you a question (shows `❯` and waits), answer naturally as
-the project owner. When in doubt, choose the path that keeps the process moving.
-
-### The 4 Sprints
-
-For each sprint, send Claude Code a prompt like this (adapt sprint number
-and goal):
-
----
-
-> **Sprint 001**
->
-> Read `docs/guessing-game-spec.md`. Follow the CLASI solo-process for
-> Sprint 001 (Project structure and menu):
->
-> 1. Write or update `docs/clasi/overview.md` with a high-level description.
-> 2. Write a sprint plan in `docs/clasi/sprints/001/planning-docs/`.
-> 3. Create implementation tickets in `docs/clasi/sprints/001/tickets/`.
-> 4. Execute each ticket one at a time: set status to `in-progress`,
->    implement, write tests, mark acceptance criteria checked, set to `done`.
-> 5. Verify all tests pass, then write `docs/clasi/sprints/001/close-report.md`.
->
-> Commit your work at the end of the sprint. Create a branch `sprint/001`.
-
----
-
-Repeat for sprints 002 (Number game), 003 (Color game), and 004 (City game).
-Adapt the sprint goal in each prompt.
-
-### Monitoring Progress
-
-While Claude is working, it shows tool calls with `●` indicators. Wait for the
-`❯` prompt before sending the next sprint prompt — that means Claude is done
-and waiting for input.
-
-If Claude gets stuck or goes off-track, you can send corrective guidance like:
-- "You're overcomplicating this. The spec is simple — just follow it."
-- "Remember to write tests before marking tickets done."
-- "Don't create more tickets than the sprint needs."
-
-### Important: Let Claude Drive
-
-**Don't write code yourself.** Your job is to give Claude the sprint prompt and
-corrective guidance. Claude does all the coding, ticket management, and
-testing. You are the project manager, not the developer.
-
-If Claude asks you to make a decision (e.g. "should I use argparse or a
-hand-written menu?"), answer briefly and let it continue.
+| Symptom | Action |
+|---------|--------|
+| Container not running | `./stop.sh && ./start.sh` (data persists on bind mount) |
+| Sprint hits max-turns without `COMPLETE` | Re-run with higher `--max-turns` or a catch-up prompt |
+| `claude -p` returns error about API key | Verify `ANTHROPIC_API_KEY` is set and valid |
+| Docker commands hang | OrbStack may be slow — wait 30s and retry |
+| Tests fail after OOP change | The change may have broken something — inspect `project/` dir |
 
 ## The Rubric
 
-After all 4 sprints, validate against this checklist. Every item must pass.
+After all 4 sprints and 3 OOP changes, `./validate.sh` checks:
 
 ### Process Artifacts
-
-- [ ] `docs/clasi/overview.md` exists and describes the project
-- [ ] `docs/clasi/sprints/001/planning-docs/` has sprint plan content
-- [ ] `docs/clasi/sprints/002/planning-docs/` has sprint plan content
-- [ ] `docs/clasi/sprints/003/planning-docs/` has sprint plan content
-- [ ] `docs/clasi/sprints/004/planning-docs/` has sprint plan content
+- [ ] `docs/design/overview.md` exists and describes the project
+- [ ] Each sprint has a plan, tickets, and close report
 
 ### Ticket Lifecycle
-
-- [ ] Each sprint has at least one ticket file in `tickets/`
-- [ ] Ticket files show state transitions (in-progress → done)
-- [ ] Ticket files have acceptance criteria
-- [ ] All tickets across all sprints are marked `done`
+- [ ] 3 tickets per sprint, all `status: done`
+- [ ] Tickets show state transitions (in-progress → done)
+- [ ] Tickets have acceptance criteria with checkboxes
 
 ### Sprint Closure
-
-- [ ] `docs/clasi/sprints/001/close-report.md` exists
-- [ ] `docs/clasi/sprints/002/close-report.md` exists
-- [ ] `docs/clasi/sprints/003/close-report.md` exists
-- [ ] `docs/clasi/sprints/004/close-report.md` exists
+- [ ] All 4 close reports exist
+- [ ] All 4 sprints are `phase: done` in the state DB
 
 ### Code Quality
-
 - [ ] `python -m guessing_game` runs and displays the menu
-- [ ] Game 1 (number) accepts guesses and returns to menu
-- [ ] Game 2 (color) accepts guesses (case-insensitive) and returns to menu
-- [ ] Game 3 (city) accepts guesses (case-insensitive) and returns to menu
-- [ ] `q` quits the program
-- [ ] Each game limits to exactly 3 guesses
-- [ ] `python -m pytest` passes with no failures
-- [ ] Test files exist for each game
+- [ ] All 3 games: accept guesses, limit 3, return to menu
+- [ ] `q` quits, invalid input shows error
+- [ ] `python -m pytest` — 37+ tests, 0 failures
 
 ### Git Hygiene
+- [ ] ≥10 commits (1 per sprint + tickets + OOPs)
+- [ ] Branches per sprint
+- [ ] No uncommitted changes
 
-- [ ] At least 4 commits (one per sprint minimum)
-- [ ] Branches exist for each sprint (`sprint/001`, `sprint/002`, etc.)
-- [ ] No uncommitted changes at the end
+### OOP Change Resilience
+- [ ] All 3 OOP commits are in git history (not squashed or reverted)
+- [ ] OOP change 1: menu title case survived
+- [ ] OOP change 2: `__version__` survived in `__init__.py`
+- [ ] OOP change 3: TODO comment survived in `number_game.py`
 
-### Non-Goals (things we DON'T check)
+## Files In This Directory
 
-- Sprint artifacts don't need to be in a specific format — we're testing that
-  the *process* produces them, not that they're perfectly formatted.
-- Claude might go "out of process" on trivial changes — that's fine as long as
-  the major artifacts (plans, tickets, close reports) are produced.
-- The code quality only needs to be functional, not beautiful.
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Can't connect to tmux | Run `docker exec -it clasi-e2e tmux attach -t claude` directly |
-| Claude is unresponsive | Press Ctrl+C in tmux to cancel current operation |
-| Container won't start | Check `docker ps -a` for the container status, check `docker logs clasi-e2e` |
-| API key errors | Ensure `ANTHROPIC_API_KEY` is set before running `start.sh` |
-| Permission denied (Linux) | `chmod +x *.sh` |
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | **This file** — agent instructions |
+| `Dockerfile` | Container image with Python, Node, Claude Code, clasi |
+| `entrypoint.sh` | Runs inside container: clasi init → git → spec → tmux |
+| `start.sh` | Build image + start container + bind mount |
+| `stop.sh` | Stop and remove container |
+| `validate.sh` | Rubric checker — run after all sprints |
+| `oop.sh` | Out-of-process change script (run between sprints) |
+| `guessing-game-spec.md` | The 4-sprint spec baked into the container |
+| `.dockerignore` | Excludes `project/` from build context |

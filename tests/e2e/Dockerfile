@@ -26,20 +26,25 @@ RUN npm install -g @anthropic-ai/claude-code \
 RUN pip install --no-cache-dir \
     git+https://github.com/ericbusboom/clasi.git
 
-# Git config (Claude Code needs this)
-RUN git config --global user.email "agent@clasi-e2e.test" \
-    && git config --global user.name "CLASI E2E Agent"
-
-# Working directory
-WORKDIR /project
-
-# Entrypoint script
+# Entrypoint script (copy as root first)
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Guessing game spec (baked in, no mount needed)
 COPY guessing-game-spec.md /spec/guessing-game-spec.md
 
-# API key is passed via ANTHROPIC_API_KEY env var at runtime
+# Create non-root user (Claude refuses --dangerously-skip-permissions as root)
+RUN useradd -m -s /bin/bash agent && \
+    mkdir -p /project && \
+    chown -R agent:agent /project
 
+# Switch to non-root user
+USER agent
+WORKDIR /project
+
+# Git config for non-root user
+RUN git config --global user.email "agent@clasi-e2e.test" \
+    && git config --global user.name "CLASI E2E Agent"
+
+# API key is passed via ANTHROPIC_API_KEY env var at runtime
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
