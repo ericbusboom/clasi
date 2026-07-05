@@ -8,9 +8,10 @@ Covers:
   create_worktree, create_ticket_branch, validate_worktree, and
   merge_ticket_branch (fast-forward, --no-ff fallback, conflict-abort),
   plus cleanup_worktree idempotency.
-
-reconcile_worktrees is intentionally NOT covered here — it is implemented
-in a separate ticket.
+- reconcile_worktrees: the standing cleanup engine that classifies live
+  ticket worktrees against the audit record (merged-not-cleaned,
+  clean-but-abandoned, ambiguous), plus the rogue/already-gone edge cases
+  and idempotency.
 """
 
 from __future__ import annotations
@@ -578,3 +579,316 @@ class TestCleanupWorktree:
         worktree.cleanup_worktree(repo, wt_path, branch_name, keep_branch=True)
 
         _run(["git", "branch", "-D", branch_name], cwd=repo)
+
+
+# ---------------------------------------------------------------------------
+# reconcile_worktrees: the standing cleanup engine
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def sprint_dir(repo: Path) -> Path:
+    """Sprint directory matching the `repo` fixture's sprint branch name.
+
+    The `repo` fixture's sprint branch is `sprint/999-test-sprint`, so the
+    sprint dir's basename must be `999-test-sprint` for
+    `reconcile_worktrees` to derive the matching sprint branch name and
+    sprint id ("999").
+    """
+    path = repo.parent / "sprint-artifacts" / "999-test-sprint"
+    path.mkdir(parents=True)
+    return path
+
+
+def _make_ticket_worktree(
+    repo: Path, ticket_id: str, slug: str = "slug"
+) -> tuple[Path, str]:
+    """Create a live worktree + ticket branch for `ticket_id` on `repo`."""
+    wt_path = worktree.create_worktree(repo, "999", ticket_id)
+    branch_name = worktree.create_ticket_branch(wt_path, "999", ticket_id, slug)
+    return wt_path, branch_name
+
+
+class TestReconcileWorktrees:
+    def test_all_three_classes_plus_edge_cases_in_one_call(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        """The single highest-value test: all three classifications plus
+        both edge cases (rogue live worktree, already-gone audit entry)
+        present simultaneously in one `reconcile_worktrees` call.
+        """
+        # --- merged-not-cleaned: audit says "merged", branch actually
+        # merged into the sprint branch.
+        merged_wt, merged_branch = _make_ticket_worktree(repo, "001", "merged-slug")
+        (merged_wt / "merged.txt").write_text("merged\n", encoding="utf-8")
+        _run(["git", "add", "-A"], cwd=merged_wt)
+        _run(["git", "commit", "-m", "merged work"], cwd=merged_wt)
+        worktree.merge_ticket_branch(repo, "sprint/999-test-sprint", merged_branch)
+        # merge_ticket_branch checks out the sprint branch as a side effect;
+        # switch back to it explicitly for clarity/robustness.
+        _run(["git", "checkout", "sprint/999-test-sprint"], cwd=repo)
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "001",
+                "state": "merged",
+                "path": str(merged_wt),
+                "branch": merged_branch,
+            },
+        )
+
+        # --- clean-but-abandoned: worktree has no uncommitted changes,
+        # audit state is some non-terminal, non-in_progress state (e.g.
+        # "worktree_created" -- work was done and committed but the ticket
+        # lifecycle was abandoned without marking merged).
+        abandoned_wt, abandoned_branch = _make_ticket_worktree(
+            repo, "002", "abandoned-slug"
+        )
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "002",
+                "state": "worktree_created",
+                "path": str(abandoned_wt),
+                "branch": abandoned_branch,
+            },
+        )
+
+        # --- ambiguous (dirty tree): uncommitted changes present.
+        dirty_wt, dirty_branch = _make_ticket_worktree(repo, "003", "dirty-slug")
+        (dirty_wt / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "003",
+                "state": "worktree_created",
+                "path": str(dirty_wt),
+                "branch": dirty_branch,
+            },
+        )
+
+        # --- ambiguous (audit state failed): clean tree but audit says
+        # failed -- must not be touched regardless of tree cleanliness.
+        failed_wt, failed_branch = _make_ticket_worktree(repo, "004", "failed-slug")
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "004",
+                "state": "failed",
+                "path": str(failed_wt),
+                "branch": failed_branch,
+            },
+        )
+
+        # --- rogue: a live ticket/* worktree with no audit entry at all.
+        rogue_wt, rogue_branch = _make_ticket_worktree(repo, "005", "rogue-slug")
+
+        # --- already-gone: an audit entry whose worktree no longer exists
+        # on disk / in `git worktree list` at all.
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "006",
+                "state": "merged",
+                "path": str(repo.parent / "worktree-999-006"),
+                "branch": "ticket/999-006-gone-slug",
+            },
+        )
+
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+
+        # --- cleaned: 001 (merged-not-cleaned) and 002 (clean-but-abandoned).
+        cleaned_ids = {c["ticket_id"] for c in result["cleaned"]}
+        assert cleaned_ids == {"001", "002"}
+
+        cleaned_by_id = {c["ticket_id"]: c for c in result["cleaned"]}
+        assert cleaned_by_id["001"]["reason"] == "merged-not-cleaned"
+        assert cleaned_by_id["002"]["reason"] == "clean-but-abandoned"
+
+        # 001: worktree dir AND branch removed.
+        assert not merged_wt.exists()
+        assert (
+            _run(["git", "rev-parse", "--verify", merged_branch], cwd=repo).returncode
+            != 0
+        )
+
+        # 002: worktree dir removed, branch RETAINED.
+        assert not abandoned_wt.exists()
+        assert (
+            _run(
+                ["git", "rev-parse", "--verify", abandoned_branch], cwd=repo
+            ).returncode
+            == 0
+        )
+
+        # --- escalated: 003 (dirty) and 004 (failed audit state), untouched.
+        escalated_ids = {e["ticket_id"] for e in result["escalated"]}
+        assert escalated_ids == {"003", "004"}
+        assert dirty_wt.exists()
+        assert failed_wt.exists()
+        assert (
+            _run(["git", "rev-parse", "--verify", dirty_branch], cwd=repo).returncode
+            == 0
+        )
+        assert (
+            _run(["git", "rev-parse", "--verify", failed_branch], cwd=repo).returncode
+            == 0
+        )
+
+        # --- rogue: 005 (live, no audit entry) and 006 (audit entry, no
+        # live worktree -- already gone) both reported, neither raises.
+        rogue_ids = {r["ticket_id"] for r in result["rogue"]}
+        assert rogue_ids == {"005", "006"}
+        # 005 is rogue but untouched -- reconcile_worktrees never deletes
+        # a worktree it can't attribute to an audit trail.
+        assert rogue_wt.exists()
+
+        # Audit record for 006 (already-gone) reconciled to cleaned_up.
+        audit = worktree.read_audit_record(sprint_dir)
+        entry_006 = next(
+            e for e in audit["worktrees"] if e["ticket_id"] == "006"
+        )
+        assert entry_006["state"] == "cleaned_up"
+
+        # No ticket/999-* worktree survives except those in escalated (003,
+        # 004) and the untouched rogue one (005), which is explicitly
+        # reported and left alone by design.
+        remaining = _run(
+            ["git", "worktree", "list", "--porcelain"], cwd=repo
+        ).stdout
+        assert "ticket/999-001-" not in remaining
+        assert "ticket/999-002-" not in remaining
+        assert "ticket/999-003-" in remaining
+        assert "ticket/999-004-" in remaining
+        assert "ticket/999-005-" in remaining
+
+        # --- idempotency: a second consecutive call with no state change
+        # cleans nothing new. 003/004/005 are still present and ambiguous/
+        # rogue on the second pass too.
+        second_result = worktree.reconcile_worktrees(repo, sprint_dir)
+        assert second_result["cleaned"] == []
+        second_escalated_ids = {e["ticket_id"] for e in second_result["escalated"]}
+        assert second_escalated_ids == {"003", "004"}
+        second_rogue_ids = {r["ticket_id"] for r in second_result["rogue"]}
+        assert second_rogue_ids == {"005"}
+
+        # Cleanup: remove the still-live worktrees/branches so the test
+        # doesn't leak state (they're outside the tmp_path fixture's repo
+        # dir, as siblings, so pytest won't clean them automatically).
+        for wt, branch in (
+            (dirty_wt, dirty_branch),
+            (failed_wt, failed_branch),
+            (rogue_wt, rogue_branch),
+        ):
+            _run(["git", "worktree", "remove", "--force", str(wt)], cwd=repo)
+            _run(["git", "branch", "-D", branch], cwd=repo)
+        _run(["git", "branch", "-D", abandoned_branch], cwd=repo)
+
+    def test_no_audit_entry_and_no_live_worktree_returns_empty(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        """No worktrees at all -> everything empty, no raise."""
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+        assert result == {"cleaned": [], "escalated": [], "rogue": []}
+
+    def test_idempotent_when_nothing_to_clean_from_the_start(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        first = worktree.reconcile_worktrees(repo, sprint_dir)
+        second = worktree.reconcile_worktrees(repo, sprint_dir)
+        assert first == {"cleaned": [], "escalated": [], "rogue": []}
+        assert second == {"cleaned": [], "escalated": [], "rogue": []}
+
+    def test_merged_audit_state_but_not_actually_merged_is_escalated(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        """Audit claims "merged" but the branch isn't actually an ancestor
+        of the sprint branch -- must be treated as ambiguous, not
+        force-cleaned.
+        """
+        wt_path, branch_name = _make_ticket_worktree(repo, "007", "unmerged-slug")
+        (wt_path / "work.txt").write_text("unmerged work\n", encoding="utf-8")
+        _run(["git", "add", "-A"], cwd=wt_path)
+        _run(["git", "commit", "-m", "unmerged work"], cwd=wt_path)
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "007",
+                "state": "merged",
+                "path": str(wt_path),
+                "branch": branch_name,
+            },
+        )
+
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+
+        assert result["cleaned"] == []
+        escalated_ids = {e["ticket_id"] for e in result["escalated"]}
+        assert "007" in escalated_ids
+        assert wt_path.exists()
+
+        _run(["git", "worktree", "remove", "--force", str(wt_path)], cwd=repo)
+        _run(["git", "branch", "-D", branch_name], cwd=repo)
+
+    def test_in_progress_audit_state_is_escalated_even_if_clean(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        """A clean tree with audit state in_progress must still be
+        escalated, never auto-cleaned (work may still be underway).
+        """
+        wt_path, branch_name = _make_ticket_worktree(repo, "008", "inprogress-slug")
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "008",
+                "state": "in_progress",
+                "path": str(wt_path),
+                "branch": branch_name,
+            },
+        )
+
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+
+        assert result["cleaned"] == []
+        escalated_ids = {e["ticket_id"] for e in result["escalated"]}
+        assert "008" in escalated_ids
+        assert wt_path.exists()
+
+        _run(["git", "worktree", "remove", "--force", str(wt_path)], cwd=repo)
+        _run(["git", "branch", "-D", branch_name], cwd=repo)
+
+    def test_conflict_audit_state_is_escalated(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        wt_path, branch_name = _make_ticket_worktree(repo, "009", "conflict-slug")
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "009",
+                "state": "conflict",
+                "path": str(wt_path),
+                "branch": branch_name,
+            },
+        )
+
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+
+        assert result["cleaned"] == []
+        escalated_ids = {e["ticket_id"] for e in result["escalated"]}
+        assert "009" in escalated_ids
+        assert wt_path.exists()
+
+        _run(["git", "worktree", "remove", "--force", str(wt_path)], cwd=repo)
+        _run(["git", "branch", "-D", branch_name], cwd=repo)
+
+    def test_never_raises_on_corrupt_state_is_not_expected_but_bad_json_propagates(
+        self, repo: Path, sprint_dir: Path
+    ) -> None:
+        """Corrupt audit JSON is a genuine unexpected error and must
+        propagate (via read_audit_record), unlike normal ambiguous cases.
+        """
+        (sprint_dir / ".worktree-audit.json").write_text(
+            "{not valid json", encoding="utf-8"
+        )
+        with pytest.raises(json.JSONDecodeError):
+            worktree.reconcile_worktrees(repo, sprint_dir)

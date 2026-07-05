@@ -34,6 +34,7 @@ __all__ = [
     "write_audit_record",
     "read_audit_record",
     "check_independence",
+    "reconcile_worktrees",
 ]
 
 # Sentinel used by check_independence when a ticket's file set cannot be
@@ -378,6 +379,265 @@ def cleanup_worktree(
                     f"Failed to delete branch '{ticket_branch}': "
                     f"{delete_result.stderr.strip()}"
                 )
+
+
+def _parse_ticket_worktrees(repo_root: Path, sprint_id: str) -> dict[str, dict]:
+    """Parse ``git worktree list --porcelain`` for live ticket worktrees.
+
+    Reuses the block-parsing technique from
+    ``clasi.tools.artifact_tools._prune_sprint_worktrees``, but matches
+    branches of the form ``refs/heads/ticket/<sprint_id>-*`` rather than a
+    single sprint branch.
+
+    Returns a dict keyed by branch name (e.g.
+    ``"ticket/018-007-some-slug"``), each value a dict with ``path`` and
+    ``branch`` keys.
+    """
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+
+    branch_prefix = f"refs/heads/ticket/{sprint_id}-"
+    live: dict[str, dict] = {}
+
+    current_path: str | None = None
+    is_main = True  # first block is always the main worktree
+
+    for line in result.stdout.splitlines():
+        line = line.rstrip()
+        if line.startswith("worktree "):
+            current_path = line[len("worktree "):]
+        elif line == "":
+            if is_main:
+                is_main = False
+            current_path = None
+        elif line.startswith("branch ") and not is_main and current_path is not None:
+            ref = line[len("branch "):]
+            if ref.startswith(branch_prefix):
+                branch_name = ref[len("refs/heads/"):]
+                live[branch_name] = {
+                    "path": current_path,
+                    "branch": branch_name,
+                }
+
+    return live
+
+
+def _ticket_id_from_branch(branch: str, sprint_id: str) -> str:
+    """Extract the ticket id from a ``ticket/<sprint_id>-<ticket_id>-<slug>``
+    branch name.
+    """
+    remainder = branch[len(f"ticket/{sprint_id}-"):]
+    return remainder.split("-", 1)[0]
+
+
+def reconcile_worktrees(repo_root: Path, sprint_dir: Path) -> dict:
+    """Reconcile live ticket worktrees against the audit record.
+
+    This is the standing cleanup engine that prevents worktree-directory
+    accumulation. It reads the sprint's audit record (via
+    ``read_audit_record``) and the live output of
+    ``git worktree list --porcelain`` (from ``cwd=repo_root``), matching
+    branches of the form ``ticket/<sprint_id>-*`` (``sprint_id`` is derived
+    from ``sprint_dir``'s directory name, e.g.
+    ``018-worktree-...`` -> ``018``). Each live ticket worktree is
+    classified using the audit state plus live git state:
+
+    - **merged-not-cleaned**: audit state is ``merged`` and the ticket
+      branch is an ancestor of the sprint branch (fully merged). Cleaned up
+      via ``cleanup_worktree(..., keep_branch=False)`` (worktree AND branch
+      removed); audit updated to ``cleaned_up``.
+    - **clean-but-abandoned**: ``git status --porcelain`` in the worktree
+      is empty and the audit state is not ``in_progress``. Cleaned up via
+      ``cleanup_worktree(..., keep_branch=True)`` (worktree removed, branch
+      retained); audit updated to ``cleaned_up``.
+    - **ambiguous**: the worktree has a dirty tree, or the audit state is
+      ``failed``/``conflict``/``in_progress``. Left untouched and reported
+      in ``escalated``.
+
+    Two edge cases are detected and reported in ``rogue`` without
+    triggering any cleanup action:
+
+    - An audit entry whose worktree path no longer appears in
+      ``git worktree list`` (already gone). The audit record is reconciled
+      (marked ``cleaned_up`` if not already) and the entry is noted.
+    - A live ``ticket/<sprint_id>-*`` worktree with no matching audit entry
+      (created outside the tracked lifecycle).
+
+    This function is pure of any prompting or interactive decision-making:
+    it classifies, safely auto-cleans the unambiguous cases, and returns
+    the rest for the caller (a human or the controller) to decide. It is
+    idempotent — calling it twice in a row with no intervening state
+    change returns ``{"cleaned": [], "escalated": [...], "rogue": []}`` on
+    the second call, since the first call already cleaned or reconciled
+    everything it safely could.
+
+    Parameters:
+        repo_root: Absolute path to the repository root (main working
+            tree).
+        sprint_dir: Absolute path to the sprint directory. Its final path
+            component's leading ``<digits>`` segment (e.g. ``"018"`` from
+            ``018-worktree-...``) is used as the sprint id for both branch
+            matching and audit lookups, and its basename is used as the
+            sprint branch name prefix (``sprint/<sprint_dir_name>``).
+
+    Returns:
+        A dict with three keys: ``cleaned``, ``escalated``, and ``rogue``.
+        Each is a list of dicts describing the ticket_id/path/branch/reason
+        sufficient for a human or the controller to act on.
+
+    Raises:
+        json.JSONDecodeError: If the audit file exists but is malformed
+            (propagated from ``read_audit_record``). No other exceptions
+            are expected in normal operation.
+
+    See: worktree-process.md §10 (Audit and Recovery State), and the
+    "Cleanup Discipline" table in the originating issue.
+    """
+    repo_root = Path(repo_root)
+    sprint_dir = Path(sprint_dir)
+    sprint_dir_name = sprint_dir.name
+    sprint_id_match = re.match(r"(\d+)", sprint_dir_name)
+    sprint_id = sprint_id_match.group(1) if sprint_id_match else sprint_dir_name
+    sprint_branch = f"sprint/{sprint_dir_name}"
+
+    audit = read_audit_record(sprint_dir)
+    audit_entries = audit.get("worktrees", [])
+    audit_by_ticket = {str(e.get("ticket_id")): e for e in audit_entries}
+
+    live_by_branch = _parse_ticket_worktrees(repo_root, sprint_id)
+    live_ticket_ids = {
+        _ticket_id_from_branch(branch, sprint_id): info
+        for branch, info in live_by_branch.items()
+    }
+
+    cleaned: list[dict] = []
+    escalated: list[dict] = []
+    rogue: list[dict] = []
+
+    handled_ticket_ids: set[str] = set()
+
+    # Pass 1: audit entries with a live worktree -- classify and act.
+    for ticket_id, entry in audit_by_ticket.items():
+        live_info = live_ticket_ids.get(ticket_id)
+        if live_info is None:
+            handled_ticket_ids.add(ticket_id)
+            if entry.get("state") == "cleaned_up":
+                # Already reconciled on a prior call -- nothing new to
+                # report. This branch is what makes the function
+                # idempotent across repeated calls.
+                continue
+            # Edge case: audit entry present but no live worktree. Already
+            # gone -- reconcile the audit record and report it once.
+            write_audit_record(
+                sprint_dir, {"ticket_id": ticket_id, "state": "cleaned_up"}
+            )
+            rogue.append(
+                {
+                    "ticket_id": ticket_id,
+                    "path": entry.get("path"),
+                    "branch": entry.get("branch"),
+                    "reason": "audit entry with no live worktree (already gone)",
+                }
+            )
+            continue
+
+        handled_ticket_ids.add(ticket_id)
+        path = live_info["path"]
+        branch = live_info["branch"]
+        state = entry.get("state")
+
+        if state == "merged":
+            merged_check = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", branch, sprint_branch],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+            )
+            if merged_check.returncode == 0:
+                cleanup_worktree(repo_root, Path(path), branch, keep_branch=False)
+                write_audit_record(
+                    sprint_dir, {"ticket_id": ticket_id, "state": "cleaned_up"}
+                )
+                cleaned.append(
+                    {
+                        "ticket_id": ticket_id,
+                        "path": path,
+                        "branch": branch,
+                        "reason": "merged-not-cleaned",
+                    }
+                )
+                continue
+            # Audit says "merged" but the branch isn't actually an
+            # ancestor of the sprint branch yet -- ambiguous, don't touch.
+            escalated.append(
+                {
+                    "ticket_id": ticket_id,
+                    "path": path,
+                    "branch": branch,
+                    "reason": "audit state merged but branch not yet an "
+                    "ancestor of the sprint branch",
+                }
+            )
+            continue
+
+        if state in ("failed", "conflict", "in_progress"):
+            escalated.append(
+                {
+                    "ticket_id": ticket_id,
+                    "path": path,
+                    "branch": branch,
+                    "reason": f"ambiguous audit state: {state}",
+                }
+            )
+            continue
+
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+        )
+        if status_result.stdout.strip() == "":
+            cleanup_worktree(repo_root, Path(path), branch, keep_branch=True)
+            write_audit_record(
+                sprint_dir, {"ticket_id": ticket_id, "state": "cleaned_up"}
+            )
+            cleaned.append(
+                {
+                    "ticket_id": ticket_id,
+                    "path": path,
+                    "branch": branch,
+                    "reason": "clean-but-abandoned",
+                }
+            )
+        else:
+            escalated.append(
+                {
+                    "ticket_id": ticket_id,
+                    "path": path,
+                    "branch": branch,
+                    "reason": "dirty working tree",
+                }
+            )
+
+    # Pass 2: live worktrees with no audit entry at all -- rogue.
+    for ticket_id, live_info in live_ticket_ids.items():
+        if ticket_id in handled_ticket_ids:
+            continue
+        rogue.append(
+            {
+                "ticket_id": ticket_id,
+                "path": live_info["path"],
+                "branch": live_info["branch"],
+                "reason": "live worktree with no audit entry (rogue)",
+            }
+        )
+
+    return {"cleaned": cleaned, "escalated": escalated, "rogue": rogue}
 
 
 def write_audit_record(sprint_dir: Path, event: dict) -> None:
