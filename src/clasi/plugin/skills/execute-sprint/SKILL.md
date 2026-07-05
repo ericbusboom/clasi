@@ -1,9 +1,9 @@
 ---
 name: execute-sprint
-description: Executes sprint tickets serially — dispatches one programmer agent per ticket in dependency order
+description: Executes sprint tickets — dispatches programmer agents in dependency order, in parallel worktrees when the sprint opts in, otherwise serially
 ---
 
-Executes all tickets in an active sprint by dispatching programmer agents serially in dependency order, then closes the sprint.
+Executes all tickets in an active sprint by dispatching programmer agents in dependency order — in parallel via git worktrees when the sprint's `worktree` flag is set, otherwise serially on the sprint branch — then closes the sprint.
 
 ## Instructions
 
