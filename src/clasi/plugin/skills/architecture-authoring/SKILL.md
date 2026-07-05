@@ -20,35 +20,45 @@ the first architecture document following steps 1-7 below.
 
 ### Mode 2: Sprint Architecture Update
 
-Write a focused architecture planning document describing the structural
-changes the sprint will introduce. This artifact is authored after use
-cases are defined and **before tickets exist** — tickets are derived from
-it, not the other way around. The guiding question throughout is: "Is this
-description clear enough that tickets can be derived from it without
-ambiguity?"
+Write the Architecture section of the sprint's `sprint.md`, sized to the
+change — or write "N/A — trivial" when the change has no architectural
+impact. This section is authored after the effort decision is made and
+use cases are defined, and **before tickets exist** — tickets are derived
+from it, not the other way around. The guiding question throughout is:
+"Is this description clear enough that tickets can be derived from it
+without ambiguity?"
 
-At authoring time the document is a structural plan; after the sprint
+Make an explicit sizing decision first: trivial/small changes get a
+minimal or omitted Architecture section (may read "N/A — trivial");
+substantial/structural changes get the full write-up below.
+
+At authoring time the section is a structural plan; after the sprint
 closes it accumulates as a historical record (an ADR at sprint
-granularity). It is not merged back into the canonical architecture docs —
-it stands on its own.
+granularity, embedded in that sprint's `sprint.md`). It is not merged
+back into the canonical architecture docs — it stands on its own. See
+the `consolidate-architecture` skill for how these per-sprint sections
+are later merged into a consolidated architecture document, if needed.
 
-Given the sprint plan and current architecture, write
-`architecture-update.md` with: Planned Changes, Rationale, Impact on
-Existing Components, Migration Concerns.
+Given the sprint plan and current architecture, write the Architecture
+section with: Planned Changes, Rationale, Impact on Existing Components,
+Migration Concerns.
 
-### Revision naming and preservation
+### Revising in place
 
-When an exception loop triggers an architecture revision, **never
-overwrite `architecture-update.md`**. The original must be preserved as a
-calibration signal for future sprint reviews.
+When an exception loop triggers an architecture revision, revise the
+Architecture section of `sprint.md` **in place** — edit the section
+directly rather than creating a separate revision file. Add a brief
+`## Revision` note (or update the section's Design Rationale) describing
+what changed and why, so the revision is visible without relying on file
+history.
 
-Naming convention:
-- First revision: write `architecture-update-r1.md`
-- Subsequent revisions: increment the suffix — `architecture-update-r2.md`,
-  `architecture-update-r3.md`, etc.
-- The latest `-rN.md` file is the active planning artifact.
-- The original `architecture-update.md` and all intermediate revisions
-  remain in the sprint directory as historical record.
+This supersedes the older convention (used by sprints planned before
+sprint 018's single-doc rewrite) of writing separate
+`architecture-update-r1.md`, `-r2.md`, etc. files that preserved the
+original `architecture-update.md` untouched. Sprints planned under the
+old three-document model may still have those files on disk as a
+historical record — that is expected for sprints 001-017 and is not a
+defect. New sprints revise the `sprint.md` Architecture section in place.
 
 The team-lead and sprint-planner both reference this convention. The full
 rule lives here; the sprint-planner agent carries only a brief

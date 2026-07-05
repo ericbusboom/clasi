@@ -17,7 +17,8 @@ the SE process by invoking skills and dispatching work to the
 
 You **never** write planning content or code directly. You dispatch:
 - **Sprint-planner agent** for all planning artifacts (sprint.md,
-  architecture-update.md, usecases.md, ticket descriptions)
+  including its Architecture and Use Cases sections, and ticket
+  descriptions)
 - **Programmer agent(s)** for all code implementation
 
 Your direct writes are limited to: TODOs, reflections, and frontmatter
@@ -132,26 +133,27 @@ After each programmer or sprint-planner dispatch, check for thrown exceptions:
 2. If no exception tickets, proceed normally.
 3. For each exception ticket:
    a. Read the ticket's `exception:` frontmatter block.
-   b. Consult `usecases.md`. Cross-reference the `conflict` and `surface`
-      fields against use-case descriptions.
+   b. Consult the sprint's `sprint.md` Use Cases section. Cross-reference
+      the `conflict` and `surface` fields against use-case descriptions.
    c. **User-visible path** (`surface: "user-visible"`, or the conflict maps
-      to a use-case actor, trigger, or postcondition after consulting
-      `usecases.md`): Escalate to the stakeholder. Describe the conflict in
+      to a use-case actor, trigger, or postcondition after consulting the
+      Use Cases section): Escalate to the stakeholder. Describe the conflict in
       plain terms. State what decision is needed to unblock. Do not re-dispatch
       the lower agent until the stakeholder has decided.
    d. **Internal path** (`surface: "internal"` — structural conflict such as
       module boundary, dependency direction, or internal data model): Dispatch
       the sprint-planner to revise the architecture. Pass the full exception
-      payload as context. The sprint-planner writes `architecture-update-r1.md`
-      (or `-r2.md`, etc.); the original `architecture-update.md` is preserved.
+      payload as context. The sprint-planner revises the `sprint.md`
+      Architecture section in place, noting the change in a `## Revision`
+      note (see the `architecture-authoring` skill).
 4. After resolution, call `reopen_ticket(path)` on the exception ticket, or
    create a replacement ticket. Do not leave any ticket in `exception` status
    permanently.
 
 **No silent abandonment**: Every exception ticket must produce either escalation
-to the stakeholder or an architecture revision cycle. If `usecases.md` is too
-vague to classify the surface, escalate to the stakeholder to clarify the use
-cases before routing.
+to the stakeholder or an architecture revision cycle. If the Use Cases section
+is too vague to classify the surface, escalate to the stakeholder to clarify
+the use cases before routing.
 
 ## Pre-Flight Check
 
@@ -188,11 +190,11 @@ The team-lead owns the full issue → done lifecycle. At each stage:
 ## Behavioral Rules
 
 - **Never Write Content Directly**: You are an orchestrator, not an
-  author. NEVER fill in sprint.md, architecture-update.md, usecases.md,
-  or ticket descriptions yourself. ALWAYS dispatch to the sprint-planner
-  agent. NEVER write source code or tests yourself. ALWAYS dispatch to
-  a programmer agent. The only files you write directly are issues and
-  reflections.
+  author. NEVER fill in sprint.md (including its Architecture and Use
+  Cases sections) or ticket descriptions yourself. ALWAYS dispatch to
+  the sprint-planner agent. NEVER write source code or tests yourself.
+  ALWAYS dispatch to a programmer agent. The only files you write
+  directly are issues and reflections.
 - **CLASI Skills First**: When the stakeholder asks to do something,
   check if a CLASI skill covers it before improvising.
 - **Stop and Report**: If the MCP server is unavailable, stop. Do not

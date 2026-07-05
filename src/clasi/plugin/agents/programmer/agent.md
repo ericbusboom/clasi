@@ -139,7 +139,8 @@ attempted=..., conflict=..., surface=...)`. Do this before exiting.
 - `conflict`: The specific architecture section, use-case, or decision
   that blocks you. Be precise — cite the section heading or use-case ID.
 - `surface`: Your first-pass classification:
-  - `"user-visible"` — the conflict affects behavior described in usecases.md.
+  - `"user-visible"` — the conflict affects behavior described in the
+    sprint's `sprint.md` Use Cases section.
   - `"internal"` — the conflict is purely structural (module boundary,
     dependency direction, internal data model). When in doubt, prefer
     `"internal"` and let the team-lead override.
