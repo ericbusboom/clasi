@@ -1252,3 +1252,120 @@ class TestHistoricalSprintBackwardCompat:
         assert list(result["files"].keys()) == ["sprint.md"]
         assert s.usecases.exists
         assert s.architecture.exists
+
+
+# --- Backward compatibility against the real clasi/sprints/done/ archive ---
+# (018-015: docs/architecture deletion + dispatch_log context reduction must
+# not regress reading sprints 001-017, which still carry the historical
+# sprint.md + usecases.md + architecture-update.md three-file layout.)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REAL_DONE_DIR = _REPO_ROOT / "clasi" / "sprints" / "done"
+_EXPECTED_HISTORICAL_SPRINT_IDS = [f"{n:03d}" for n in range(1, 18)]  # 001-017
+
+
+def _copy_real_done_sprints_into(tmp_path) -> Project:
+    """Copy the real clasi/sprints/done/001-* .. 017-* dirs into a tmp project.
+
+    Exercises list_sprints()/Sprint.phase against byte-identical copies of
+    the actual historical sprint directories rather than the real repo
+    tree, so the test can call Sprint.phase (which lazily initializes a
+    StateDB file) without writing into this repository's own .clasi/ state.
+    """
+    import shutil
+
+    proj = Project(tmp_path)
+    dest_done = proj.sprints_dir / "done"
+    dest_done.mkdir(parents=True, exist_ok=True)
+    for entry in sorted(_REAL_DONE_DIR.iterdir()):
+        if entry.is_dir():
+            shutil.copytree(entry, dest_done / entry.name)
+    return proj
+
+
+class TestRealDoneArchiveBackwardCompat:
+    """018-015 item 3(a): list_sprints()/get_status()-equivalent code must
+
+    keep working, without exception and with correct phase/status, against
+    the real historical sprint archive (clasi/sprints/done/001-* .. 017-*),
+    which retains the old three-file (sprint.md + usecases.md +
+    architecture-update.md) layout that docs/architecture/ deletion and the
+    dispatch_log context reduction must not disturb.
+    """
+
+    @pytest.fixture(scope="class")
+    def real_done_ids(self):
+        assert _REAL_DONE_DIR.is_dir(), (
+            f"expected real archive at {_REAL_DONE_DIR}; sprints 001-017 "
+            "must exist under clasi/sprints/done/"
+        )
+        ids = sorted(
+            d.name.split("-", 1)[0]
+            for d in _REAL_DONE_DIR.iterdir()
+            if d.is_dir() and (d / "sprint.md").exists()
+        )
+        return ids
+
+    def test_real_archive_contains_sprints_001_through_017(self, real_done_ids):
+        """Sanity check: the real done/ dir has exactly sprints 001-017."""
+        assert real_done_ids == _EXPECTED_HISTORICAL_SPRINT_IDS
+
+    def test_real_archive_sprints_have_historical_three_file_layout(self):
+        """Every historical sprint on disk still has the pre-single-doc
+        three-file shape (sprint.md, usecases.md, architecture-update.md)."""
+        for entry in sorted(_REAL_DONE_DIR.iterdir()):
+            if not entry.is_dir():
+                continue
+            assert (entry / "sprint.md").exists(), entry
+            assert (entry / "usecases.md").exists(), entry
+            assert (entry / "architecture-update.md").exists(), entry
+
+    def test_list_sprints_succeeds_against_copied_real_archive(self, tmp_path):
+        """Project.list_sprints() (list_sprints tool's underlying call) does
+        not raise and reports every historical sprint as status 'done'."""
+        proj = _copy_real_done_sprints_into(tmp_path)
+        sprints = proj.list_sprints()
+        found_ids = sorted(s.id for s in sprints)
+        assert found_ids == _EXPECTED_HISTORICAL_SPRINT_IDS
+        for s in sprints:
+            assert s.status == "done"
+
+    def test_list_sprints_filter_by_done_status(self, tmp_path):
+        proj = _copy_real_done_sprints_into(tmp_path)
+        sprints = proj.list_sprints(status="done")
+        assert sorted(s.id for s in sprints) == _EXPECTED_HISTORICAL_SPRINT_IDS
+
+    def test_sprint_phase_reports_done_for_each_historical_sprint(self, tmp_path):
+        """Sprint.phase (get_sprint_status's phase field) resolves to 'done'
+
+        for every historical sprint without raising, via the done/-directory
+        fallback (no StateDB row is registered for pre-existing archives).
+        """
+        proj = _copy_real_done_sprints_into(tmp_path)
+        for s in proj.list_sprints():
+            assert s.phase == "done"
+
+    def test_get_ticket_counts_succeeds_for_each_historical_sprint(self, tmp_path):
+        """get_sprint_status's ticket_counts() call does not raise for any
+
+        historical sprint, regardless of how many tickets it contains.
+        """
+        proj = _copy_real_done_sprints_into(tmp_path)
+        for s in proj.list_sprints():
+            counts = s.ticket_counts()
+            assert isinstance(counts, dict)
+            assert set(counts) == {"open", "in_progress", "done", "exception"}
+
+    def test_usecases_and_architecture_readable_for_every_historical_sprint(self, tmp_path):
+        """Sprint.usecases/Sprint.architecture remain readable Artifact
+
+        objects for every sprint in the real archive, not just a synthetic
+        fixture.
+        """
+        proj = _copy_real_done_sprints_into(tmp_path)
+        for s in proj.list_sprints():
+            assert s.usecases.exists
+            assert s.architecture.exists
+            # Both are parseable markdown-with-frontmatter documents.
+            assert isinstance(s.usecases.content, str)
+            assert isinstance(s.architecture.content, str)

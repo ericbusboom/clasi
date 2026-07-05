@@ -305,6 +305,32 @@ class TestReviewSprintPreClose:
                          if i["check"].endswith("_status")]
         assert len(status_issues) >= 1
 
+    def test_historical_three_file_layout_does_not_regress(self, work_dir):
+        """018-015 item 3(c): review_sprint_pre_close must not regress
+
+        against a sprint shaped like a historical closed sprint (sprint.md +
+        usecases.md + architecture-update.md all present on disk, as in
+        sprints 001-017), now that dispatch context and docs/architecture/
+        have been removed. This mirrors test_happy_path_passes above but
+        makes the historical-layout backward-compat intent explicit:
+        _make_sprint_ready_for_execution() already builds exactly this
+        three-file shape.
+        """
+        sprint_dir = _make_sprint_ready_for_execution(work_dir)
+        assert (sprint_dir / "usecases.md").exists()
+        assert (sprint_dir / "architecture-update.md").exists()
+
+        tickets_dir = sprint_dir / "tickets"
+        for f in sorted(tickets_dir.glob("*.md")):
+            fm = read_frontmatter(f)
+            if fm.get("id"):
+                update_ticket_status(str(f), "done")
+                move_ticket_to_done(str(f))
+
+        result = json.loads(review_sprint_pre_close("001"))
+        assert result["passed"] is True
+        assert result["issues"] == []
+
 
 class TestReviewSprintPostClose:
     """Tests for review_sprint_post_close."""

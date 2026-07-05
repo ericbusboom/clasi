@@ -388,18 +388,20 @@ class TestAutoContextDocuments:
         docs = _auto_context_documents("001-my-sprint")
         assert docs == [
             ".clasi/sprints/001-my-sprint/sprint.md",
-            ".clasi/sprints/001-my-sprint/architecture-update.md",
-            ".clasi/sprints/001-my-sprint/usecases.md",
         ]
 
     def test_sprint_with_ticket(self):
         docs = _auto_context_documents("002-sprint", ticket_id="007")
         assert docs == [
             ".clasi/sprints/002-sprint/sprint.md",
-            ".clasi/sprints/002-sprint/architecture-update.md",
-            ".clasi/sprints/002-sprint/usecases.md",
             ".clasi/sprints/002-sprint/tickets/007.md",
         ]
+
+    def test_no_architecture_or_usecases_entries(self):
+        """Single-doc model: no architecture-update.md/usecases.md entries."""
+        docs = _auto_context_documents("003-sprint", ticket_id="001")
+        assert not any("architecture-update.md" in d for d in docs)
+        assert not any("usecases.md" in d for d in docs)
 
 
 class TestContextDocuments:
@@ -420,8 +422,6 @@ class TestContextDocuments:
         assert "context_documents" in fm
         assert fm["context_documents"] == [
             ".clasi/sprints/010-my-sprint/sprint.md",
-            ".clasi/sprints/010-my-sprint/architecture-update.md",
-            ".clasi/sprints/010-my-sprint/usecases.md",
         ]
 
     def test_auto_populated_with_ticket(self, tmp_path):
@@ -491,8 +491,8 @@ class TestContextDocuments:
         _, body = read_document(path)
         assert "## Context Documents" in body
         assert "`.clasi/sprints/010-my-sprint/sprint.md`" in body
-        assert "`.clasi/sprints/010-my-sprint/architecture-update.md`" in body
-        assert "`.clasi/sprints/010-my-sprint/usecases.md`" in body
+        assert "architecture-update.md" not in body
+        assert "usecases.md" not in body
 
     def test_explicit_context_documents_in_body(self, tmp_path):
         """Explicit context_documents appear in the body section."""

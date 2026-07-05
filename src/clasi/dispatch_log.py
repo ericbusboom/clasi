@@ -44,8 +44,10 @@ def _auto_context_documents(sprint_name: str, ticket_id: str | None = None) -> l
     """Derive standard planning documents from a sprint name.
 
     Returns paths relative to the repository root for the standard sprint
-    planning documents (sprint.md, architecture-update.md, usecases.md)
-    plus the ticket file when *ticket_id* is provided.
+    planning document (sprint.md) plus the ticket file when *ticket_id* is
+    provided. Under the single-doc model, use cases and architecture live
+    as sections inside sprint.md, so there are no separate
+    architecture-update.md/usecases.md context documents to include.
     """
     project = get_project()
     sprint_dir = str(
@@ -53,8 +55,6 @@ def _auto_context_documents(sprint_name: str, ticket_id: str | None = None) -> l
     )
     docs = [
         f"{sprint_dir}/sprint.md",
-        f"{sprint_dir}/architecture-update.md",
-        f"{sprint_dir}/usecases.md",
     ]
     if ticket_id:
         docs.append(f"{sprint_dir}/tickets/{ticket_id}.md")
