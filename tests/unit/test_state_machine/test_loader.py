@@ -184,9 +184,10 @@ class TestLoadSprintMachine:
         assert "is_at_least_one_ticket" in invs
 
     def test_ticketed_invariant_count(self):
-        # ticketed has 6 invariants per the design doc
+        # ticketed has 4 invariants under the single-doc model
+        # (is_architecture_present/is_usecases_present removed).
         m = load_machine("sprint")
-        assert len(m.states["ticketed"].invariants) == 6
+        assert len(m.states["ticketed"].invariants) == 4
 
 
 # ---------------------------------------------------------------------------

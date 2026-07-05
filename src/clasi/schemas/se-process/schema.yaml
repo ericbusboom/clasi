@@ -11,13 +11,13 @@ artifacts:
     requires: []
 
   - id: planning-docs
-    generates: docs/clasi/sprints/<id>/planning-docs/
+    generates: docs/clasi/sprints/<id>/sprint.md
     instruction: clasi/schemas/se-process/instructions/specification.md
     requires:
       - roadmap
 
   - id: architecture-review
-    generates: docs/clasi/sprints/<id>/architecture-update.md
+    generates: docs/clasi/sprints/<id>/sprint.md
     instruction: clasi/schemas/se-process/instructions/architecture-update.md
     requires:
       - planning-docs

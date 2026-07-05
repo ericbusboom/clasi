@@ -392,11 +392,12 @@ class TestCloseSprintFullIssueHandling:
                 return d
         raise ValueError(f"Sprint dir for {sprint_id!r} not found")
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.1")
     @patch("subprocess.run")
     def test_full_close_unresolved_issue_returns_success(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """_close_sprint_full with an in-progress unresolved issue returns success.
 
@@ -424,6 +425,7 @@ class TestCloseSprintFullIssueHandling:
         )
 
         mock_run.side_effect = list(_FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS)
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
 
@@ -434,11 +436,12 @@ class TestCloseSprintFullIssueHandling:
             f"Expected 'unresolved.md' in unresolved_issues, got: {result}"
         )
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.2")
     @patch("subprocess.run")
     def test_full_close_deferred_issue_does_not_block(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """_close_sprint_full with a deferred issue closes cleanly.
 
@@ -481,6 +484,7 @@ class TestCloseSprintFullIssueHandling:
         )
 
         mock_run.side_effect = list(_FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS)
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
 

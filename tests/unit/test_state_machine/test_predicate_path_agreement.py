@@ -107,14 +107,6 @@ class TestSprintArtifactPredicatesWithRealPaths:
         from clasi.state_machine.predicates.sprint import is_sprint_doc_present
         assert is_sprint_doc_present(_sprint_ctx(reader)) is True
 
-    def test_usecases_present(self, reader: ClasiStateReader) -> None:
-        from clasi.state_machine.predicates.sprint import is_usecases_present
-        assert is_usecases_present(_sprint_ctx(reader)) is True
-
-    def test_architecture_present(self, reader: ClasiStateReader) -> None:
-        from clasi.state_machine.predicates.sprint import is_architecture_present
-        assert is_architecture_present(_sprint_ctx(reader)) is True
-
     def test_close_report_present(self, reader: ClasiStateReader) -> None:
         from clasi.state_machine.predicates.sprint import is_close_report_present
         assert is_close_report_present(_sprint_ctx(reader)) is True
@@ -138,3 +130,61 @@ class TestTicketPredicateWithRealPaths:
         dst = done_dir / f"{TICKET_ID}-my-ticket.md"
         src.rename(dst)
         assert is_ticket_file_present(_ticket_ctx(reader)) is True
+
+
+class TestSprintMdOnlySprintTransitionsPlannedToTicketed:
+    """Single-doc model: a sprint with only sprint.md (no usecases.md or
+
+    architecture-update.md on disk) must still be able to advance through
+    the sprint machine's planned -> pre-flight -> ticketed states, since
+    those states no longer require is_architecture_present/is_usecases_present.
+    """
+
+    def test_planned_state_satisfied_without_usecases_or_architecture(
+        self, project: Project
+    ) -> None:
+        """The 'planned' state's only invariant (is_sprint_doc_present) holds
+
+        even with no usecases.md/architecture-update.md on disk. Calls the
+        predicate function directly (not through the global registry) since
+        other test modules in this package clear the registry in autouse
+        fixtures without restoring it.
+        """
+        from clasi.state_machine.loader import load_machine
+        from clasi.state_machine.predicates.sprint import is_sprint_doc_present
+
+        sprint_dir = project.sprints_dir / f"{SPRINT_ID}-my-sprint"
+        # Remove the historical-shaped usecases.md/architecture-update.md
+        # written by the `project` fixture to simulate a sprint.md-only sprint.
+        (sprint_dir / "usecases.md").unlink()
+        (sprint_dir / "architecture-update.md").unlink()
+
+        reader = ClasiStateReader(project)
+        machine = load_machine("sprint")
+        sprint_ctx = _sprint_ctx(reader)
+
+        invariants = machine.states["planned"].invariants
+        assert list(invariants) == ["is_sprint_doc_present"]
+        assert is_sprint_doc_present(sprint_ctx) is True
+
+    def test_advance_through_planned_pre_flight_ticketed_sprint_md_only(
+        self, project: Project
+    ) -> None:
+        """Drives a sprint.md-only sprint from planned through ticketed via
+
+        the linear StateDB gate/phase machinery (project.db), confirming
+        the relaxed invariants correspond to real advanceability.
+        """
+        sprint_dir = project.sprints_dir / f"{SPRINT_ID}-my-sprint"
+        (sprint_dir / "usecases.md").unlink()
+        (sprint_dir / "architecture-update.md").unlink()
+
+        project.db.register_sprint(SPRINT_ID, "my-sprint", branch=f"sprint/{SPRINT_ID}-my-sprint")
+        project.db.advance_phase(SPRINT_ID)  # roadmap -> planning-docs
+        project.db.advance_phase(SPRINT_ID)  # planning-docs -> architecture-review
+        project.db.record_gate(SPRINT_ID, "architecture_review", "skipped")
+        result = project.db.advance_phase(SPRINT_ID)  # -> stakeholder-review
+        assert result["new_phase"] == "stakeholder-review"
+        project.db.record_gate(SPRINT_ID, "stakeholder_approval", "passed")
+        result = project.db.advance_phase(SPRINT_ID)  # -> ticketing
+        assert result["new_phase"] == "ticketing"

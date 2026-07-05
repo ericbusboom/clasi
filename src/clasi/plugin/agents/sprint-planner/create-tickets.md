@@ -15,12 +15,14 @@ handles ticket creation inline.
 
 ## Inputs
 
-- Sprint's `architecture-update.md` (must exist in the sprint directory)
-- Sprint's `usecases.md` (must exist in the sprint directory)
+- Sprint's `sprint.md` (must exist in the sprint directory) -- its
+  Architecture and Use Cases sections, sized to the sprint's effort
+  decision (may read "N/A -- trivial" for a trivial/small sprint)
 
 ## Process
 
-1. **Read artifacts**: Read the sprint's architecture document and use cases.
+1. **Read artifacts**: Read the sprint's `sprint.md` Architecture and
+   Use Cases sections.
 2. **Identify work units**: Break the Sprint Changes into coherent
    implementation units. Each unit should be completable in one focused
    session.

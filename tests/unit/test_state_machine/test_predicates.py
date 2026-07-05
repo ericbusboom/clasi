@@ -1,8 +1,8 @@
 """Unit tests for clasi.state_machine.predicates.
 
-Covers True and False cases for all 34 predicates:
+Covers True and False cases for all 32 predicates:
 - 8 project predicates
-- 13 sprint predicates  (is_on_sprint_branch shared with project)
+- 11 sprint predicates  (is_on_sprint_branch shared with project)
 - 13 ticket predicates
 
 Uses ``unittest.mock.MagicMock`` or stub readers to keep tests isolated
@@ -312,48 +312,6 @@ class TestIsSprintDocPresent:
         reader.sprint_artifact_exists.assert_called_once_with("007", "sprint.md")
 
 
-class TestIsArchitecturePresent:
-    def test_true_when_file_exists(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_architecture_present
-        assert is_architecture_present(ctx) is True
-
-    def test_false_when_file_missing(self):
-        ctx = _sprint_ctx()
-        from clasi.state_machine.predicates.sprint import is_architecture_present
-        assert is_architecture_present(ctx) is False
-
-    def test_uses_sprint_id_and_artifact_name(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(sprint_id="003", reader=reader)
-        from clasi.state_machine.predicates.sprint import is_architecture_present
-        is_architecture_present(ctx)
-        reader.sprint_artifact_exists.assert_called_once_with(
-            "003", "architecture-update.md"
-        )
-
-
-class TestIsUsecasesPresent:
-    def test_true_when_file_exists(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_usecases_present
-        assert is_usecases_present(ctx) is True
-
-    def test_false_when_file_missing(self):
-        ctx = _sprint_ctx()
-        from clasi.state_machine.predicates.sprint import is_usecases_present
-        assert is_usecases_present(ctx) is False
-
-    def test_uses_usecases_md_not_hyphenated(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(sprint_id="005", reader=reader)
-        from clasi.state_machine.predicates.sprint import is_usecases_present
-        is_usecases_present(ctx)
-        reader.sprint_artifact_exists.assert_called_once_with("005", "usecases.md")
-
-
 class TestIsArchitectureReviewRecorded:
     def test_true_when_gate_present(self):
         reader = _mock_reader()
@@ -367,6 +325,17 @@ class TestIsArchitectureReviewRecorded:
         ctx = _sprint_ctx()  # NullStateReader returns None
         from clasi.state_machine.predicates.sprint import is_architecture_review_recorded
         assert is_architecture_review_recorded(ctx) is False
+
+    def test_true_when_gate_result_is_skipped(self):
+        """A 'skipped' architecture_review gate record still satisfies
+
+        this predicate — it checks presence only, not the result value.
+        """
+        reader = _mock_reader()
+        reader.sprint_gate.return_value = {"result": "skipped"}
+        ctx = _sprint_ctx(reader=reader)
+        from clasi.state_machine.predicates.sprint import is_architecture_review_recorded
+        assert is_architecture_review_recorded(ctx) is True
 
 
 class TestIsPreFlightSatisfied:
@@ -785,8 +754,6 @@ class TestPredicateRegistration:
         names = list_predicates()
         sprint_predicates = [
             "is_sprint_doc_present",
-            "is_architecture_present",
-            "is_usecases_present",
             "is_architecture_review_recorded",
             "is_pre_flight_satisfied",
             "is_at_least_one_ticket",
@@ -799,6 +766,18 @@ class TestPredicateRegistration:
         ]
         for name in sprint_predicates:
             assert name in names, f"Missing sprint predicate: {name}"
+
+    def test_is_architecture_present_and_is_usecases_present_not_registered(self):
+        """Single-doc model: these two predicates were removed entirely —
+
+        use cases and architecture are sections of sprint.md, not
+        separate files whose presence can be checked.
+        """
+        from clasi.state_machine.registry import list_predicates
+
+        names = list_predicates()
+        assert "is_architecture_present" not in names
+        assert "is_usecases_present" not in names
 
     def test_all_ticket_predicates_registered(self):
         from clasi.state_machine.registry import list_predicates
@@ -823,13 +802,14 @@ class TestPredicateRegistration:
             assert name in names, f"Missing ticket predicate: {name}"
 
     def test_total_predicate_count(self):
-        """8 project + 12 sprint (shared is_on_sprint_branch) + 13 ticket = 33."""
+        """8 project + 10 sprint (shared is_on_sprint_branch) + 13 ticket = 31."""
         from clasi.state_machine.registry import list_predicates
 
         # is_on_sprint_branch is shared (registered once in project.py)
-        # Project: 8, Sprint: 12 new (is_on_sprint_branch already counted), Ticket: 13
-        # Total unique: 8 + 12 + 13 = 33
+        # Project: 8, Sprint: 10 new (is_architecture_present/is_usecases_present
+        # removed; is_on_sprint_branch already counted), Ticket: 13
+        # Total unique: 8 + 10 + 13 = 31
         names = list_predicates()
-        assert len(names) == 33, (
-            f"Expected 33 predicates, got {len(names)}: {names}"
+        assert len(names) == 31, (
+            f"Expected 31 predicates, got {len(names)}: {names}"
         )

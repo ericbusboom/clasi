@@ -81,7 +81,7 @@ class TestPruneSprintWorktrees:
         """When only the main worktree exists, no removals are attempted."""
         with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run:
             mock_run.return_value = _mock_run(0, _MAIN_ONLY_PORCELAIN)
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -104,7 +104,7 @@ class TestPruneSprintWorktrees:
                 _mock_run(0, _ONE_SPRINT_PORCELAIN),
                 _mock_run(0),
             ]
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -131,7 +131,7 @@ class TestPruneSprintWorktrees:
                 _mock_run(0, _ONE_SPRINT_PORCELAIN),
                 _mock_run(1, stderr="error: Unable to remove worktree"),
             ]
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -149,7 +149,7 @@ class TestPruneSprintWorktrees:
                 _mock_run(0),  # remove path1
                 _mock_run(0),  # remove path2
             ]
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -165,7 +165,7 @@ class TestPruneSprintWorktrees:
                 _mock_run(0, _MIXED_PORCELAIN),
                 _mock_run(0),  # remove sprint-015 worktree only
             ]
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -187,7 +187,7 @@ class TestPruneSprintWorktrees:
 
         with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run:
             mock_run.return_value = _mock_run(0, porcelain)
-            pruned, failed = _prune_sprint_worktrees(
+            pruned, failed, _retained = _prune_sprint_worktrees(
                 "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
             )
 
@@ -195,6 +195,173 @@ class TestPruneSprintWorktrees:
         mock_run.assert_called_once()
         assert pruned == []
         assert failed == []
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: orphaned ticket/<sprint-id>-* worktree sweep (ticket 018-008)
+# ---------------------------------------------------------------------------
+
+class TestPruneSprintWorktreesTicketSweep:
+    """Tests for the second sweep in _prune_sprint_worktrees: orphaned
+    ticket/<sprint-id>-* worktrees, classified via worktree.reconcile_worktrees.
+    """
+
+    def test_sprint_branch_only_path_unaffected_when_repo_root_omitted(self):
+        """Regression: omitting repo_root/sprint_dir preserves the exact
+        pre-existing sprint-branch-only pruning behavior (no ticket sweep,
+        no call to reconcile_worktrees, retained is always []).
+        """
+        with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run, \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile:
+            mock_run.side_effect = [
+                _mock_run(0, _ONE_SPRINT_PORCELAIN),
+                _mock_run(0),
+            ]
+            pruned, failed, retained = _prune_sprint_worktrees(
+                "sprint/015-close-sprint-and-sprint-lifecycle-hardening"
+            )
+
+        mock_reconcile.assert_not_called()
+        assert pruned == ["/repo/.git/worktrees/sprint-015-ticket-001"]
+        assert failed == []
+        assert retained == []
+
+    def test_merged_ticket_worktree_pruned_and_failed_worktree_retained(self):
+        """One merged-not-cleaned ticket worktree (reconcile already cleaned
+        it up: directory AND branch gone) is reported as pruned; one
+        failed/conflict ticket worktree has its directory force-removed here
+        (branch retained) and is reported distinctly in `retained`.
+        """
+        repo_root = Path("/repo/root")
+        sprint_dir = Path("/repo/root/clasi/sprints/done/018-some-sprint")
+
+        with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run, \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
+                patch("clasi.worktree.cleanup_worktree") as mock_cleanup:
+            # Sprint-branch sweep: only the main worktree, no sprint-branch
+            # worktree present.
+            mock_run.return_value = _mock_run(0, _MAIN_ONLY_PORCELAIN)
+
+            mock_reconcile.return_value = {
+                "cleaned": [
+                    {
+                        "ticket_id": "001",
+                        "path": "/repo/../worktree-018-001",
+                        "branch": "ticket/018-001-merged-slug",
+                        "reason": "merged-not-cleaned",
+                    }
+                ],
+                "escalated": [
+                    {
+                        "ticket_id": "002",
+                        "path": "/repo/../worktree-018-002",
+                        "branch": "ticket/018-002-failed-slug",
+                        "reason": "ambiguous audit state: failed",
+                    }
+                ],
+                "rogue": [],
+            }
+
+            pruned, failed, retained = _prune_sprint_worktrees(
+                "sprint/018-some-sprint",
+                repo_root=repo_root,
+                sprint_dir=sprint_dir,
+            )
+
+        mock_reconcile.assert_called_once_with(repo_root, sprint_dir)
+
+        # Merged-not-cleaned worktree: already fully removed by
+        # reconcile_worktrees; reported as pruned.
+        assert "/repo/../worktree-018-001" in pruned
+        assert failed == []
+
+        # Failed/conflict worktree: directory force-removed via
+        # cleanup_worktree(..., keep_branch=True); branch retained.
+        mock_cleanup.assert_called_once_with(
+            repo_root,
+            Path("/repo/../worktree-018-002"),
+            "ticket/018-002-failed-slug",
+            keep_branch=True,
+        )
+        assert len(retained) == 1
+        assert retained[0]["ticket_id"] == "002"
+        assert retained[0]["path"] == "/repo/../worktree-018-002"
+        assert retained[0]["branch"] == "ticket/018-002-failed-slug"
+        assert "/repo/../worktree-018-002" not in pruned
+
+    def test_conflict_state_also_retained(self):
+        """A 'conflict' audit state (not just 'failed') is also retained
+        distinctly, not silently dropped or treated as pruned."""
+        repo_root = Path("/repo/root")
+        sprint_dir = Path("/repo/root/clasi/sprints/done/018-some-sprint")
+
+        with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run, \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
+                patch("clasi.worktree.cleanup_worktree") as mock_cleanup:
+            mock_run.return_value = _mock_run(0, _MAIN_ONLY_PORCELAIN)
+            mock_reconcile.return_value = {
+                "cleaned": [],
+                "escalated": [
+                    {
+                        "ticket_id": "003",
+                        "path": "/repo/../worktree-018-003",
+                        "branch": "ticket/018-003-conflict-slug",
+                        "reason": "ambiguous audit state: conflict",
+                    }
+                ],
+                "rogue": [],
+            }
+
+            pruned, failed, retained = _prune_sprint_worktrees(
+                "sprint/018-some-sprint",
+                repo_root=repo_root,
+                sprint_dir=sprint_dir,
+            )
+
+        mock_cleanup.assert_called_once_with(
+            repo_root,
+            Path("/repo/../worktree-018-003"),
+            "ticket/018-003-conflict-slug",
+            keep_branch=True,
+        )
+        assert pruned == []
+        assert len(retained) == 1
+        assert retained[0]["ticket_id"] == "003"
+
+    def test_other_escalated_reasons_left_untouched(self):
+        """Escalated entries that are neither failed nor conflict (e.g. a
+        dirty working tree) are not force-cleaned and not reported as
+        retained -- matching reconcile_worktrees' own safety contract.
+        """
+        repo_root = Path("/repo/root")
+        sprint_dir = Path("/repo/root/clasi/sprints/done/018-some-sprint")
+
+        with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run, \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
+                patch("clasi.worktree.cleanup_worktree") as mock_cleanup:
+            mock_run.return_value = _mock_run(0, _MAIN_ONLY_PORCELAIN)
+            mock_reconcile.return_value = {
+                "cleaned": [],
+                "escalated": [
+                    {
+                        "ticket_id": "004",
+                        "path": "/repo/../worktree-018-004",
+                        "branch": "ticket/018-004-dirty-slug",
+                        "reason": "dirty working tree",
+                    }
+                ],
+                "rogue": [],
+            }
+
+            pruned, failed, retained = _prune_sprint_worktrees(
+                "sprint/018-some-sprint",
+                repo_root=repo_root,
+                sprint_dir=sprint_dir,
+            )
+
+        mock_cleanup.assert_not_called()
+        assert pruned == []
+        assert retained == []
 
 
 # ---------------------------------------------------------------------------
@@ -259,16 +426,18 @@ class TestCloseSSprintWorktreeResultJSON:
             self._mock_ok(0, worktree_stdout),      # git worktree list --porcelain
         ]
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.1")
     @patch("subprocess.run")
     def test_result_includes_worktrees_pruned_empty(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Result JSON includes worktrees_pruned: [] when no sprint worktrees exist."""
         from clasi.tools.artifact_tools import close_sprint
 
         mock_run.side_effect = self._subprocess_side_effects(_MAIN_ONLY_PORCELAIN)
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
 
@@ -280,11 +449,12 @@ class TestCloseSSprintWorktreeResultJSON:
             "worktrees_failed should be absent when no failures occurred"
         )
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.2")
     @patch("subprocess.run")
     def test_result_includes_worktrees_pruned_with_path(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Result JSON lists pruned worktree path when one sprint worktree exists."""
         from clasi.tools.artifact_tools import close_sprint
@@ -299,6 +469,7 @@ class TestCloseSSprintWorktreeResultJSON:
         side_effects.append(self._mock_ok(0))
 
         mock_run.side_effect = side_effects
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
 
@@ -307,11 +478,12 @@ class TestCloseSSprintWorktreeResultJSON:
             "worktrees_pruned", []
         ), f"Expected pruned path in worktrees_pruned: {result}"
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.3")
     @patch("subprocess.run")
     def test_failed_worktree_removal_does_not_abort_close(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """A worktree removal failure still yields status: success and populates worktrees_failed."""
         from clasi.tools.artifact_tools import close_sprint
@@ -326,6 +498,7 @@ class TestCloseSSprintWorktreeResultJSON:
         side_effects.append(self._mock_ok(1, stderr="error: unable to remove"))
 
         mock_run.side_effect = side_effects
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
 

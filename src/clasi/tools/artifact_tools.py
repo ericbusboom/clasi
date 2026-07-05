@@ -28,8 +28,6 @@ from clasi.state_db import (
 from clasi.templates import (
     slugify,
     SPRINT_TEMPLATE,
-    SPRINT_USECASES_TEMPLATE,
-    SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
 )
 from clasi.ticket import Ticket
@@ -228,32 +226,16 @@ def _sweep_done_issues(sprint: Sprint) -> list[str]:
 # --- Create tools (ticket 008) ---
 
 
-def _find_latest_architecture() -> Path | None:
-    """Find the most recent architecture document.
-
-    Looks for the top-level file in docs/clasi/architecture/ (most recent
-    version). Returns None if no architecture documents exist.
-    """
-    arch_dir = get_project().architecture_dir
-    if not arch_dir.exists():
-        return None
-
-    # Find architecture-NNN.md files at the top level (not in done/)
-    candidates = sorted(arch_dir.glob("architecture-*.md"), reverse=True)
-    return candidates[0] if candidates else None
-
-
 @server.tool()
 def create_sprint(title: str) -> str:
-    """Create a new sprint directory with template planning documents.
+    """Create a new sprint directory with a template sprint.md.
 
-    Auto-assigns the next sprint number and creates the full directory
-    structure: sprint.md, usecases.md, architecture-update.md,
-    and tickets/ + tickets/done/ directories.
-
-    The sprint receives a lightweight architecture-update template instead
-    of a full copy of the previous architecture.  The full architecture
-    lives in ``docs/clasi/architecture/`` and is consolidated on demand.
+    Auto-assigns the next sprint number and writes only sprint.md
+    (roadmap phase). Under the single-doc model, use cases and
+    architecture are sections within sprint.md rather than separate
+    files — they get filled in when the sprint is detail-promoted, not
+    scaffolded here. The full architecture history lives in
+    ``docs/clasi/architecture/`` and is consolidated on demand.
 
     Args:
         title: The sprint title (e.g., 'MCP Server Implementation')
@@ -276,9 +258,10 @@ def create_sprint(title: str) -> str:
 def detail_sprint(sprint_id: str) -> str:
     """Promote a roadmap sprint to detail planning.
 
-    Scaffolds usecases.md, architecture-update.md, tickets/, and tickets/done/
-    for the given sprint and advances the state DB phase from roadmap to
-    planning-docs.
+    Creates tickets/ and tickets/done/ for the given sprint and advances
+    the state DB phase from roadmap to planning-docs. Use cases and
+    architecture are filled in as sections of the sprint's existing
+    sprint.md, not scaffolded as separate files.
 
     Args:
         sprint_id: The sprint ID (e.g., '017')
@@ -340,7 +323,6 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
     - sprint.md frontmatter (id, branch)
     - sprint.md body references to "Sprint NNN"
     - Ticket frontmatter (no sprint_id field, but just in case)
-    - usecases.md body references to "Sprint NNN"
     - architecture.md body references to "Sprint NNN"
 
     Returns the new directory path.
@@ -362,8 +344,9 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
         content = content.replace(f"Sprint {old_id}", f"Sprint {new_id}")
         sprint_file.write_text(content, encoding="utf-8")
 
-    # Update body references in usecases.md and architecture-update.md
-    for doc_name in ("usecases.md", "architecture-update.md", "architecture.md"):
+    # Update body references in architecture.md (unrelated pre-existing
+    # entry, not written by Sprint, left untouched by this change)
+    for doc_name in ("architecture.md",):
         doc = new_dir / doc_name
         if doc.exists():
             content = doc.read_text(encoding="utf-8")
@@ -468,16 +451,9 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     files = {}
     for name, path, template in [
         ("sprint.md", _new_sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", _new_sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
     ]:
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
-
-    # Architecture: lightweight update template (not a full copy)
-    _new_sprint.architecture_update_md.write_text(
-        SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
-    )
-    files["architecture-update.md"] = str(_new_sprint.architecture_update_md)
 
     # Register in state database
     try:
@@ -787,7 +763,8 @@ def get_sprint_status(sprint_id: str) -> str:
     Args:
         sprint_id: The sprint ID (e.g., '001')
 
-    Returns JSON with {id, title, status, branch, tickets: {open, in_progress, done}}.
+    Returns JSON with {id, title, status, branch, worktree,
+    tickets: {open, in_progress, done}}.
     """
     sprint = get_project().get_sprint(sprint_id)
 
@@ -796,6 +773,7 @@ def get_sprint_status(sprint_id: str) -> str:
         "title": sprint.title,
         "status": sprint.status,
         "branch": sprint.branch,
+        "worktree": sprint.worktree,
         "tickets": sprint.ticket_counts(),
     }, indent=2)
 
@@ -1152,16 +1130,51 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
-def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
-    """Prune git worktrees associated with the closing sprint branch.
+def _prune_sprint_worktrees(
+    branch_name: str,
+    repo_root: Optional[Path] = None,
+    sprint_dir: Optional[Path] = None,
+) -> tuple[list[str], list[str], list[dict]]:
+    """Prune git worktrees associated with the closing sprint.
 
-    Parses ``git worktree list --porcelain`` output and removes any worktree
-    whose ``branch`` field matches ``refs/heads/<branch_name>``.
+    Two independent sweeps are performed:
 
-    Returns a tuple of ``(pruned_paths, failed_paths)`` where each element is
-    a list of absolute worktree paths.  The main worktree (the first entry in
-    the porcelain output, which has no ``branch`` field when in detached-HEAD
-    state, or whose path matches the repo root) is never touched.
+    1. **Sprint branch's own worktree** (pre-existing behavior, unchanged):
+       parses ``git worktree list --porcelain`` output and removes any
+       worktree whose ``branch`` field matches ``refs/heads/<branch_name>``.
+       This sweep always runs and never touches the main worktree (the first
+       entry in the porcelain output, which has no ``branch`` field when in
+       detached-HEAD state, or whose path matches the repo root).
+
+    2. **Orphaned ticket worktrees** (``ticket/<sprint-id>-*`` branches left
+       behind by parallel ticket execution): only runs when both
+       ``repo_root`` and ``sprint_dir`` are provided. Delegates
+       classification to ``worktree.reconcile_worktrees`` so there is one
+       code path for ticket-worktree classification. Cleanup policy at
+       sprint close is conservative:
+
+       - ``merged``/``cleaned_up`` (reconcile's ``cleaned`` list): both the
+         worktree directory and the branch are already removed by
+         ``reconcile_worktrees`` itself.
+       - ``failed``/``conflict`` (a subset of reconcile's ``escalated``
+         list): the worktree *directory* is force-removed here, but the
+         branch is retained so a human can inspect the partial work. These
+         are reported back distinctly (see the third return element) rather
+         than silently dropped.
+       - Any other ambiguous case reconcile reports (dirty tree, "merged"
+         audit state not yet an actual ancestor, rogue worktrees, etc.) is
+         left untouched, matching reconcile's own safety contract.
+
+    Returns a 3-tuple ``(pruned_paths, failed_paths, retained)``:
+
+    - ``pruned_paths``: absolute worktree paths that were fully removed
+      (both sweeps contribute).
+    - ``failed_paths``: absolute worktree paths whose removal command
+      failed (sprint-branch sweep only; unchanged from prior behavior).
+    - ``retained``: list of dicts describing ticket worktrees whose
+      directory was removed but whose branch was retained because the
+      audit state was ``failed``/``conflict``. Each dict has
+      ``ticket_id``, ``path``, ``branch``, and ``reason`` keys.
     """
     result = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],
@@ -1172,6 +1185,7 @@ def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
     target_ref = f"refs/heads/{branch_name}"
     pruned: list[str] = []
     failed: list[str] = []
+    retained: list[dict] = []
 
     # Parse porcelain blocks separated by blank lines.
     # Each block looks like:
@@ -1204,7 +1218,67 @@ def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
                 else:
                     failed.append(current_path)
 
-    return pruned, failed
+    # Sweep 2: orphaned ticket/<sprint-id>-* worktrees, via reconcile_worktrees.
+    if repo_root is not None and sprint_dir is not None:
+        from clasi import worktree as worktree_module
+
+        reconciliation = worktree_module.reconcile_worktrees(repo_root, sprint_dir)
+
+        for entry in reconciliation.get("cleaned", []):
+            path = entry.get("path")
+            if path:
+                pruned.append(path)
+
+        for entry in reconciliation.get("escalated", []):
+            reason = entry.get("reason", "")
+            if reason.startswith("ambiguous audit state: failed") or reason.startswith(
+                "ambiguous audit state: conflict"
+            ):
+                path = entry.get("path")
+                branch = entry.get("branch")
+                if path:
+                    worktree_module.cleanup_worktree(
+                        repo_root, Path(path), branch, keep_branch=True
+                    )
+                retained.append(
+                    {
+                        "ticket_id": entry.get("ticket_id"),
+                        "path": path,
+                        "branch": branch,
+                        "reason": reason,
+                    }
+                )
+
+    return pruned, failed, retained
+
+
+@server.tool()
+def reconcile_worktrees(sprint_id: str) -> str:
+    """Reconcile worktree state for a sprint on demand.
+
+    Resolves the sprint's directory and repo root, calls
+    clasi.worktree.reconcile_worktrees, and returns the
+    cleaned/escalated/rogue summary as JSON. Read-mostly: auto-cleans
+    the two safe classes (merged-not-cleaned, clean-but-abandoned) and
+    returns ambiguous cases for the caller to act on. Safe to call at
+    any time, from any session — not only from within execute-sprint.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '018')
+
+    Returns JSON with {cleaned, escalated, rogue} (see
+    clasi.worktree.reconcile_worktrees for the shape of each entry).
+    """
+    from clasi import worktree as worktree_module
+
+    try:
+        project = get_project()
+        sprint = project.get_sprint(sprint_id)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+    result = worktree_module.reconcile_worktrees(project.root, sprint.path)
+    return json.dumps(result, indent=2)
 
 
 def _close_sprint_full(
@@ -1632,12 +1706,22 @@ def _close_sprint_full(
     # ── Step 9: Prune sprint worktrees ──
     worktrees_pruned: list[str] = []
     worktrees_failed: list[str] = []
-    pruned, failed = _prune_sprint_worktrees(branch_name)
+    worktrees_retained: list[dict] = []
+    pruned, failed, retained = _prune_sprint_worktrees(
+        branch_name, repo_root=project.root, sprint_dir=new_path
+    )
     worktrees_pruned = pruned
     worktrees_failed = failed
+    worktrees_retained = retained
     if worktrees_failed:
         for wt_path in worktrees_failed:
             repairs.append(f"failed to remove worktree: {wt_path}")
+    if worktrees_retained:
+        for entry in worktrees_retained:
+            repairs.append(
+                f"retained branch '{entry.get('branch')}' for ticket "
+                f"{entry.get('ticket_id')} ({entry.get('reason')})"
+            )
     if worktrees_pruned:
         completed_steps.append("prune_worktrees")
 
@@ -1658,6 +1742,8 @@ def _close_sprint_full(
     }
     if worktrees_failed:
         result["worktrees_failed"] = worktrees_failed
+    if worktrees_retained:
+        result["worktrees_retained"] = worktrees_retained
     if unresolved_issues:
         result["unresolved_issues"] = unresolved_issues
     if version:
@@ -1747,7 +1833,9 @@ def record_gate_result(
     Args:
         sprint_id: The sprint ID
         gate: Gate name ('architecture_review' or 'stakeholder_approval')
-        result: 'passed' or 'failed'
+        result: 'passed', 'failed', or 'skipped' (skipped is treated as
+            satisfying the gate, same as passed, for changes with no
+            architectural impact)
         notes: Optional notes about the review
 
     Returns JSON with {sprint_id, gate_name, result, recorded_at}.
@@ -2482,8 +2570,6 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     # Check planning docs exist and have correct status
     planning_docs = [
         ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
-        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
     ]
 
     for filename, filepath, template in planning_docs:
@@ -2632,8 +2718,6 @@ def review_sprint_pre_close(sprint_id: str) -> str:
     # Check planning docs status and content
     planning_docs_pre_close = [
         ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
-        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
     ]
 
     for filename, filepath, template in planning_docs_pre_close:

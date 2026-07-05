@@ -252,6 +252,27 @@ class TestRecordGate:
         with pytest.raises(ValueError, match="not registered"):
             record_gate(db_path, "999", "architecture_review", "passed")
 
+    def test_skipped_result_accepted(self, db_path):
+        """'skipped' is a valid gate result (architecture review may be
+
+        skipped for changes with no architectural impact).
+        """
+        register_sprint(db_path, "001", "test")
+        result = record_gate(db_path, "001", "architecture_review", "skipped")
+        assert result["result"] == "skipped"
+
+    def test_skipped_gate_satisfies_advance_phase(self, db_path):
+        """A 'skipped' architecture_review gate unblocks phase advancement,
+
+        same as 'passed' — only 'failed' should block.
+        """
+        register_sprint(db_path, "001", "test")
+        advance_phase(db_path, "001")  # roadmap -> planning-docs
+        advance_phase(db_path, "001")  # planning-docs -> architecture-review
+        record_gate(db_path, "001", "architecture_review", "skipped")
+        result = advance_phase(db_path, "001")  # -> stakeholder-review
+        assert result["new_phase"] == "stakeholder-review"
+
     def test_visible_in_state(self, db_path):
         register_sprint(db_path, "001", "test")
         record_gate(db_path, "001", "architecture_review", "passed")

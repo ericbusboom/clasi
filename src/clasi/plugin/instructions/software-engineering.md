@@ -39,8 +39,11 @@ project-manager:
 - **requirements-analyst** — Elicits detailed requirements from stakeholder
   narratives. Produces the brief and use cases for complex projects.
 - **architect** — Maintains the system architecture. Writes the sprint's
-  `architecture-update.md` each sprint. Two modes: initial architecture
-  and sprint update. See `instructions/architectural-quality.md` for quality criteria.
+  Architecture section (in `sprint.md`) each sprint, sized to the change.
+  Two modes: initial architecture and sprint update. See
+  `instructions/architectural-quality.md` for quality criteria. (In the
+  current three-agent model this responsibility is folded into the
+  **sprint-planner** agent; see the `architecture-authoring` skill.)
 - **technical-lead** — Breaks the sprint architecture into sequenced, numbered
   tickets. Creates ticket plans before implementation begins.
 - **architecture-reviewer** — Reviews sprint plans and architecture updates
@@ -91,21 +94,27 @@ Contents:
 
 ### 2. Architecture (`docs/architecture/`)
 
-Each sprint contains an `architecture-update.md` in its sprint directory.
-This file is a **planning-time artifact**: the architect authors it at the
-front of sprint planning, before any tickets are created. It captures the
-structural intent for that sprint — what components change, what design
-decisions are being made, and why. Per-sprint `architecture-update.md` files
-accumulate as a chronological historical record; they are never merged back
-into canonical design documents. Code is the source of truth for current
-architecture; the per-sprint updates are the record of structural intent over
-time. Canonical design documents (`design/overview.md`, etc.) are
-project-initiation artifacts, frozen after the project is initiated.
+Each sprint's `sprint.md` contains an Architecture section, sized to the
+change. This section is a **planning-time artifact**: the sprint-planner
+authors it at the front of sprint planning, before any tickets are
+created. It captures the structural intent for that sprint — what
+components change, what design decisions are being made, and why.
+Per-sprint Architecture sections accumulate as a chronological historical
+record; they are never merged back into canonical design documents. Code
+is the source of truth for current architecture; the per-sprint sections
+are the record of structural intent over time. Canonical design documents
+(`design/overview.md`, etc.) are project-initiation artifacts, frozen
+after the project is initiated.
+
+(Sprints planned before the single-doc rewrite — sprints 001-017 — carry
+this content in a separate `architecture-update.md` file in the sprint
+directory instead of a `sprint.md` section. Both forms coexist; read
+whichever exists for a given sprint.)
 
 The optional `docs/architecture/` directory holds **consolidated** architecture
 documents produced by the `consolidate-architecture` skill. These merge
-multiple sprint updates into a single coherent view. They are distinct from
-the per-sprint `architecture-update.md` files and are not required for every
+multiple sprints' Architecture sections into a single coherent view. They
+are distinct from the per-sprint sections and are not required for every
 project:
 
 ```
@@ -115,14 +124,15 @@ docs/architecture/
   ...
 ```
 
-The architect produces sprint `architecture-update.md` files; the
-architecture-reviewer evaluates them during sprint planning. See
+The sprint-planner produces each sprint's Architecture section and
+performs its self-review during sprint planning (or records the review as
+`skipped` for a trivial/small sprint). See
 `instructions/architectural-quality.md` for document structure and quality
 criteria.
 
 Not every sprint requires architectural changes -- pure bug fixes and
-refactors within existing boundaries can note "No architectural changes"
-in the sprint's `architecture-update.md`.
+refactors within existing boundaries can note "N/A — trivial" in the
+sprint's Architecture section.
 
 ### Legacy: Brief, Use Cases, Technical Plan
 
@@ -168,15 +178,20 @@ Ticket numbering is per-sprint (starts at 001 within each sprint).
 Directory structure:
 ```
 clasi/sprints/NNN-slug/
-├── sprint.md              # Sprint goals, scope, problem, solution, test strategy
-├── usecases.md            # Sprint-level use cases (SUC-NNN)
-├── architecture-update.md # Sprint architecture update (focused diff)
+├── sprint.md              # Sprint goals, scope, problem, solution, test
+│                          # strategy, and Architecture + Use Cases sections
+│                          # (right-sized to the change)
 └── tickets/
     ├── 001-first-task.md  # Active ticket
     ├── 002-next-task.md   # Active ticket
     └── done/              # Completed tickets and plans
         └── ...
 ```
+
+(Sprints planned before the single-doc rewrite — sprints 001-017 — have
+separate `usecases.md` and `architecture-update.md` files alongside
+`sprint.md` instead. Both forms coexist; new sprints use the single-doc
+form above.)
 
 Sprint frontmatter (`sprint.md`):
 ```yaml
@@ -303,13 +318,13 @@ A sprint is a focused batch of work with its own lifecycle, branch, and
 ticket set.
 
 **Sprint directories** live in `clasi/sprints/NNN-slug/`. Each sprint
-directory contains `sprint.md`, `usecases.md`, `architecture-update.md`,
-and a `tickets/` subdirectory (see Artifacts §4 above).
+directory contains `sprint.md` (with its Architecture and Use Cases
+sections) and a `tickets/` subdirectory (see Artifacts §4 above).
 
 **Sprint lifecycle** (skills: **plan-sprint**, **close-sprint**):
 1. Stakeholder describes the next batch of work.
-2. Create sprint directory with planning documents (sprint.md, use cases,
-   architecture) and a `tickets/` subdirectory.
+2. Create sprint directory with `sprint.md` (goals, scope, use cases,
+   architecture, right-sized to the change) and a `tickets/` subdirectory.
 3. Create sprint branch (`sprint/NNN-slug`).
 4. **Architecture review**: Delegate to the **architecture-reviewer** to
    validate the plan against the existing codebase and architecture.
@@ -557,9 +572,8 @@ clasi/
 │   └── YYYY-MM-DD-slug.md       # One knowledge entry per file
 └── sprints/
     ├── 001-mcp-server/          # Active sprint directory
-    │   ├── sprint.md            # Sprint goals, scope, notes
-    │   ├── usecases.md          # Sprint-level use cases
-    │   ├── architecture-update.md # Architecture update (focused diff)
+    │   ├── sprint.md            # Sprint goals, scope, notes, plus
+    │   │                        # Architecture + Use Cases sections
     │   └── tickets/
     │       ├── 003-add-auth.md      # Active ticket
     │       ├── 003-add-auth-plan.md # Its plan

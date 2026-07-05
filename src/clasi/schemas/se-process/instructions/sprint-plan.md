@@ -7,8 +7,10 @@ This skill creates sprint plans using a two-phase model:
   TODO references). No branches created.
 
 - **Phase 2 — Detail**: One sprint at a time. Produces full planning
-  artifacts via the sprint-planner agent: `usecases.md`,
-  `architecture-update.md`, and tickets. Runs architecture review inline.
+  artifacts via the sprint-planner agent: a single `sprint.md` with
+  right-sized Architecture and Use Cases sections, plus tickets. Runs
+  architecture review inline (or records it `skipped` for a trivial/small
+  sprint).
 
 Branches are created later via `acquire_execution_lock`, not during
 planning. All planning happens on main.

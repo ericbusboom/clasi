@@ -1142,8 +1142,10 @@ class TestRoleGuardLegacyLayout:
         _write_legacy_layout_config(tmp_path)
         assert _run_role_guard(tmp_path, ".clasi/reflections/x.md", "") == 0
 
-    def test_tier0_architecture_dir_allowed(self, tmp_path):
-        """Tier 0: write to .clasi/architecture/x.md is allowed (architecture_dir)."""
+    def test_tier0_legacy_architecture_path_allowed_via_clasi_dir(self, tmp_path):
+        """Tier 0: write to .clasi/architecture/x.md is allowed, but only because
+        it falls under clasi_dir (.clasi/) — there is no dedicated
+        architecture_dir prefix anymore (removed by ticket 018-014)."""
         _write_legacy_layout_config(tmp_path)
         assert _run_role_guard(tmp_path, ".clasi/architecture/x.md", "") == 0
 
@@ -1151,6 +1153,13 @@ class TestRoleGuardLegacyLayout:
         """Tier 0: write to docs/design/x.md is allowed (design_dir)."""
         _write_legacy_layout_config(tmp_path)
         assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+    def test_tier0_design_dir_architecture_doc_allowed(self, tmp_path):
+        """Tier 0: write to docs/design/architecture.md (the consolidated
+        architecture doc's new home, per ticket 013) is allowed via
+        design_dir — no separate architecture allow-prefix is needed."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/architecture.md", "") == 0
 
     def test_tier0_clasi_dir_config_allowed(self, tmp_path):
         """Tier 0: write to .clasi/config.yaml is allowed (clasi_dir state)."""
@@ -1239,15 +1248,27 @@ class TestRoleGuardFreshLayout:
         _write_fresh_config(tmp_path)
         assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "") == 0
 
-    def test_tier0_architecture_dir_allowed(self, tmp_path):
-        """Tier 0: write to docs/architecture/x.md is allowed (new default)."""
+    def test_tier0_docs_architecture_no_longer_allow_listed(self, tmp_path):
+        """Tier 0: write to docs/architecture/x.md is now BLOCKED.
+
+        docs/architecture/ is not clasi_dir, not design_dir, and (per
+        ticket 018-014) no longer has a dedicated architecture allow-prefix.
+        Nothing relies on docs/architecture/ being allow-listed anymore.
+        """
         _write_fresh_config(tmp_path)
-        assert _run_role_guard(tmp_path, "docs/architecture/x.md", "") == 0
+        assert _run_role_guard(tmp_path, "docs/architecture/x.md", "") == 2
 
     def test_tier0_design_dir_allowed(self, tmp_path):
         """Tier 0: write to docs/design/x.md is allowed (new default, unchanged)."""
         _write_fresh_config(tmp_path)
         assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+    def test_tier0_design_dir_architecture_doc_allowed(self, tmp_path):
+        """Tier 0: write to docs/design/architecture.md (the consolidated
+        architecture doc's new home, per ticket 013) is allowed via
+        design_dir under the fresh default layout too."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/architecture.md", "") == 0
 
     def test_tier0_clasi_state_dir_allowed(self, tmp_path):
         """Tier 0: write to .clasi/config.yaml is allowed (clasi_dir state, fixed)."""

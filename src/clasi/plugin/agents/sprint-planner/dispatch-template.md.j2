@@ -28,8 +28,8 @@ You are producing a **lightweight roadmap plan**. This is batch planning
 
 ### What NOT to produce
 
-- No `usecases.md`
-- No `architecture-update.md`
+- No separate `usecases.md` or `architecture-update.md` files (use cases
+  and architecture live as sections inside `sprint.md`)
 - No tickets
 - No branch creation
 
@@ -52,9 +52,10 @@ with full details.
 
 ### What to produce
 
-- Update `sprint.md` -- set frontmatter `status: planning-docs`
-- `usecases.md` with use cases covered by this sprint
-- `architecture-update.md` with focused architecture changes
+- Update `sprint.md` -- set frontmatter `status: planning-docs`, and fill
+  in its Architecture and Use Cases sections, sized to the change (make
+  an explicit trivial/small vs. substantial/structural effort decision
+  first -- see the sprint-planner `agent.md`)
 - `tickets/` with numbered ticket files and acceptance criteria
 
 ### What NOT to produce
@@ -68,7 +69,7 @@ Return a JSON object:
 {
   "status": "success",
   "summary": "Brief description of the sprint plan",
-  "files_created": ["sprint.md", "usecases.md", ...],
+  "files_created": ["sprint.md", "tickets/001-001-title.md", ...],
   "ticket_ids": ["001-001", "001-002"],
   "architecture_review": "passed"
 }
@@ -87,7 +88,11 @@ Read these before planning:
 - Use CLASI MCP tools for all sprint and ticket creation.
 {% if mode == "detail" %}
 - Handle architecture, architecture review, and ticket creation inline.
-- Do not skip the architecture review gate.
+- Make an explicit trivial/small vs. substantial/structural effort
+  decision before writing the Architecture and Use Cases sections. Do
+  not skip the architecture review gate for a substantial/structural
+  sprint; for a trivial/small sprint, record the gate result as
+  `skipped` rather than silently omitting it.
 {% endif %}
 - Do not write code or tests. You produce planning artifacts only.
 - Do NOT create a git branch. Branches are created later at execution time.
@@ -118,8 +123,6 @@ your work will be rejected.
   "summary": "Brief description of the sprint plan",
   "files_created": [
     "sprint.md",
-    "usecases.md",
-    "architecture-update.md",
     "tickets/NNN-001-title.md"
   ],
   "ticket_ids": [

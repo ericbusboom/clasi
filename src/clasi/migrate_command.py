@@ -197,11 +197,15 @@ def detect_moves(project: Project) -> list[Move]:
     root = project.root
 
     # Map each category to its configured destination path.
+    # "architecture" has no dedicated destination property — legacy
+    # architecture content now merges into design_dir, matching where
+    # consolidate-architecture writes the consolidated doc
+    # (docs/design/architecture.md).
     category_dst: dict[str, Path] = {
         "issues": project.issues_dir,
         "sprints": project.sprints_dir,
         "reflections": project.reflections_dir,
-        "architecture": project.architecture_dir,
+        "architecture": project.design_dir,
         "design": project.design_dir,
         "logs": project.log_dir,
         "db": project.db_path,

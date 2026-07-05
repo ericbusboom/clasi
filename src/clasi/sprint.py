@@ -21,8 +21,6 @@ class MergeConflictError(RuntimeError):
 from clasi.artifact import Artifact
 from clasi.templates import (
     SPRINT_TEMPLATE,
-    SPRINT_USECASES_TEMPLATE,
-    SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
     slugify,
 )
@@ -75,6 +73,12 @@ class Sprint:
     def status(self) -> str:
         """From sprint.md frontmatter 'status' field."""
         return self.sprint_doc.frontmatter.get("status", "unknown")
+
+    @property
+    def worktree(self) -> bool:
+        """From sprint.md frontmatter 'worktree' field. Opt-in for parallel
+        execution; default False (serial) for backward compatibility."""
+        return bool(self.sprint_doc.frontmatter.get("worktree", False))
 
     @property
     def phase(self) -> str:
@@ -428,15 +432,17 @@ class Sprint:
     def detail_promote(self) -> dict:
         """Promote a sprint from roadmap phase to planning-docs phase.
 
-        Scaffolds usecases.md, architecture-update.md, tickets/, and
-        tickets/done/ from templates onto the sprint directory, then
-        advances the state DB phase from 'roadmap' to 'planning-docs'.
+        Under the single-doc model, use cases and architecture live as
+        sections inside sprint.md — there is nothing left to scaffold for
+        them. This method creates tickets/ and tickets/done/ onto the
+        sprint directory, then advances the state DB phase from 'roadmap'
+        to 'planning-docs'.
 
         Returns a dict: {"sprint_id": ..., "phase": "planning-docs",
                           "files_written": [...]}.
 
-        Raises ValueError if the sprint is not in roadmap phase or if
-        usecases.md already exists.
+        Raises ValueError if the sprint is not in roadmap phase or if the
+        sprint has already been detail-planned (tickets/ already exists).
         """
         current_phase = self.phase
         if current_phase != "roadmap":
@@ -444,29 +450,20 @@ class Sprint:
                 f"Sprint {self.id} is not in roadmap phase (current: {current_phase})"
             )
 
-        if self.usecases_md.exists():
+        if self.tickets_dir.exists():
             raise ValueError(
-                f"Sprint {self.id} is already detail-planned (usecases.md exists)"
+                f"Sprint {self.id} is already detail-planned (tickets/ exists)"
             )
 
         sprint_id = self.id
-        sprint_title = self.title
 
         files_written: list[str] = []
-
-        # Write usecases.md from template
-        usecases_content = SPRINT_USECASES_TEMPLATE.format(id=sprint_id, title=sprint_title)
-        self.usecases_md.write_text(usecases_content, encoding="utf-8")
-        files_written.append(str(self.usecases_md))
-
-        # Write architecture-update.md from template
-        arch_content = SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(id=sprint_id, title=sprint_title)
-        self.architecture_update_md.write_text(arch_content, encoding="utf-8")
-        files_written.append(str(self.architecture_update_md))
 
         # Create tickets/ and tickets/done/ directories
         self.tickets_dir.mkdir(parents=True, exist_ok=True)
         self.tickets_done_dir.mkdir(exist_ok=True)
+        files_written.append(str(self.tickets_dir))
+        files_written.append(str(self.tickets_done_dir))
 
         # Update sprint.md frontmatter status to reflect new phase
         self.sprint_doc.update_frontmatter(status="planning-docs")
@@ -483,7 +480,11 @@ class Sprint:
     def archive(self) -> dict:
         """Archive this sprint by updating status to 'done' and moving to sprints/done/.
 
-        Also copies the architecture-update.md to docs/clasi/architecture/.
+        Under the single-doc model, architecture lives as a section inside
+        sprint.md — there is nothing to copy into a dedicated architecture
+        directory (full architecture consolidation, if wanted, is done on
+        demand from sprint.md history via the consolidate-architecture
+        skill, writing to ``project.design_dir``).
 
         Returns a dict with keys: old_path, new_path.
         Raises ValueError if the destination already exists.
@@ -495,13 +496,6 @@ class Sprint:
 
         # Update sprint status to done
         self.sprint_doc.update_frontmatter(status="done")
-
-        # Copy architecture-update to the architecture directory
-        if self.architecture_update_md.exists():
-            arch_dir = project.architecture_dir
-            arch_dir.mkdir(parents=True, exist_ok=True)
-            dest = arch_dir / f"architecture-update-{self.id}.md"
-            shutil.copy2(str(self.architecture_update_md), str(dest))
 
         # Move to done directory
         done_dir = project.sprints_dir / "done"
@@ -530,8 +524,6 @@ class Sprint:
             "branch": self.branch,
             "files": {
                 "sprint.md": str(self.sprint_md),
-                "usecases.md": str(self.usecases_md),
-                "architecture-update.md": str(self.architecture_update_md),
             },
             "phase": self.phase,
         }

@@ -41,10 +41,6 @@ class TestProject:
         proj = Project(tmp_path)
         assert proj.log_dir == tmp_path / ".clasi" / "log"
 
-    def test_architecture_dir(self, tmp_path):
-        proj = Project(tmp_path)
-        assert proj.architecture_dir == tmp_path / "docs" / "architecture"
-
     def test_mcp_config_path(self, tmp_path):
         proj = Project(tmp_path)
         assert proj.mcp_config_path == tmp_path / ".mcp.json"

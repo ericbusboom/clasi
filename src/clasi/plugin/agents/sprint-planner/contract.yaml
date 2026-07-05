@@ -56,15 +56,17 @@ outputs:
       - path: sprint.md
         frontmatter:
           status: planning-docs
-      - path: usecases.md
-      - path: architecture-update.md
-        frontmatter:
-          status: draft
       - path: "tickets/*.md"
         min_count: 1
         frontmatter:
           status: pending
           id: { type: string, required: true }
+    validates:
+      - >
+        sprint.md contains right-sized Architecture and Use Cases
+        sections (may read "N/A -- trivial" for a trivial/small sprint;
+        full content for a substantial/structural sprint) -- these are
+        sections within sprint.md, not separate files.
 
 returns:
   roadmap:

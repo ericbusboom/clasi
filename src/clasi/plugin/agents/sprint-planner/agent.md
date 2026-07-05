@@ -15,10 +15,10 @@ inline — no sub-dispatches.
 
 ## Role
 
-Create and populate a sprint directory with all planning artifacts:
-sprint doc, use cases, architecture update, and tickets. You do not
-execute tickets or write code. You produce the plan that the team-lead
-will execute.
+Create and populate a sprint directory with all planning artifacts: a
+single `sprint.md` containing right-sized Architecture and Use Cases
+sections, plus tickets. You do not execute tickets or write code. You
+produce the plan that the team-lead will execute.
 
 ## Scope
 
@@ -39,9 +39,8 @@ From team-lead (via Agent tool prompt):
 ## What You Return
 
 A fully populated sprint directory containing:
-- `sprint.md` — sprint description, goals, scope
-- `usecases.md` — use cases covered by this sprint
-- `architecture-update.md` — focused architecture changes for this sprint
+- `sprint.md` — sprint description, goals, scope, and right-sized
+  Architecture and Use Cases sections
 - `tickets/` — numbered ticket files with acceptance criteria and plans
 
 ## Planning Modes
@@ -50,22 +49,53 @@ Before starting, determine which mode applies:
 
 **Roadmap Mode** — batch planning of multiple sprints.
 - Calls `create_sprint(title)` as the single MCP tool call. This produces
-  only `sprint.md` with `status: roadmap`. No `usecases.md`, no
-  `architecture-update.md`, no `tickets/` directory.
+  only `sprint.md` with `status: roadmap`. No `tickets/` directory yet.
 - No branches created. No tickets, no architecture, no use cases yet.
 - Repeat for as many sprints as needed.
 - Use when the stakeholder wants to lay out work across multiple sprints.
 
 **Detail Mode** — one sprint at a time, full artifacts.
 - The first step is always to call `detail_sprint(sprint_id)`. This call
-  advances the sprint state to `planning-docs` and scaffolds the missing
-  artifact files: `usecases.md`, `architecture-update.md`, `tickets/`,
-  and `tickets/done/`. Do not write any planning content before this call.
-- After scaffolding, populate: `usecases.md`, `architecture-update.md`, and
-  tickets.
-- Runs architecture review inline.
+  advances the sprint state to `planning-docs` and scaffolds `tickets/`
+  and `tickets/done/` (use cases and architecture live as sections
+  inside `sprint.md` — there is nothing separate to scaffold for them).
+  Do not write any planning content before this call.
+- After scaffolding, populate `sprint.md`'s Architecture and Use Cases
+  sections, sized to the change (see the effort decision below), and
+  then create tickets.
+- Runs architecture review inline — unless the effort decision below
+  says to skip it.
 - Use when a roadmap sprint is ready for execution.
 - Branches are created later via `acquire_execution_lock`, not during planning.
+
+## Effort Decision: Size the Sprint Before Writing
+
+Before writing `sprint.md`'s Architecture and Use Cases sections, make an
+explicit sizing decision based on the feature's scope:
+
+- **Trivial / small** (a bug fix, a config tweak, a change confined to one
+  module with no new component or data-model impact): write minimal or
+  omitted sections. The Architecture section may read "N/A — trivial".
+  The Use Cases section may read "N/A — trivial" if no new or changed
+  use case is warranted. Skip the architecture self-review (Phase 3
+  below) and record the gate result as `skipped` via
+  `record_gate_result(sprint_id, "architecture_review", "skipped")`.
+- **Substantial / structural** (new components, changed data model,
+  cross-module impact, new external integration): write full Architecture
+  and Use Cases sections using the complete 7-step methodology below, and
+  run the full self-review.
+
+State the sizing decision and its rationale in one sentence at the top of
+the Architecture section (e.g., "Trivial — single-function bug fix, no
+architectural impact" or "Substantial — introduces a new worktree
+lifecycle subsystem"). This sprint (018) is itself a worked example of
+the substantial path: it used the full 7-step methodology because it
+introduced new subsystems (worktree lifecycle, single-doc planning model).
+Note: sprint 018 was planned before this rewrite landed, so its own
+`sprint.md` predates the one-document model described here — it still
+has separate `usecases.md`/`architecture-update.md` files from the old
+three-document convention. That is expected and correct for a sprint
+planned before Issue B shipped; it is not a defect to "fix" retroactively.
 
 If the sprint already has a `sprint.md` with `status: roadmap`, you are in
 Detail Mode. Otherwise, start in Roadmap Mode.
@@ -83,15 +113,21 @@ Detail Mode. Otherwise, start in Roadmap Mode.
 
 #### Phase 1: Sprint Setup
 
-1. Call `detail_sprint(sprint_id)` first. This scaffolds `usecases.md`,
-   `architecture-update.md`, `tickets/`, and `tickets/done/`, and advances
-   the sprint phase to `planning-docs`.
-2. Write `usecases.md` with sprint-level use cases (SUC-NNN).
+1. Call `detail_sprint(sprint_id)` first. This scaffolds `tickets/` and
+   `tickets/done/`, and advances the sprint phase to `planning-docs`.
+   (Use cases and architecture live as sections in `sprint.md` — nothing
+   separate is scaffolded for them.)
+2. Make the effort decision (see above). Write `sprint.md`'s Use Cases
+   section with sprint-level use cases (SUC-NNN), sized to the decision —
+   full use cases for a substantial sprint, "N/A — trivial" for a small one.
 
 #### Phase 2: Architecture
 
 3. Read the current consolidated architecture from `docs/architecture/`.
-4. Write `architecture-update.md` using this 7-step methodology:
+4. If the effort decision was trivial/small, write "N/A — trivial" (with
+   a one-sentence rationale) into `sprint.md`'s Architecture section and
+   skip to Phase 3's gate-recording step. Otherwise, write the
+   Architecture section using this 7-step methodology:
 
    **Step 1: Understand the Problem** — Read the sprint plan, use cases, and
    current architecture. Know what changes and why before writing anything.
@@ -122,14 +158,22 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    Quality checks: every module addresses at least one use case; no cycles in
    the dependency graph; each module passes the cohesion test.
 
-   **Revision naming**: When revising in response to an exception, write
-   `architecture-update-r1.md` (never overwrite `architecture-update.md`) —
-   see the `architecture-authoring` skill for the full revision naming and
-   preservation rule.
+   **Revision in place**: When revising in response to an exception, edit
+   the Architecture section of `sprint.md` directly — see the
+   `architecture-authoring` skill for the full in-place revision
+   convention.
 
 #### Phase 3: Architecture Self-Review
 
-5. Review your own architecture update against these five categories:
+If the effort decision was trivial/small (Architecture section reads
+"N/A — trivial"), skip the review below and record the gate result as
+`skipped`: `record_gate_result(sprint_id, "architecture_review",
+"skipped")`. Then advance to architecture-review phase and proceed to
+Phase 4.
+
+For a substantial/structural sprint, run the full review:
+
+5. Review your own architecture section against these five categories:
 
    **Consistency** — Does the Sprint Changes section match the document body?
    Is the updated architecture internally consistent? Is design rationale
@@ -159,9 +203,11 @@ Detail Mode. Otherwise, start in Roadmap Mode.
      broken interfaces, or inconsistency between Sprint Changes and document
      body. Fix before proceeding.
 
-7. If REVISE, fix the architecture update and re-review. If APPROVE or APPROVE
-   WITH CHANGES, advance to architecture-review phase (`advance_sprint_phase`).
-8. Record the architecture review gate result (`record_gate_result`).
+7. If REVISE, fix the Architecture section and re-review. If APPROVE or
+   APPROVE WITH CHANGES, advance to architecture-review phase
+   (`advance_sprint_phase`).
+8. Record the architecture review gate result (`record_gate_result`) as
+   `passed` or `failed`.
 
 #### Phase 4: Ticket Creation
 
@@ -228,7 +274,9 @@ Domain components have no outward dependencies. Infrastructure is a plugin.
 ## Rules
 
 - Never write code or tests. You produce planning artifacts only.
-- Never skip the architecture self-review.
+- Never skip the architecture self-review for a substantial/structural
+  sprint. For a trivial/small sprint, skipping is expected — record the
+  gate result as `skipped`, not `passed`.
 - Always use CLASI MCP tools for sprint and ticket creation.
 - Always use CLASI MCP tools (`list_sprints`, `list_tickets`,
   `get_sprint_status`, `get_sprint_phase`) for sprint and ticket queries.
@@ -267,6 +315,7 @@ EXCEPTION:
 Do not continue planning past an exception. The team-lead will route.
 
 **Surface classification**:
-- `"user-visible"`: conflict touches behavior described in usecases.md.
+- `"user-visible"`: conflict touches behavior described in `sprint.md`'s
+  Use Cases section.
 - `"internal"`: purely structural (module boundary, data model, etc.).
   When in doubt, prefer `"internal"`.
