@@ -53,6 +53,28 @@ accident.
 
 ## Parallel Path
 
+### Preflight sweep (session/execution start)
+
+Before any ticket work begins in this session — parallel or serial, though
+this only has teeth on the parallel path since the serial path never
+creates worktrees — call `reconcile_worktrees(repo_root, sprint_dir)`.
+This is the standing reaper (see `clasi.worktree.reconcile_worktrees`)
+that reconciles the sprint's worktree audit record against live `git
+worktree list` output, auto-cleaning the unambiguous cases and reporting
+the rest.
+
+Report a one-line summary of what the sweep cleaned (e.g. "reconcile:
+cleaned 2, escalated 0, rogue 0").
+
+If the sweep returns any `escalated` entries, the controller must resolve
+every one of them — see "Escalation handling" below — before starting any
+new ticket work in this sprint. **Never auto-resume ambiguous work without
+explicit stakeholder confirmation.** This preflight sweep is the first of
+three trigger points at which `reconcile_worktrees` runs (the other two
+are the per-creation gate below and the close-time safety net — see
+"Close"); all three invoke the same reconciliation mechanism, just at
+different moments in the sprint's lifecycle.
+
 ### Preconditions
 
 All of the following must hold before the controller creates any
@@ -89,18 +111,29 @@ note at the end of this section).
 
 For each group, in order:
 
-1. **Setup (sequential, per ticket in the group)**: for every ticket in
+1. **Per-creation gate**: immediately before this group's worktrees are
+   created (step 2 below), call `reconcile_worktrees(repo_root,
+   sprint_dir)` again. Report the one-line cleaned/escalated/rogue
+   summary as at the preflight sweep. **If any `escalated` entries
+   remain unresolved, this is a BLOCKING CONDITION: the controller STOPS
+   and must NOT create any new worktrees for this group** until every
+   escalated entry has been resolved (see "Escalation handling" below).
+   This is not a warning to log and proceed past — worktree accumulation
+   is exactly what this gate exists to prevent, and it only works if the
+   controller actually halts here rather than treating a pile of
+   unresolved worktrees as background noise.
+2. **Setup (sequential, per ticket in the group)**: for every ticket in
    the group, create its worktree (`create_worktree`), create its
    per-ticket branch (`create_ticket_branch`), write an audit record,
    and set the ticket's status to `in-progress` via
    `update_ticket_status`.
-2. **Dispatch (concurrent)**: dispatch one programmer agent per ticket
+3. **Dispatch (concurrent)**: dispatch one programmer agent per ticket
    in the group using concurrent background Agent tool calls, each
    pointed at that ticket's own worktree directory. This is the only
    step in the loop that runs concurrently.
-3. **Wait**: wait for every dispatch in the group to return before
+4. **Wait**: wait for every dispatch in the group to return before
    proceeding.
-4. **Per-ticket validate → merge → cleanup (sequential, never
+5. **Per-ticket validate → merge → cleanup (sequential, never
    concurrent — this is the single-HEAD merge serialization
    constraint)**: for each ticket in the group, one at a time:
    a. `validate_worktree`. On failure, retry by re-dispatching the
@@ -115,10 +148,65 @@ For each group, in order:
       `move_ticket_to_done`, then **immediately** — no deferral to
       sprint close — call `cleanup_worktree(keep_branch=False)`, and
       mark the audit record `cleaned_up`.
-5. **Advance**: move on to the next group only when every ticket in the
+6. **Advance**: move on to the next group only when every ticket in the
    current group has reached `merged`/`cleaned_up` or has been
    explicitly escalated. Do not start the next group while any ticket
    in the current group is unresolved.
+
+### Escalation handling
+
+Both the preflight sweep and the per-creation gate call the same
+`reconcile_worktrees` mechanism, and both can return `escalated` entries
+that the controller must resolve before proceeding. "Resolve" means one
+of exactly three actions, chosen per entry:
+
+- **Recover**: re-dispatch the programmer agent into the *existing*
+  worktree (do not create a new one) to finish or fix the work, then
+  continue the normal validate → merge → cleanup flow for that ticket.
+  Use this when the escalated work looks salvageable — e.g. an
+  `in_progress` entry whose worktree still has uncommitted work in
+  progress and no crash indication.
+- **Abandon**: call `cleanup_worktree(keep_branch=True)` to remove the
+  worktree directory while retaining the branch for later human
+  inspection. Update the audit record accordingly. Use this when the
+  work is not worth recovering but should not be silently discarded —
+  the branch remains as a paper trail.
+- **Inspect**: take no automated action on the worktree or branch.
+  Acknowledge the entry and move it into an explicitly-tracked "known,
+  deferred" state (e.g. a note in the audit record or sprint log) so
+  that it does not silently reappear as a fresh `escalated` entry on
+  every subsequent sweep. Use this when a human needs to look at the
+  work before any decision can be made.
+
+**Never auto-resume ambiguous work without explicit stakeholder
+confirmation.** The reaper itself never guesses at recover/abandon/
+inspect — it only classifies and safely auto-cleans the unambiguous
+cases (`merged-not-cleaned`, `clean-but-abandoned`); everything it
+returns in `escalated` is, by construction, a case the controller (and
+where needed, the stakeholder) must decide on explicitly.
+
+This subsection also covers two related recovery paths that surface
+through the same `escalated`/audit machinery:
+
+- **Orphaned worktree (controller crash)**: if the controller crashes or
+  is killed mid-lifecycle, a worktree can be left in a non-terminal audit
+  state (`worktree_created`, `branch_created`, `in_progress`) with no
+  programmer agent actually running against it. The next sweep
+  (whichever trigger point runs first — preflight, per-creation gate, or
+  close) surfaces it as `escalated`. Resolve it with the same
+  recover/abandon/inspect choice above: recover means re-dispatching a
+  programmer into that worktree as if picking up where the crash left
+  off; abandon and inspect are as described above.
+- **Abandoned branch**: a `ticket/<sprint-id>-*` branch can exist with no
+  live worktree registered against it — either because the worktree was
+  already cleaned up but the branch was deliberately retained
+  (`failed`/`conflict`), or because the audit entry is missing entirely
+  (a rogue branch created outside the tracked lifecycle). `reconcile_
+  worktrees` reports entries with no live worktree in `rogue` rather than
+  `escalated` (there's no directory left to act on), but the same
+  resolution question applies to the branch: retain it for inspection, or
+  delete it once a human confirms it is safe to discard. Do not delete a
+  `failed`/`conflict` branch without that confirmation.
 
 **Serial fallback within the parallel path**: even when `worktree:
 true` and preconditions hold, any group that `check_independence`
@@ -129,9 +217,13 @@ parallelize for a group of one.
 ### Close
 
 When all groups are done, invoke `close-sprint` as usual (see §5 of the
-Serial Path). Its reconciliation safety net is the final pass that
-catches anything the per-group loop did not already clean up — it does
-not replace the immediate cleanup described above.
+Serial Path). Its reconciliation safety net — the close-time extension
+of `_prune_sprint_worktrees` (ticket 008) — is **the final reconcile
+pass**: the third of the three `reconcile_worktrees` trigger points
+(preflight sweep at session start, the per-creation gate before each
+group, and this close-time pass), catching anything the per-group loop
+did not already clean up. It does not replace the immediate cleanup
+described above.
 
 ---
 
