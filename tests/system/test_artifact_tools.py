@@ -18,6 +18,7 @@ from clasi.tools.artifact_tools import (
     list_sprints,
     list_tickets,
     move_ticket_to_done,
+    reconcile_worktrees,
     reopen_ticket,
     update_ticket_status,
 )
@@ -1050,6 +1051,74 @@ class TestCloseSprintFull:
         # Recovery state should be cleared
         recovery = get_recovery_state(db_path)
         assert recovery is None
+
+
+class TestReconcileWorktreesTool:
+    """Tests for the reconcile_worktrees MCP tool (ticket 018-011)."""
+
+    @patch("clasi.worktree.reconcile_worktrees")
+    def test_returns_json_with_expected_shape_and_only_cleans_safe_worktrees(
+        self, mock_reconcile, work_dir
+    ):
+        """The tool resolves sprint_dir/repo_root for the given sprint_id,
+        delegates to clasi.worktree.reconcile_worktrees, and returns its
+        cleaned/escalated/rogue result as JSON untouched. A mix of a
+        safe-to-clean (merged-not-cleaned) worktree and an ambiguous
+        (failed audit state) worktree is used to assert that only the
+        safe one shows up in "cleaned" and the ambiguous one is reported,
+        untouched, in "escalated".
+        """
+        create_sprint("Sprint")
+
+        mock_reconcile.return_value = {
+            "cleaned": [
+                {
+                    "ticket_id": "002",
+                    "path": "/repo/../worktree-001-002",
+                    "branch": "ticket/001-002-merged-slug",
+                    "reason": "merged-not-cleaned",
+                }
+            ],
+            "escalated": [
+                {
+                    "ticket_id": "003",
+                    "path": "/repo/../worktree-001-003",
+                    "branch": "ticket/001-003-failed-slug",
+                    "reason": "ambiguous audit state: failed",
+                }
+            ],
+            "rogue": [],
+        }
+
+        result = json.loads(reconcile_worktrees("001"))
+
+        assert set(result.keys()) == {"cleaned", "escalated", "rogue"}
+        assert len(result["cleaned"]) == 1
+        assert result["cleaned"][0]["ticket_id"] == "002"
+        assert result["cleaned"][0]["reason"] == "merged-not-cleaned"
+        assert len(result["escalated"]) == 1
+        assert result["escalated"][0]["ticket_id"] == "003"
+        assert result["escalated"][0]["reason"] == "ambiguous audit state: failed"
+        assert result["rogue"] == []
+
+        # Verify the tool resolved sprint_dir/repo_root via the project and
+        # passed them through to clasi.worktree.reconcile_worktrees.
+        mock_reconcile.assert_called_once()
+        call_args = mock_reconcile.call_args[0]
+        repo_root_arg, sprint_dir_arg = call_args
+        assert Path(repo_root_arg) == work_dir
+        assert Path(sprint_dir_arg).name == "001-sprint"
+
+    @patch("clasi.worktree.reconcile_worktrees")
+    def test_unknown_sprint_id_returns_error_json_without_calling_reconcile(
+        self, mock_reconcile, work_dir
+    ):
+        """An unresolvable sprint_id returns an error JSON payload and never
+        reaches clasi.worktree.reconcile_worktrees."""
+        result = json.loads(reconcile_worktrees("999"))
+
+        assert "error" in result
+        mock_reconcile.assert_not_called()
 
 
 class TestSystemRoundtrip:

@@ -1267,6 +1267,35 @@ def _prune_sprint_worktrees(
     return pruned, failed, retained
 
 
+@server.tool()
+def reconcile_worktrees(sprint_id: str) -> str:
+    """Reconcile worktree state for a sprint on demand.
+
+    Resolves the sprint's directory and repo root, calls
+    clasi.worktree.reconcile_worktrees, and returns the
+    cleaned/escalated/rogue summary as JSON. Read-mostly: auto-cleans
+    the two safe classes (merged-not-cleaned, clean-but-abandoned) and
+    returns ambiguous cases for the caller to act on. Safe to call at
+    any time, from any session — not only from within execute-sprint.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '018')
+
+    Returns JSON with {cleaned, escalated, rogue} (see
+    clasi.worktree.reconcile_worktrees for the shape of each entry).
+    """
+    from clasi import worktree as worktree_module
+
+    try:
+        project = get_project()
+        sprint = project.get_sprint(sprint_id)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+    result = worktree_module.reconcile_worktrees(project.root, sprint.path)
+    return json.dumps(result, indent=2)
+
+
 def _close_sprint_full(
     sprint_id: str,
     branch_name: str,
