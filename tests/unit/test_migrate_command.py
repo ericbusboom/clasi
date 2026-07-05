@@ -86,9 +86,20 @@ def _make_project(root: Path, config_paths: dict | None = None) -> Project:
 
 class TestCandidateLocations:
     def test_all_default_keys_present(self):
+        """Every ARTIFACT_PATH_DEFAULTS category has a migration source.
+
+        "architecture" is the one exception: it remains a probed legacy
+        source category (for old .clasi/architecture / docs/clasi/architecture
+        content) but has no destination property of its own anymore — its
+        destination now resolves to design_dir (see detect_moves'
+        category_dst), so it is not in ARTIFACT_PATH_DEFAULTS.
+        """
         from clasi.project import ARTIFACT_PATH_DEFAULTS
 
-        assert set(CANDIDATE_LOCATIONS.keys()) == set(ARTIFACT_PATH_DEFAULTS.keys())
+        assert set(ARTIFACT_PATH_DEFAULTS.keys()) <= set(CANDIDATE_LOCATIONS.keys())
+        assert set(CANDIDATE_LOCATIONS.keys()) - set(ARTIFACT_PATH_DEFAULTS.keys()) == {
+            "architecture"
+        }
 
     def test_db_is_file_candidate(self):
         """db candidates should reference a .db filename, not a directory."""
@@ -584,13 +595,16 @@ class TestMergeModeCleansUpSourceDir:
 
     def test_docs_category_source_removed_when_dest_has_only_gitkeep(self, tmp_path):
         """Regression for a docs/-target category (architecture): source dir
-        removed after merge-mode migration when dest has only .gitkeep."""
+        removed after merge-mode migration when dest has only .gitkeep.
+
+        The "architecture" category's destination is design_dir (no
+        dedicated architecture_dir property exists anymore)."""
         src_dir = tmp_path / ".clasi" / "architecture"
         src_dir.mkdir(parents=True)
         (src_dir / "arch.md").write_text("# Architecture", encoding="utf-8")
 
         project = _make_project(tmp_path)
-        dst_dir = project.architecture_dir
+        dst_dir = project.design_dir
         dst_dir.mkdir(parents=True, exist_ok=True)
         (dst_dir / ".gitkeep").touch()
 
@@ -689,7 +703,9 @@ class TestRunMigrateLegacyDocsClasi:
         project = Project(tmp_path)
         assert (project.issues_dir / "file.md").exists()
         assert (project.sprints_dir / "file.md").exists()
-        assert (project.architecture_dir / "file.md").exists()
+        # "architecture" has no dedicated destination property anymore —
+        # legacy architecture content merges into design_dir.
+        assert (project.design_dir / "file.md").exists()
 
     def test_calls_run_init(self, tmp_path):
         """run_migrate calls run_init after migration."""

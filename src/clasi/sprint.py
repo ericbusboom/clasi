@@ -481,9 +481,10 @@ class Sprint:
         """Archive this sprint by updating status to 'done' and moving to sprints/done/.
 
         Under the single-doc model, architecture lives as a section inside
-        sprint.md — there is nothing to copy into
-        ``project.architecture_dir`` (full architecture consolidation, if
-        wanted, is done on demand from sprint.md history).
+        sprint.md — there is nothing to copy into a dedicated architecture
+        directory (full architecture consolidation, if wanted, is done on
+        demand from sprint.md history via the consolidate-architecture
+        skill, writing to ``project.design_dir``).
 
         Returns a dict with keys: old_path, new_path.
         Raises ValueError if the destination already exists.

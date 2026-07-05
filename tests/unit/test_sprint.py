@@ -1095,18 +1095,23 @@ class TestSprintArchive:
         assert s.path.parent.name == "done"
 
     def test_archive_does_not_copy_architecture_update(self, tmp_path):
-        """Single-doc model: archive() no longer copies into architecture_dir,
+        """Single-doc model: archive() no longer copies architecture-update.md
+        anywhere, even when a historical architecture-update.md is present.
 
-        even when a historical architecture-update.md is present.
+        There is no dedicated architecture directory anymore (Project no
+        longer exposes architecture_dir) — this asserts archive() does not
+        create one, and does not write an architecture-update copy into
+        design_dir either.
         """
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         arch_update = sprint_dir / "architecture-update.md"
         arch_update.write_text("---\nstatus: final\n---\n# Update\n", encoding="utf-8")
         s = Sprint(sprint_dir, proj)
         s.archive()
-        arch_dir = proj.architecture_dir
-        dest = arch_dir / "architecture-update-001.md"
-        assert not dest.exists()
+        assert not (proj.root / "docs" / "architecture").exists()
+        design_dir = proj.design_dir
+        if design_dir.exists():
+            assert not any(design_dir.glob("architecture-update*.md"))
 
     def test_archive_raises_if_destination_exists(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)

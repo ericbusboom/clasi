@@ -101,11 +101,6 @@ class TestDefaultPaths:
         proj = Project(tmp_path)
         assert proj.reflections_dir == tmp_path / "clasi" / "reflections"
 
-    def test_default_paths_no_config_architecture(self, tmp_path):
-        """architecture_dir returns new default when no config.yaml."""
-        proj = Project(tmp_path)
-        assert proj.architecture_dir == tmp_path / "docs" / "architecture"
-
     def test_design_dir_preserved(self, tmp_path):
         """design_dir default remains docs/design (unchanged from before)."""
         proj = Project(tmp_path)
@@ -160,12 +155,6 @@ class TestConfigOverrides:
         proj = Project(tmp_path)
         assert proj.sprints_dir == tmp_path / "custom" / "sprints"
 
-    def test_override_architecture(self, tmp_path):
-        """Custom architecture path is returned."""
-        self._write_config(tmp_path, "paths:\n  architecture: .clasi/architecture\n")
-        proj = Project(tmp_path)
-        assert proj.architecture_dir == tmp_path / ".clasi" / "architecture"
-
     def test_override_db(self, tmp_path):
         """Custom db path is returned by db_path."""
         self._write_config(tmp_path, "paths:\n  db: custom/.mydb\n")
@@ -173,7 +162,12 @@ class TestConfigOverrides:
         assert proj.db_path == tmp_path / "custom" / ".mydb"
 
     def test_full_pin_config(self, tmp_path):
-        """Full backward-compat pin config resolves all paths to .clasi/."""
+        """Full backward-compat pin config resolves all paths to .clasi/.
+
+        Includes a stale ``architecture:`` key (from pre-ticket-014 config
+        files) to verify it is silently ignored now that the category no
+        longer exists — it must not raise or affect any other path.
+        """
         pin_yaml = (
             "process: se\n"
             "paths:\n"
@@ -190,7 +184,6 @@ class TestConfigOverrides:
         assert proj.issues_dir == tmp_path / ".clasi" / "issues"
         assert proj.sprints_dir == tmp_path / ".clasi" / "sprints"
         assert proj.reflections_dir == tmp_path / ".clasi" / "reflections"
-        assert proj.architecture_dir == tmp_path / ".clasi" / "architecture"
         assert proj.design_dir == tmp_path / "docs" / "design"
         assert proj.log_dir == tmp_path / ".clasi" / "log"
         assert proj.db_path == tmp_path / ".clasi" / ".clasi.db"
@@ -324,14 +317,13 @@ class TestArtifactPathDefaults:
     """Verify the module-level constant has all required keys and values."""
 
     def test_all_required_keys_present(self):
-        required = {"issues", "sprints", "reflections", "architecture", "design", "logs", "db"}
+        required = {"issues", "sprints", "reflections", "design", "logs", "db"}
         assert required == set(ARTIFACT_PATH_DEFAULTS.keys())
 
     def test_default_values(self):
         assert ARTIFACT_PATH_DEFAULTS["issues"] == "clasi/issues"
         assert ARTIFACT_PATH_DEFAULTS["sprints"] == "clasi/sprints"
         assert ARTIFACT_PATH_DEFAULTS["reflections"] == "clasi/reflections"
-        assert ARTIFACT_PATH_DEFAULTS["architecture"] == "docs/architecture"
         assert ARTIFACT_PATH_DEFAULTS["design"] == "docs/design"
         assert ARTIFACT_PATH_DEFAULTS["logs"] == ".clasi/log"
         assert ARTIFACT_PATH_DEFAULTS["db"] == ".clasi/.clasi.db"

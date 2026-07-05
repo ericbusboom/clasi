@@ -23,7 +23,6 @@ ARTIFACT_PATH_DEFAULTS: dict[str, str] = {
     "issues": "clasi/issues",
     "sprints": "clasi/sprints",
     "reflections": "clasi/reflections",
-    "architecture": "docs/architecture",
     "design": "docs/design",
     "logs": ".clasi/log",
     "db": ".clasi/.clasi.db",
@@ -111,11 +110,6 @@ class Project:
     def reflections_dir(self) -> Path:
         """Reflections directory (default: clasi/reflections/)."""
         return self._resolve_dir("reflections")
-
-    @property
-    def architecture_dir(self) -> Path:
-        """Architecture documents directory (default: docs/architecture/)."""
-        return self._resolve_dir("architecture")
 
     @property
     def design_dir(self) -> Path:

@@ -213,7 +213,6 @@ def handle_role_guard(payload: dict) -> None:
     _allow_prefixes = [
         _prefix(_proj.issues_dir),
         _prefix(_proj.reflections_dir),
-        _prefix(_proj.architecture_dir),
         _prefix(_proj.design_dir),
         _prefix(_proj.clasi_dir),   # state files: config.yaml, log/, .clasi.db
         _prefix(_proj.log_dir),

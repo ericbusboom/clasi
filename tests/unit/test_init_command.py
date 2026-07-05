@@ -867,12 +867,19 @@ class TestPathTableAndPathsBlock:
 
         assert (target_dir / "clasi" / "issues").exists()
 
-    def test_creates_architecture_at_new_default_path(self, target_dir):
-        """clasi init creates docs/architecture/ (new default)."""
+    def test_does_not_create_architecture_dir(self, target_dir):
+        """clasi init no longer creates docs/architecture/.
+
+        "architecture" was removed from ARTIFACT_PATH_DEFAULTS by ticket
+        018-014 — the consolidated architecture doc now lives at
+        docs/design/architecture.md (design_dir), generated on demand by
+        the consolidate-architecture skill rather than scaffolded by init.
+        """
         target_dir.mkdir()
         run_init(str(target_dir))
 
-        assert (target_dir / "docs" / "architecture").exists()
+        assert not (target_dir / "docs" / "architecture").exists()
+        assert (target_dir / "docs" / "design").exists()
 
     def test_creates_all_default_directories(self, target_dir):
         """clasi init creates every non-db entry in ARTIFACT_PATH_DEFAULTS."""
@@ -927,7 +934,9 @@ class TestPathTableAndPathsBlock:
         # Old default paths should NOT exist; new defaults should.
         assert not (target_dir / ".clasi" / "architecture").exists()
         assert not (target_dir / ".clasi" / "sprints").exists()
-        assert (target_dir / "docs" / "architecture").exists()
+        # docs/architecture/ is no longer scaffolded at all (ticket 018-014
+        # removed the "architecture" category from ARTIFACT_PATH_DEFAULTS).
+        assert not (target_dir / "docs" / "architecture").exists()
         assert (target_dir / "clasi" / "sprints").exists()
 
     def test_gitkeep_placed_in_empty_dirs(self, target_dir):

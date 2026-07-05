@@ -226,21 +226,6 @@ def _sweep_done_issues(sprint: Sprint) -> list[str]:
 # --- Create tools (ticket 008) ---
 
 
-def _find_latest_architecture() -> Path | None:
-    """Find the most recent architecture document.
-
-    Looks for the top-level file in docs/clasi/architecture/ (most recent
-    version). Returns None if no architecture documents exist.
-    """
-    arch_dir = get_project().architecture_dir
-    if not arch_dir.exists():
-        return None
-
-    # Find architecture-NNN.md files at the top level (not in done/)
-    candidates = sorted(arch_dir.glob("architecture-*.md"), reverse=True)
-    return candidates[0] if candidates else None
-
-
 @server.tool()
 def create_sprint(title: str) -> str:
     """Create a new sprint directory with a template sprint.md.
