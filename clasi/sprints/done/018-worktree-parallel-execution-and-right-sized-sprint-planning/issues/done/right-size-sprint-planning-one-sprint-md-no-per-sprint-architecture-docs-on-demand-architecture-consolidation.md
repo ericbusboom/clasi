@@ -1,5 +1,15 @@
 ---
-status: pending
+status: done
+sprint: 018
+tickets:
+- 018-002
+- 018-003
+- 018-004
+- 018-005
+- 018-012
+- 018-013
+- 018-014
+- 018-015
 ---
 
 # Right-size sprint planning: one sprint.md, no per-sprint architecture docs, on-demand architecture consolidation
