@@ -1145,16 +1145,51 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
-def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
-    """Prune git worktrees associated with the closing sprint branch.
+def _prune_sprint_worktrees(
+    branch_name: str,
+    repo_root: Optional[Path] = None,
+    sprint_dir: Optional[Path] = None,
+) -> tuple[list[str], list[str], list[dict]]:
+    """Prune git worktrees associated with the closing sprint.
 
-    Parses ``git worktree list --porcelain`` output and removes any worktree
-    whose ``branch`` field matches ``refs/heads/<branch_name>``.
+    Two independent sweeps are performed:
 
-    Returns a tuple of ``(pruned_paths, failed_paths)`` where each element is
-    a list of absolute worktree paths.  The main worktree (the first entry in
-    the porcelain output, which has no ``branch`` field when in detached-HEAD
-    state, or whose path matches the repo root) is never touched.
+    1. **Sprint branch's own worktree** (pre-existing behavior, unchanged):
+       parses ``git worktree list --porcelain`` output and removes any
+       worktree whose ``branch`` field matches ``refs/heads/<branch_name>``.
+       This sweep always runs and never touches the main worktree (the first
+       entry in the porcelain output, which has no ``branch`` field when in
+       detached-HEAD state, or whose path matches the repo root).
+
+    2. **Orphaned ticket worktrees** (``ticket/<sprint-id>-*`` branches left
+       behind by parallel ticket execution): only runs when both
+       ``repo_root`` and ``sprint_dir`` are provided. Delegates
+       classification to ``worktree.reconcile_worktrees`` so there is one
+       code path for ticket-worktree classification. Cleanup policy at
+       sprint close is conservative:
+
+       - ``merged``/``cleaned_up`` (reconcile's ``cleaned`` list): both the
+         worktree directory and the branch are already removed by
+         ``reconcile_worktrees`` itself.
+       - ``failed``/``conflict`` (a subset of reconcile's ``escalated``
+         list): the worktree *directory* is force-removed here, but the
+         branch is retained so a human can inspect the partial work. These
+         are reported back distinctly (see the third return element) rather
+         than silently dropped.
+       - Any other ambiguous case reconcile reports (dirty tree, "merged"
+         audit state not yet an actual ancestor, rogue worktrees, etc.) is
+         left untouched, matching reconcile's own safety contract.
+
+    Returns a 3-tuple ``(pruned_paths, failed_paths, retained)``:
+
+    - ``pruned_paths``: absolute worktree paths that were fully removed
+      (both sweeps contribute).
+    - ``failed_paths``: absolute worktree paths whose removal command
+      failed (sprint-branch sweep only; unchanged from prior behavior).
+    - ``retained``: list of dicts describing ticket worktrees whose
+      directory was removed but whose branch was retained because the
+      audit state was ``failed``/``conflict``. Each dict has
+      ``ticket_id``, ``path``, ``branch``, and ``reason`` keys.
     """
     result = subprocess.run(
         ["git", "worktree", "list", "--porcelain"],
@@ -1165,6 +1200,7 @@ def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
     target_ref = f"refs/heads/{branch_name}"
     pruned: list[str] = []
     failed: list[str] = []
+    retained: list[dict] = []
 
     # Parse porcelain blocks separated by blank lines.
     # Each block looks like:
@@ -1197,7 +1233,38 @@ def _prune_sprint_worktrees(branch_name: str) -> tuple[list[str], list[str]]:
                 else:
                     failed.append(current_path)
 
-    return pruned, failed
+    # Sweep 2: orphaned ticket/<sprint-id>-* worktrees, via reconcile_worktrees.
+    if repo_root is not None and sprint_dir is not None:
+        from clasi import worktree as worktree_module
+
+        reconciliation = worktree_module.reconcile_worktrees(repo_root, sprint_dir)
+
+        for entry in reconciliation.get("cleaned", []):
+            path = entry.get("path")
+            if path:
+                pruned.append(path)
+
+        for entry in reconciliation.get("escalated", []):
+            reason = entry.get("reason", "")
+            if reason.startswith("ambiguous audit state: failed") or reason.startswith(
+                "ambiguous audit state: conflict"
+            ):
+                path = entry.get("path")
+                branch = entry.get("branch")
+                if path:
+                    worktree_module.cleanup_worktree(
+                        repo_root, Path(path), branch, keep_branch=True
+                    )
+                retained.append(
+                    {
+                        "ticket_id": entry.get("ticket_id"),
+                        "path": path,
+                        "branch": branch,
+                        "reason": reason,
+                    }
+                )
+
+    return pruned, failed, retained
 
 
 def _close_sprint_full(
@@ -1625,12 +1692,22 @@ def _close_sprint_full(
     # ── Step 9: Prune sprint worktrees ──
     worktrees_pruned: list[str] = []
     worktrees_failed: list[str] = []
-    pruned, failed = _prune_sprint_worktrees(branch_name)
+    worktrees_retained: list[dict] = []
+    pruned, failed, retained = _prune_sprint_worktrees(
+        branch_name, repo_root=project.root, sprint_dir=new_path
+    )
     worktrees_pruned = pruned
     worktrees_failed = failed
+    worktrees_retained = retained
     if worktrees_failed:
         for wt_path in worktrees_failed:
             repairs.append(f"failed to remove worktree: {wt_path}")
+    if worktrees_retained:
+        for entry in worktrees_retained:
+            repairs.append(
+                f"retained branch '{entry.get('branch')}' for ticket "
+                f"{entry.get('ticket_id')} ({entry.get('reason')})"
+            )
     if worktrees_pruned:
         completed_steps.append("prune_worktrees")
 
@@ -1651,6 +1728,8 @@ def _close_sprint_full(
     }
     if worktrees_failed:
         result["worktrees_failed"] = worktrees_failed
+    if worktrees_retained:
+        result["worktrees_retained"] = worktrees_retained
     if unresolved_issues:
         result["unresolved_issues"] = unresolved_issues
     if version:

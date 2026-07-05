@@ -732,11 +732,19 @@ class TestCloseSprintFull:
         assert "done" in result["new_path"]
         assert "status" not in result
 
+    @patch("clasi.worktree.cleanup_worktree")
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_full_lifecycle_success(self, mock_run, mock_ver, mock_tag, work_dir):
-        """Full lifecycle returns structured success JSON."""
+    def test_full_lifecycle_success(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, mock_cleanup, work_dir
+    ):
+        """Full lifecycle returns structured success JSON, and orphaned ticket
+        worktrees are swept: a merged-not-cleaned one is pruned, a
+        failed/conflict one has its directory removed but branch retained
+        and reported distinctly in worktrees_retained.
+        """
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
         (work_dir / "pyproject.toml").write_text(
@@ -765,8 +773,34 @@ class TestCloseSprintFull:
             self._make_subprocess_result(0),  # git push --tags
             self._make_subprocess_result(0),  # git rev-parse --verify branch (delete check)
             self._make_subprocess_result(0),  # git branch -d
-            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain (no sprint worktrees)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain (no sprint-branch worktree)
         ]
+
+        # Orphaned ticket worktree sweep (via reconcile_worktrees): one
+        # merged-not-cleaned worktree (already fully cleaned up by
+        # reconcile_worktrees itself) and one failed/conflict worktree
+        # (left live by reconcile_worktrees, escalated for the caller to
+        # decide — _prune_sprint_worktrees force-removes its directory and
+        # retains its branch).
+        mock_reconcile.return_value = {
+            "cleaned": [
+                {
+                    "ticket_id": "002",
+                    "path": "/repo/../worktree-001-002",
+                    "branch": "ticket/001-002-merged-slug",
+                    "reason": "merged-not-cleaned",
+                }
+            ],
+            "escalated": [
+                {
+                    "ticket_id": "003",
+                    "path": "/repo/../worktree-001-003",
+                    "branch": "ticket/001-003-failed-slug",
+                    "reason": "ambiguous audit state: failed",
+                }
+            ],
+            "rogue": [],
+        }
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -774,6 +808,27 @@ class TestCloseSprintFull:
         assert result["git"]["merged"] is True
         assert result["git"]["merge_target"] == "master"
         assert result["git"]["branch_name"] == "sprint/001-sprint"
+
+        # Merged-not-cleaned ticket worktree is reported as pruned.
+        assert "/repo/../worktree-001-002" in result["worktrees_pruned"]
+
+        # Failed/conflict ticket worktree: directory force-removed (branch
+        # retained), reported distinctly in worktrees_retained rather than
+        # worktrees_pruned/worktrees_failed.
+        assert "/repo/../worktree-001-002" not in [
+            r.get("path") for r in result.get("worktrees_retained", [])
+        ]
+        retained = result["worktrees_retained"]
+        assert len(retained) == 1
+        assert retained[0]["ticket_id"] == "003"
+        assert retained[0]["path"] == "/repo/../worktree-001-003"
+        assert retained[0]["branch"] == "ticket/001-003-failed-slug"
+        mock_cleanup.assert_called_once_with(
+            work_dir,
+            Path("/repo/../worktree-001-003"),
+            "ticket/001-003-failed-slug",
+            keep_branch=True,
+        )
 
     @patch("subprocess.run")
     def test_test_failure_returns_error(self, mock_run, work_dir):
@@ -835,10 +890,13 @@ class TestCloseSprintFull:
         assert recovery is not None
         assert recovery["step"] == "merge"
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_already_merged_branch_is_idempotent(self, mock_run, mock_ver, mock_tag, work_dir):
+    def test_already_merged_branch_is_idempotent(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
         """If branch doesn't exist, merge step is skipped."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -859,6 +917,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, delete check)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -877,10 +936,13 @@ class TestCloseSprintFull:
         assert result["error"]["step"] == "precondition"
         assert "in-progress" in result["error"]["message"]
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_self_repair_moves_done_ticket(self, mock_run, mock_ver, mock_tag, work_dir):
+    def test_self_repair_moves_done_ticket(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
         """Ticket with done status but in tickets/ (not done/) gets moved."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -901,15 +963,19 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
         assert any("moved ticket" in r for r in result["repairs"])
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_structured_result_format(self, mock_run, mock_ver, mock_tag, work_dir):
+    def test_structured_result_format(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
         """Verify all expected fields in success result."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -930,6 +996,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -944,10 +1011,13 @@ class TestCloseSprintFull:
         assert "branch_deleted" in result["git"]
         assert "branch_name" in result["git"]
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_recovery_state_cleared_on_success(self, mock_run, mock_ver, mock_tag, work_dir):
+    def test_recovery_state_cleared_on_success(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
         """Recovery state is cleared after successful close."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -972,6 +1042,7 @@ class TestCloseSprintFull:
             self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -1062,8 +1133,11 @@ class TestCloseSprintLockAndDbGuard:
         result.stderr = stderr
         return result
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("subprocess.run")
-    def test_dirty_db_guard_commits_when_versioning_disabled(self, mock_run, work_dir):
+    def test_dirty_db_guard_commits_when_versioning_disabled(
+        self, mock_run, mock_reconcile, work_dir
+    ):
         """Guard stages and commits .clasi.db when dirty and versioning is manual."""
         # Disable versioning so no version bump subprocess calls happen
         settings_dir = work_dir / ".clasi"
@@ -1091,6 +1165,7 @@ class TestCloseSprintLockAndDbGuard:
             self._make_subprocess_result(1),            # git rev-parse --verify (delete, branch gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -1103,11 +1178,12 @@ class TestCloseSprintLockAndDbGuard:
         assert len(add_calls) == 1, "Expected one git add .clasi.db call"
         assert len(commit_calls) == 1, "Expected one git commit chore: update .clasi.db call"
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
     def test_dirty_db_guard_is_noop_when_versioning_cleans_it(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Guard is a no-op when git status shows .clasi.db is clean (version bump committed it)."""
         create_sprint("Sprint")
@@ -1133,6 +1209,7 @@ class TestCloseSprintLockAndDbGuard:
             self._make_subprocess_result(1),        # git rev-parse --verify (delete, gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result["status"] == "success"
@@ -1186,8 +1263,11 @@ class TestCloseSprintLockAndDbGuard:
         state_after = get_sprint_state(str(db_path), "001")
         assert state_after["lock"] is None, "Lock must be released after merge failure"
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("subprocess.run")
-    def test_db_guard_skipped_when_not_on_sprint_branch(self, mock_run, work_dir):
+    def test_db_guard_skipped_when_not_on_sprint_branch(
+        self, mock_run, mock_reconcile, work_dir
+    ):
         """Guard does not commit .clasi.db when HEAD is not the sprint branch."""
         # Disable versioning for a simpler call sequence
         settings_dir = work_dir / ".clasi"
@@ -1210,6 +1290,7 @@ class TestCloseSprintLockAndDbGuard:
             self._make_subprocess_result(1),            # git rev-parse --verify (delete, branch gone)
             self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         # close_sprint still succeeds (guard just doesn't commit)

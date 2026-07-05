@@ -523,11 +523,12 @@ class TestCloseSprintIssueHandling:
         assert "unresolved_issues" in result
         assert "unresolved.md" in result["unresolved_issues"]
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.1")
     @patch("subprocess.run")
     def test_close_sprint_full_allows_deferred_issue(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path (_close_sprint_full): deferred issue does not block precondition.
 
@@ -582,6 +583,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git branch -d
             _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         # Must succeed — precondition step must not have blocked on the deferred TODO
@@ -696,11 +698,12 @@ class TestCloseSprintIssueHandling:
         assert "unresolved_issues" in result
         assert "blocker.md" in result["unresolved_issues"]
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.2")
     @patch("subprocess.run")
     def test_full_done_dir_issues_pass_cleanly(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: issues in <sprint>/issues/done/ pass cleanly.
 
@@ -740,6 +743,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git branch -d
             _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result.get("status") == "success", f"Expected success but got: {result}"
@@ -749,11 +753,12 @@ class TestCloseSprintIssueHandling:
             f"already-done.md should not appear in repairs: {repairs}"
         )
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.3")
     @patch("subprocess.run")
     def test_full_top_level_done_issue_migrated(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: top-level done issue is self-repaired to done/.
 
@@ -793,6 +798,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git branch -d
             _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result.get("status") == "success", f"Expected success but got: {result}"
@@ -802,11 +808,12 @@ class TestCloseSprintIssueHandling:
             f"Expected repair for stale-done.md in: {repairs}"
         )
 
+    @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.4")
     @patch("subprocess.run")
     def test_full_pending_pool_done_issue_relocated_to_sprint_done(
-        self, mock_run, mock_ver, mock_tag, work_dir
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: pending-pool done issue relocated to <sprint>/issues/done/.
 
@@ -844,6 +851,7 @@ class TestCloseSprintIssueHandling:
             _ok(0),  # git branch -d
             _ok(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
         ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
         result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
         assert result.get("status") == "success", f"Expected success but got: {result}"
