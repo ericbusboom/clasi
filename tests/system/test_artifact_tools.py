@@ -310,6 +310,20 @@ class TestGetSprintStatus:
         with pytest.raises(ValueError, match="not found"):
             get_sprint_status("999")
 
+    def test_worktree_defaults_false(self, work_dir):
+        create_sprint("Sprint")
+        result = json.loads(get_sprint_status("001"))
+        assert result["worktree"] is False
+
+    def test_worktree_surfaces_true(self, work_dir):
+        create_sprint("Sprint")
+        sprint_md = work_dir / ".clasi" / "sprints" / "001-sprint" / "sprint.md"
+        fm = read_frontmatter(sprint_md)
+        fm["worktree"] = True
+        write_frontmatter(sprint_md, fm)
+        result = json.loads(get_sprint_status("001"))
+        assert result["worktree"] is True
+
 
 class TestUpdateTicketStatus:
     def test_updates_status(self, work_dir):

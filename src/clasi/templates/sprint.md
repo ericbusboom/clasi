@@ -3,6 +3,7 @@ id: "{id}"
 title: "{title}"
 status: roadmap
 branch: sprint/{id}-{slug}
+worktree: false
 use-cases: []
 issues: []
 ---

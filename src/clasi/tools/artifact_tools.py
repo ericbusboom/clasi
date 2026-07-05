@@ -787,7 +787,8 @@ def get_sprint_status(sprint_id: str) -> str:
     Args:
         sprint_id: The sprint ID (e.g., '001')
 
-    Returns JSON with {id, title, status, branch, tickets: {open, in_progress, done}}.
+    Returns JSON with {id, title, status, branch, worktree,
+    tickets: {open, in_progress, done}}.
     """
     sprint = get_project().get_sprint(sprint_id)
 
@@ -796,6 +797,7 @@ def get_sprint_status(sprint_id: str) -> str:
         "title": sprint.title,
         "status": sprint.status,
         "branch": sprint.branch,
+        "worktree": sprint.worktree,
         "tickets": sprint.ticket_counts(),
     }, indent=2)
 

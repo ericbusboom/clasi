@@ -70,6 +70,35 @@ class TestSprintProperties:
         s = Sprint(sprint_dir, proj)
         assert s.status == "planning"
 
+    def test_worktree_defaults_false_when_key_absent(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.worktree is False
+
+    def test_worktree_true_when_set(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        sprint_md = sprint_dir / "sprint.md"
+        sprint_md.write_text(
+            sprint_md.read_text(encoding="utf-8").replace(
+                "status: planning\n", "status: planning\nworktree: true\n"
+            ),
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        assert s.worktree is True
+
+    def test_worktree_false_when_explicitly_false(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        sprint_md = sprint_dir / "sprint.md"
+        sprint_md.write_text(
+            sprint_md.read_text(encoding="utf-8").replace(
+                "status: planning\n", "status: planning\nworktree: false\n"
+            ),
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        assert s.worktree is False
+
     def test_path(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)

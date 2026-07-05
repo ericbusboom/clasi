@@ -77,6 +77,12 @@ class Sprint:
         return self.sprint_doc.frontmatter.get("status", "unknown")
 
     @property
+    def worktree(self) -> bool:
+        """From sprint.md frontmatter 'worktree' field. Opt-in for parallel
+        execution; default False (serial) for backward compatibility."""
+        return bool(self.sprint_doc.frontmatter.get("worktree", False))
+
+    @property
     def phase(self) -> str:
         """From StateDB if available, else inferred from directory location."""
         sid = self.id
