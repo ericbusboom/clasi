@@ -113,24 +113,24 @@ class TestDetailSprint:
     """Tests for the detail_sprint MCP tool."""
 
     def test_success_path_roadmap_to_planning_docs(self, work_dir):
-        """detail_sprint on a roadmap sprint scaffolds files and returns correct JSON."""
+        """detail_sprint on a roadmap sprint scaffolds tickets/ and returns correct JSON."""
         create_sprint("My Sprint")
         result = json.loads(detail_sprint("001"))
         assert result["sprint_id"] == "001"
         assert result["phase"] == "planning-docs"
-        assert len(result["files_written"]) >= 2
-        # usecases.md and architecture-update.md should be among files written
+        # Single-doc model: only tickets/ and tickets/done/ are scaffolded —
+        # no usecases.md/architecture-update.md (those are sprint.md sections).
         written_names = [Path(f).name for f in result["files_written"]]
-        assert "usecases.md" in written_names
-        assert "architecture-update.md" in written_names
+        assert "usecases.md" not in written_names
+        assert "architecture-update.md" not in written_names
 
     def test_scaffolds_full_directory_structure(self, work_dir):
         """After detail_sprint, tickets/ and tickets/done/ directories exist."""
         create_sprint("My Sprint")
         detail_sprint("001")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-my-sprint"
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
         assert (sprint_dir / "tickets").is_dir()
         assert (sprint_dir / "tickets" / "done").is_dir()
 
@@ -469,14 +469,15 @@ class TestInsertSprint:
             insert_sprint("999", "Ghost")
 
     def test_new_sprint_has_full_structure(self, work_dir):
+        """Single-doc model: insert_sprint writes only sprint.md (+ tickets dirs)."""
         create_sprint("Alpha")
         result = json.loads(insert_sprint("001", "New Sprint"))
 
         from pathlib import Path
         sprint_dir = Path(result["path"])
         assert (sprint_dir / "sprint.md").exists()
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
         assert (sprint_dir / "tickets").is_dir()
         assert (sprint_dir / "tickets" / "done").is_dir()
 
@@ -552,11 +553,14 @@ class TestCloseSprintEdgeCases:
         # Should not include version keys (or version is None)
         assert "done" in result["new_path"]
 
-    def test_close_copies_architecture_update(self, work_dir):
-        """close_sprint copies architecture-update.md to architecture dir."""
+    def test_close_does_not_copy_architecture_update(self, work_dir):
+        """Single-doc model: close_sprint no longer copies architecture-update.md,
+
+        even when a historical-shaped one is present on disk.
+        """
         create_sprint("Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-sprint"
-        # Write content to the architecture-update file
+        # Write content to a historical-shaped architecture-update file
         arch_update = sprint_dir / "architecture-update.md"
         arch_update.write_text(
             "---\nsprint: '001'\nstatus: draft\n---\n\n# Update\n\nSome changes.\n",
@@ -565,9 +569,7 @@ class TestCloseSprintEdgeCases:
         close_sprint("001")
         arch_dir = work_dir / ".clasi" / "architecture"
         dest = arch_dir / "architecture-update-001.md"
-        assert dest.exists()
-        content = dest.read_text(encoding="utf-8")
-        assert "Some changes." in content
+        assert not dest.exists()
 
     def test_close_without_architecture_update(self, work_dir):
         """close_sprint works even if no architecture-update.md exists."""
@@ -1001,11 +1003,13 @@ class TestSystemRoundtrip:
         phase_result = json.loads(get_sprint_phase(sprint_id))
         assert phase_result["phase"] == "planning-docs"
 
-        # Verify all three artifact files exist
+        # Verify only sprint.md + tickets dirs exist (single-doc model)
         sprint_dir = work_dir / ".clasi" / "sprints" / f"{sprint_id}-roundtrip-sprint"
         assert (sprint_dir / "sprint.md").exists()
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
+        assert (sprint_dir / "tickets").is_dir()
+        assert (sprint_dir / "tickets" / "done").is_dir()
 
     def test_detail_sprint_rejects_non_roadmap(self, work_dir):
         """detail_sprint on a sprint already in planning-docs returns error with non-empty message."""

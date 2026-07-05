@@ -9,7 +9,7 @@ Exercises all eight verification items from the source issue
 4. ``clasi status --agent programmer --ticket 006-001`` narrows to one ticket.
 5. MCP ``get_status()`` returns the JSON form of the same data.
 6. MCP ``get_status(agent="sprint-planner", sprint_id="006")`` returns narrowed JSON.
-7. A sprint with ``status: planned`` while ``is_architecture_present`` is False
+7. A sprint with a declared status that its computed state contradicts
    produces an ``inconsistencies:`` entry of kind ``state_drift``.
 8. A non-CLASI directory / ``.clasi/oop`` case is silent.
 
@@ -360,7 +360,19 @@ class TestInconsistencyDetection:
     """V7: A sprint with status=planned while arch is absent produces state_drift."""
 
     def test_state_drift_entry_produced(self, tmp_path: Path) -> None:
-        """Synthetic sprint: frontmatter status=planned but no architecture file."""
+        """Synthetic sprint: frontmatter status=ticketed but no tickets exist.
+
+        Under the single-doc model, ``open`` and ``planned`` share the same
+        invariant (``is_sprint_doc_present``) since planning content lives
+        inside sprint.md rather than in separate files whose presence can
+        be checked — so a declared status of ``planned`` with only
+        sprint.md present no longer produces a computed-state mismatch
+        (the ambiguity-resolution fallback in the reporter correctly picks
+        ``planned`` as the more-advanced match). ``ticketed`` remains
+        properly distinguishable (it still requires
+        ``is_pre_flight_satisfied``/``is_at_least_one_ticket``), so it is
+        used here to exercise state_drift detection.
+        """
         from clasi.project import Project
         from clasi.status import build_status
 
@@ -380,12 +392,13 @@ class TestInconsistencyDetection:
         tickets_dir = sprints_dir / "tickets"
         tickets_dir.mkdir()
 
-        # Sprint.md declares status=planned but there is no architecture file
+        # Sprint.md declares status=ticketed but there are no tickets and
+        # no recorded gates — computed state cannot be "ticketed".
         sprint_md = sprints_dir / "sprint.md"
         sprint_md.write_text(
             "---\n"
             "id: '099'\n"
-            "status: planned\n"
+            "status: ticketed\n"
             "branch: sprint/099-test-sprint\n"
             "---\n\n# Test Sprint\n",
             encoding="utf-8",
@@ -407,9 +420,9 @@ class TestInconsistencyDetection:
         )
         entry = sprint_drift[0]
         assert entry["kind"] == "state_drift"
-        assert entry["declared"] == "planned"
+        assert entry["declared"] == "ticketed"
         assert "computed" in entry
-        assert entry["computed"] != "planned"
+        assert entry["computed"] != "ticketed"
         assert "explanation" in entry
 
     def test_state_drift_entry_has_required_fields(self, tmp_path: Path) -> None:

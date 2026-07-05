@@ -36,9 +36,6 @@ def slugify(title: str) -> str:
 
 SPRINT_TEMPLATE = _load("sprint")
 SPRINT_BRIEF_TEMPLATE = _load("sprint-brief")
-SPRINT_USECASES_TEMPLATE = _load("sprint-usecases")
-SPRINT_ARCHITECTURE_TEMPLATE = _load("sprint-architecture")
-SPRINT_ARCHITECTURE_UPDATE_TEMPLATE = _load("architecture-update")
 TICKET_TEMPLATE = _load("ticket")
 REVIEW_CHECKLIST_TEMPLATE = _load("review-checklist")
 CLASI_SECTION_TEMPLATE = _load("clasi-section")

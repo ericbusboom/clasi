@@ -24,7 +24,13 @@ _schema_path = _res.files("clasi.schemas").joinpath("se-process", "schema.yaml")
 PHASES = _ArtifactGraph(_loader.load(_schema_path)).phases()
 
 VALID_GATE_NAMES = {"architecture_review", "stakeholder_approval"}
-VALID_GATE_RESULTS = {"passed", "failed"}
+VALID_GATE_RESULTS = {"passed", "failed", "skipped"}
+
+# Gate results that satisfy an advance-phase gate requirement. "skipped" is
+# treated as equivalent to "passed" for the purpose of unblocking phase
+# advancement (e.g. an architecture review skipped for a trivial change);
+# "failed" still blocks.
+_SATISFYING_GATE_RESULTS = {"passed", "skipped"}
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS sprints (
@@ -241,7 +247,7 @@ class StateDB:
                     "WHERE sprint_id = ? AND gate_name = ?",
                     (sprint_id, required_gate),
                 ).fetchone()
-                if gate_row is None or gate_row["result"] != "passed":
+                if gate_row is None or gate_row["result"] not in _SATISFYING_GATE_RESULTS:
                     raise ValueError(
                         f"Cannot advance from '{current}': "
                         f"gate '{required_gate}' has not passed"

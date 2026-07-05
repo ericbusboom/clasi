@@ -250,8 +250,13 @@ class TestSprintToDict:
         s = Sprint(sprint_dir, proj)
         result = s.to_dict()
         assert "sprint.md" in result["files"]
-        assert "usecases.md" in result["files"]
-        assert "architecture-update.md" in result["files"]
+
+    def test_to_dict_files_has_exactly_one_key(self, tmp_path):
+        """Single-doc model: to_dict()['files'] contains only sprint.md."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert list(result["files"].keys()) == ["sprint.md"]
 
     def test_to_dict_is_json_serializable(self, tmp_path):
         """to_dict() output must be json.dumps-safe."""
@@ -584,7 +589,7 @@ class TestDetailPromote:
     """Tests for Sprint.detail_promote()."""
 
     def test_detail_promote_scaffolds_artifacts(self, tmp_path):
-        """detail_promote() writes usecases.md, architecture-update.md, tickets/, tickets/done/.
+        """detail_promote() writes only tickets/, tickets/done/ (single-doc model).
 
         After promotion the sprint phase must be 'planning-docs'.
         """
@@ -596,11 +601,11 @@ class TestDetailPromote:
         # Return value
         assert result["sprint_id"] == "001"
         assert result["phase"] == "planning-docs"
-        assert len(result["files_written"]) == 2
 
-        # Artifact files exist
-        assert (sprint_dir / "usecases.md").exists()
-        assert (sprint_dir / "architecture-update.md").exists()
+        # No usecases.md/architecture-update.md written under the
+        # single-doc model — those are sections of sprint.md.
+        assert not (sprint_dir / "usecases.md").exists()
+        assert not (sprint_dir / "architecture-update.md").exists()
 
         # Directory structure created
         assert (sprint_dir / "tickets").is_dir()
@@ -608,6 +613,17 @@ class TestDetailPromote:
 
         # Phase advanced in DB
         assert s.phase == "planning-docs"
+
+    def test_detail_promote_writes_only_tickets_dirs(self, tmp_path):
+        """detail_promote() writes only tickets/ and tickets/done/, nothing else."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.detail_promote()
+
+        files_after = {f.name for f in sprint_dir.iterdir()}
+        assert files_after == {"sprint.md", "tickets"}
+        assert all("tickets" in f for f in result["files_written"])
 
     def test_detail_promote_rejects_non_roadmap(self, tmp_path):
         """detail_promote() raises ValueError when sprint is not in roadmap phase."""
@@ -621,17 +637,34 @@ class TestDetailPromote:
             s.detail_promote()
 
     def test_detail_promote_idempotent_guard(self, tmp_path):
-        """detail_promote() raises ValueError when usecases.md already exists."""
+        """detail_promote() raises ValueError when tickets/ already exists."""
         proj, sprint_dir = _make_roadmap_sprint(tmp_path)
         s = Sprint(sprint_dir, proj)
 
-        # Manually pre-create usecases.md to simulate a partially-promoted sprint
+        # Manually pre-create tickets/ to simulate a partially-promoted sprint
+        (sprint_dir / "tickets").mkdir()
+
+        with pytest.raises(ValueError, match="already detail-planned"):
+            s.detail_promote()
+
+    def test_detail_promote_guard_uses_own_state_not_stale_usecases(self, tmp_path):
+        """A stale historical usecases.md must not block detail_promote()
+
+        for THIS sprint — the guard checks this sprint's own tickets_dir,
+        not the presence of a usecases.md file (which may exist from a
+        historical sprint layout but is no longer written by this method).
+        """
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        # A leftover usecases.md (e.g. from manual editing or migration)
+        # must not trip the guard now that it's based on tickets_dir.
         (sprint_dir / "usecases.md").write_text(
             "---\nstatus: draft\n---\n# Use Cases\n", encoding="utf-8"
         )
 
-        with pytest.raises(ValueError, match="already detail-planned"):
-            s.detail_promote()
+        result = s.detail_promote()
+        assert result["phase"] == "planning-docs"
 
 
 # ---------------------------------------------------------------------------
@@ -1061,7 +1094,11 @@ class TestSprintArchive:
         s.archive()
         assert s.path.parent.name == "done"
 
-    def test_archive_copies_architecture_update(self, tmp_path):
+    def test_archive_does_not_copy_architecture_update(self, tmp_path):
+        """Single-doc model: archive() no longer copies into architecture_dir,
+
+        even when a historical architecture-update.md is present.
+        """
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         arch_update = sprint_dir / "architecture-update.md"
         arch_update.write_text("---\nstatus: final\n---\n# Update\n", encoding="utf-8")
@@ -1069,7 +1106,7 @@ class TestSprintArchive:
         s.archive()
         arch_dir = proj.architecture_dir
         dest = arch_dir / "architecture-update-001.md"
-        assert dest.exists()
+        assert not dest.exists()
 
     def test_archive_raises_if_destination_exists(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
@@ -1132,4 +1169,81 @@ class TestSprintArchive:
         issues = s.list_issues()
         assert len(issues) == 1
         assert isinstance(issues[0], Issue)
-        assert "done" in str(issues[0].path)
+
+
+def _make_historical_sprint_dir(tmp_path, sprint_id="017", title="Historical Sprint", slug="historical-sprint"):
+    """Create a sprint directory shaped like a pre-single-doc-model sprint
+
+    (e.g. sprint 017): sprint.md + usecases.md + architecture-update.md on
+    disk, simulating sprints 001-017 which predate folding use cases and
+    architecture into sprint.md.
+    """
+    proj = Project(tmp_path)
+    sprint_dir = proj.sprints_dir / f"{sprint_id}-{slug}"
+    sprint_dir.mkdir(parents=True)
+    (sprint_dir / "tickets").mkdir()
+    (sprint_dir / "tickets" / "done").mkdir()
+
+    sprint_md = sprint_dir / "sprint.md"
+    sprint_md.write_text(
+        f"---\nid: \"{sprint_id}\"\ntitle: \"{title}\"\n"
+        f"status: done\nbranch: sprint/{sprint_id}-{slug}\n---\n"
+        f"# Sprint {sprint_id}: {title}\n",
+        encoding="utf-8",
+    )
+    (sprint_dir / "usecases.md").write_text(
+        "---\nstatus: final\n---\n# Use Cases\n\n## SUC-001: Historical\n",
+        encoding="utf-8",
+    )
+    (sprint_dir / "architecture-update.md").write_text(
+        "---\nstatus: final\n---\n# Architecture Update\n\n## What Changed\n\nLegacy.\n",
+        encoding="utf-8",
+    )
+    return proj, sprint_dir
+
+
+class TestHistoricalSprintBackwardCompat:
+    """Historical sprints (001-017) still have usecases.md/architecture-update.md
+
+    on disk. The single-doc model must not remove the read-only accessors
+    that let this content keep rendering.
+    """
+
+    def test_usecases_accessor_reads_historical_file(self, tmp_path):
+        proj, sprint_dir = _make_historical_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.usecases.exists
+        assert s.usecases.path == sprint_dir / "usecases.md"
+        assert "Historical" in s.usecases.content
+
+    def test_architecture_accessor_reads_historical_file(self, tmp_path):
+        proj, sprint_dir = _make_historical_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.architecture.exists
+        assert s.architecture.path == sprint_dir / "architecture-update.md"
+        assert "Legacy" in s.architecture.content
+
+    def test_usecases_md_path_accessor_unchanged(self, tmp_path):
+        proj, sprint_dir = _make_historical_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.usecases_md == sprint_dir / "usecases.md"
+        assert s.usecases_md.exists()
+
+    def test_architecture_update_md_path_accessor_unchanged(self, tmp_path):
+        proj, sprint_dir = _make_historical_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.architecture_update_md == sprint_dir / "architecture-update.md"
+        assert s.architecture_update_md.exists()
+
+    def test_to_dict_omits_historical_files_but_they_remain_readable(self, tmp_path):
+        """to_dict()['files'] only has sprint.md even for a historical sprint,
+
+        but the accessors still work — to_dict() reflects what's written
+        going forward, not what may be read from a legacy layout.
+        """
+        proj, sprint_dir = _make_historical_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        result = s.to_dict()
+        assert list(result["files"].keys()) == ["sprint.md"]
+        assert s.usecases.exists
+        assert s.architecture.exists

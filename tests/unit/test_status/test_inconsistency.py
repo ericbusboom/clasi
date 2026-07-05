@@ -207,8 +207,8 @@ class TestSprintStateDrift:
         result = detect_inconsistencies(project, status)
         assert len(result) == 1
         explanation = result[0]["explanation"]
-        # The planned state requires is_architecture_present and is_usecases_present
-        # which will both fail against a NullStateReader-like context.
+        # The planned state requires is_sprint_doc_present, which will fail
+        # against a NullStateReader-like context.
         # Explanation should reference at least "planned" or a predicate name.
         assert "planned" in explanation
 

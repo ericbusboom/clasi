@@ -32,18 +32,6 @@ def is_sprint_doc_present(ctx: SprintContext) -> bool:
     return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "sprint.md")
 
 
-@predicate("is_architecture_present")
-def is_architecture_present(ctx: SprintContext) -> bool:
-    """Return True iff the sprint's architecture-update.md exists."""
-    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "architecture-update.md")
-
-
-@predicate("is_usecases_present")
-def is_usecases_present(ctx: SprintContext) -> bool:
-    """Return True iff the sprint's use cases artifact exists."""
-    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "usecases.md")
-
-
 @predicate("is_architecture_review_recorded")
 def is_architecture_review_recorded(ctx: SprintContext) -> bool:
     """Return True iff the state DB has an ``architecture_review`` gate record for this sprint."""

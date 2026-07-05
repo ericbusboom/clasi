@@ -159,21 +159,24 @@ class TestReviewSprintPreExecution:
         assert result["issues"][0]["check"] == "sprint_dir_exists"
 
     def test_draft_status_detected(self, work_dir):
-        """Planning docs with draft status are flagged."""
+        """sprint.md with draft status is flagged (single-doc model: only
+
+        sprint.md's status is checked now — usecases.md/architecture-update.md
+        are no longer separate planning docs to validate).
+        """
         create_sprint("Test Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        # create_sprint() only writes sprint.md; add planning docs in draft status.
-        _write_planning_docs(sprint_dir)
+        fm = read_frontmatter(sprint_dir / "sprint.md")
+        fm["status"] = "draft"
+        write_frontmatter(sprint_dir / "sprint.md", fm)
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 
         result = json.loads(review_sprint_pre_execution("001"))
         assert result["passed"] is False
-        # sprint.md has status "planning" (not draft), but usecases and
-        # architecture have status "draft"
         status_issues = [i for i in result["issues"]
                          if i["check"].endswith("_status")]
-        assert len(status_issues) >= 2
+        assert len(status_issues) >= 1
 
     def test_template_placeholder_detected(self, work_dir):
         """Files with template placeholder content are flagged."""
@@ -279,11 +282,15 @@ class TestReviewSprintPreClose:
         assert len(dir_issues) >= 1
 
     def test_draft_planning_docs_detected(self, work_dir):
-        """Planning docs still in draft are flagged."""
+        """sprint.md still in draft is flagged (single-doc model: only
+
+        sprint.md's status is checked pre-close now).
+        """
         create_sprint("Test Sprint")
         sprint_dir = work_dir / ".clasi" / "sprints" / "001-test-sprint"
-        # create_sprint() only writes sprint.md; add planning docs in draft status.
-        _write_planning_docs(sprint_dir)
+        fm = read_frontmatter(sprint_dir / "sprint.md")
+        fm["status"] = "draft"
+        write_frontmatter(sprint_dir / "sprint.md", fm)
         _advance_to_ticketing(work_dir, "001")
         create_ticket("001", "A ticket")
 

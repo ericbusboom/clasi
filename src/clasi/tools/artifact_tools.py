@@ -28,8 +28,6 @@ from clasi.state_db import (
 from clasi.templates import (
     slugify,
     SPRINT_TEMPLATE,
-    SPRINT_USECASES_TEMPLATE,
-    SPRINT_ARCHITECTURE_UPDATE_TEMPLATE,
     TICKET_TEMPLATE,
 )
 from clasi.ticket import Ticket
@@ -245,15 +243,14 @@ def _find_latest_architecture() -> Path | None:
 
 @server.tool()
 def create_sprint(title: str) -> str:
-    """Create a new sprint directory with template planning documents.
+    """Create a new sprint directory with a template sprint.md.
 
-    Auto-assigns the next sprint number and creates the full directory
-    structure: sprint.md, usecases.md, architecture-update.md,
-    and tickets/ + tickets/done/ directories.
-
-    The sprint receives a lightweight architecture-update template instead
-    of a full copy of the previous architecture.  The full architecture
-    lives in ``docs/clasi/architecture/`` and is consolidated on demand.
+    Auto-assigns the next sprint number and writes only sprint.md
+    (roadmap phase). Under the single-doc model, use cases and
+    architecture are sections within sprint.md rather than separate
+    files — they get filled in when the sprint is detail-promoted, not
+    scaffolded here. The full architecture history lives in
+    ``docs/clasi/architecture/`` and is consolidated on demand.
 
     Args:
         title: The sprint title (e.g., 'MCP Server Implementation')
@@ -276,9 +273,10 @@ def create_sprint(title: str) -> str:
 def detail_sprint(sprint_id: str) -> str:
     """Promote a roadmap sprint to detail planning.
 
-    Scaffolds usecases.md, architecture-update.md, tickets/, and tickets/done/
-    for the given sprint and advances the state DB phase from roadmap to
-    planning-docs.
+    Creates tickets/ and tickets/done/ for the given sprint and advances
+    the state DB phase from roadmap to planning-docs. Use cases and
+    architecture are filled in as sections of the sprint's existing
+    sprint.md, not scaffolded as separate files.
 
     Args:
         sprint_id: The sprint ID (e.g., '017')
@@ -340,7 +338,6 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
     - sprint.md frontmatter (id, branch)
     - sprint.md body references to "Sprint NNN"
     - Ticket frontmatter (no sprint_id field, but just in case)
-    - usecases.md body references to "Sprint NNN"
     - architecture.md body references to "Sprint NNN"
 
     Returns the new directory path.
@@ -362,8 +359,9 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
         content = content.replace(f"Sprint {old_id}", f"Sprint {new_id}")
         sprint_file.write_text(content, encoding="utf-8")
 
-    # Update body references in usecases.md and architecture-update.md
-    for doc_name in ("usecases.md", "architecture-update.md", "architecture.md"):
+    # Update body references in architecture.md (unrelated pre-existing
+    # entry, not written by Sprint, left untouched by this change)
+    for doc_name in ("architecture.md",):
         doc = new_dir / doc_name
         if doc.exists():
             content = doc.read_text(encoding="utf-8")
@@ -468,16 +466,9 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
     files = {}
     for name, path, template in [
         ("sprint.md", _new_sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", _new_sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
     ]:
         path.write_text(template.format(**fmt), encoding="utf-8")
         files[name] = str(path)
-
-    # Architecture: lightweight update template (not a full copy)
-    _new_sprint.architecture_update_md.write_text(
-        SPRINT_ARCHITECTURE_UPDATE_TEMPLATE.format(**fmt), encoding="utf-8"
-    )
-    files["architecture-update.md"] = str(_new_sprint.architecture_update_md)
 
     # Register in state database
     try:
@@ -1749,7 +1740,9 @@ def record_gate_result(
     Args:
         sprint_id: The sprint ID
         gate: Gate name ('architecture_review' or 'stakeholder_approval')
-        result: 'passed' or 'failed'
+        result: 'passed', 'failed', or 'skipped' (skipped is treated as
+            satisfying the gate, same as passed, for changes with no
+            architectural impact)
         notes: Optional notes about the review
 
     Returns JSON with {sprint_id, gate_name, result, recorded_at}.
@@ -2484,8 +2477,6 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
     # Check planning docs exist and have correct status
     planning_docs = [
         ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
-        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
     ]
 
     for filename, filepath, template in planning_docs:
@@ -2634,8 +2625,6 @@ def review_sprint_pre_close(sprint_id: str) -> str:
     # Check planning docs status and content
     planning_docs_pre_close = [
         ("sprint.md", sprint.sprint_md, SPRINT_TEMPLATE),
-        ("usecases.md", sprint.usecases_md, SPRINT_USECASES_TEMPLATE),
-        ("architecture-update.md", sprint.architecture_update_md, SPRINT_ARCHITECTURE_UPDATE_TEMPLATE),
     ]
 
     for filename, filepath, template in planning_docs_pre_close:
