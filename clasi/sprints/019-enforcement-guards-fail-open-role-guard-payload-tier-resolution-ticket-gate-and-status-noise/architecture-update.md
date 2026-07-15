@@ -198,16 +198,28 @@ responsibility 4 collapses into, and one new cross-cutting test
   does not change).
 - **Use cases served**: SUC-007 (folds in e2e-001 item 7).
 
-### Historical archive frontmatter correction (new, one-time script — not a production module)
-- **Purpose**: Bring the 18 already-archived `clasi/sprints/done/*/sprint.md`
-  files' `status:` value into agreement with the state machine's
-  vocabulary, matching what `Sprint.archive()` now writes going forward.
-- **Boundary**: Inside — a one-time frontmatter rewrite (`status: done` →
-  `status: closed`) across the 18 existing files. Outside — the
-  `Sprint.archive()` writer fix itself (that only affects future
-  archives; this module is specifically the retroactive correction).
-- **Use cases served**: SUC-007. Decision to bulk-correct rather than
-  accept as historical drift: see Design Rationale.
+### ~~Historical archive frontmatter correction (one-time script)~~ — CUT, NOT BUILT
+- **Status**: Cut during execution by stakeholder decision (2026-07-15).
+  This module was never written. It is retained here, struck through,
+  because the reasoning is worth keeping.
+- **Would have**: rewritten `status: done` → `status: closed` across the
+  18 already-archived `clasi/sprints/done/*/sprint.md` files.
+- **Why cut**: the archive is a record of what happened, and those
+  sprints genuinely *were* archived carrying `status: done`. Editing them
+  makes the record assert something untrue at the time. Nothing reads an
+  archived sprint's declared status — `closed` is terminal with no
+  outbound transitions — so no behavior depends on the correction. And
+  the `done/`-exclusion shipped in ticket 006 means the drift warnings it
+  was meant to silence no longer reach any consumer.
+- **What replaces it**: nothing, for now. The genuine defect is that
+  `detect_inconsistencies` drift-checks terminal, archived sprints at
+  all — a question with no useful answer. Fixing the checker would cover
+  every legacy sprint and touch zero data files. Filed as
+  `clasi/issues/detect-inconsistencies-drift-checks-terminal-archived-sprints.md`,
+  low priority precisely because 006 removed the symptom.
+- **Use cases served**: SUC-007, partially — the writer fix
+  (`Sprint.archive()`, responsibility above) satisfies it going forward.
+  Retroactive correction is explicitly abandoned, not deferred.
 
 ### Verified non-regression: `handle_role_guard`'s artifact allow-list (no code change)
 - **Purpose**: Confirm the payload-parsing fix (responsibility 1) does
@@ -352,10 +364,19 @@ its call sites; sprint/ticket frontmatter schema is unchanged — only the
 - `sprint.Sprint.archive`: writes `status: "closed"` instead of
   `status: "done"` to sprint.md frontmatter on archive, matching the
   sprint machine's actual terminal state name.
-- One-time script: bulk-corrects all 18 existing
+- ~~One-time script: bulk-corrects all 18 existing
   `clasi/sprints/done/*/sprint.md` files from `status: done` to
-  `status: closed`, so history agrees with the fixed writer, not just
-  future archives.
+  `status: closed`.~~ **CUT during execution** (stakeholder decision,
+  2026-07-15). Rewriting the archive makes the record assert something
+  that was not true at the time; nothing reads an archived sprint's
+  declared status (`closed` has no outbound transitions); and the
+  `done/`-exclusion above means the resulting drift warnings no longer
+  surface anywhere. The 18 files are left as they are and legacy
+  `status: done` is tolerated on read. The underlying defect —
+  `detect_inconsistencies` drift-checking terminal, archived sprints at
+  all — is filed as
+  `clasi/issues/detect-inconsistencies-drift-checks-terminal-archived-sprints.md`
+  rather than worked around by editing data.
 - `hook_handlers._build_status_block` / `handle_status_inject`: threads
   the real active `sprint_id` (and `ticket_id` where known, e.g. inside
   `handle_subagent_start` for a programmer) into `narrow_status`; adds an
@@ -452,10 +473,12 @@ ticketed work.
   stale rows are present. The dual purge mechanism (TTL backstop +
   `SubagentStop` primary) prevents re-accumulation going forward; see
   Migration Concerns.
-- **18 archived sprint files**: bulk-corrected in place
-  (`status: done` → `status: closed`). No behavior change for closed
-  sprints — `sprint.yaml`'s `closed` state has no outbound transitions,
-  so nothing downstream re-evaluates differently; this is purely a
+- **18 archived sprint files**: ~~bulk-corrected in place
+  (`status: done` → `status: closed`)~~ **CUT — left untouched.** They
+  still carry `status: done` and are tolerated on read. No behavior
+  change either way for closed sprints — `sprint.yaml`'s `closed` state
+  has no outbound transitions, so nothing downstream re-evaluates
+  differently; this would have been purely a
   frontmatter-accuracy fix.
 
 ## 8. Design Rationale
@@ -596,18 +619,37 @@ ticketed work.
   the e2e-001 reviewer's own recommendation.
 - **Consequences**: Fixing the writer alone only affects sprints archived
   *after* this sprint ships. The 18 sprints already in `sprints/done/`
-  would keep `status: "done"` — a state the machine does not define —
-  unless separately corrected. **Resolved for this sprint: bulk-correct
-  them.** Leaving 18 files declaring an undefined state keeps
-  `detect_inconsistencies` permanently correct-but-ignored (it would
-  flag drift the team already knows about and has chosen not to fix) and
-  is a landmine for any future code that reads archived sprint status
-  directly rather than through the per-prompt block (which excludes
-  `done/` regardless, per SUC-007, and so does not depend on this
-  correction for its own fix). The correction is mechanical (a scripted
-  frontmatter rewrite) and verifiable by grep — low effort relative to
-  the risk of leaving 18 files as a standing exception to the machine's
-  own vocabulary.
+  keep `status: "done"` — a state the machine does not define.
+
+- **REVERSED DURING EXECUTION (2026-07-15).** This section originally
+  read "Resolved for this sprint: bulk-correct them," and argued the
+  rewrite was cheap, grep-verifiable, and lower-risk than leaving a
+  standing exception to the machine's vocabulary. The stakeholder
+  rejected that reasoning mid-sprint. The counter-argument, which won:
+
+  1. **The archive is a record, not state.** Those sprints *were*
+     archived carrying `status: done`. Rewriting them makes the record
+     assert something that was not true when it was written. "If the
+     sprint is done, it's done — why am I editing old sprints?"
+  2. **The landmine is hypothetical; the edit is real.** The argument
+     above rests on *future* code that might read archived status
+     directly. No such code exists, and `closed` is terminal with no
+     outbound transitions, so nothing can act on the value.
+  3. **Ticket 006 removed the symptom.** The `done/`-exclusion means the
+     drift warnings never surface. This section conceded 006 "does not
+     depend on this correction for its own fix" — which, once 006
+     shipped, left Part B fixing something invisible.
+  4. **It treats the data as wrong when the checker is.** The real
+     defect is that `detect_inconsistencies` drift-checks terminal,
+     archived sprints at all. Fixing the checker covers all 18 legacy
+     sprints *and* every sprint archived before the writer fix, without
+     editing a byte of history.
+
+  Outcome: Part A only. The 18 files are untouched; legacy `status: done`
+  is tolerated on read. The checker defect is filed as
+  `clasi/issues/detect-inconsistencies-drift-checks-terminal-archived-sprints.md`
+  at low priority — 006 having removed the symptom means there is no
+  longer anything driving it.
 
 ## 9. Open Questions
 
@@ -615,7 +657,13 @@ All three questions raised in the first draft of this document were
 resolved during stakeholder review before ticketing began (rules
 `exclude:` support verified against official docs — no such key exists;
 purge mechanism — both TTL and `SubagentStop`; historical files — bulk
-correct). No open questions remain from that pass. One new item surfaced
+correct). No open questions remain from that pass.
+
+**The third was re-opened and answered the other way during execution**:
+historical files are NOT bulk-corrected. See Design Rationale — the
+pre-ticketing review reached the wrong conclusion, and the stakeholder
+reversed it mid-sprint once ticket 006 had removed the symptom the
+correction was meant to address. One new item surfaced
 during the same review and was resolved rather than left open (see
 Design Rationale: `source-code.md` drops `paths:`; note added to Sprint
 Changes that responsibility 5 covers all three drifted/unreachable
@@ -640,10 +688,13 @@ Remaining genuinely open item for ticketing:
   pre-existing state. No schema migration needed — `clear_stale_agents`
   already exists and operates on the current schema; only its call site
   and TTL value change.
-- **Existing `status: "done"` sprint frontmatter**: bulk-corrected in
-  this sprint (see Design Rationale) — a scripted rewrite of all 18
-  `clasi/sprints/done/*/sprint.md` files, verified by
-  `grep -c "^status: done" clasi/sprints/done/*/sprint.md` returning 0.
+- **Existing `status: "done"` sprint frontmatter**: ~~bulk-corrected in
+  this sprint~~ **NOT corrected — the rewrite was cut** (see Design
+  Rationale). All 18 `clasi/sprints/done/*/sprint.md` files still declare
+  `status: done` and are left that way deliberately;
+  `grep -lc "^status: done" clasi/sprints/done/*/sprint.md` still returns
+  18, which is the intended end state, not a missed step. Readers must
+  tolerate the legacy value.
   No sprint behavior changes as a result (the `closed` state has no
   outbound transitions); this is a frontmatter-accuracy fix only.
 - **Downstream `clasi init` consumers**: dropping `paths:` from
