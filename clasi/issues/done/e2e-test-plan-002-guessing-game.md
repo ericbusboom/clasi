@@ -177,3 +177,52 @@ After all 4 sprints and 3 OOP changes, `./validate.sh` checks:
 - `clasi/sprints/018-.../sprint.md` — right-sized planning
 - `clasi/sprints/016-.../sprint.md` — security and housekeeping
 - `tests/e2e/AGENTS.md` — agent driving instructions for the run
+
+## Run 003 Findings
+
+Completed 2026-07-15. 4 sprints, 3 OOP changes, 40 tests passing, 36 commits.
+Ran against **clasi 0.20260715.2** (local wheel build). Model: claude-opus-4-8 via Anthropic API.
+Project at `~/clasi-e2e-project/` — bind-mounted, inspectable on host.
+
+### Summary — Run 003 vs Run 002
+
+| # | Observation | Run 002 (v0.20260705.11) | Run 003 (v0.20260715.2) |
+|---|-------------|--------------------------|--------------------------|
+| 1 | Guard enforcement | ❌ All `0 no-path` | ✅ **104 guards, 0 no-path, real blocks** |
+| 2 | Planning proportionality | ❌ 1,866–2,958 words | ❌ 1,317–2,278 words (improved but still heavy) |
+| 3 | Version bump noise | ❌ 12/35 (34%) | ❌ 11/36 (31%) |
+| 4 | Close report quality | ❌ 1 of 4 | ⚠️ 3 of 4 (004 manual) |
+| 5 | OOP bypass | ⚠️ Never tested (guards dead) | ❌ **Blocks team-lead even with OOP intent** |
+| 6 | Artifact layout | ⚠️ Path drift | ✅ Consistent at `clasi/sprints/done/` |
+| 7 | Transcript security | ❌ No gitignore | ✅ `.clasi/log/` gitignored |
+| 8 | Issue linkage | ❌ All `[]` | ❌ All `[]` (unchanged) |
+| 9 | State machine terms | ❌ All `done` | ⚠️ 001-003 = `closed`, 004 = `planning-docs` |
+
+### Key Improvements (Run 002 → 003)
+
+- **Guards now enforce.** 104 role-guard entries, zero `no-path` — the sprint 019 fix works.
+  Sprint-planner gets `2 blk-write` on artifact directories. Guards are real.
+- **Transcript security fixed.** `.clasi/log/` is in `.gitignore` now (Sprint 016 fix).
+- **State machine corrected.** `status: closed` on sprints 001-003 (Sprint 019 fix).
+
+### Persistent Issues
+
+- **OOP bypass is broken.** No `.clasi/oop` flag was created or used. Team-lead gets blocked
+  from editing source even in OOP mode and must route through programmer agents. The 
+  `oop.sh` prompts ("Let's just get this done") don't trigger the bypass. Guards are
+  active but the sanctioned escape hatch doesn't work.
+- **Planning still too heavy.** 1,317–2,278 word sprint plans with Mermaid diagrams for a 
+  trivial 3-game CLI. Sprint 018's right-sizing helped (~30% reduction from old version) 
+  but the planner still writes novels.
+- **Version bump noise unchanged.** 11 bumps in 36 commits. Still ~1 per ticket.
+
+### Recommendations
+
+1. **Fix OOP bypass** — guards are working but the `.clasi/oop` mechanism isn't. The
+   e2e's OOP flow should either create the flag file before sending OOP prompts, or
+   the `role-guard` should properly recognize OOP mode.
+2. **Reduce turn limits for close ceremony** — `close_sprint` burns 10+ turns on
+   state validation. Consider a dedicated "close sprint" prompt that skips redundant checks.
+3. **Bump sprint turn limits** — sprints routinely hit 40-50 turn limits. The guard
+   enforcement adds overhead.
+4. **Update `validate.sh`** to match current artifact paths (still checks `docs/clasi/`).
