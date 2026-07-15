@@ -509,22 +509,78 @@ def _get_active_tickets(sprint_id: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[str]) -> None:
+    """Append the ticket-gate imperative sentence to *narrowed*'s notes, in place.
+
+    When a sprint execution lock is held (``sprint_id`` is non-empty) and no
+    ticket in that sprint is ``in-progress`` (``active_tickets`` is empty),
+    source edits are gated closed by the role-guard ticket-state gate
+    (ticket 004). Callers other than tier-2 already see that gate as a
+    BLOCK on their next write; this note makes the same fact visible
+    up-front in the status block, so the agent does not need to attempt a
+    write just to discover the gate.  Names both sanctioned exits: resume
+    or start a ticket via execute-ticket, or set ``.clasi/oop`` (checked
+    only via the shared :func:`_oop_active` helper — never reimplemented).
+
+    No-op if a ticket is active, no sprint is executing, or OOP bypass is
+    already active (the gate does not apply in that case).
+    """
+    if not sprint_id or active_tickets or _oop_active():
+        return
+    notes = narrowed.setdefault("notes", {})
+    imperative = (
+        f"Sprint {sprint_id} execution lock is held but no ticket is "
+        "in-progress: source edits are gated closed (role-guard "
+        "ticket-state gate). Start or resume a ticket via the "
+        "execute-ticket flow, or set .clasi/oop to bypass."
+    )
+    existing_focus = notes.get("current_focus", "")
+    notes["current_focus"] = (
+        f"{existing_focus} {imperative}".strip() if existing_focus else imperative
+    )
+
+
 def _build_status_block(agent: str) -> str:
     """Build a ``## CLASI status`` fenced YAML block for *agent*.
 
-    Returns an empty string if building fails (e.g. no status data available).
-    Never raises — callers rely on this being safe.
+    Resolves the active ``sprint_id`` via :func:`_get_sprint_context` and,
+    for the ``programmer`` role, the active ``ticket_id`` via
+    :func:`_get_active_tickets`, then threads both into
+    :func:`~clasi.status.narrow_status` so the returned view is actually
+    scoped to the requesting agent (rather than always the team-lead's
+    full view, which is what passing no ids produces).
+
+    The status-block assembly excludes ``done/`` sprints and tickets
+    (``exclude_done=True``) — this hook path is the only caller that opts
+    into that; on-demand callers (MCP tools) still see full history.
+
+    Returns an empty string if building fails (e.g. no status data
+    available). Never raises — callers rely on this being safe. Failures
+    are logged as a warning so a broken status hook is observable instead
+    of silently indistinguishable from "nothing to report".
     """
     try:
         from clasi.status import build_status, narrow_status
         from clasi.status.formatting import to_yaml
 
         project = get_project()
-        full = build_status(project, agent=agent)
-        narrowed = narrow_status(full, agent=agent)
+        _, sprint_id = _get_sprint_context()
+
+        active_tickets = _get_active_tickets(sprint_id) if sprint_id else []
+        ticket_id = active_tickets[0] if agent == "programmer" and active_tickets else None
+
+        full = build_status(
+            project, agent=agent, sprint_id=sprint_id or None,
+            ticket_id=ticket_id, exclude_done=True,
+        )
+        narrowed = narrow_status(
+            full, agent=agent, sprint_id=sprint_id or None, ticket_id=ticket_id,
+        )
+        _add_gate_imperative(narrowed, sprint_id, active_tickets)
         yaml_text = to_yaml(narrowed)
         return f"## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
+        logger.warning("status-inject: failed to build status block", exc_info=True)
         return ""
 
 

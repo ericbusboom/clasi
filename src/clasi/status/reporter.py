@@ -89,6 +89,7 @@ class StatusReporter:
         agent: str = "team-lead",
         sprint_id: str | None = None,
         ticket_id: str | None = None,
+        exclude_done: bool = False,
     ) -> dict:
         """Build and return the full status dict.
 
@@ -107,6 +108,15 @@ class StatusReporter:
                 used for narrowing here).
             ticket_id: Optional ticket ID hint (stored for callers; not
                 used for narrowing here).
+            exclude_done: When True, sprints and tickets with
+                ``status: done`` are excluded from the assembled dict.
+                Intended ONLY for the per-prompt status-block hook path
+                (``hook_handlers._build_status_block``), which must stay
+                small. On-demand callers (MCP ``list_sprints``,
+                ``get_sprint_status``, the ``status`` CLI/MCP tool) must
+                keep the default ``False`` so they continue to return full
+                history including archived (``done/``) sprints and
+                tickets.
 
         Returns:
             A dict with top-level keys: ``agent``, ``computed_at``,
@@ -120,7 +130,9 @@ class StatusReporter:
         project_block = self._build_project_block(reader)
 
         # --- sprints block ---
-        sprints_block = self._build_sprints_block(reader, project)
+        sprints_block = self._build_sprints_block(
+            reader, project, exclude_done=exclude_done
+        )
 
         # --- issues block ---
         issues_block = self._build_issues_block(project)
@@ -195,6 +207,7 @@ class StatusReporter:
         self,
         sprint,  # clasi.sprint.Sprint
         reader: "StateReader",
+        exclude_done: bool = False,
     ) -> dict:
         """Evaluate a single sprint's state machine and return the sprint block."""
         sprint_id = sprint.id
@@ -224,7 +237,9 @@ class StatusReporter:
             transitions = []
 
         # --- tickets sub-block ---
-        tickets_block = self._build_tickets_block(sprint, reader, sprint_ctx, state_name)
+        tickets_block = self._build_tickets_block(
+            sprint, reader, sprint_ctx, state_name, exclude_done=exclude_done
+        )
 
         return {
             "id": sprint_id,
@@ -239,17 +254,34 @@ class StatusReporter:
         reader: "StateReader",
         sprint_ctx: "SprintContext",
         sprint_state: str,
+        exclude_done: bool = False,
     ) -> dict:
         """Build the tickets sub-block for a sprint entry.
 
         Iterates every ticket in the sprint (active + done directories).
         Evaluates the ticket machine for each and assembles per-ticket detail
         entries.
+
+        When *exclude_done* is True, tickets with ``status: done`` in their
+        frontmatter are omitted. This is used ONLY by the status-block hook
+        path to keep the per-prompt injection small — on-demand callers
+        (MCP tools) always pass the default ``False`` and see full history.
         """
         try:
             all_tickets = sprint.list_tickets()
         except Exception:
             all_tickets = []
+
+        if exclude_done:
+            filtered = []
+            for ticket in all_tickets:
+                try:
+                    if ticket.status == "done":
+                        continue
+                except Exception:
+                    pass
+                filtered.append(ticket)
+            all_tickets = filtered
 
         total = len(all_tickets)
         by_state: dict[str, int] = {}
@@ -300,14 +332,41 @@ class StatusReporter:
         return block
 
     def _build_sprints_block(
-        self, reader: "StateReader", project: "Project"
+        self,
+        reader: "StateReader",
+        project: "Project",
+        exclude_done: bool = False,
     ) -> list[dict]:
-        """Iterate all sprints and build the sprints list."""
+        """Iterate all sprints and build the sprints list.
+
+        When *exclude_done* is True, sprints with ``status: done`` in their
+        frontmatter are omitted entirely (and their tickets with them, via
+        ``_build_tickets_block``'s own ``exclude_done``). This is used ONLY
+        by the status-block hook path — ``project.list_sprints()`` itself
+        is unchanged and still returns full history including ``done/``,
+        so on-demand callers (MCP ``list_sprints``, ``get_sprint_status``)
+        are unaffected.
+        """
         try:
             sprints = project.list_sprints()
         except Exception:
             return []
-        return [self._build_sprint_block(s, reader) for s in sprints]
+
+        if exclude_done:
+            filtered = []
+            for s in sprints:
+                try:
+                    if s.status == "done":
+                        continue
+                except Exception:
+                    pass
+                filtered.append(s)
+            sprints = filtered
+
+        return [
+            self._build_sprint_block(s, reader, exclude_done=exclude_done)
+            for s in sprints
+        ]
 
     def _build_issues_block(self, project: "Project") -> dict:
         """Count all pending-pool issues and return the issues block."""

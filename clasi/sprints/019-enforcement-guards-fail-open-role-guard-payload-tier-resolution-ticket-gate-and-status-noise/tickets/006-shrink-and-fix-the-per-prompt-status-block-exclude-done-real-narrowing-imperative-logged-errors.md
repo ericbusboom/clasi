@@ -2,9 +2,12 @@
 id: '006'
 title: Shrink and fix the per-prompt status block (exclude done/, real narrowing,
   imperative, logged errors)
-status: open
-use-cases: [SUC-007]
-depends-on: ['002', '004']
+status: done
+use-cases:
+- SUC-007
+depends-on:
+- '002'
+- '004'
 github-issue: ''
 issue: enforcement-guards-fail-open-role-guard-payload-and-tier-resolution.md
 completes_issue: false
@@ -77,33 +80,33 @@ bulk-correction (ticket 007).
 
 ## Acceptance Criteria
 
-- [ ] `clasi hook status-inject | wc -c` is well under 5KB on this
+- [x] `clasi hook status-inject | wc -c` is well under 5KB on this
       project's real, current (multi-sprint) state — target explicitly
-      verified, not just "smaller than before."
-- [ ] `done/` sprints and their tickets are excluded from the
+      verified, not just "smaller than before." (37,651 -> 2,314 bytes.)
+- [x] `done/` sprints and their tickets are excluded from the
       status-block assembly path specifically; `list_sprints()` and
       `Sprint.list_tickets()` continue to return full history including
       `done/` when called directly (e.g. via MCP tools) — verify this
       with a test that calls both paths against the same fixture data
       and asserts they differ only in the done/ exclusion.
-- [ ] `_build_status_block` threads a real `sprint_id` (from
+- [x] `_build_status_block` threads a real `sprint_id` (from
       `_get_sprint_context()`) into `narrow_status` for all callers; for
       `handle_subagent_start`'s programmer-role invocation, also threads
       a real `ticket_id` when one can be resolved.
-- [ ] Test: with a real (unmocked) multi-sprint fixture project including
+- [x] Test: with a real (unmocked) multi-sprint fixture project including
       at least one `done/` sprint, `narrow_status` output for a
       `sprint-planner`/`programmer` agent role is demonstrably narrower
       than the team-lead's full view (not just "narrow_status was
       called" — assert the actual returned dict is smaller/scoped).
-- [ ] When a sprint is executing with zero in-progress tickets, the
+- [x] When a sprint is executing with zero in-progress tickets, the
       status block's notes contain an explicit sentence naming both
       exits (start/resume a ticket; `.clasi/oop`).
-- [ ] `except Exception: return ""` in `_build_status_block` is replaced
+- [x] `except Exception: return ""` in `_build_status_block` is replaced
       with a logged warning (verify the log actually fires under a
       simulated failure — e.g. inject a broken reader/mock that raises)
       followed by the same `return ""` fallback behavior (the hook still
       never fails outright).
-- [ ] **Size assertion test against the REAL, unmocked status block** —
+- [x] **Size assertion test against the REAL, unmocked status block** —
       not `_build_status_block` mocked away, which is how every existing
       test in `tests/unit/test_status/test_hook_injection.py` missed the
       original 34KB. Build (or reuse) a realistic multi-sprint fixture

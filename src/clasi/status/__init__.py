@@ -26,6 +26,7 @@ def build_status(
     sprint_id: str | None = None,
     ticket_id: str | None = None,
     reader: "StateReader | None" = None,
+    exclude_done: bool = False,
 ) -> dict:
     """Build the full status dict for *project*.
 
@@ -40,6 +41,11 @@ def build_status(
         ticket_id: Optional ticket ID hint passed through to the reporter.
         reader: Optional :class:`~clasi.state_machine.context.StateReader`
             override (useful for testing with :class:`~clasi.state_machine.context.NullStateReader`).
+        exclude_done: When True, excludes ``status: done`` sprints and
+            tickets from the result. Intended ONLY for the per-prompt
+            status-block hook path — on-demand callers (MCP tools, the
+            ``status`` CLI command) must leave this ``False`` so they keep
+            returning full history.
 
     Returns:
         A dict with top-level keys: ``agent``, ``computed_at``, ``project``,
@@ -48,7 +54,8 @@ def build_status(
     from clasi.status.reporter import StatusReporter
 
     return StatusReporter(project, reader=reader).build(
-        agent=agent, sprint_id=sprint_id, ticket_id=ticket_id
+        agent=agent, sprint_id=sprint_id, ticket_id=ticket_id,
+        exclude_done=exclude_done,
     )
 
 
