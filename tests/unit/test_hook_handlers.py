@@ -22,6 +22,7 @@ from clasi.hook_handlers import (
     handle_mcp_guard,
     _ensure_log_gitignore,
     _get_log_dir,
+    _get_sprint_context,
     _get_active_tickets,
     _render_transcript_lines,
     _ext_to_language,
@@ -2002,3 +2003,137 @@ class TestStaleAgentTtlSweepViaSubagentStart:
         result = clear_stale_agents(db_path, ttl_hours=2)
         assert result["cleared"] == 1
         assert get_active_agent(db_path, "direct-stale") is None
+
+
+# ---------------------------------------------------------------------------
+# Ticket-in-progress gate on role-guard (ticket 019-004)
+# ---------------------------------------------------------------------------
+
+
+def _setup_sprint_with_lock(
+    tmp_path: Path, sprint_id: str = "019", slug: str = "test-sprint"
+) -> Path:
+    """Create a real sprint directory (fresh/visible layout) plus a state
+    DB with the sprint registered and its execution lock held.
+
+    Returns the sprint directory (tickets/ not yet created — callers add
+    ticket files with _make_in_progress_ticket / _make_done_ticket as
+    needed for their scenario).
+    """
+    _write_fresh_config(tmp_path)
+    sprint_dir = tmp_path / "clasi" / "sprints" / f"{sprint_id}-{slug}"
+    sprint_dir.mkdir(parents=True)
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, sprint_id, f"sprint-{sprint_id}")
+    acquire_lock(db_path, sprint_id)
+    return sprint_dir
+
+
+class TestRoleGuardTicketStateGate:
+    """Ticket-state gate (ticket 019-004): block Edit/Write/MultiEdit when
+    a sprint execution lock is held, zero tickets in that sprint are
+    status: in-progress, and OOP is not active — REGARDLESS of tier,
+    including tier 2 (the gate that was previously entirely absent for
+    programmers). Uses real sprint/ticket directory structures on disk,
+    not mocks of _get_sprint_context() / _get_active_tickets() — this
+    sprint's standard is no hand-built fixtures that bypass real logic.
+    """
+
+    def test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked(
+        self, tmp_path, capsys
+    ):
+        """Sprint executing (lock held) + zero in-progress tickets + tier 2
+        + source-path write -> exit 2."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+        stderr = capsys.readouterr().err
+        assert "019" in stderr
+        assert "in-progress" in stderr
+        assert ".clasi/oop" in stderr
+
+    def test_lock_held_one_in_progress_ticket_tier2_source_write_allowed(
+        self, tmp_path
+    ):
+        """Sprint executing + one in-progress ticket + tier 2 + source-path
+        write -> exit 0."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_in_progress_ticket(sprint_dir, "004", "Add ticket gate")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_lock_held_zero_in_progress_tickets_oop_flag_present_allowed(
+        self, tmp_path
+    ):
+        """Sprint executing + zero in-progress tickets + tier 2 +
+        .clasi/oop present -> exit 0 (OOP bypass still works for this
+        gate)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+        (tmp_path / ".clasi" / "oop").write_text("", encoding="utf-8")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_no_lock_held_tier2_source_write_allowed(self, tmp_path):
+        """No execution lock held + tier 2 + source-path write -> exit 0
+        (gate does not apply when no sprint is executing)."""
+        _write_fresh_config(tmp_path)
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
+        init_db(db_path)
+        register_sprint(db_path, "019", "sprint-019")
+        # No acquire_lock call: no sprint is executing.
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked(
+        self, tmp_path, capsys
+    ):
+        """Sprint executing + zero in-progress tickets + tier 0/1 +
+        source-path write -> exit 2 (gate applies to all tiers, not just
+        tier 2)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 2
+        stderr = capsys.readouterr().err
+        assert "019" in stderr
+        assert "in-progress" in stderr
+
+    def test_lock_held_zero_in_progress_tickets_tier1_source_write_blocked(
+        self, tmp_path
+    ):
+        """Same gate applies to tier 1 as well, not only tier 0/2."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+
+    def test_lock_held_zero_in_progress_tickets_safe_prefix_still_allowed(
+        self, tmp_path
+    ):
+        """Safe-prefix writes (.claude/, CLAUDE.md, AGENTS.md) are checked
+        before the ticket-state gate and remain allowed even with zero
+        in-progress tickets — the gate must not regress existing
+        allow-listed meta-file writes."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "CLAUDE.md", "2") == 0
+
+    def test_gate_uses_get_sprint_context_and_get_active_tickets_live(
+        self, tmp_path
+    ):
+        """Sanity: the real helpers, called directly against the same
+        fixture, agree with the gate's block/allow decision — confirms
+        the gate is driven by the actual helpers and not a duplicated
+        ad hoc check."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        _, sprint_id = _run_with_cwd(tmp_path, _get_sprint_context)
+        active = _run_with_cwd(tmp_path, _get_active_tickets, sprint_id)
+        assert sprint_id == "019"
+        assert active == []
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2

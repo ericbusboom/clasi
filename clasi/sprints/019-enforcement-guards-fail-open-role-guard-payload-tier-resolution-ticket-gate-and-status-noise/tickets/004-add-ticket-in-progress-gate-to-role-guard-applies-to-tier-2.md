@@ -1,9 +1,13 @@
 ---
 id: '004'
 title: Add ticket-in-progress gate to role-guard (applies to tier 2)
-status: open
-use-cases: [SUC-004]
-depends-on: ['001', '002', '003']
+status: done
+use-cases:
+- SUC-004
+depends-on:
+- '001'
+- '002'
+- '003'
 github-issue: ''
 issue: enforcement-guards-fail-open-role-guard-payload-and-tier-resolution.md
 completes_issue: false
@@ -72,33 +76,33 @@ defect 6 ("no gate on ticket state at all").
 
 ## Acceptance Criteria
 
-- [ ] New check in `handle_role_guard`: if an execution lock is held
+- [x] New check in `handle_role_guard`: if an execution lock is held
       (via `_get_sprint_context()`) and `_get_active_tickets()` returns
       an empty list for that sprint, and `_oop_active()` is `False`,
       block the write (exit 2) with a clear stderr message naming the
       two exits (start/resume a ticket via the execute-ticket flow, or
       set `.clasi/oop`).
-- [ ] This check applies REGARDLESS of tier, including tier 2. The
+- [x] This check applies REGARDLESS of tier, including tier 2. The
       `if agent_tier == "2": allow` early return is moved to after this
       new check, not before it.
-- [ ] If no execution lock is held (no sprint executing), this gate does
+- [x] If no execution lock is held (no sprint executing), this gate does
       not trigger — existing tier-based rules apply unchanged. (A sprint
       in `planning-docs`/`ticketing`/etc. with no lock is not this
       failure mode.)
-- [ ] If at least one ticket is `in-progress`, the write proceeds to
+- [x] If at least one ticket is `in-progress`, the write proceeds to
       existing tier-based scope checks (this gate does not further
       restrict which files a tier-2 agent may write — only whether ANY
       ticket is in-progress at all).
-- [ ] Test: sprint executing (lock held) + zero in-progress tickets +
+- [x] Test: sprint executing (lock held) + zero in-progress tickets +
       tier 2 + source-path write → exit 2.
-- [ ] Test: sprint executing + one in-progress ticket + tier 2 +
+- [x] Test: sprint executing + one in-progress ticket + tier 2 +
       source-path write → exit 0.
-- [ ] Test: sprint executing + zero in-progress tickets + tier 2 +
+- [x] Test: sprint executing + zero in-progress tickets + tier 2 +
       `.clasi/oop` present → exit 0 (OOP bypass still works for this
       gate).
-- [ ] Test: no execution lock held + tier 2 + source-path write → exit 0
+- [x] Test: no execution lock held + tier 2 + source-path write → exit 0
       (gate does not apply when no sprint is executing).
-- [ ] Test: sprint executing + zero in-progress tickets + tier 0/1 +
+- [x] Test: sprint executing + zero in-progress tickets + tier 0/1 +
       source-path write → exit 2 (gate applies to all tiers, verify it's
       not accidentally tier-2-only).
 

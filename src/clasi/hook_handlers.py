@@ -152,6 +152,15 @@ def handle_role_guard(payload: dict) -> None:
     Tier 2 = programmer
     OOP    = .clasi/oop (or legacy .clasi-oop) present in cwd (out-of-process bypass)
 
+    Ticket-state gate (applies to ALL tiers, including tier 2): if a
+    sprint execution lock is held (via _get_sprint_context()) and zero
+    tickets in that sprint are `status: in-progress` (via
+    _get_active_tickets()), the write is blocked — unless _oop_active()
+    is True. This gate is skipped entirely when no execution lock is
+    held. It runs BEFORE the tier-2 unrestricted-write early return, so
+    a programmer with no in-progress ticket during an active sprint is
+    blocked exactly like any other tier.
+
     No path resolvable from the payload (neither the nested
     tool_input.file_path/path/new_path shape nor a flat fallback) fails
     CLOSED for tier 0/1 — directory-scope enforcement is meaningless
@@ -185,18 +194,16 @@ def handle_role_guard(payload: dict) -> None:
         except Exception:
             pass
 
-    # Tier 2 (programmer) can write anywhere — that's their job.
-    # Checked first so programmer subagents never hit any later block.
-    if agent_tier == "2":
-        _exit_hook("role-guard", payload, 0, "tier-2")
-
     # No path in payload — nothing to guard against. This must be fail
     # CLOSED for tier 0/1: directory-scope enforcement cannot be applied
     # without a path, and silently allowing here is exactly how the
     # payload-shape bug (reading file_path from the wrong nesting level)
     # went undetected. Tier 2 already has unrestricted write scope by
-    # design (handled above), so no-path is moot there.
-    if not file_path:
+    # design once the ticket-state gate below has been checked, so
+    # no-path is moot there — exempted here rather than exiting early,
+    # so the ticket-state gate (which applies to tier 2 too) still runs
+    # for tier 2 regardless of whether a path was resolved.
+    if not file_path and agent_tier != "2":
         present_keys = sorted(payload.keys()) if payload else []
         logger.warning(
             "role-guard: no file_path resolved from payload "
@@ -232,6 +239,38 @@ def handle_role_guard(payload: dict) -> None:
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
+
+    # Ticket-state gate: if a sprint execution lock is held but zero
+    # tickets in that sprint are `status: in-progress`, block the write
+    # regardless of tier — including tier 2. This is the gate that was
+    # missing entirely: tier 2 previously exited allow (see below) before
+    # any ticket-state logic could run, which is exactly how a sprint
+    # could land untracked commits with no ticket ever marked
+    # in-progress. Skipped entirely when no execution lock is held (no
+    # sprint executing); already-bypassed OOP requests exited above via
+    # the oop-bypass check, so no separate _oop_active() re-check is
+    # needed here — reaching this point means OOP is not active.
+    _sprint_log_dir, _sprint_id = _get_sprint_context()
+    if _sprint_id:
+        active_tickets = _get_active_tickets(_sprint_id)
+        if not active_tickets:
+            print(
+                f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
+                "is held but no ticket is in-progress.\n"
+                "Start or resume a ticket via the execute-ticket flow, "
+                "or set .clasi/oop to bypass.",
+                file=sys.stderr,
+            )
+            _exit_hook("role-guard", payload, 2, "no-ticket")
+
+    # Tier 2 (programmer) can write anywhere — that's their job.
+    # Checked after the ticket-state gate above (and after the no-path /
+    # OOP / recovery / safe-prefix checks) so programmer subagents are
+    # still subject to the ticket-state gate; this early return only
+    # fires once that gate has confirmed either no lock is held or a
+    # ticket is in-progress.
+    if agent_tier == "2":
+        _exit_hook("role-guard", payload, 0, "tier-2")
 
     # Build allow/block prefix sets from live Project properties.
     # Each prefix is root-relative so it matches the file_path strings
