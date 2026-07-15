@@ -1383,7 +1383,28 @@ class TestHistoricalSprintBackwardCompat:
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REAL_DONE_DIR = _REPO_ROOT / "clasi" / "sprints" / "done"
-_EXPECTED_HISTORICAL_SPRINT_IDS = [f"{n:03d}" for n in range(1, 18)]  # 001-017
+
+
+def _discover_historical_sprint_ids() -> list[str]:
+    """Return every sprint id currently archived under clasi/sprints/done/.
+
+    Derived from disk rather than hardcoded. This list was previously
+    `range(1, 18)` (001-017), which broke the moment sprint 018 was
+    archived and would have broken again on every subsequent sprint —
+    the archive grows by definition, so a literal range is guaranteed to
+    go stale. These tests are about the historical three-file layout
+    remaining *readable*, not about how many sprints exist.
+    """
+    if not _REAL_DONE_DIR.is_dir():
+        return []
+    return sorted(
+        d.name.split("-", 1)[0]
+        for d in _REAL_DONE_DIR.iterdir()
+        if d.is_dir() and (d / "sprint.md").exists()
+    )
+
+
+_EXPECTED_HISTORICAL_SPRINT_IDS = _discover_historical_sprint_ids()
 
 
 def _copy_real_done_sprints_into(tmp_path) -> Project:
