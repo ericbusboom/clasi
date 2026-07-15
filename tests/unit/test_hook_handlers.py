@@ -17,6 +17,7 @@ from clasi.hook_handlers import (
     handle_codex_plan_to_issue,
     handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
+    handle_role_guard,
     _ensure_log_gitignore,
     _get_log_dir,
     _get_active_tickets,
@@ -1092,8 +1093,21 @@ def _write_legacy_layout_config(root: Path) -> None:
     (clasi_dir / "config.yaml").write_text(_LEGACY_LAYOUT_CONFIG, encoding="utf-8")
 
 
-def _role_guard_payload(file_path: str) -> dict:
-    return {"file_path": file_path}
+def _role_guard_payload(file_path: str, tool_name: str = "Write") -> dict:
+    """Build a role-guard payload matching Claude Code's real, nested
+    PreToolUse shape: {"tool_name": ..., "tool_input": {"file_path": ...}}.
+
+    Confirmed against real captured lines in .clasi/log/hooks.log and the
+    same nested-parse pattern already used elsewhere in this module
+    (handle_plan_to_issue: payload.get("tool_input", {}).get("planFilePath")).
+    A flat {"file_path": ...} shape never occurs in practice and must not
+    be used as a test fixture — it silently validates the wrong parse.
+    """
+    return {
+        "tool_name": tool_name,
+        "tool_input": {"file_path": file_path},
+        "session_id": "test-session-id",
+    }
 
 
 def _run_role_guard(tmp_path: Path, file_path: str, tier: str = "") -> int:
@@ -1112,7 +1126,29 @@ def _run_role_guard(tmp_path: Path, file_path: str, tier: str = "") -> int:
         else:
             os.environ.pop("CLASI_AGENT_TIER", None)
 
-        from clasi.hook_handlers import handle_role_guard
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_role_guard, payload)
+        return exc.value.code
+    finally:
+        if old_tier is None:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+        else:
+            os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+def _run_role_guard_payload(tmp_path: Path, payload: dict, tier: str = "") -> int:
+    """Like _run_role_guard, but takes a raw payload directly instead of
+    building one from a file_path. Used for no-path / malformed-payload
+    fail-closed tests where the payload deliberately has no resolvable path.
+    """
+    import os
+
+    old_tier = os.environ.get("CLASI_AGENT_TIER", None)
+    try:
+        if tier:
+            os.environ["CLASI_AGENT_TIER"] = tier
+        else:
+            os.environ.pop("CLASI_AGENT_TIER", None)
 
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_role_guard, payload)
@@ -1349,6 +1385,112 @@ class TestRoleGuardFreshLayout:
     def test_tier0_no_config_sprints_blocked(self, tmp_path):
         """Tier 0: without config, clasi/sprints/ is blocked (new default sprints_dir)."""
         assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+
+
+class TestRoleGuardNestedPayloadShape:
+    """Regression coverage for ticket 019-001: handle_role_guard must read
+    file_path from the REAL nested Claude Code PreToolUse shape
+    (payload["tool_input"]["file_path"]), not the payload root.
+
+    Before this fix, `tool_input = payload if payload else {}` meant every
+    real invocation saw file_path == "" and silently ALLOWED via the
+    (then-unconditional) no-path branch. These tests exercise the guard
+    through handle_role_guard directly with a payload built by
+    _role_guard_payload(), which now matches the real nested shape.
+    """
+
+    # --- Deny path, end-to-end, nested real payload shape (non-negotiable) ---
+
+    def test_deny_path_nested_payload_tier0_source_write_blocked(self, tmp_path, capsys):
+        """Nested real payload + tier 0 + source path → exit 2, via the
+        source-code block branch specifically (not the no-path branch).
+
+        This is the core regression test: exit code 2 alone is NOT
+        sufficient here, because a fail-closed no-path branch also exits
+        2 — a flat-shape read would find file_path == "" and hit THAT
+        branch, coincidentally producing the same exit code while never
+        having parsed "source/main.cpp" at all. The assertion on stderr
+        content (which echoes the parsed file_path back) is what actually
+        distinguishes "correctly parsed and blocked" from "failed to
+        parse and failed closed" — i.e. what makes this test fail if the
+        line-140 payload-read fix is reverted.
+        """
+        _write_fresh_config(tmp_path)
+        payload = _role_guard_payload("source/main.cpp")
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_role_guard, payload)
+        assert exc.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "source/main.cpp" in stderr
+        assert "attempted direct file write to" in stderr
+
+    def test_deny_path_nested_payload_tier_unset_source_write_blocked(self, tmp_path, capsys):
+        """Same as above with CLASI_AGENT_TIER unset (defaults to tier 0)."""
+        import os
+
+        _write_fresh_config(tmp_path)
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "source/main.cpp" in stderr
+            assert "attempted direct file write to" in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    # --- No-path fail-closed (tier 0 / tier 1) vs allow (tier 2) ---
+
+    def test_no_path_tier0_fails_closed(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 0 → exit 2."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "") == 2
+
+    def test_no_path_tier1_fails_closed(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 1 → exit 2."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "1") == 2
+
+    def test_no_path_tier2_still_allows(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 2 → exit 0.
+
+        Tier 2 (programmer) has unrestricted write scope by design, so the
+        fail-closed no-path branch must not apply to it.
+        """
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "2") == 0
+
+    def test_no_path_completely_empty_payload_tier0_fails_closed(self, tmp_path):
+        """An entirely empty payload (no tool_input key at all) still fails
+        closed for tier 0, and the WARN log must not raise."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard_payload(tmp_path, {}, "") == 2
+
+    # --- Non-regression: artifact-dir allow-list still works live ---
+
+    def test_tier0_issues_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to clasi/issues/**, via the real nested payload shape,
+        still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+
+    def test_tier0_reflections_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to clasi/reflections/**, via the real nested payload
+        shape, still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "") == 0
+
+    def test_tier0_design_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to docs/design/**, via the real nested payload shape,
+        still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
 
 
 # ---------------------------------------------------------------------------

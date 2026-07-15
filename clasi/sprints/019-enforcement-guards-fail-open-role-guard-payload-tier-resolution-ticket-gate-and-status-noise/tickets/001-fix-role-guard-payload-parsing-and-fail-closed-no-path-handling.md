@@ -1,8 +1,10 @@
 ---
 id: '001'
 title: Fix role-guard payload parsing and fail-closed no-path handling
-status: open
-use-cases: [SUC-001, SUC-002]
+status: done
+use-cases:
+- SUC-001
+- SUC-002
 depends-on: []
 github-issue: ''
 issue: enforcement-guards-fail-open-role-guard-payload-and-tier-resolution.md
@@ -43,19 +45,19 @@ for the fuller warning once the ticket-gate is also live).
 
 ## Acceptance Criteria
 
-- [ ] `handle_role_guard` reads `file_path` via
+- [x] `handle_role_guard` reads `file_path` via
       `payload.get("tool_input", payload).get("file_path")` (or
       `.get("path")` / `.get("new_path")` fallback), matching the pattern
       already correct at line 1014 — not a new ad hoc parse.
-- [ ] `echo '{"tool_name":"Write","tool_input":{"file_path":"source/main.cpp"}}' | clasi hook role-guard` exits 2 for tier 0 (was 0/`no-path`).
-- [ ] The no-path branch (neither nested nor flat shape yields a
+- [x] `echo '{"tool_name":"Write","tool_input":{"file_path":"source/main.cpp"}}' | clasi hook role-guard` exits 2 for tier 0 (was 0/`no-path`).
+- [x] The no-path branch (neither nested nor flat shape yields a
       `file_path`) fails CLOSED for tier 0 and tier 1: logs a WARN-level
       reason (including the actual payload keys present, for
       diagnosability) and exits 2.
-- [ ] The no-path branch continues to ALLOW (exit 0) for tier 2 — tier 2
+- [x] The no-path branch continues to ALLOW (exit 0) for tier 2 — tier 2
       already has unrestricted write scope by design; no-path fail-closed
       only applies where directory-scope enforcement is meaningful.
-- [ ] `_role_guard_payload()` in `tests/unit/test_hook_handlers.py`
+- [x] `_role_guard_payload()` in `tests/unit/test_hook_handlers.py`
       (currently hand-builds the flat, never-occurring
       `{"file_path": ...}` shape) is replaced with a fixture built from a
       REAL captured payload — pull an actual `role-guard` line's
@@ -64,12 +66,12 @@ for the fuller warning once the ticket-gate is also live).
       documented nested `PreToolUse` payload
       (`{"tool_name": "Write", "tool_input": {"file_path": "..."}}`).
       No hand-built flat fixtures anywhere in this file going forward.
-- [ ] A new test asserts the DENY path explicitly end-to-end: nested real
+- [x] A new test asserts the DENY path explicitly end-to-end: nested real
       payload shape + tier 0 (or unset) + a source-code path (not under
       any safe/allow prefix) → `handle_role_guard` exits 2. This is
       non-negotiable — a guard whose block branch is never exercised is
       untested, which is exactly how this bug shipped.
-- [ ] **Non-negotiable, explicit acceptance criterion**: the new deny-path
+- [x] **Non-negotiable, explicit acceptance criterion**: the new deny-path
       test(s) added by this ticket MUST FAIL if the line-140 payload-read
       fix is reverted (i.e. if `tool_input = payload if payload else {}`
       is restored). Verify this directly before marking the ticket done:
@@ -78,7 +80,7 @@ for the fuller warning once the ticket-gate is also live).
       manual check — it is the only verification that catches "a test
       that merely restates the bug," which is how the original defect
       survived undetected for months.
-- [ ] Regression test added (or an existing test extended) asserting that
+- [x] Regression test added (or an existing test extended) asserting that
       `handle_role_guard`'s `_allow_prefixes` (built from
       `Project.issues_dir`, `reflections_dir`, `design_dir`, `clasi_dir`,
       `log_dir`) still correctly ALLOWS tier-0 writes to
@@ -88,7 +90,7 @@ for the fuller warning once the ticket-gate is also live).
       (`ARTIFACT_PATH_DEFAULTS` already resolves to visible `clasi/...`
       paths, not `.clasi/...`) but "verified during planning" is not the
       same as "covered by a test" — this ticket must close that gap.
-- [ ] Existing role-guard tests (tier-1/tier-2 allow paths, safe-prefix
+- [x] Existing role-guard tests (tier-1/tier-2 allow paths, safe-prefix
       allow paths, block paths) still pass after the payload-read change
       — run the full `tests/unit/test_hook_handlers.py` suite, not just
       the new tests.
@@ -112,3 +114,51 @@ for the fuller warning once the ticket-gate is also live).
   and the live CLI check:
   `echo '{"tool_name":"Write","tool_input":{"file_path":"source/main.cpp"}}' | clasi hook role-guard; echo "exit=$?"`
   (expect `exit=2`).
+
+## Completion notes
+
+- Fixed `handle_role_guard` to read `payload.get("tool_input", payload)`,
+  matching the existing correct pattern at line 1014
+  (`handle_plan_to_issue`). Moved tier resolution above the no-path check
+  so the no-path branch can discriminate tier 2 (still allow) from
+  tier 0/1 (now fail closed, exit 2, with a `logger.warning` including the
+  sorted payload top-level keys).
+- Replaced `_role_guard_payload()` in `tests/unit/test_hook_handlers.py`
+  with a fixture matching Claude Code's real nested `PreToolUse` shape
+  (`{"tool_name", "tool_input": {"file_path"}, "session_id"}`), confirmed
+  against real captured `role-guard` lines in `.clasi/log/hooks.log`
+  (which show `tool_name`, `agent_type`, `agent_id`, `session_id` — the
+  log doesn't retain the raw payload body, so the nested shape used here
+  is built from Claude Code's documented `PreToolUse` contract plus the
+  already-correct sibling parse at line 1014, per the ticket's fallback
+  instruction). No hand-built flat fixtures remain in the file.
+- **Revert-and-confirm-failure check (performed manually, not a
+  permanent CI step)**:
+  1. Temporarily reverted line 143 to `tool_input = payload if payload
+     else {}`.
+  2. Ran the new deny-path tests
+     (`TestRoleGuardNestedPayloadShape::test_deny_path_nested_payload_*`).
+     **First attempt exposed a real gap**: asserting only on exit code 2
+     was insufficient — the reverted code still returns exit 2, but via
+     the *new* fail-closed no-path branch (since the flat-shape read
+     finds no `file_path` at the payload root either), not via the
+     source-code block branch. This is precisely the "test that merely
+     restates the bug" failure mode the ticket warned about, caught by
+     the check itself.
+  3. Fixed the tests to assert on stderr content
+     (`"attempted direct file write to"` + the literal path
+     `source/main.cpp`), which only appears when `file_path` was actually
+     parsed and reached the source-code block branch. Re-ran with the fix
+     still reverted: **both tests failed** as required
+     (`AssertionError: assert 'source/main.cpp' in ''`).
+  4. Restored the line-143 fix. Re-ran the same tests: **both passed**.
+  5. Ran the full file: **122 passed**.
+- Live CLI check via the working tree's editable install
+  (`uv run clasi hook role-guard`): confirmed `exit=2` for
+  `{"tool_name":"Write","tool_input":{"file_path":"source/main.cpp"}}`.
+  Note: the separately pipx-installed `clasi` on `$PATH` (version
+  `0.20260627.14`) is a stale build predating this fix and still returns
+  `exit=0`; this is the known installed-build-vs-working-tree gap noted
+  in the ticket, not a defect in this change. `uv run clasi` (or
+  `.venv/bin/clasi`) reflects the fix; the global pipx install does not
+  until reinstalled.

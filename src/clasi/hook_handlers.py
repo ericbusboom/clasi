@@ -9,6 +9,7 @@ These are thin dispatchers — actual logic lives in dedicated modules.
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 from clasi.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 def get_project() -> Project:
@@ -134,20 +137,22 @@ def handle_role_guard(payload: dict) -> None:
     Tier 2 = programmer
     OOP    = .clasi-oop flag file present in cwd (out-of-process bypass)
 
+    No path resolvable from the payload (neither the nested
+    tool_input.file_path/path/new_path shape nor a flat fallback) fails
+    CLOSED for tier 0/1 — directory-scope enforcement is meaningless
+    without a path to check, so the safe default is to block, not allow.
+    Tier 2 is unaffected (already unrestricted) and still exits 0.
+
     Exits with code 0 (allow) or 2 (block).  Code 1 is reserved for
     unknown event names in the dispatcher.
     """
-    tool_input = payload if payload else {}
+    tool_input = payload.get("tool_input", payload) if payload else {}
     file_path = (
         tool_input.get("file_path")
         or tool_input.get("path")
         or tool_input.get("new_path")
         or ""
     )
-
-    # No path in payload — nothing to guard, allow through
-    if not file_path:
-        _exit_hook("role-guard", payload, 0, "no-path")
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
@@ -165,6 +170,21 @@ def handle_role_guard(payload: dict) -> None:
     # Checked first so programmer subagents never hit any later block.
     if agent_tier == "2":
         _exit_hook("role-guard", payload, 0, "tier-2")
+
+    # No path in payload — nothing to guard against. This must be fail
+    # CLOSED for tier 0/1: directory-scope enforcement cannot be applied
+    # without a path, and silently allowing here is exactly how the
+    # payload-shape bug (reading file_path from the wrong nesting level)
+    # went undetected. Tier 2 already has unrestricted write scope by
+    # design (handled above), so no-path is moot there.
+    if not file_path:
+        present_keys = sorted(payload.keys()) if payload else []
+        logger.warning(
+            "role-guard: no file_path resolved from payload "
+            "(tier=%s, payload keys=%s) — failing closed",
+            agent_tier or "0", present_keys,
+        )
+        _exit_hook("role-guard", payload, 2, "no-path")
 
     # OOP bypass: .clasi-oop flag enables direct writes for any tier.
     # Used for out-of-process changes reviewed manually by the team-lead.
