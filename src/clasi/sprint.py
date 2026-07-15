@@ -494,8 +494,13 @@ class Sprint:
         sprint_dir = self._path
         project = self._project
 
-        # Update sprint status to done
-        self.sprint_doc.update_frontmatter(status="done")
+        # Update sprint status to the state machine's terminal state.
+        # `closed` is the only terminal state sprint.yaml defines; writing
+        # `done` here (as this did until 019-007) minted a status the
+        # machine does not recognise, which detect_inconsistencies then
+        # reported as permanent state_drift. Sprints archived before that
+        # fix still carry `status: done` on disk and are tolerated on read.
+        self.sprint_doc.update_frontmatter(status="closed")
 
         # Move to done directory
         done_dir = project.sprints_dir / "done"

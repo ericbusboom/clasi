@@ -10,6 +10,33 @@ from clasi.project import Project
 from clasi.sprint import Sprint, MergeConflictError
 
 
+def _load_terminal_sprint_state() -> str:
+    """Return the sprint machine's only terminal state (no outbound transitions).
+
+    Derived from sprint.yaml rather than hardcoded so that 019-007's
+    archive-writes-a-real-state guarantee is expressed against the machine
+    itself. If the terminal state is ever renamed, these tests follow it
+    instead of silently asserting a stale literal.
+    """
+    import yaml
+
+    machine_path = (
+        Path(__file__).parent.parent.parent
+        / "src" / "clasi" / "schemas" / "state-machines" / "sprint.yaml"
+    )
+    machine = yaml.safe_load(machine_path.read_text(encoding="utf-8"))
+    terminal = [
+        name
+        for name, body in machine["states"].items()
+        if not (body or {}).get("transitions")
+    ]
+    assert len(terminal) == 1, f"expected exactly one terminal state, got {terminal}"
+    return terminal[0]
+
+
+_TERMINAL_SPRINT_STATE = _load_terminal_sprint_state()
+
+
 def _make_sprint_dir(tmp_path, sprint_id="001", title="Test Sprint", slug="test-sprint"):
     """Create a minimal sprint directory for testing."""
     proj = Project(tmp_path)
@@ -1078,6 +1105,12 @@ class TestSprintArchive:
         assert result["old_path"] == str(sprint_dir)
 
     def test_archive_updates_status(self, tmp_path):
+        """archive() writes the state machine's terminal state, `closed`.
+
+        019-007: this previously asserted `done`, which is not a state
+        sprint.yaml defines — the assertion encoded the bug rather than
+        the contract, which is why the mismatch survived 18 sprints.
+        """
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
         s.archive()
@@ -1085,7 +1118,96 @@ class TestSprintArchive:
         new_sprint_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
         from clasi.frontmatter import read_frontmatter
         fm = read_frontmatter(new_sprint_md)
-        assert fm.get("status") == "done"
+        assert fm.get("status") == "closed"
+
+    def test_archive_writes_the_machines_terminal_state(self, tmp_path):
+        """019-007: archive() writes the machine's terminal state.
+
+        Derived from sprint.yaml rather than hardcoded, so a rename of the
+        terminal state updates this expectation automatically instead of
+        silently re-opening the drift this ticket closed.
+        """
+        from clasi.frontmatter import read_frontmatter
+
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        Sprint(sprint_dir, proj).archive()
+
+        archived_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
+        declared = read_frontmatter(archived_md).get("status")
+        assert declared == _TERMINAL_SPRINT_STATE
+
+    def test_archive_writes_a_state_the_machine_defines(self, tmp_path):
+        """019-007: the status archive() writes must be a real sprint.yaml state.
+
+        The original defect was not that `done` was the wrong word — it was
+        that `done` is not a state the machine defines at all, so
+        detect_inconsistencies computed `closed`, compared it against a
+        declared `done`, and reported permanent state_drift for every
+        archived sprint. Asserting membership in the machine's own state
+        set (rather than hardcoding "closed") means this test keeps
+        holding if the terminal state is ever renamed.
+        """
+        import yaml
+
+        from clasi.frontmatter import read_frontmatter
+
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        Sprint(sprint_dir, proj).archive()
+
+        machine_path = (
+            Path(__file__).parent.parent.parent
+            / "src" / "clasi" / "schemas" / "state-machines" / "sprint.yaml"
+        )
+        machine = yaml.safe_load(machine_path.read_text(encoding="utf-8"))
+        defined_states = set(machine["states"])
+
+        archived_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
+        declared = read_frontmatter(archived_md).get("status")
+
+        assert declared in defined_states, (
+            f"archive() wrote status={declared!r}, which sprint.yaml does not "
+            f"define. Known states: {sorted(defined_states)}"
+        )
+
+    def test_archive_leaves_no_state_drift(self, tmp_path):
+        """019-007: detect_inconsistencies reports no state_drift post-archive.
+
+        The declared status archive() writes must match the state the
+        machine computes for an archived sprint. Before this fix, archive()
+        wrote `done` while the machine computed `closed`, so every archived
+        sprint drifted the instant it was archived — permanently, since
+        `closed` has no outbound transitions.
+        """
+        from clasi.status.inconsistency import detect_inconsistencies
+
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        s.archive()
+
+        # `computed` must come from the state machine's terminal state, NOT
+        # from the sprint's own declared status — feeding the declared value
+        # in as `computed` makes both sides agree by construction and the
+        # test passes even against the `done`-writing bug.
+        status_dict = {
+            "sprints": [
+                {
+                    "id": s.id,
+                    "state": _TERMINAL_SPRINT_STATE,
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        drift = [
+            e for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift"
+        ]
+        assert drift == [], (
+            f"archived sprint drifted immediately: {drift}. archive() wrote a "
+            f"declared status that disagrees with the machine's terminal "
+            f"state ({_TERMINAL_SPRINT_STATE!r})."
+        )
 
     def test_archive_updates_path(self, tmp_path):
         """Sprint._path is updated to the archived location."""
@@ -1261,7 +1383,28 @@ class TestHistoricalSprintBackwardCompat:
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REAL_DONE_DIR = _REPO_ROOT / "clasi" / "sprints" / "done"
-_EXPECTED_HISTORICAL_SPRINT_IDS = [f"{n:03d}" for n in range(1, 18)]  # 001-017
+
+
+def _discover_historical_sprint_ids() -> list[str]:
+    """Return every sprint id currently archived under clasi/sprints/done/.
+
+    Derived from disk rather than hardcoded. This list was previously
+    `range(1, 18)` (001-017), which broke the moment sprint 018 was
+    archived and would have broken again on every subsequent sprint —
+    the archive grows by definition, so a literal range is guaranteed to
+    go stale. These tests are about the historical three-file layout
+    remaining *readable*, not about how many sprints exist.
+    """
+    if not _REAL_DONE_DIR.is_dir():
+        return []
+    return sorted(
+        d.name.split("-", 1)[0]
+        for d in _REAL_DONE_DIR.iterdir()
+        if d.is_dir() and (d / "sprint.md").exists()
+    )
+
+
+_EXPECTED_HISTORICAL_SPRINT_IDS = _discover_historical_sprint_ids()
 
 
 def _copy_real_done_sprints_into(tmp_path) -> Project:

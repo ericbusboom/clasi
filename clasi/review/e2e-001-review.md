@@ -1,11 +1,20 @@
 ---
-id: "e2e-001"
-title: "E2E Test Review — Guessing Game (4 sprints, Docker, Claude print-mode)"
-status: open
+id: e2e-001
+title: "E2E Test Review \u2014 Guessing Game (4 sprints, Docker, Claude print-mode)"
+status: in-progress
 type: review
-sprint: "N/A (post-run review)"
-created: "2026-06-28"
-tags: [e2e, review, process-improvement, sprint-planner, tickets, logging]
+sprint: 019
+created: '2026-06-28'
+tags:
+- e2e
+- review
+- process-improvement
+- sprint-planner
+- tickets
+- logging
+tickets:
+- 019-007
+- 019-009
 ---
 
 # E2E Test Review — Guessing Game CLI

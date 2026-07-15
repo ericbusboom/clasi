@@ -198,20 +198,44 @@ class TestActiveAgents:
         assert result["removed"] is False
 
     def test_get_active_tier_returns_empty_when_no_agents(self, db):
-        tier = db.get_active_tier()
+        tier = db.get_active_tier("agent-001")
         assert tier == ""
 
     def test_get_active_tier_returns_tier_when_agent_present(self, db):
         db.register_active_agent("agent-001", "programmer", "2")
-        tier = db.get_active_tier()
+        tier = db.get_active_tier("agent-001")
         assert tier == "2"
 
-    def test_get_active_tier_with_multiple_agents(self, db):
+    def test_get_active_tier_unknown_agent_id_returns_unresolved_sentinel(self, db):
+        """A caller whose agent_id has no matching row gets the empty-string
+        sentinel — never another agent's tier, even though other agents
+        are registered."""
         db.register_active_agent("agent-001", "programmer", "2")
-        db.register_active_agent("agent-002", "sprint-planner", "1")
-        tier = db.get_active_tier()
-        # Returns one of the tiers (LIMIT 1)
-        assert tier in ("1", "2")
+        tier = db.get_active_tier("agent-999-no-such-agent")
+        assert tier == ""
+
+    def test_get_active_tier_concurrent_agents_each_get_own_tier(self, db):
+        """Non-negotiable regression test (ticket 019-003): register two
+        agents with DIFFERENT tiers simultaneously, then assert each
+        caller — identified by its own agent_id — gets back its OWN
+        tier, not the other's and not whichever row sorts first.
+
+        Before this fix, get_active_tier() ran `SELECT tier FROM
+        active_agents LIMIT 1` with no WHERE clause, so which tier came
+        back was arbitrary once more than one agent was registered. A
+        single-agent test (as above) passes trivially against both the
+        old and new implementation and would not have caught the bug.
+        """
+        db.register_active_agent("agent-tier1", "sprint-planner", "1")
+        db.register_active_agent("agent-tier2", "programmer", "2")
+
+        assert db.get_active_tier("agent-tier1") == "1"
+        assert db.get_active_tier("agent-tier2") == "2"
+
+        # Re-check in reverse order to rule out any ordering/caching
+        # dependence between the two lookups.
+        assert db.get_active_tier("agent-tier2") == "2"
+        assert db.get_active_tier("agent-tier1") == "1"
 
     def test_register_active_agent_without_log_file(self, db):
         result = db.register_active_agent("agent-xyz", "programmer", "2")

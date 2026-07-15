@@ -79,9 +79,15 @@ class FakeTicket:
 class FakeSprint:
     """Minimal stand-in for clasi.sprint.Sprint."""
 
-    def __init__(self, sprint_id: str = "001", tickets: list | None = None):
+    def __init__(
+        self,
+        sprint_id: str = "001",
+        tickets: list | None = None,
+        status: str = "executing",
+    ):
         self._id = sprint_id
         self._tickets = tickets or []
+        self.status = status
 
     @property
     def id(self) -> str:
@@ -319,6 +325,98 @@ class TestTicketsSubBlock:
         tickets_block = result["sprints"][0]["tickets"]
         assert "by_state" not in tickets_block
         assert "details" not in tickets_block
+
+
+# ---------------------------------------------------------------------------
+# exclude_done: status-block assembly path vs. on-demand path (019-006 fix 1)
+# ---------------------------------------------------------------------------
+
+
+class TestExcludeDone:
+    """``exclude_done`` (StatusReporter.build / _build_sprints_block /
+    _build_tickets_block) must drop status: done sprints and tickets from
+    the assembled dict WITHOUT changing what project.list_sprints() or
+    Sprint.list_tickets() themselves return — those on-demand-query paths
+    (MCP list_sprints, get_sprint_status) must keep including done/ so
+    they still return full history.
+    """
+
+    def _project(self, null_reader):
+        done_ticket = FakeTicket("001-01")
+        done_ticket.status = "done"
+        open_ticket = FakeTicket("001-02")
+        open_ticket.status = "open"
+
+        active_sprint = FakeSprint(
+            "001", tickets=[done_ticket, open_ticket], status="executing"
+        )
+        done_sprint = FakeSprint("000", tickets=[], status="done")
+        return FakeProject(sprints=[done_sprint, active_sprint])
+
+    def test_default_excludes_nothing_same_as_list_sprints(self, null_reader):
+        """Default (exclude_done=False) — same fixture, both call paths
+        return identical sprint counts: the assembly path defers entirely
+        to project.list_sprints(), which already includes done/."""
+        project = self._project(null_reader)
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build()
+        direct = project.list_sprints()
+
+        assert len(result["sprints"]) == len(direct) == 2
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"000", "001"}
+
+    def test_exclude_done_removes_done_sprint(self, null_reader):
+        project = self._project(null_reader)
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=True)
+
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"001"}
+
+    def test_exclude_done_removes_done_tickets_from_remaining_sprint(self, null_reader):
+        project = self._project(null_reader)
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=True)
+
+        sprint_001 = next(s for s in result["sprints"] if s["id"] == "001")
+        detail_ids = {d["id"] for d in sprint_001["tickets"]["details"]}
+        assert detail_ids == {"001-02"}
+        assert sprint_001["tickets"]["total"] == 1
+
+    def test_exclude_done_does_not_mutate_list_sprints_or_list_tickets(self, null_reader):
+        """The same fixture, queried directly via list_sprints()/
+        list_tickets(), must be unaffected by exclude_done=True having
+        been used on the status-block build path — proves the two paths
+        differ only in the done/ exclusion, not in underlying behavior."""
+        project = self._project(null_reader)
+        reporter = StatusReporter(project, reader=null_reader)
+
+        # Exercise the exclude_done path first.
+        reporter.build(exclude_done=True)
+
+        # Direct on-demand queries still see everything, including done/.
+        direct_sprints = project.list_sprints()
+        assert len(direct_sprints) == 2
+        assert {s.id for s in direct_sprints} == {"000", "001"}
+
+        active_sprint = next(s for s in direct_sprints if s.id == "001")
+        direct_tickets = active_sprint.list_tickets()
+        assert len(direct_tickets) == 2
+        assert {t.id for t in direct_tickets} == {"001-01", "001-02"}
+
+    def test_exclude_done_false_keeps_done_ticket_details(self, null_reader):
+        project = self._project(null_reader)
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=False)
+
+        sprint_001 = next(s for s in result["sprints"] if s["id"] == "001")
+        detail_ids = {d["id"] for d in sprint_001["tickets"]["details"]}
+        assert detail_ids == {"001-01", "001-02"}
 
 
 # ---------------------------------------------------------------------------

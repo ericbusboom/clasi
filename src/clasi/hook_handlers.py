@@ -9,6 +9,7 @@ These are thin dispatchers — actual logic lives in dedicated modules.
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 from clasi.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 def get_project() -> Project:
@@ -35,6 +38,21 @@ def read_payload() -> dict:
         return json.loads(data)
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _oop_active() -> bool:
+    """Return True if out-of-process (OOP) bypass is active for this cwd.
+
+    Checks ``.clasi/oop`` first (canonical — matches the documented escape
+    hatch in ``.claude/rules/*.md`` and the ``oop`` skill), then falls back
+    to the legacy ``.clasi-oop`` (repo root, hyphen) so any session already
+    relying on the old flag file keeps working.
+
+    This is the single source of truth for OOP bypass. No handler in this
+    module may check either flag-file path directly — always call this
+    helper, so the two flag files can never drift out of sync again.
+    """
+    return Path(".clasi/oop").exists() or Path(".clasi-oop").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -132,12 +150,27 @@ def handle_role_guard(payload: dict) -> None:
     Tier 0 = team-lead / interactive session (CLASI_AGENT_TIER unset or "0")
     Tier 1 = sprint-planner
     Tier 2 = programmer
-    OOP    = .clasi-oop flag file present in cwd (out-of-process bypass)
+    OOP    = .clasi/oop (or legacy .clasi-oop) present in cwd (out-of-process bypass)
+
+    Ticket-state gate (applies to ALL tiers, including tier 2): if a
+    sprint execution lock is held (via _get_sprint_context()) and zero
+    tickets in that sprint are `status: in-progress` (via
+    _get_active_tickets()), the write is blocked — unless _oop_active()
+    is True. This gate is skipped entirely when no execution lock is
+    held. It runs BEFORE the tier-2 unrestricted-write early return, so
+    a programmer with no in-progress ticket during an active sprint is
+    blocked exactly like any other tier.
+
+    No path resolvable from the payload (neither the nested
+    tool_input.file_path/path/new_path shape nor a flat fallback) fails
+    CLOSED for tier 0/1 — directory-scope enforcement is meaningless
+    without a path to check, so the safe default is to block, not allow.
+    Tier 2 is unaffected (already unrestricted) and still exits 0.
 
     Exits with code 0 (allow) or 2 (block).  Code 1 is reserved for
     unknown event names in the dispatcher.
     """
-    tool_input = payload if payload else {}
+    tool_input = payload.get("tool_input", payload) if payload else {}
     file_path = (
         tool_input.get("file_path")
         or tool_input.get("path")
@@ -145,30 +178,44 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
-    # No path in payload — nothing to guard, allow through
-    if not file_path:
-        _exit_hook("role-guard", payload, 0, "no-path")
+    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
-    # If no env var, check the DB for the active agent tier
+    # If no env var, check the DB for the caller's own active-agent tier.
+    # Keyed on caller_id — never a filter-less lookup, which with
+    # concurrent agents would return an arbitrary agent's tier.
     if not agent_tier:
         try:
             db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
-                agent_tier = get_active_tier(str(db_path_tier))
+                agent_tier = get_active_tier(str(db_path_tier), caller_id)
         except Exception:
             pass
 
-    # Tier 2 (programmer) can write anywhere — that's their job.
-    # Checked first so programmer subagents never hit any later block.
-    if agent_tier == "2":
-        _exit_hook("role-guard", payload, 0, "tier-2")
+    # No path in payload — nothing to guard against. This must be fail
+    # CLOSED for tier 0/1: directory-scope enforcement cannot be applied
+    # without a path, and silently allowing here is exactly how the
+    # payload-shape bug (reading file_path from the wrong nesting level)
+    # went undetected. Tier 2 already has unrestricted write scope by
+    # design once the ticket-state gate below has been checked, so
+    # no-path is moot there — exempted here rather than exiting early,
+    # so the ticket-state gate (which applies to tier 2 too) still runs
+    # for tier 2 regardless of whether a path was resolved.
+    if not file_path and agent_tier != "2":
+        present_keys = sorted(payload.keys()) if payload else []
+        logger.warning(
+            "role-guard: no file_path resolved from payload "
+            "(tier=%s, payload keys=%s) — failing closed",
+            agent_tier or "0", present_keys,
+        )
+        _exit_hook("role-guard", payload, 2, "no-path")
 
-    # OOP bypass: .clasi-oop flag enables direct writes for any tier.
-    # Used for out-of-process changes reviewed manually by the team-lead.
-    if Path(".clasi-oop").exists():
+    # OOP bypass: .clasi/oop (or legacy .clasi-oop) enables direct writes
+    # for any tier. Used for out-of-process changes reviewed manually by
+    # the team-lead.
+    if _oop_active():
         _exit_hook("role-guard", payload, 0, "oop-bypass")
 
     # Recovery state bypass: allows specific paths during sprint recovery
@@ -192,6 +239,38 @@ def handle_role_guard(payload: dict) -> None:
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
+
+    # Ticket-state gate: if a sprint execution lock is held but zero
+    # tickets in that sprint are `status: in-progress`, block the write
+    # regardless of tier — including tier 2. This is the gate that was
+    # missing entirely: tier 2 previously exited allow (see below) before
+    # any ticket-state logic could run, which is exactly how a sprint
+    # could land untracked commits with no ticket ever marked
+    # in-progress. Skipped entirely when no execution lock is held (no
+    # sprint executing); already-bypassed OOP requests exited above via
+    # the oop-bypass check, so no separate _oop_active() re-check is
+    # needed here — reaching this point means OOP is not active.
+    _sprint_log_dir, _sprint_id = _get_sprint_context()
+    if _sprint_id:
+        active_tickets = _get_active_tickets(_sprint_id)
+        if not active_tickets:
+            print(
+                f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
+                "is held but no ticket is in-progress.\n"
+                "Start or resume a ticket via the execute-ticket flow, "
+                "or set .clasi/oop to bypass.",
+                file=sys.stderr,
+            )
+            _exit_hook("role-guard", payload, 2, "no-ticket")
+
+    # Tier 2 (programmer) can write anywhere — that's their job.
+    # Checked after the ticket-state gate above (and after the no-path /
+    # OOP / recovery / safe-prefix checks) so programmer subagents are
+    # still subject to the ticket-state gate; this early return only
+    # fires once that gate has confirmed either no lock is held or a
+    # ticket is in-progress.
+    if agent_tier == "2":
+        _exit_hook("role-guard", payload, 0, "tier-2")
 
     # Build allow/block prefix sets from live Project properties.
     # Each prefix is root-relative so it matches the file_path strings
@@ -279,21 +358,25 @@ def handle_mcp_guard(payload: dict) -> None:
     """Block Tier 0 (team-lead) from calling artifact-creation MCP tools directly.
 
     The sprint-planner (Tier 1) and programmer (Tier 2) are allowed.
-    OOP bypass: if .clasi-oop exists, allow all tiers.
+    OOP bypass: if .clasi/oop (or legacy .clasi-oop) exists, allow all tiers.
     """
     # OOP bypass
-    if Path(".clasi-oop").exists():
+    if _oop_active():
         _exit_hook("mcp-guard", payload, 0, "oop-bypass")
+
+    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
-    # If no env var, check the DB for the active agent tier
+    # If no env var, check the DB for the caller's own active-agent tier.
+    # Keyed on caller_id — never a filter-less lookup, which with
+    # concurrent agents would return an arbitrary agent's tier.
     if not agent_tier:
         try:
             db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
-                agent_tier = get_active_tier(str(db_path_tier))
+                agent_tier = get_active_tier(str(db_path_tier), caller_id)
         except Exception:
             pass
 
@@ -426,22 +509,78 @@ def _get_active_tickets(sprint_id: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[str]) -> None:
+    """Append the ticket-gate imperative sentence to *narrowed*'s notes, in place.
+
+    When a sprint execution lock is held (``sprint_id`` is non-empty) and no
+    ticket in that sprint is ``in-progress`` (``active_tickets`` is empty),
+    source edits are gated closed by the role-guard ticket-state gate
+    (ticket 004). Callers other than tier-2 already see that gate as a
+    BLOCK on their next write; this note makes the same fact visible
+    up-front in the status block, so the agent does not need to attempt a
+    write just to discover the gate.  Names both sanctioned exits: resume
+    or start a ticket via execute-ticket, or set ``.clasi/oop`` (checked
+    only via the shared :func:`_oop_active` helper — never reimplemented).
+
+    No-op if a ticket is active, no sprint is executing, or OOP bypass is
+    already active (the gate does not apply in that case).
+    """
+    if not sprint_id or active_tickets or _oop_active():
+        return
+    notes = narrowed.setdefault("notes", {})
+    imperative = (
+        f"Sprint {sprint_id} execution lock is held but no ticket is "
+        "in-progress: source edits are gated closed (role-guard "
+        "ticket-state gate). Start or resume a ticket via the "
+        "execute-ticket flow, or set .clasi/oop to bypass."
+    )
+    existing_focus = notes.get("current_focus", "")
+    notes["current_focus"] = (
+        f"{existing_focus} {imperative}".strip() if existing_focus else imperative
+    )
+
+
 def _build_status_block(agent: str) -> str:
     """Build a ``## CLASI status`` fenced YAML block for *agent*.
 
-    Returns an empty string if building fails (e.g. no status data available).
-    Never raises — callers rely on this being safe.
+    Resolves the active ``sprint_id`` via :func:`_get_sprint_context` and,
+    for the ``programmer`` role, the active ``ticket_id`` via
+    :func:`_get_active_tickets`, then threads both into
+    :func:`~clasi.status.narrow_status` so the returned view is actually
+    scoped to the requesting agent (rather than always the team-lead's
+    full view, which is what passing no ids produces).
+
+    The status-block assembly excludes ``done/`` sprints and tickets
+    (``exclude_done=True``) — this hook path is the only caller that opts
+    into that; on-demand callers (MCP tools) still see full history.
+
+    Returns an empty string if building fails (e.g. no status data
+    available). Never raises — callers rely on this being safe. Failures
+    are logged as a warning so a broken status hook is observable instead
+    of silently indistinguishable from "nothing to report".
     """
     try:
         from clasi.status import build_status, narrow_status
         from clasi.status.formatting import to_yaml
 
         project = get_project()
-        full = build_status(project, agent=agent)
-        narrowed = narrow_status(full, agent=agent)
+        _, sprint_id = _get_sprint_context()
+
+        active_tickets = _get_active_tickets(sprint_id) if sprint_id else []
+        ticket_id = active_tickets[0] if agent == "programmer" and active_tickets else None
+
+        full = build_status(
+            project, agent=agent, sprint_id=sprint_id or None,
+            ticket_id=ticket_id, exclude_done=True,
+        )
+        narrowed = narrow_status(
+            full, agent=agent, sprint_id=sprint_id or None, ticket_id=ticket_id,
+        )
+        _add_gate_imperative(narrowed, sprint_id, active_tickets)
         yaml_text = to_yaml(narrowed)
         return f"## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
+        logger.warning("status-inject: failed to build status block", exc_info=True)
         return ""
 
 
@@ -460,7 +599,7 @@ def handle_status_inject(payload: dict) -> None:
     project = get_project()
     if not project.clasi_dir.exists():
         _exit_hook("status-inject", payload, 0, "no-clasi")
-    if (project.clasi_dir / "oop").exists():
+    if _oop_active():
         _exit_hook("status-inject", payload, 0, "oop-bypass")
 
     agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")
@@ -479,6 +618,19 @@ _AGENT_TYPE_TO_ROLE = {
     "programmer": "programmer",
     "sprint-planner": "sprint-planner",
 }
+
+# Backstop TTL (hours) for active_agents rows, swept from handle_subagent_start.
+# This project's subagents run for minutes, occasionally low hours for a long
+# ticket; a 24h-old "active" row (the old StateDB default) is never a real
+# in-flight agent, only a ghost left by a stop event that was missed (crash,
+# kill -9, hook misconfiguration). 2 hours is comfortably above the longest
+# normal single-agent run observed in this project while still purging
+# ghosts within the same working session rather than letting them survive
+# for a full day and keep skewing get_active_tier lookups for other callers
+# who happen to share no agent_id filter (pre-Part-A) or simply pollute the
+# table indefinitely (post-Part-A, ghosts no longer corrupt lookups but
+# still accumulate rows forever without this sweep).
+_STALE_AGENT_TTL_HOURS = 2
 
 
 def handle_subagent_start(payload: dict) -> None:
@@ -530,7 +682,16 @@ def handle_subagent_start(payload: dict) -> None:
     try:
         db_path = get_project().db_path
         if db_path.exists() or (db_path.parent.exists()):
-            from clasi.state_db import register_active_agent
+            from clasi.state_db import register_active_agent, clear_stale_agents
+
+            # Backstop purge: handle_subagent_stop is the primary removal
+            # path (removes by marker_id on every stop), but this sweep
+            # catches ghosts left by any stop event that never fires
+            # (crash, kill -9, hook misconfiguration). Runs on every
+            # subagent dispatch — cheap, and keeps active_agents from
+            # accumulating unbounded rows in normal operation.
+            clear_stale_agents(str(db_path), ttl_hours=_STALE_AGENT_TTL_HOURS)
+
             register_active_agent(
                 str(db_path), marker_id, agent_type, tier, str(log_file)
             )
@@ -538,9 +699,8 @@ def handle_subagent_start(payload: dict) -> None:
         pass
 
     # Prepend status block — scoped to the subagent's role.
-    # Silent if .clasi/oop exists (already checked via log_dir above).
-    project = get_project()
-    if not (project.clasi_dir / "oop").exists():
+    # Silent if OOP bypass is active (.clasi/oop or legacy .clasi-oop).
+    if not _oop_active():
         agent_role = _AGENT_TYPE_TO_ROLE.get(agent_type, "team-lead")
         block = _build_status_block(agent_role)
         if block:

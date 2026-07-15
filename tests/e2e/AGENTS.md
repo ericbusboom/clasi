@@ -30,19 +30,20 @@ The target project is a trivial Python CLI with 3 guessing games, split across
 ```
 
 The agent (you) runs on the host. Claude Code runs inside a Docker container
-with a bind mount at `project/`. You send sprint prompts via
+with a named volume at `/project`. You send sprint prompts via
 `docker exec clasi-e2e claude -p "..."` (print mode). Print mode uses the
-API key from the environment, needs no OAuth, and produces no interactive
-dialogs.
+API key from the environment (routed through OpenRouter), needs no OAuth,
+and produces no interactive dialogs.
 
-Data persists on the host at `project/` via the bind mount. You can inspect
-files, run tests, and make OOP changes directly on the host filesystem.
+Data persists in a named Docker volume (`clasi-data`). You can access it via
+`docker exec` or `docker cp`.
 
 ## Prerequisites
 
 - Docker running (OrbStack or Docker Desktop)
-- `ANTHROPIC_API_KEY` set in your environment
+- `OPENROUTER_API_KEY` set in your environment
 - The Docker image built: `docker build -t clasi-e2e .`
+- `start.sh` redirects Claude Code to OpenRouter via `ANTHROPIC_BASE_URL`
 
 ## Agent Workflow (the step-by-step script you follow)
 
@@ -62,7 +63,7 @@ Send the sprint prompt to Claude Code inside the container:
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 50 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 50 \
   "Sprint 001: Project structure and menu. Read docs/guessing-game-spec.md.
    ... [full sprint prompt below] ..."
 ```
@@ -90,7 +91,7 @@ edit directly — no sprint, no tickets. The prompt is in `oop.sh`:
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 5 \
   "$(./oop.sh 1)"
 ```
 
@@ -100,7 +101,7 @@ This tells Claude to fix menu.py title capitalization as a direct edit.
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 40 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 40 \
   "Sprint 002: Number Guessing Game. Secret is 7 (hardcoded). 3 guesses.
    Non-numeric shows 'Please enter a number' (does not count as guess).
    Correct: Correct! You got it!. Wrong: Nope, try again. 3 wrong:
@@ -113,7 +114,7 @@ docker exec clasi-e2e claude -p \
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 5 \
   "$(./oop.sh 2)"
 ```
 
@@ -123,7 +124,7 @@ Tells Claude to add `__version__` to `__init__.py` as a bypassed edit.
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 35 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 35 \
   "Sprint 003: Color Guessing Game. Secret: blue (case-insensitive, strip
    whitespace). 3 guesses. Correct: Correct! You got it!. Wrong: Nope,
    try again. 3 wrong: Sorry! The answer was blue. Wire to menu choice 2.
@@ -135,7 +136,7 @@ docker exec clasi-e2e claude -p \
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 5 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 5 \
   "$(./oop.sh 3)"
 ```
 
@@ -145,7 +146,7 @@ Tells Claude to add a TODO comment to number_game.py as a quick bypass.
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 30 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 30 \
   "Sprint 004 (FINAL): City Guessing Game. Secret: Paris (case-insensitive,
    strip whitespace). 3 guesses. Correct: Correct! You got it!. Wrong:
    Nope, try again. 3 wrong: Sorry! The answer was Paris. Wire to menu
@@ -164,7 +165,7 @@ short catch-up command:
 
 ```bash
 docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns 20 \
+  --dangerously-skip-permissions --model anthropic/claude-sonnet-4.5 --output-format text --max-turns 20 \
   "Close sprint 004: write close-report, merge to master, tag. Code + tests
    are DONE. Do NOT re-implement anything. SPRINT_004_COMPLETE."
 ```
@@ -187,9 +188,9 @@ docker exec clasi-e2e claude -p \
 
 | Symptom | Action |
 |---------|--------|
-| Container not running | `./stop.sh && ./start.sh` (data persists on bind mount) |
+| Container not running | `./stop.sh && ./start.sh` (data persists in named volume) |
 | Sprint hits max-turns without `COMPLETE` | Re-run with higher `--max-turns` or a catch-up prompt |
-| `claude -p` returns error about API key | Verify `ANTHROPIC_API_KEY` is set and valid |
+| `claude -p` returns error about API key | Verify `OPENROUTER_API_KEY` is set and valid |
 | Docker commands hang | OrbStack may be slow — wait 30s and retry |
 | Tests fail after OOP change | The change may have broken something — inspect `project/` dir |
 

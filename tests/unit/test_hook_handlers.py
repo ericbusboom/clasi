@@ -11,19 +11,32 @@ from clasi.hook_handlers import (
     handle_task_created,
     handle_task_completed,
     handle_subagent_start,
+    handle_subagent_stop,
     handle_commit_check,
     handle_plan_to_issue,
     handle_plan_to_todo,  # backward-compatible alias
     handle_codex_plan_to_issue,
     handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
+    handle_role_guard,
+    handle_mcp_guard,
     _ensure_log_gitignore,
     _get_log_dir,
+    _get_sprint_context,
     _get_active_tickets,
     _render_transcript_lines,
     _ext_to_language,
+    _oop_active,
 )
-from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_agent
+from clasi.state_db import (
+    init_db,
+    register_sprint,
+    acquire_lock,
+    get_active_agent,
+    register_active_agent,
+    get_active_tier,
+    clear_stale_agents,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1092,8 +1105,21 @@ def _write_legacy_layout_config(root: Path) -> None:
     (clasi_dir / "config.yaml").write_text(_LEGACY_LAYOUT_CONFIG, encoding="utf-8")
 
 
-def _role_guard_payload(file_path: str) -> dict:
-    return {"file_path": file_path}
+def _role_guard_payload(file_path: str, tool_name: str = "Write") -> dict:
+    """Build a role-guard payload matching Claude Code's real, nested
+    PreToolUse shape: {"tool_name": ..., "tool_input": {"file_path": ...}}.
+
+    Confirmed against real captured lines in .clasi/log/hooks.log and the
+    same nested-parse pattern already used elsewhere in this module
+    (handle_plan_to_issue: payload.get("tool_input", {}).get("planFilePath")).
+    A flat {"file_path": ...} shape never occurs in practice and must not
+    be used as a test fixture — it silently validates the wrong parse.
+    """
+    return {
+        "tool_name": tool_name,
+        "tool_input": {"file_path": file_path},
+        "session_id": "test-session-id",
+    }
 
 
 def _run_role_guard(tmp_path: Path, file_path: str, tier: str = "") -> int:
@@ -1112,7 +1138,29 @@ def _run_role_guard(tmp_path: Path, file_path: str, tier: str = "") -> int:
         else:
             os.environ.pop("CLASI_AGENT_TIER", None)
 
-        from clasi.hook_handlers import handle_role_guard
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_role_guard, payload)
+        return exc.value.code
+    finally:
+        if old_tier is None:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+        else:
+            os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+def _run_role_guard_payload(tmp_path: Path, payload: dict, tier: str = "") -> int:
+    """Like _run_role_guard, but takes a raw payload directly instead of
+    building one from a file_path. Used for no-path / malformed-payload
+    fail-closed tests where the payload deliberately has no resolvable path.
+    """
+    import os
+
+    old_tier = os.environ.get("CLASI_AGENT_TIER", None)
+    try:
+        if tier:
+            os.environ["CLASI_AGENT_TIER"] = tier
+        else:
+            os.environ.pop("CLASI_AGENT_TIER", None)
 
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_role_guard, payload)
@@ -1351,6 +1399,220 @@ class TestRoleGuardFreshLayout:
         assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
 
 
+class TestRoleGuardNestedPayloadShape:
+    """Regression coverage for ticket 019-001: handle_role_guard must read
+    file_path from the REAL nested Claude Code PreToolUse shape
+    (payload["tool_input"]["file_path"]), not the payload root.
+
+    Before this fix, `tool_input = payload if payload else {}` meant every
+    real invocation saw file_path == "" and silently ALLOWED via the
+    (then-unconditional) no-path branch. These tests exercise the guard
+    through handle_role_guard directly with a payload built by
+    _role_guard_payload(), which now matches the real nested shape.
+    """
+
+    # --- Deny path, end-to-end, nested real payload shape (non-negotiable) ---
+
+    def test_deny_path_nested_payload_tier0_source_write_blocked(self, tmp_path, capsys):
+        """Nested real payload + tier 0 + source path → exit 2, via the
+        source-code block branch specifically (not the no-path branch).
+
+        This is the core regression test: exit code 2 alone is NOT
+        sufficient here, because a fail-closed no-path branch also exits
+        2 — a flat-shape read would find file_path == "" and hit THAT
+        branch, coincidentally producing the same exit code while never
+        having parsed "source/main.cpp" at all. The assertion on stderr
+        content (which echoes the parsed file_path back) is what actually
+        distinguishes "correctly parsed and blocked" from "failed to
+        parse and failed closed" — i.e. what makes this test fail if the
+        line-140 payload-read fix is reverted.
+        """
+        _write_fresh_config(tmp_path)
+        payload = _role_guard_payload("source/main.cpp")
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_role_guard, payload)
+        assert exc.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "source/main.cpp" in stderr
+        assert "attempted direct file write to" in stderr
+
+    def test_deny_path_nested_payload_tier_unset_source_write_blocked(self, tmp_path, capsys):
+        """Same as above with CLASI_AGENT_TIER unset (defaults to tier 0)."""
+        import os
+
+        _write_fresh_config(tmp_path)
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "source/main.cpp" in stderr
+            assert "attempted direct file write to" in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    # --- No-path fail-closed (tier 0 / tier 1) vs allow (tier 2) ---
+
+    def test_no_path_tier0_fails_closed(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 0 → exit 2."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "") == 2
+
+    def test_no_path_tier1_fails_closed(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 1 → exit 2."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "1") == 2
+
+    def test_no_path_tier2_still_allows(self, tmp_path):
+        """No file_path resolvable anywhere in the payload, tier 2 → exit 0.
+
+        Tier 2 (programmer) has unrestricted write scope by design, so the
+        fail-closed no-path branch must not apply to it.
+        """
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "2") == 0
+
+    def test_no_path_completely_empty_payload_tier0_fails_closed(self, tmp_path):
+        """An entirely empty payload (no tool_input key at all) still fails
+        closed for tier 0, and the WARN log must not raise."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard_payload(tmp_path, {}, "") == 2
+
+    # --- Non-regression: artifact-dir allow-list still works live ---
+
+    def test_tier0_issues_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to clasi/issues/**, via the real nested payload shape,
+        still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+
+    def test_tier0_reflections_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to clasi/reflections/**, via the real nested payload
+        shape, still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "") == 0
+
+    def test_tier0_design_dir_allowed_with_real_nested_payload(self, tmp_path):
+        """Tier 0 write to docs/design/**, via the real nested payload shape,
+        still ALLOWS once the payload-read fix makes role-guard live."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+
+# ---------------------------------------------------------------------------
+# _oop_active() — unified OOP bypass helper (ticket 019-002)
+# ---------------------------------------------------------------------------
+
+
+def _run_mcp_guard(tmp_path: Path, tool_name: str = "create_ticket", tier: str = "") -> int:
+    """Run handle_mcp_guard with the given tool_name and agent tier.
+
+    Returns the exit code (0 = allow, 2 = block).
+    """
+    import os
+
+    payload = {"tool_name": tool_name}
+
+    old_tier = os.environ.get("CLASI_AGENT_TIER", None)
+    try:
+        if tier:
+            os.environ["CLASI_AGENT_TIER"] = tier
+        else:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_mcp_guard, payload)
+        return exc.value.code
+    finally:
+        if old_tier is None:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+        else:
+            os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestOopActiveHelper:
+    """Unit tests for _oop_active() itself: each flag file independently,
+    and neither present. A test that only ever creates both flag files
+    together would not have caught the original split-brain bug (where
+    two handlers checked .clasi-oop and two checked .clasi/oop), so each
+    case here is isolated.
+    """
+
+    def test_true_when_only_canonical_flag_present(self, tmp_path):
+        """Only .clasi/oop (canonical, matches documentation) exists."""
+        (tmp_path / ".clasi").mkdir()
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+    def test_true_when_only_legacy_flag_present(self, tmp_path):
+        """Only .clasi-oop (legacy, repo root, hyphen) exists."""
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+    def test_false_when_neither_flag_present(self, tmp_path):
+        """Neither flag file exists."""
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+
+class TestOopBypassHandlerLevel:
+    """Handler-level regression coverage for ticket 019-002: the original
+    bug was two of four handlers (handle_role_guard, handle_mcp_guard)
+    checking only .clasi-oop while handle_status_inject checked only
+    .clasi/oop — so the documented .clasi/oop escape hatch silently did
+    NOT open the door for role-guard or mcp-guard.
+
+    These tests exercise bypass through the real handlers (live guard
+    calls), not by calling _oop_active() directly, because the bug class
+    here is a handler failing to *call* the shared check at all — a
+    helper-only unit test cannot detect that a call site was never wired
+    up. Each flag file is tested independently per handler, and a
+    neither-flag control case confirms the guards still enforce normally
+    when OOP is not active.
+    """
+
+    # --- .clasi/oop only (canonical) ---
+
+    def test_role_guard_bypasses_with_canonical_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        # Tier 0 write to a source file would normally be blocked (exit 2).
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_bypasses_with_canonical_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        # Tier 0 calling an MCP tool would normally be blocked (exit 2).
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    # --- .clasi-oop only (legacy) ---
+
+    def test_role_guard_bypasses_with_legacy_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_bypasses_with_legacy_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    # --- neither flag present: guards enforce normally ---
+
+    def test_role_guard_enforces_normally_with_neither_flag(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_enforces_normally_with_neither_flag(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+
 # ---------------------------------------------------------------------------
 # _ensure_log_gitignore
 # ---------------------------------------------------------------------------
@@ -1399,3 +1661,479 @@ class TestEnsureLogGitignore:
         content = gitignore.read_text(encoding="utf-8")
         assert "*" in content
         assert "!.gitignore" in content
+
+
+# ---------------------------------------------------------------------------
+# Tier resolution keyed on caller identity (ticket 019-003)
+# ---------------------------------------------------------------------------
+
+
+def _init_db_only(tmp_path: Path) -> str:
+    """Create an initialized, empty state DB with no fixture rows.
+
+    active_agents starts empty in this repo (manually cleared during
+    triage) — tests must create their own fixture rows, never assume
+    pre-existing state.
+    """
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    return db_path
+
+
+class TestRoleGuardTierResolutionByCallerIdentity:
+    """handle_role_guard must resolve the caller's OWN tier from the DB,
+    keyed on the payload's agent_id (or session_id fallback) — never an
+    arbitrary row from active_agents.
+    """
+
+    def test_concurrent_agents_each_get_own_tier_via_role_guard(self, tmp_path):
+        """Non-negotiable concurrent-registration test, exercised through
+        the real handle_role_guard call site (not just StateDB directly).
+
+        Two agents are registered with DIFFERENT tiers: tier "1"
+        (sprint-planner, blocked from source writes) and tier "2"
+        (programmer, unrestricted). Each caller — identified by its own
+        agent_id in the hook payload — must be judged by its own tier.
+        Before this fix, get_active_tier() ignored agent_id entirely, so
+        whichever row happened to be returned by `LIMIT 1` decided the
+        outcome for BOTH callers.
+        """
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier1", "sprint-planner", "1")
+        register_active_agent(db_path, "agent-tier2", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # Caller is agent-tier1 (tier 1) writing to source -> BLOCK.
+            payload_t1 = _role_guard_payload("source/main.cpp")
+            payload_t1["agent_id"] = "agent-tier1"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload_t1)
+            assert exc.value.code == 2
+
+            # Caller is agent-tier2 (tier 2) writing to source -> ALLOW.
+            payload_t2 = _role_guard_payload("source/main.cpp")
+            payload_t2["agent_id"] = "agent-tier2"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload_t2)
+            assert exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_unknown_agent_id_no_env_var_fails_closed(self, tmp_path):
+        """Caller's agent_id has no matching row and no CLASI_AGENT_TIER
+        env var is set -> tier resolves to the unresolved sentinel ("")
+        -> handle_role_guard fails closed (tier 0/1 blocked from source
+        writes), per ticket 001's fail-closed behavior. Another agent IS
+        registered, to prove its tier is not leaked to this caller.
+        """
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = _role_guard_payload("source/main.cpp")
+            payload["agent_id"] = "agent-with-no-db-row"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_session_id_fallback_used_when_agent_id_absent(self, tmp_path):
+        """When the payload has no agent_id, handle_role_guard falls back
+        to session_id to look up the caller's tier."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "test-session-id", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # _role_guard_payload sets session_id="test-session-id" and no
+            # agent_id key at all.
+            payload = _role_guard_payload("source/main.cpp")
+            assert "agent_id" not in payload
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 0  # tier 2 -> unrestricted
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardTierResolutionByCallerIdentity:
+    """handle_mcp_guard must key its DB tier lookup on caller identity too."""
+
+    def test_concurrent_agents_each_get_own_tier_via_mcp_guard(self, tmp_path):
+        """Two agents registered with different tiers; each caller's own
+        MCP-guard outcome depends only on its own agent_id's tier."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier0-caller", "unknown", "0")
+        register_active_agent(db_path, "agent-tier1-caller", "sprint-planner", "1")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # Tier 0 caller -> blocked from create_ticket.
+            payload_t0 = {"tool_name": "create_ticket", "agent_id": "agent-tier0-caller"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload_t0)
+            assert exc.value.code == 2
+
+            # Tier 1 caller -> allowed.
+            payload_t1 = {"tool_name": "create_ticket", "agent_id": "agent-tier1-caller"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload_t1)
+            assert exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_unknown_agent_id_no_env_var_fails_closed(self, tmp_path):
+        """Unresolved tier -> mcp-guard treats caller as tier 0 -> blocked,
+        even though a differently-tiered agent is registered."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = {"tool_name": "create_ticket", "agent_id": "no-such-agent"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# Dual-mechanism stale-agent purge (ticket 019-003)
+# ---------------------------------------------------------------------------
+
+
+class TestSubagentStopRemovesActiveAgent:
+    """Primary purge mechanism: handle_subagent_stop must remove the
+    stopping agent's active_agents row on every normal stop path."""
+
+    def test_removes_row_on_normal_stop(self, tmp_path):
+        """Registered agent's row is gone after handle_subagent_stop."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        log_file = tmp_path / ".clasi" / "log" / "001-programmer.md"
+        log_file.write_text("---\nagent_type: programmer\n---\n\n")
+        register_active_agent(db_path, "agent-stop-test", "programmer", "2", str(log_file))
+        assert get_active_agent(db_path, "agent-stop-test") is not None
+
+        payload = {
+            "agent_id": "agent-stop-test",
+            "session_id": "sess-stop-test",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "agent-stop-test") is None
+
+    def test_removes_row_when_last_message_and_transcript_path_empty(self, tmp_path):
+        """Empty last_message/transcript_path (an early-return-adjacent
+        shape) still results in the active_agents row being removed —
+        the DB removal happens before those fields are even consulted."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        log_file = tmp_path / ".clasi" / "log" / "001-programmer.md"
+        log_file.write_text("---\nagent_type: programmer\n---\n\n")
+        register_active_agent(db_path, "agent-empty-fields", "programmer", "2", str(log_file))
+
+        payload = {
+            "agent_id": "agent-empty-fields",
+            "session_id": "",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+
+        assert get_active_agent(db_path, "agent-empty-fields") is None
+
+    def test_removes_row_even_when_no_log_file_recorded(self, tmp_path):
+        """If the DB record has no log_file (or the log file is missing),
+        handle_subagent_stop exits early via the no-log-file branch —
+        but the active_agents row must already be gone by that point."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-no-log-file", "programmer", "2", None)
+        assert get_active_agent(db_path, "agent-no-log-file") is not None
+
+        payload = {
+            "agent_id": "agent-no-log-file",
+            "session_id": "",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+        assert exc.value.code == 0  # no-log-file branch, still exit 0
+
+        assert get_active_agent(db_path, "agent-no-log-file") is None
+
+    def test_session_id_fallback_marker_removed(self, tmp_path):
+        """When agent_id is absent, the session_id-derived marker_id row
+        is the one removed."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "sess-marker-only", "programmer", "2", None)
+
+        payload = {
+            "agent_id": "",
+            "session_id": "sess-marker-only",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+
+        assert get_active_agent(db_path, "sess-marker-only") is None
+
+
+class TestStaleAgentTtlSweepViaSubagentStart:
+    """Backstop purge mechanism: handle_subagent_start invokes
+    clear_stale_agents with a TTL well below the previous 24h default,
+    so ghost rows (left by any stop event that never fires) don't
+    accumulate unbounded.
+    """
+
+    def test_backdated_row_older_than_ttl_is_purged(self, tmp_path):
+        """A row with started_at older than the new TTL is gone after the
+        next handle_subagent_start call."""
+        from datetime import datetime, timedelta, timezone
+        import sqlite3
+
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+
+        # Fixture row artificially aged well past the new (sub-24h) TTL,
+        # inserted directly since register_active_agent always stamps
+        # "now". Must not rely on any pre-existing stale row.
+        stale_time = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO active_agents (agent_id, agent_type, tier, log_file, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("ghost-agent", "programmer", "2", None, stale_time),
+        )
+        conn.commit()
+        conn.close()
+        assert get_active_agent(db_path, "ghost-agent") is not None
+
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "new-agent",
+            "session_id": "sess-new",
+            "hook_event_name": "SubagentStart",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "ghost-agent") is None
+
+    def test_fresh_row_within_ttl_is_not_purged(self, tmp_path):
+        """A row registered moments ago (within the new TTL window)
+        survives a handle_subagent_start-triggered sweep."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "fresh-existing-agent", "programmer", "2", None)
+        assert get_active_agent(db_path, "fresh-existing-agent") is not None
+
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "new-agent-2",
+            "session_id": "sess-new-2",
+            "hook_event_name": "SubagentStart",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "fresh-existing-agent") is not None
+        # The newly-started agent itself must also have been registered.
+        assert get_active_agent(db_path, "new-agent-2") is not None
+
+    def test_ttl_constant_is_well_below_previous_24h_default(self):
+        """Documents/enforces the TTL choice: well below the old 24h
+        default, on the order of minutes-to-low-hours per the ticket."""
+        from clasi.hook_handlers import _STALE_AGENT_TTL_HOURS
+
+        assert 0 < _STALE_AGENT_TTL_HOURS < 24
+
+    def test_clear_stale_agents_still_directly_callable_with_custom_ttl(self, tmp_path):
+        """Sanity check that the underlying clear_stale_agents wrapper
+        used by handle_subagent_start behaves as expected in isolation."""
+        from datetime import datetime, timedelta, timezone
+        import sqlite3
+
+        db_path = _init_db_only(tmp_path)
+        stale_time = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO active_agents (agent_id, agent_type, tier, log_file, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("direct-stale", "programmer", "2", None, stale_time),
+        )
+        conn.commit()
+        conn.close()
+
+        result = clear_stale_agents(db_path, ttl_hours=2)
+        assert result["cleared"] == 1
+        assert get_active_agent(db_path, "direct-stale") is None
+
+
+# ---------------------------------------------------------------------------
+# Ticket-in-progress gate on role-guard (ticket 019-004)
+# ---------------------------------------------------------------------------
+
+
+def _setup_sprint_with_lock(
+    tmp_path: Path, sprint_id: str = "019", slug: str = "test-sprint"
+) -> Path:
+    """Create a real sprint directory (fresh/visible layout) plus a state
+    DB with the sprint registered and its execution lock held.
+
+    Returns the sprint directory (tickets/ not yet created — callers add
+    ticket files with _make_in_progress_ticket / _make_done_ticket as
+    needed for their scenario).
+    """
+    _write_fresh_config(tmp_path)
+    sprint_dir = tmp_path / "clasi" / "sprints" / f"{sprint_id}-{slug}"
+    sprint_dir.mkdir(parents=True)
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, sprint_id, f"sprint-{sprint_id}")
+    acquire_lock(db_path, sprint_id)
+    return sprint_dir
+
+
+class TestRoleGuardTicketStateGate:
+    """Ticket-state gate (ticket 019-004): block Edit/Write/MultiEdit when
+    a sprint execution lock is held, zero tickets in that sprint are
+    status: in-progress, and OOP is not active — REGARDLESS of tier,
+    including tier 2 (the gate that was previously entirely absent for
+    programmers). Uses real sprint/ticket directory structures on disk,
+    not mocks of _get_sprint_context() / _get_active_tickets() — this
+    sprint's standard is no hand-built fixtures that bypass real logic.
+    """
+
+    def test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked(
+        self, tmp_path, capsys
+    ):
+        """Sprint executing (lock held) + zero in-progress tickets + tier 2
+        + source-path write -> exit 2."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+        stderr = capsys.readouterr().err
+        assert "019" in stderr
+        assert "in-progress" in stderr
+        assert ".clasi/oop" in stderr
+
+    def test_lock_held_one_in_progress_ticket_tier2_source_write_allowed(
+        self, tmp_path
+    ):
+        """Sprint executing + one in-progress ticket + tier 2 + source-path
+        write -> exit 0."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_in_progress_ticket(sprint_dir, "004", "Add ticket gate")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_lock_held_zero_in_progress_tickets_oop_flag_present_allowed(
+        self, tmp_path
+    ):
+        """Sprint executing + zero in-progress tickets + tier 2 +
+        .clasi/oop present -> exit 0 (OOP bypass still works for this
+        gate)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+        (tmp_path / ".clasi" / "oop").write_text("", encoding="utf-8")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_no_lock_held_tier2_source_write_allowed(self, tmp_path):
+        """No execution lock held + tier 2 + source-path write -> exit 0
+        (gate does not apply when no sprint is executing)."""
+        _write_fresh_config(tmp_path)
+        db_path = str(tmp_path / ".clasi" / ".clasi.db")
+        init_db(db_path)
+        register_sprint(db_path, "019", "sprint-019")
+        # No acquire_lock call: no sprint is executing.
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked(
+        self, tmp_path, capsys
+    ):
+        """Sprint executing + zero in-progress tickets + tier 0/1 +
+        source-path write -> exit 2 (gate applies to all tiers, not just
+        tier 2)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 2
+        stderr = capsys.readouterr().err
+        assert "019" in stderr
+        assert "in-progress" in stderr
+
+    def test_lock_held_zero_in_progress_tickets_tier1_source_write_blocked(
+        self, tmp_path
+    ):
+        """Same gate applies to tier 1 as well, not only tier 0/2."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+
+    def test_lock_held_zero_in_progress_tickets_safe_prefix_still_allowed(
+        self, tmp_path
+    ):
+        """Safe-prefix writes (.claude/, CLAUDE.md, AGENTS.md) are checked
+        before the ticket-state gate and remain allowed even with zero
+        in-progress tickets — the gate must not regress existing
+        allow-listed meta-file writes."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "CLAUDE.md", "2") == 0
+
+    def test_gate_uses_get_sprint_context_and_get_active_tickets_live(
+        self, tmp_path
+    ):
+        """Sanity: the real helpers, called directly against the same
+        fixture, agree with the gate's block/allow decision — confirms
+        the gate is driven by the actual helpers and not a duplicated
+        ad hoc check."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        _, sprint_id = _run_with_cwd(tmp_path, _get_sprint_context)
+        active = _run_with_cwd(tmp_path, _get_active_tickets, sprint_id)
+        assert sprint_id == "019"
+        assert active == []
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2

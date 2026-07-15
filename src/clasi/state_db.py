@@ -149,9 +149,13 @@ def remove_active_agent(db_path: str | Path, agent_id: str) -> dict[str, Any]:
     return StateDB(db_path).remove_active_agent(agent_id)
 
 
-def get_active_tier(db_path: str | Path) -> str:
-    """Return the tier of any active agent, or empty string if none."""
-    return StateDB(db_path).get_active_tier()
+def get_active_tier(db_path: str | Path, agent_id: str) -> str:
+    """Return the tier of the active agent identified by agent_id.
+
+    Returns the "unresolved" sentinel (empty string) if no row matches
+    agent_id — never another agent's tier.
+    """
+    return StateDB(db_path).get_active_tier(agent_id)
 
 
 def clear_stale_agents(db_path: str | Path, ttl_hours: int = 24) -> dict[str, Any]:

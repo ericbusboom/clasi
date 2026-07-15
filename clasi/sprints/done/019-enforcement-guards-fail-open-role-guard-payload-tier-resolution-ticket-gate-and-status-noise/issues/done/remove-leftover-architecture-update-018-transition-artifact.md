@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: 019
+tickets:
+- 019-008
 ---
 
 # Remove leftover docs/architecture/architecture-update-018.md transition artifact

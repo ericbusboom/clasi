@@ -371,13 +371,17 @@ class TestCloseSprint:
     def test_closes_sprint(self, work_dir):
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
+        # The directory is still named done/ — only the declared status
+        # changed (019-007). The two are independent.
         assert "done" in result["new_path"]
         assert not os.path.exists(result["old_path"])
-        # Verify status was updated
+        # Verify status was updated to the state machine's terminal state.
+        # 019-007: this asserted "done" until archive() was fixed to write
+        # "closed"; sprint.yaml has never defined a "done" state.
         from pathlib import Path
         sprint_file = Path(result["new_path"]) / "sprint.md"
         fm = read_frontmatter(sprint_file)
-        assert fm["status"] == "done"
+        assert fm["status"] == "closed"
 
 
 class TestInsertSprint:
@@ -512,11 +516,13 @@ class TestCloseSprintEdgeCases:
     def test_close_updates_status_and_moves(self, work_dir):
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
+        # done/ is the archive directory name; "closed" is the declared
+        # state. 019-007 changed the latter only.
         assert "done" in result["new_path"]
         assert not os.path.exists(result["old_path"])
         sprint_file = Path(result["new_path"]) / "sprint.md"
         fm = read_frontmatter(sprint_file)
-        assert fm["status"] == "done"
+        assert fm["status"] == "closed"
 
     def test_close_advances_state_db(self, work_dir):
         create_sprint("Sprint")

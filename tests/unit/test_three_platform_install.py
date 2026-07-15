@@ -241,12 +241,19 @@ def test_three_platform_install_end_to_end(tmp_path: Path) -> None:
 
     # ------------------------------------------------------------------
     # .github/instructions/*.instructions.md — files with applyTo: frontmatter
+    #
+    # 2 files (clasi-artifacts, todo-dir), not 3: source-code is global in
+    # Copilot's format (Copilot's applyTo has no absent-key "unconditional"
+    # convention the way Claude Code's paths-less rules do), so it is
+    # folded into .github/copilot-instructions.md instead of emitted as its
+    # own always-true-glob file (ticket 019-005; see platforms/copilot.py
+    # _PATH_RULES comment).
     # ------------------------------------------------------------------
     instr_dir = tmp_path / ".github" / "instructions"
     assert instr_dir.is_dir(), ".github/instructions/ must exist"
     instr_files = list(instr_dir.glob("*.instructions.md"))
-    assert len(instr_files) >= 3, (
-        f".github/instructions/ must contain at least 3 files, found {len(instr_files)}"
+    assert len(instr_files) >= 2, (
+        f".github/instructions/ must contain at least 2 files, found {len(instr_files)}"
     )
     for instr_file in instr_files:
         content = instr_file.read_text(encoding="utf-8")

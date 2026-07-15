@@ -8,6 +8,8 @@ emitted block.
 
 from __future__ import annotations
 
+import importlib
+import logging
 import os
 import sys
 from io import StringIO
@@ -15,8 +17,36 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
+import yaml
 
+import clasi.state_machine.predicates  # noqa: F401 — side-effect: registers all predicates
+import clasi.state_machine.predicates.project
+import clasi.state_machine.predicates.sprint
+import clasi.state_machine.predicates.ticket
+from clasi.state_machine.registry import clear_registry
 from clasi.hook_handlers import handle_status_inject, handle_subagent_start
+from clasi.state_db import init_db, register_sprint, acquire_lock
+
+
+# ---------------------------------------------------------------------------
+# Registry guard: several tests below exercise the REAL, unmocked state
+# machine (via handle_status_inject -> build_status). If a prior test
+# module's autouse fixture cleared the predicate registry (e.g.
+# test_evaluator._clean_registry) and ran after this module's normal
+# import-time registration, evaluate_state() would raise
+# UnknownPredicateError. Re-registering before every test — matching the
+# guard already used in test_reporter.py — makes this file's real-state-
+# machine tests independent of module run order.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _ensure_predicates_registered():
+    clear_registry()
+    importlib.reload(clasi.state_machine.predicates.project)
+    importlib.reload(clasi.state_machine.predicates.sprint)
+    importlib.reload(clasi.state_machine.predicates.ticket)
+    yield
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +90,385 @@ def _make_clasi_dir(tmp_path: Path) -> Path:
     clasi_dir = tmp_path / ".clasi"
     clasi_dir.mkdir()
     return clasi_dir
+
+
+# ---------------------------------------------------------------------------
+# Realistic multi-sprint on-disk fixture (019-006) — REAL, unmocked
+# handle_status_inject output is what the size/narrowing/imperative tests
+# below assert against.  Every existing test above this point mocks
+# _build_status_block away, which is exactly how the original 34KB block
+# shipped unnoticed (see ticket 006).
+# ---------------------------------------------------------------------------
+
+
+def _write_fresh_config(root: Path) -> None:
+    """Write config.yaml with no paths: block -> uses new default layout
+    (clasi/sprints/, clasi/issues/, etc. — visible, not dot-hidden)."""
+    clasi_dir = root / ".clasi"
+    clasi_dir.mkdir(parents=True, exist_ok=True)
+    (clasi_dir / "config.yaml").write_text("process: se\n", encoding="utf-8")
+
+
+def _write_sprint_md(
+    sprint_dir: Path,
+    sprint_id: str,
+    title: str,
+    status: str = "executing",
+) -> None:
+    sprint_dir.mkdir(parents=True, exist_ok=True)
+    slug = title.lower().replace(" ", "-")
+    (sprint_dir / "sprint.md").write_text(
+        f"---\nid: \"{sprint_id}\"\ntitle: \"{title}\"\n"
+        f"status: {status}\nbranch: sprint/{sprint_id}-{slug}\n---\n"
+        f"# Sprint {sprint_id}: {title}\n",
+        encoding="utf-8",
+    )
+
+
+def _write_ticket(
+    sprint_dir: Path,
+    ticket_id: str,
+    title: str,
+    status: str = "open",
+    done_dir: bool = False,
+) -> None:
+    tickets_dir = sprint_dir / "tickets" / ("done" if done_dir else "")
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    slug = title.lower().replace(" ", "-")
+    (tickets_dir / f"{ticket_id}-{slug}.md").write_text(
+        f"---\nid: '{ticket_id}'\ntitle: {title}\nstatus: {status}\n"
+        "use-cases: []\ndepends-on: []\n---\n"
+        f"# {title}\n\n"
+        "## Description\n\n"
+        "Some reasonably realistic prose describing this ticket's scope, "
+        "acceptance criteria, and testing notes, so the fixture is not "
+        "unrealistically tiny compared to real sprint content.\n",
+        encoding="utf-8",
+    )
+
+
+def _build_realistic_multi_sprint_fixture(tmp_path: Path) -> str:
+    """Build an on-disk multi-sprint project: several done/ archived
+    sprints (each with several done tickets) plus one executing sprint
+    with a mix of done and in-progress tickets.
+
+    Returns the sprint_id of the executing sprint (the one with an
+    execution lock held in the state DB).
+    """
+    _write_fresh_config(tmp_path)
+    sprints_root = tmp_path / "clasi" / "sprints"
+
+    # Several archived (done/) sprints, each with several done tickets —
+    # mirrors the real project's ~18-sprint history.
+    for n in range(1, 6):
+        sid = f"{n:03d}"
+        sprint_dir = sprints_root / "done" / f"{sid}-archived-sprint-{n}"
+        _write_sprint_md(sprint_dir, sid, f"Archived Sprint {n}", status="done")
+        for t in range(1, 5):
+            tid = f"{t:03d}"
+            _write_ticket(
+                sprint_dir, tid, f"Archived ticket {n}-{t}",
+                status="done", done_dir=True,
+            )
+
+    # One currently-executing sprint with a mix of done and in-progress
+    # tickets — this is the sprint under the execution lock.
+    active_sid = "019"
+    active_dir = sprints_root / f"{active_sid}-current-sprint"
+    _write_sprint_md(active_dir, active_sid, "Current Sprint", status="executing")
+    for t in range(1, 4):
+        tid = f"{t:03d}"
+        _write_ticket(
+            active_dir, tid, f"Finished ticket {t}", status="done", done_dir=True,
+        )
+    _write_ticket(active_dir, "006", "Shrink status block", status="in-progress")
+
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, active_sid, "current-sprint")
+    acquire_lock(db_path, active_sid)
+
+    return active_sid
+
+
+def _build_fixture_no_active_ticket(tmp_path: Path) -> str:
+    """Like _build_realistic_multi_sprint_fixture, but the executing
+    sprint has zero in-progress tickets (all done) — the scenario that
+    should trigger the ticket-gate imperative."""
+    _write_fresh_config(tmp_path)
+    sprints_root = tmp_path / "clasi" / "sprints"
+
+    for n in range(1, 4):
+        sid = f"{n:03d}"
+        sprint_dir = sprints_root / "done" / f"{sid}-archived-sprint-{n}"
+        _write_sprint_md(sprint_dir, sid, f"Archived Sprint {n}", status="done")
+        for t in range(1, 4):
+            tid = f"{t:03d}"
+            _write_ticket(
+                sprint_dir, tid, f"Archived ticket {n}-{t}",
+                status="done", done_dir=True,
+            )
+
+    active_sid = "020"
+    active_dir = sprints_root / f"{active_sid}-current-sprint"
+    _write_sprint_md(active_dir, active_sid, "Current Sprint", status="executing")
+    for t in range(1, 4):
+        tid = f"{t:03d}"
+        _write_ticket(
+            active_dir, tid, f"Finished ticket {t}", status="done", done_dir=True,
+        )
+
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, active_sid, "current-sprint")
+    acquire_lock(db_path, active_sid)
+
+    return active_sid
+
+
+def _run_status_inject(tmp_path: Path, agent: str = "team-lead") -> str:
+    """Run the REAL, unmocked handle_status_inject against tmp_path (cwd
+    switched there) and return the captured stdout output."""
+    old_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    old_agent = os.environ.get("CLASI_AGENT_NAME")
+    try:
+        os.environ["CLASI_AGENT_NAME"] = agent
+        buf = StringIO()
+        with patch("sys.stdout", buf):
+            try:
+                handle_status_inject({})
+            except SystemExit:
+                pass
+        return buf.getvalue()
+    finally:
+        os.chdir(old_cwd)
+        if old_agent is None:
+            os.environ.pop("CLASI_AGENT_NAME", None)
+        else:
+            os.environ["CLASI_AGENT_NAME"] = old_agent
+
+
+def _extract_yaml(block: str) -> dict:
+    """Parse the fenced ```yaml ... ``` body out of a ## CLASI status block."""
+    start = block.index("```yaml\n") + len("```yaml\n")
+    end = block.index("```", start)
+    return yaml.safe_load(block[start:end])
+
+
+# ---------------------------------------------------------------------------
+# Size assertion — the REAL, unmocked handle_status_inject output (019-006)
+# ---------------------------------------------------------------------------
+
+
+class TestRealStatusBlockSize:
+    """Byte-size assertion against the actual, unmocked status block —
+    not _build_status_block mocked away. This is the test the ticket
+    calls out as the one that matters: every prior test in this file
+    mocked the block builder, which is exactly how a 34KB block shipped
+    unnoticed."""
+
+    def test_real_multi_sprint_output_well_under_5kb(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output != ""
+        assert len(output.encode("utf-8")) < 5000
+
+    def test_real_multi_sprint_programmer_output_well_under_5kb(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="programmer")
+
+        assert output != ""
+        assert len(output.encode("utf-8")) < 5000
+
+
+# ---------------------------------------------------------------------------
+# done/ exclusion at the hook level (fix 1)
+# ---------------------------------------------------------------------------
+
+
+class TestHookExcludesDone:
+    def test_done_sprints_absent_from_injected_block(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        sprint_ids = {s["id"] for s in parsed["sprints"]}
+        # Archived sprints 001-005 must not appear; only the executing
+        # sprint 019 should be present.
+        assert sprint_ids == {"019"}
+
+    def test_done_tickets_absent_from_remaining_sprint(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        sprint_019 = next(s for s in parsed["sprints"] if s["id"] == "019")
+        detail_ids = {d["id"] for d in sprint_019["tickets"].get("details", [])}
+        # Only the in-progress ticket should remain; the three done
+        # tickets (001, 002, 003) must be excluded.
+        assert "019-006" in detail_ids or "006" in detail_ids
+        assert not ({"019-001", "001"} & detail_ids)
+
+
+# ---------------------------------------------------------------------------
+# Real sprint_id/ticket_id narrowing (fix 2)
+# ---------------------------------------------------------------------------
+
+
+class TestRealNarrowing:
+    """narrow_status must actually receive real sprint_id/ticket_id —
+    verified here by asserting the RETURNED DICT is smaller/scoped for a
+    sprint-planner/programmer role than the team-lead's full view, not
+    merely that narrow_status was called."""
+
+    def test_programmer_view_scoped_to_single_sprint(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        team_lead_output = _run_status_inject(tmp_path, agent="team-lead")
+        programmer_output = _run_status_inject(tmp_path, agent="programmer")
+
+        team_lead_parsed = _extract_yaml(team_lead_output)
+        programmer_parsed = _extract_yaml(programmer_output)
+
+        assert programmer_parsed["agent"] == "programmer"
+        # Programmer view must be scoped to (at most) one sprint.
+        assert len(programmer_parsed["sprints"]) <= 1
+        assert len(programmer_parsed["sprints"]) <= len(team_lead_parsed["sprints"])
+
+    def test_programmer_view_ticket_details_scoped_to_single_ticket(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="programmer")
+        parsed = _extract_yaml(output)
+
+        assert len(parsed["sprints"]) == 1
+        details = parsed["sprints"][0].get("tickets", {}).get("details", [])
+        # programmer narrowing keeps exactly the single matching ticket.
+        assert len(details) == 1
+
+    def test_programmer_view_smaller_than_team_lead_view(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        team_lead_output = _run_status_inject(tmp_path, agent="team-lead")
+        programmer_output = _run_status_inject(tmp_path, agent="programmer")
+
+        team_lead_parsed = _extract_yaml(team_lead_output)
+        programmer_parsed = _extract_yaml(programmer_output)
+
+        # The actual returned dict must be demonstrably smaller/scoped —
+        # not just "narrow_status was called".
+        assert len(str(programmer_parsed)) < len(str(team_lead_parsed))
+
+    def test_sprint_planner_view_scoped_to_single_sprint(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        team_lead_output = _run_status_inject(tmp_path, agent="team-lead")
+        planner_output = _run_status_inject(tmp_path, agent="sprint-planner")
+
+        team_lead_parsed = _extract_yaml(team_lead_output)
+        planner_parsed = _extract_yaml(planner_output)
+
+        assert planner_parsed["agent"] == "sprint-planner"
+        assert len(planner_parsed["sprints"]) == 1
+        assert planner_parsed["sprints"][0]["id"] == "019"
+        # Sprint-planner narrowing drops per-ticket details (summary only).
+        assert "details" not in planner_parsed["sprints"][0].get("tickets", {})
+        assert len(str(planner_parsed)) < len(str(team_lead_parsed))
+
+
+# ---------------------------------------------------------------------------
+# Missing imperative when sprint executing + zero in-progress tickets (fix 3)
+# ---------------------------------------------------------------------------
+
+
+class TestGateImperative:
+    def test_imperative_present_when_zero_in_progress_tickets(self, tmp_path):
+        _build_fixture_no_active_ticket(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        focus = parsed["notes"]["current_focus"]
+        assert "gated" in focus.lower() or "in-progress" in focus.lower()
+        assert "execute-ticket" in focus
+        assert ".clasi/oop" in focus
+
+    def test_imperative_absent_when_ticket_in_progress(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        focus = parsed["notes"]["current_focus"]
+        assert "gated closed" not in focus
+
+    def test_imperative_absent_when_no_sprint_executing(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        # No sprint directories, no execution lock at all.
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        assert output == "" or "gated closed" not in output
+
+    def test_imperative_absent_when_oop_active(self, tmp_path):
+        active_sid = _build_fixture_no_active_ticket(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        # OOP bypass short-circuits handle_status_inject entirely before
+        # any block is built.
+        assert output == ""
+
+
+# ---------------------------------------------------------------------------
+# Logged warning replacing the silent except Exception: return "" (fix 4)
+# ---------------------------------------------------------------------------
+
+
+class TestLoggedWarningOnFailure:
+    def test_warning_logged_when_build_status_raises(self, tmp_path, caplog):
+        _make_clasi_dir(tmp_path)
+
+        with caplog.at_level(logging.WARNING, logger="clasi.hook_handlers"):
+            with patch(
+                "clasi.status.build_status", side_effect=RuntimeError("boom"),
+            ):
+                output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output == ""
+        assert any(
+            record.levelno >= logging.WARNING for record in caplog.records
+        )
+
+    def test_hook_still_exits_cleanly_when_build_status_raises(self, tmp_path):
+        _make_clasi_dir(tmp_path)
+
+        with patch(
+            "clasi.status.build_status", side_effect=RuntimeError("boom"),
+        ):
+            old_cwd = os.getcwd()
+            os.chdir(tmp_path)
+            try:
+                with pytest.raises(SystemExit) as exc:
+                    handle_status_inject({})
+                assert exc.value.code == 0
+            finally:
+                os.chdir(old_cwd)
+
+    def test_no_warning_logged_on_healthy_build(self, tmp_path, caplog):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        with caplog.at_level(logging.WARNING, logger="clasi.hook_handlers"):
+            _run_status_inject(tmp_path, agent="team-lead")
+
+        assert not any(
+            record.levelno >= logging.WARNING for record in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------

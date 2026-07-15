@@ -163,6 +163,20 @@ def test_install_global_instructions_git_commits_body(tmp_path: Path) -> None:
     assert "dotconfig version bump" in content
 
 
+def test_install_global_instructions_includes_source_code_body(tmp_path: Path) -> None:
+    """The CLASI block must contain SOURCE_CODE_BODY (global, not a scoped file).
+
+    Copilot's applyTo format has no absent-key "unconditional" convention
+    the way Claude Code's paths-less rules do, so source-code is folded
+    into the always-loaded global block instead of a separate
+    source-code.instructions.md with applyTo: "**".
+    """
+    copilot._install_global_instructions(tmp_path)
+    content = (tmp_path / ".github" / "copilot-instructions.md").read_text(encoding="utf-8")
+    assert SOURCE_CODE_BODY.strip() in content
+    assert not (tmp_path / ".github" / "instructions" / "source-code.instructions.md").exists()
+
+
 def test_install_global_instructions_idempotent_preserves_user_content(tmp_path: Path) -> None:
     """Re-running _install_global_instructions must preserve user content outside the marker block."""
     path = tmp_path / ".github" / "copilot-instructions.md"
@@ -282,10 +296,15 @@ def test_install_calls_print_cloud_mcp_notice(tmp_path: Path, capsys: pytest.Cap
 # ---------------------------------------------------------------------------
 
 # Map of expected filename -> (applyTo glob, rule body constant)
+#
+# source-code is intentionally absent here: Copilot's applyTo format has no
+# absent-key "unconditional" convention (unlike Claude Code's paths-less
+# rules), so source-code is folded into the global copilot-instructions.md
+# block instead of emitted as its own always-true-glob file. See
+# test_install_global_instructions_includes_source_code below.
 _EXPECTED_PATH_RULES = [
-    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
-    ("source-code.instructions.md", "{src/clasi/**,src/clasr/**}", SOURCE_CODE_BODY),
+    ("clasi-artifacts.instructions.md", "clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", "clasi/issues/**", TODO_DIR_BODY),
 ]
 
 
