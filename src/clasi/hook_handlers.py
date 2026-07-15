@@ -40,6 +40,21 @@ def read_payload() -> dict:
         return {}
 
 
+def _oop_active() -> bool:
+    """Return True if out-of-process (OOP) bypass is active for this cwd.
+
+    Checks ``.clasi/oop`` first (canonical — matches the documented escape
+    hatch in ``.claude/rules/*.md`` and the ``oop`` skill), then falls back
+    to the legacy ``.clasi-oop`` (repo root, hyphen) so any session already
+    relying on the old flag file keeps working.
+
+    This is the single source of truth for OOP bypass. No handler in this
+    module may check either flag-file path directly — always call this
+    helper, so the two flag files can never drift out of sync again.
+    """
+    return Path(".clasi/oop").exists() or Path(".clasi-oop").exists()
+
+
 # ---------------------------------------------------------------------------
 # Log directory protection
 # ---------------------------------------------------------------------------
@@ -135,7 +150,7 @@ def handle_role_guard(payload: dict) -> None:
     Tier 0 = team-lead / interactive session (CLASI_AGENT_TIER unset or "0")
     Tier 1 = sprint-planner
     Tier 2 = programmer
-    OOP    = .clasi-oop flag file present in cwd (out-of-process bypass)
+    OOP    = .clasi/oop (or legacy .clasi-oop) present in cwd (out-of-process bypass)
 
     No path resolvable from the payload (neither the nested
     tool_input.file_path/path/new_path shape nor a flat fallback) fails
@@ -186,9 +201,10 @@ def handle_role_guard(payload: dict) -> None:
         )
         _exit_hook("role-guard", payload, 2, "no-path")
 
-    # OOP bypass: .clasi-oop flag enables direct writes for any tier.
-    # Used for out-of-process changes reviewed manually by the team-lead.
-    if Path(".clasi-oop").exists():
+    # OOP bypass: .clasi/oop (or legacy .clasi-oop) enables direct writes
+    # for any tier. Used for out-of-process changes reviewed manually by
+    # the team-lead.
+    if _oop_active():
         _exit_hook("role-guard", payload, 0, "oop-bypass")
 
     # Recovery state bypass: allows specific paths during sprint recovery
@@ -299,10 +315,10 @@ def handle_mcp_guard(payload: dict) -> None:
     """Block Tier 0 (team-lead) from calling artifact-creation MCP tools directly.
 
     The sprint-planner (Tier 1) and programmer (Tier 2) are allowed.
-    OOP bypass: if .clasi-oop exists, allow all tiers.
+    OOP bypass: if .clasi/oop (or legacy .clasi-oop) exists, allow all tiers.
     """
     # OOP bypass
-    if Path(".clasi-oop").exists():
+    if _oop_active():
         _exit_hook("mcp-guard", payload, 0, "oop-bypass")
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
@@ -480,7 +496,7 @@ def handle_status_inject(payload: dict) -> None:
     project = get_project()
     if not project.clasi_dir.exists():
         _exit_hook("status-inject", payload, 0, "no-clasi")
-    if (project.clasi_dir / "oop").exists():
+    if _oop_active():
         _exit_hook("status-inject", payload, 0, "oop-bypass")
 
     agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")
@@ -558,9 +574,8 @@ def handle_subagent_start(payload: dict) -> None:
         pass
 
     # Prepend status block — scoped to the subagent's role.
-    # Silent if .clasi/oop exists (already checked via log_dir above).
-    project = get_project()
-    if not (project.clasi_dir / "oop").exists():
+    # Silent if OOP bypass is active (.clasi/oop or legacy .clasi-oop).
+    if not _oop_active():
         agent_role = _AGENT_TYPE_TO_ROLE.get(agent_type, "team-lead")
         block = _build_status_block(agent_role)
         if block:

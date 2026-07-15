@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: Unify OOP bypass behind one _oop_active() helper
-status: open
-use-cases: [SUC-005]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-005
+depends-on:
+- '001'
 github-issue: ''
 issue: enforcement-guards-fail-open-role-guard-payload-and-tier-resolution.md
 completes_issue: false
@@ -41,29 +43,29 @@ defect 5 (OOP split-brain).
 
 ## Acceptance Criteria
 
-- [ ] New `_oop_active()` helper added to `hook_handlers.py`: returns
+- [x] New `_oop_active()` helper added to `hook_handlers.py`: returns
       `True` if `Path(".clasi/oop").exists()`, else `True` if
       `Path(".clasi-oop").exists()`, else `False`.
-- [ ] `handle_role_guard`'s inline `.clasi-oop` check (line 171) replaced
+- [x] `handle_role_guard`'s inline `.clasi-oop` check (line 171) replaced
       with a call to `_oop_active()`.
-- [ ] `handle_mcp_guard`'s inline `.clasi-oop` check (line 285) replaced
+- [x] `handle_mcp_guard`'s inline `.clasi-oop` check (line 285) replaced
       with a call to `_oop_active()`.
-- [ ] `handle_status_inject`'s inline `.clasi/oop` check (line 463)
+- [x] `handle_status_inject`'s inline `.clasi/oop` check (line 463)
       replaced with a call to `_oop_active()`.
-- [ ] `handle_subagent_start`'s inline `.clasi/oop` check (line 543)
+- [x] `handle_subagent_start`'s inline `.clasi/oop` check (line 543)
       replaced with a call to `_oop_active()`.
-- [ ] `grep -n '"\.clasi-oop"\|"\.clasi/oop"' src/clasi/hook_handlers.py`
+- [x] `grep -n '"\.clasi-oop"\|"\.clasi/oop"' src/clasi/hook_handlers.py`
       shows matches only inside `_oop_active()` itself — no other
       handler references either flag file string directly.
-- [ ] Test: create only `.clasi/oop` in a temp project; assert
+- [x] Test: create only `.clasi/oop` in a temp project; assert
       `_oop_active()` returns `True`, and assert bypass actually occurs
       in `handle_role_guard`, `handle_mcp_guard` (both via a live guard
       call, not just calling the helper directly).
-- [ ] Test: create only `.clasi-oop` (legacy) in a temp project; assert
+- [x] Test: create only `.clasi-oop` (legacy) in a temp project; assert
       the same bypass occurs in the same set of handlers. Both flag
       files must be tested independently — a test that only ever creates
       both together would not have caught the original split-brain bug.
-- [ ] Test: neither flag file exists; assert `_oop_active()` returns
+- [x] Test: neither flag file exists; assert `_oop_active()` returns
       `False` and guards proceed to their normal (non-bypassed) logic.
 
 ## Testing

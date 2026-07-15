@@ -18,11 +18,13 @@ from clasi.hook_handlers import (
     handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
     handle_role_guard,
+    handle_mcp_guard,
     _ensure_log_gitignore,
     _get_log_dir,
     _get_active_tickets,
     _render_transcript_lines,
     _ext_to_language,
+    _oop_active,
 )
 from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_agent
 
@@ -1491,6 +1493,114 @@ class TestRoleGuardNestedPayloadShape:
         still ALLOWS once the payload-read fix makes role-guard live."""
         _write_fresh_config(tmp_path)
         assert _run_role_guard(tmp_path, "docs/design/x.md", "") == 0
+
+
+# ---------------------------------------------------------------------------
+# _oop_active() — unified OOP bypass helper (ticket 019-002)
+# ---------------------------------------------------------------------------
+
+
+def _run_mcp_guard(tmp_path: Path, tool_name: str = "create_ticket", tier: str = "") -> int:
+    """Run handle_mcp_guard with the given tool_name and agent tier.
+
+    Returns the exit code (0 = allow, 2 = block).
+    """
+    import os
+
+    payload = {"tool_name": tool_name}
+
+    old_tier = os.environ.get("CLASI_AGENT_TIER", None)
+    try:
+        if tier:
+            os.environ["CLASI_AGENT_TIER"] = tier
+        else:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_mcp_guard, payload)
+        return exc.value.code
+    finally:
+        if old_tier is None:
+            os.environ.pop("CLASI_AGENT_TIER", None)
+        else:
+            os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestOopActiveHelper:
+    """Unit tests for _oop_active() itself: each flag file independently,
+    and neither present. A test that only ever creates both flag files
+    together would not have caught the original split-brain bug (where
+    two handlers checked .clasi-oop and two checked .clasi/oop), so each
+    case here is isolated.
+    """
+
+    def test_true_when_only_canonical_flag_present(self, tmp_path):
+        """Only .clasi/oop (canonical, matches documentation) exists."""
+        (tmp_path / ".clasi").mkdir()
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+    def test_true_when_only_legacy_flag_present(self, tmp_path):
+        """Only .clasi-oop (legacy, repo root, hyphen) exists."""
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+    def test_false_when_neither_flag_present(self, tmp_path):
+        """Neither flag file exists."""
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+
+class TestOopBypassHandlerLevel:
+    """Handler-level regression coverage for ticket 019-002: the original
+    bug was two of four handlers (handle_role_guard, handle_mcp_guard)
+    checking only .clasi-oop while handle_status_inject checked only
+    .clasi/oop — so the documented .clasi/oop escape hatch silently did
+    NOT open the door for role-guard or mcp-guard.
+
+    These tests exercise bypass through the real handlers (live guard
+    calls), not by calling _oop_active() directly, because the bug class
+    here is a handler failing to *call* the shared check at all — a
+    helper-only unit test cannot detect that a call site was never wired
+    up. Each flag file is tested independently per handler, and a
+    neither-flag control case confirms the guards still enforce normally
+    when OOP is not active.
+    """
+
+    # --- .clasi/oop only (canonical) ---
+
+    def test_role_guard_bypasses_with_canonical_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        # Tier 0 write to a source file would normally be blocked (exit 2).
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_bypasses_with_canonical_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        # Tier 0 calling an MCP tool would normally be blocked (exit 2).
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    # --- .clasi-oop only (legacy) ---
+
+    def test_role_guard_bypasses_with_legacy_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_bypasses_with_legacy_flag_only(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi-oop").touch()
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    # --- neither flag present: guards enforce normally ---
+
+    def test_role_guard_enforces_normally_with_neither_flag(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_enforces_normally_with_neither_flag(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
 
 
 # ---------------------------------------------------------------------------
