@@ -2,7 +2,7 @@
 id: 019
 title: "Enforcement guards fail open \u2014 role-guard payload, tier resolution, ticket\
   \ gate, and status noise"
-status: planning-docs
+status: done
 branch: sprint/019-enforcement-guards-fail-open-role-guard-payload-tier-resolution-ticket-gate-and-status-noise
 use-cases: []
 issues:
