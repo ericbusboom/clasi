@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Fix Sprint.archive() done/closed terminology and bulk-correct 18 archived sprints
-status: open
+status: done
 use-cases:
 - SUC-007
 depends-on:
@@ -42,15 +42,34 @@ Two parts:
 sprints archived *after* this ticket ships — it does not retroactively
 fix the 18 existing files.
 
-**Part B — bulk-correct history.** Write a one-time script (can be a
-throwaway script run once and not committed, or a small permanent
-migration utility — implementer's judgment, but document which in the
-implementation notes) that rewrites `status: done` to `status: closed` in
-the frontmatter of all 18 `clasi/sprints/done/*/sprint.md` files. This is
-mechanical and low-risk: `sprint.yaml`'s `closed` state has no outbound
-transitions, so nothing downstream re-evaluates differently as a result
-— this is a frontmatter-accuracy fix only, not a behavior change for any
-of the 18 archived sprints.
+**Part B — bulk-correct history. CUT — do not implement.**
+
+Originally: rewrite `status: done` → `status: closed` in the frontmatter
+of all 18 `clasi/sprints/done/*/sprint.md` files.
+
+Dropped by stakeholder decision during execution (2026-07-15). Reasons:
+
+1. **It rewrites history to satisfy a checker.** Those 18 sprints *were*
+   archived with `status: done`. That is what happened. Editing them makes
+   the record assert something that was not true at the time.
+2. **Nothing reads them.** `sprint.yaml`'s `closed` state has no outbound
+   transitions; no decision anywhere depends on an archived sprint's
+   declared status. The ticket's own text concedes this is
+   "a frontmatter-accuracy fix only, not a behavior change."
+3. **The symptom is already gone.** The 18 bogus `state_drift` warnings
+   were only ever visible via the status block, and ticket 006 now
+   excludes `done/` from status-block assembly. The warnings no longer
+   surface.
+4. **The real defect is the checker, not the data.** `detect_inconsistencies`
+   (`status/inconsistency.py`) drift-checks terminal, archived sprints at
+   all — a question that cannot have a useful answer. Teaching it to skip
+   archived sprints would fix the class permanently, cover every sprint
+   archived before Part A, and touch zero data files. Filed as a
+   follow-up issue rather than done here: with 006 shipped there is no
+   remaining visible symptom driving it.
+
+Part A alone stops the bug at the source. Legacy `status: done` in the 18
+archived files is tolerated on read, not erased from disk.
 
 Depends on ticket 004 only for sequencing (this ticket's own execution,
 like every ticket after 004, runs under the live ticket-state gate — no
@@ -72,21 +91,24 @@ that issue.
 
 ## Acceptance Criteria
 
-- [ ] `Sprint.archive()` writes `status: "closed"` (not `"done"`) to
+- [x] `Sprint.archive()` writes `status: "closed"` (not `"done"`) to
       `sprint.md` frontmatter.
-- [ ] Test: archiving a sprint via `Sprint.archive()` produces
+- [x] Test: archiving a sprint via `Sprint.archive()` produces
       `status: closed` in the resulting frontmatter, and
       `detect_inconsistencies` reports zero `state_drift` for that
       sprint immediately after archiving (declared now matches computed).
-- [ ] All 18 existing `clasi/sprints/done/*/sprint.md` files have
-      `status: done` rewritten to `status: closed` in place.
-- [ ] `grep -c "^status: done" clasi/sprints/done/*/sprint.md` returns 0
-      for every one of the 18 files (verify by running the actual
-      command against this repo, not just by inspection).
-- [ ] No other frontmatter field in any of the 18 files is altered by the
-      bulk-correction (verify via diff — the change should be a
-      single-line `status:` value swap per file, nothing else).
-- [ ] Existing sprint-lifecycle tests (`Sprint.archive()`,
+- [x] ~~All 18 existing `clasi/sprints/done/*/sprint.md` files have
+      `status: done` rewritten to `status: closed` in place.~~ **CUT** —
+      Part B dropped by stakeholder decision; see Description.
+- [x] ~~`grep -c "^status: done" clasi/sprints/done/*/sprint.md` returns 0
+      for every one of the 18 files.~~ **CUT** — the 18 archived files are
+      left as they are. Legacy `status: done` is tolerated on read.
+- [x] ~~No other frontmatter field in any of the 18 files is altered by the
+      bulk-correction.~~ **CUT** — no files are altered.
+- [x] The 18 archived sprints are left untouched on disk (verify
+      `grep -lc "^status: done" clasi/sprints/done/*/sprint.md` still
+      returns all 18 — i.e. confirm nothing rewrote them).
+- [x] Existing sprint-lifecycle tests (`Sprint.archive()`,
       `detect_inconsistencies`) still pass after the writer change.
 
 ## Testing
