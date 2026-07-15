@@ -11,6 +11,7 @@ from clasi.hook_handlers import (
     handle_task_created,
     handle_task_completed,
     handle_subagent_start,
+    handle_subagent_stop,
     handle_commit_check,
     handle_plan_to_issue,
     handle_plan_to_todo,  # backward-compatible alias
@@ -26,7 +27,15 @@ from clasi.hook_handlers import (
     _ext_to_language,
     _oop_active,
 )
-from clasi.state_db import init_db, register_sprint, acquire_lock, get_active_agent
+from clasi.state_db import (
+    init_db,
+    register_sprint,
+    acquire_lock,
+    get_active_agent,
+    register_active_agent,
+    get_active_tier,
+    clear_stale_agents,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1651,3 +1660,345 @@ class TestEnsureLogGitignore:
         content = gitignore.read_text(encoding="utf-8")
         assert "*" in content
         assert "!.gitignore" in content
+
+
+# ---------------------------------------------------------------------------
+# Tier resolution keyed on caller identity (ticket 019-003)
+# ---------------------------------------------------------------------------
+
+
+def _init_db_only(tmp_path: Path) -> str:
+    """Create an initialized, empty state DB with no fixture rows.
+
+    active_agents starts empty in this repo (manually cleared during
+    triage) — tests must create their own fixture rows, never assume
+    pre-existing state.
+    """
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    return db_path
+
+
+class TestRoleGuardTierResolutionByCallerIdentity:
+    """handle_role_guard must resolve the caller's OWN tier from the DB,
+    keyed on the payload's agent_id (or session_id fallback) — never an
+    arbitrary row from active_agents.
+    """
+
+    def test_concurrent_agents_each_get_own_tier_via_role_guard(self, tmp_path):
+        """Non-negotiable concurrent-registration test, exercised through
+        the real handle_role_guard call site (not just StateDB directly).
+
+        Two agents are registered with DIFFERENT tiers: tier "1"
+        (sprint-planner, blocked from source writes) and tier "2"
+        (programmer, unrestricted). Each caller — identified by its own
+        agent_id in the hook payload — must be judged by its own tier.
+        Before this fix, get_active_tier() ignored agent_id entirely, so
+        whichever row happened to be returned by `LIMIT 1` decided the
+        outcome for BOTH callers.
+        """
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier1", "sprint-planner", "1")
+        register_active_agent(db_path, "agent-tier2", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # Caller is agent-tier1 (tier 1) writing to source -> BLOCK.
+            payload_t1 = _role_guard_payload("source/main.cpp")
+            payload_t1["agent_id"] = "agent-tier1"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload_t1)
+            assert exc.value.code == 2
+
+            # Caller is agent-tier2 (tier 2) writing to source -> ALLOW.
+            payload_t2 = _role_guard_payload("source/main.cpp")
+            payload_t2["agent_id"] = "agent-tier2"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload_t2)
+            assert exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_unknown_agent_id_no_env_var_fails_closed(self, tmp_path):
+        """Caller's agent_id has no matching row and no CLASI_AGENT_TIER
+        env var is set -> tier resolves to the unresolved sentinel ("")
+        -> handle_role_guard fails closed (tier 0/1 blocked from source
+        writes), per ticket 001's fail-closed behavior. Another agent IS
+        registered, to prove its tier is not leaked to this caller.
+        """
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = _role_guard_payload("source/main.cpp")
+            payload["agent_id"] = "agent-with-no-db-row"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_session_id_fallback_used_when_agent_id_absent(self, tmp_path):
+        """When the payload has no agent_id, handle_role_guard falls back
+        to session_id to look up the caller's tier."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "test-session-id", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # _role_guard_payload sets session_id="test-session-id" and no
+            # agent_id key at all.
+            payload = _role_guard_payload("source/main.cpp")
+            assert "agent_id" not in payload
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 0  # tier 2 -> unrestricted
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardTierResolutionByCallerIdentity:
+    """handle_mcp_guard must key its DB tier lookup on caller identity too."""
+
+    def test_concurrent_agents_each_get_own_tier_via_mcp_guard(self, tmp_path):
+        """Two agents registered with different tiers; each caller's own
+        MCP-guard outcome depends only on its own agent_id's tier."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier0-caller", "unknown", "0")
+        register_active_agent(db_path, "agent-tier1-caller", "sprint-planner", "1")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            # Tier 0 caller -> blocked from create_ticket.
+            payload_t0 = {"tool_name": "create_ticket", "agent_id": "agent-tier0-caller"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload_t0)
+            assert exc.value.code == 2
+
+            # Tier 1 caller -> allowed.
+            payload_t1 = {"tool_name": "create_ticket", "agent_id": "agent-tier1-caller"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload_t1)
+            assert exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_unknown_agent_id_no_env_var_fails_closed(self, tmp_path):
+        """Unresolved tier -> mcp-guard treats caller as tier 0 -> blocked,
+        even though a differently-tiered agent is registered."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            payload = {"tool_name": "create_ticket", "agent_id": "no-such-agent"}
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_mcp_guard, payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# Dual-mechanism stale-agent purge (ticket 019-003)
+# ---------------------------------------------------------------------------
+
+
+class TestSubagentStopRemovesActiveAgent:
+    """Primary purge mechanism: handle_subagent_stop must remove the
+    stopping agent's active_agents row on every normal stop path."""
+
+    def test_removes_row_on_normal_stop(self, tmp_path):
+        """Registered agent's row is gone after handle_subagent_stop."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        log_file = tmp_path / ".clasi" / "log" / "001-programmer.md"
+        log_file.write_text("---\nagent_type: programmer\n---\n\n")
+        register_active_agent(db_path, "agent-stop-test", "programmer", "2", str(log_file))
+        assert get_active_agent(db_path, "agent-stop-test") is not None
+
+        payload = {
+            "agent_id": "agent-stop-test",
+            "session_id": "sess-stop-test",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "agent-stop-test") is None
+
+    def test_removes_row_when_last_message_and_transcript_path_empty(self, tmp_path):
+        """Empty last_message/transcript_path (an early-return-adjacent
+        shape) still results in the active_agents row being removed —
+        the DB removal happens before those fields are even consulted."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        log_file = tmp_path / ".clasi" / "log" / "001-programmer.md"
+        log_file.write_text("---\nagent_type: programmer\n---\n\n")
+        register_active_agent(db_path, "agent-empty-fields", "programmer", "2", str(log_file))
+
+        payload = {
+            "agent_id": "agent-empty-fields",
+            "session_id": "",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+
+        assert get_active_agent(db_path, "agent-empty-fields") is None
+
+    def test_removes_row_even_when_no_log_file_recorded(self, tmp_path):
+        """If the DB record has no log_file (or the log file is missing),
+        handle_subagent_stop exits early via the no-log-file branch —
+        but the active_agents row must already be gone by that point."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-no-log-file", "programmer", "2", None)
+        assert get_active_agent(db_path, "agent-no-log-file") is not None
+
+        payload = {
+            "agent_id": "agent-no-log-file",
+            "session_id": "",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+        assert exc.value.code == 0  # no-log-file branch, still exit 0
+
+        assert get_active_agent(db_path, "agent-no-log-file") is None
+
+    def test_session_id_fallback_marker_removed(self, tmp_path):
+        """When agent_id is absent, the session_id-derived marker_id row
+        is the one removed."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "sess-marker-only", "programmer", "2", None)
+
+        payload = {
+            "agent_id": "",
+            "session_id": "sess-marker-only",
+            "last_assistant_message": "",
+            "agent_transcript_path": "",
+        }
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_stop, payload)
+
+        assert get_active_agent(db_path, "sess-marker-only") is None
+
+
+class TestStaleAgentTtlSweepViaSubagentStart:
+    """Backstop purge mechanism: handle_subagent_start invokes
+    clear_stale_agents with a TTL well below the previous 24h default,
+    so ghost rows (left by any stop event that never fires) don't
+    accumulate unbounded.
+    """
+
+    def test_backdated_row_older_than_ttl_is_purged(self, tmp_path):
+        """A row with started_at older than the new TTL is gone after the
+        next handle_subagent_start call."""
+        from datetime import datetime, timedelta, timezone
+        import sqlite3
+
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+
+        # Fixture row artificially aged well past the new (sub-24h) TTL,
+        # inserted directly since register_active_agent always stamps
+        # "now". Must not rely on any pre-existing stale row.
+        stale_time = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO active_agents (agent_id, agent_type, tier, log_file, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("ghost-agent", "programmer", "2", None, stale_time),
+        )
+        conn.commit()
+        conn.close()
+        assert get_active_agent(db_path, "ghost-agent") is not None
+
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "new-agent",
+            "session_id": "sess-new",
+            "hook_event_name": "SubagentStart",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "ghost-agent") is None
+
+    def test_fresh_row_within_ttl_is_not_purged(self, tmp_path):
+        """A row registered moments ago (within the new TTL window)
+        survives a handle_subagent_start-triggered sweep."""
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "fresh-existing-agent", "programmer", "2", None)
+        assert get_active_agent(db_path, "fresh-existing-agent") is not None
+
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "new-agent-2",
+            "session_id": "sess-new-2",
+            "hook_event_name": "SubagentStart",
+        }
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
+        assert exc.value.code == 0
+
+        assert get_active_agent(db_path, "fresh-existing-agent") is not None
+        # The newly-started agent itself must also have been registered.
+        assert get_active_agent(db_path, "new-agent-2") is not None
+
+    def test_ttl_constant_is_well_below_previous_24h_default(self):
+        """Documents/enforces the TTL choice: well below the old 24h
+        default, on the order of minutes-to-low-hours per the ticket."""
+        from clasi.hook_handlers import _STALE_AGENT_TTL_HOURS
+
+        assert 0 < _STALE_AGENT_TTL_HOURS < 24
+
+    def test_clear_stale_agents_still_directly_callable_with_custom_ttl(self, tmp_path):
+        """Sanity check that the underlying clear_stale_agents wrapper
+        used by handle_subagent_start behaves as expected in isolation."""
+        from datetime import datetime, timedelta, timezone
+        import sqlite3
+
+        db_path = _init_db_only(tmp_path)
+        stale_time = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO active_agents (agent_id, agent_type, tier, log_file, started_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("direct-stale", "programmer", "2", None, stale_time),
+        )
+        conn.commit()
+        conn.close()
+
+        result = clear_stale_agents(db_path, ttl_hours=2)
+        assert result["cleared"] == 1
+        assert get_active_agent(db_path, "direct-stale") is None

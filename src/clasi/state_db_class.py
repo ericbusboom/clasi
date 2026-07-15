@@ -640,17 +640,23 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_active_tier(self) -> str:
-        """Return the tier of any active agent, or empty string if none.
+    def get_active_tier(self, agent_id: str) -> str:
+        """Return the tier of the active agent identified by agent_id.
 
-        Reads the first row from active_agents. This replaces the
-        .clasi-agent-tier file check.
+        Queries active_agents WHERE agent_id = ? — this answers "what
+        tier is *this caller*?", not "what tier is somebody?". With
+        concurrent agents (normal for this project), a filter-less
+        lookup would return an arbitrary row. If no row matches
+        agent_id, the tier is unresolvable: return the "unresolved"
+        sentinel (empty string) rather than any other agent's tier.
+        This replaces the .clasi-agent-tier file check.
         """
         self.init()
         conn = _connect(self._path)
         try:
             row = conn.execute(
-                "SELECT tier FROM active_agents LIMIT 1"
+                "SELECT tier FROM active_agents WHERE agent_id = ?",
+                (agent_id,),
             ).fetchone()
             if row is None:
                 return ""

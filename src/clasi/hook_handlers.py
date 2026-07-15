@@ -169,15 +169,19 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
+    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
+
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
-    # If no env var, check the DB for the active agent tier
+    # If no env var, check the DB for the caller's own active-agent tier.
+    # Keyed on caller_id — never a filter-less lookup, which with
+    # concurrent agents would return an arbitrary agent's tier.
     if not agent_tier:
         try:
             db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
-                agent_tier = get_active_tier(str(db_path_tier))
+                agent_tier = get_active_tier(str(db_path_tier), caller_id)
         except Exception:
             pass
 
@@ -321,15 +325,19 @@ def handle_mcp_guard(payload: dict) -> None:
     if _oop_active():
         _exit_hook("mcp-guard", payload, 0, "oop-bypass")
 
+    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
+
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
-    # If no env var, check the DB for the active agent tier
+    # If no env var, check the DB for the caller's own active-agent tier.
+    # Keyed on caller_id — never a filter-less lookup, which with
+    # concurrent agents would return an arbitrary agent's tier.
     if not agent_tier:
         try:
             db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
-                agent_tier = get_active_tier(str(db_path_tier))
+                agent_tier = get_active_tier(str(db_path_tier), caller_id)
         except Exception:
             pass
 
@@ -516,6 +524,19 @@ _AGENT_TYPE_TO_ROLE = {
     "sprint-planner": "sprint-planner",
 }
 
+# Backstop TTL (hours) for active_agents rows, swept from handle_subagent_start.
+# This project's subagents run for minutes, occasionally low hours for a long
+# ticket; a 24h-old "active" row (the old StateDB default) is never a real
+# in-flight agent, only a ghost left by a stop event that was missed (crash,
+# kill -9, hook misconfiguration). 2 hours is comfortably above the longest
+# normal single-agent run observed in this project while still purging
+# ghosts within the same working session rather than letting them survive
+# for a full day and keep skewing get_active_tier lookups for other callers
+# who happen to share no agent_id filter (pre-Part-A) or simply pollute the
+# table indefinitely (post-Part-A, ghosts no longer corrupt lookups but
+# still accumulate rows forever without this sweep).
+_STALE_AGENT_TTL_HOURS = 2
+
 
 def handle_subagent_start(payload: dict) -> None:
     """Log when a subagent starts and prepend a CLASI status block.
@@ -566,7 +587,16 @@ def handle_subagent_start(payload: dict) -> None:
     try:
         db_path = get_project().db_path
         if db_path.exists() or (db_path.parent.exists()):
-            from clasi.state_db import register_active_agent
+            from clasi.state_db import register_active_agent, clear_stale_agents
+
+            # Backstop purge: handle_subagent_stop is the primary removal
+            # path (removes by marker_id on every stop), but this sweep
+            # catches ghosts left by any stop event that never fires
+            # (crash, kill -9, hook misconfiguration). Runs on every
+            # subagent dispatch — cheap, and keeps active_agents from
+            # accumulating unbounded rows in normal operation.
+            clear_stale_agents(str(db_path), ttl_hours=_STALE_AGENT_TTL_HOURS)
+
             register_active_agent(
                 str(db_path), marker_id, agent_type, tier, str(log_file)
             )
