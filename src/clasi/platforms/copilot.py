@@ -170,7 +170,11 @@ def _install_global_instructions(target: Path, copy: bool = False) -> None:
     Creates or updates the marker block inside the file, preserving any
     user content outside the block.  The block contains:
     - Entry-point sentence pointing at .github/agents/team-lead.agent.md
-    - Global-scope rules: MCP Required and Git Commits (from _rules.py)
+    - Global-scope rules: MCP Required, Source Code, and Git Commits
+      (from _rules.py). Source Code is global here (not a separate
+      .instructions.md file) because Copilot's applyTo format has no
+      absent-key "unconditional" convention the way Claude Code's
+      paths-less rules do — see the comment above _PATH_RULES.
     """
     path = target / ".github" / "copilot-instructions.md"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +183,8 @@ def _install_global_instructions(target: Path, copy: bool = False) -> None:
         "## Global Rules\n\n"
         "### MCP Server Required\n\n"
         f"{MCP_REQUIRED_BODY}\n"
+        "### Source Code\n\n"
+        f"{SOURCE_CODE_BODY}\n"
         "### Git Commits\n\n"
         f"{GIT_COMMITS_BODY}"
     )
@@ -199,15 +205,30 @@ def _uninstall_global_instructions(target: Path) -> None:
 # Path-scoped instruction files — ticket 008
 # ---------------------------------------------------------------------------
 
-# Decision: mcp-required and git-commits have global scope ("**") and are
-# already written into .github/copilot-instructions.md by ticket 007.
-# Writing them again here as separate .instructions.md files would duplicate
-# content without adding value.  Only the three genuinely path-scoped rules
-# are emitted here.
+# Decision: mcp-required, git-commits, and source-code all have global
+# scope in Copilot's instructions-file format and are already written into
+# .github/copilot-instructions.md by ticket 007 (see
+# _install_global_instructions).  Writing them again here as separate
+# .instructions.md files would duplicate content without adding value.
+#
+# source-code moved here from a path-scoped entry: Claude Code's rules
+# frontmatter has no key at all for "unconditional" (absence of `paths:`
+# means unconditional), but Copilot's `.instructions.md` format has no such
+# absent-key convention — every file's applicability is driven by `applyTo`,
+# and the closest equivalent to "unconditional" is `applyTo: "**"` (see
+# clasi-artifacts.instructions.md / todo-dir.instructions.md below for the
+# contrast: those keep a real, matchable scoped glob). Rather than emit a
+# `source-code.instructions.md` with `applyTo: "**"` — functionally
+# equivalent but a separate file for no benefit — source-code is folded
+# into the same global block as mcp-required and git-commits, matching how
+# Claude Code's own unconditional rules (`paths: ["**"]`) are minimal in
+# ceremony.  If Copilot's docs conventions change (e.g. dedicated
+# unconditional key), split it back out.
+#
+# Only the two genuinely path-scoped rules are emitted as separate files.
 _PATH_RULES: list[tuple[str, str, str]] = [
-    ("clasi-artifacts.instructions.md", ".clasi/**", CLASI_ARTIFACTS_BODY),
-    ("todo-dir.instructions.md", ".clasi/issues/**", TODO_DIR_BODY),
-    ("source-code.instructions.md", "{src/clasi/**,src/clasr/**}", SOURCE_CODE_BODY),
+    ("clasi-artifacts.instructions.md", "clasi/**", CLASI_ARTIFACTS_BODY),
+    ("todo-dir.instructions.md", "clasi/issues/**", TODO_DIR_BODY),
 ]
 
 

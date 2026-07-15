@@ -469,15 +469,35 @@ class TestRules:
             assert actual == expected_content
 
     def test_rules_have_paths_frontmatter(self, target_dir):
-        """Each rule file has YAML frontmatter with a paths field."""
+        """Each rule file has YAML frontmatter with a paths field, except
+        source-code.md, which loads unconditionally (no paths: key) because
+        no glob can express "everything except .clasi/, .claude/, docs/,
+        and *.md" — see SOURCE_CODE_BODY and platforms/claude.py RULES.
+        """
         target_dir.mkdir()
         run_init(str(target_dir))
 
         rules_dir = target_dir / ".claude" / "rules"
         for filename in RULES:
             content = (rules_dir / filename).read_text(encoding="utf-8")
+            if filename == "source-code.md":
+                assert not content.startswith("---\n")
+                continue
             assert content.startswith("---\n")
             assert "paths:" in content
+
+    def test_source_code_rule_has_no_paths_key(self, target_dir):
+        """source-code.md must load unconditionally: no paths: key at all,
+        and no YAML frontmatter block, since dropping paths: leaves nothing
+        else to put in frontmatter.
+        """
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        content = (target_dir / ".claude" / "rules" / "source-code.md").read_text(
+            encoding="utf-8"
+        )
+        assert not content.startswith("---\n"), "source-code.md must have no frontmatter block"
 
     def test_rules_idempotent(self, target_dir):
         """Running init twice produces the same rule files with no duplication."""
@@ -962,3 +982,102 @@ class TestPathTableAndPathsBlock:
         log_dir = target_dir / ARTIFACT_PATH_DEFAULTS["logs"]
         assert (log_dir / ".gitignore").exists()
         assert not (log_dir / ".gitkeep").exists()
+
+
+class TestRulePathReachability:
+    """Ticket 019-005: the general regression test for the failure class
+    that let source-code.md, clasi-artifacts.md, and todo-dir.md all ship
+    with `paths:` globs that could never match a real file in a downstream
+    project (source-code.md), or that stopped matching after the artifact
+    layout moved (clasi-artifacts.md), or where the generator silently
+    drifted from a hand-corrected on-disk file (todo-dir.md).
+
+    This targets the failure *class*, not the three fixed instances: after
+    a fresh `clasi init`, every generated rule file that carries a `paths:`
+    key must have at least one pattern that matches a real path that exists
+    in the initialized project. A rule whose glob can never match anything
+    is functionally dead — indistinguishable from having no rule at all —
+    which is the same fail-open shape as the other defects in this sprint,
+    one layer up (the rules engine rather than the hook).
+    """
+
+    def _scaffold_downstream_layout(self, target_dir: Path) -> None:
+        """Build a plausible non-CLASI project layout before `clasi init`.
+
+        Uses `source/` (not `src/clasi/` or `src/clasr/`) deliberately —
+        CLASI's own layout is the one thing this test must NOT resemble,
+        since the whole point is to prove the generated rules are reachable
+        in a project that looks nothing like CLASI itself.
+        """
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "source").mkdir()
+        (target_dir / "source" / "main.py").write_text(
+            "print('hello')\n", encoding="utf-8"
+        )
+        (target_dir / "tests").mkdir()
+        (target_dir / "tests" / "test_main.py").write_text(
+            "def test_ok():\n    assert True\n", encoding="utf-8"
+        )
+
+    def test_every_scoped_rule_matches_a_real_path(self, target_dir):
+        """For every generated rule with a `paths:` key, at least one glob
+        pattern must match a real path that exists after `clasi init`.
+
+        This is the general reachability test: it does not name
+        source-code.md, clasi-artifacts.md, or todo-dir.md specifically —
+        it walks every rule in RULES and would have caught all three
+        defects (and would catch a future one) without modification.
+        """
+        self._scaffold_downstream_layout(target_dir)
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        unreachable = []
+
+        for filename in RULES:
+            content = (rules_dir / filename).read_text(encoding="utf-8")
+            if not content.startswith("---\n"):
+                # No frontmatter at all => unconditional, always reachable.
+                continue
+            end = content.index("\n---", 4)
+            frontmatter_text = content[4:end]
+            import yaml
+
+            frontmatter = yaml.safe_load(frontmatter_text) or {}
+            patterns = frontmatter.get("paths")
+            if not patterns:
+                # No paths: key => unconditional, always reachable.
+                continue
+
+            matched = any(list(target_dir.glob(pattern)) for pattern in patterns)
+            if not matched:
+                unreachable.append((filename, patterns))
+
+        assert unreachable == [], (
+            f"Rule(s) with paths: that match nothing in the initialized "
+            f"project: {unreachable}"
+        )
+
+    def test_source_code_rule_fires_in_non_clasi_layout(self, target_dir):
+        """source-code.md must be present and unconditional (no paths: key)
+        in a scratch repo whose code lives under source/, not src/clasi/.
+
+        This is the acceptance bar specified as non-negotiable during
+        architecture review: source-code.md is not merely present in the
+        rules directory (it always was, even when dead) — it must be
+        provably reachable, i.e. loaded for every file read regardless of
+        this project's layout, which for a paths:-less rule means simply
+        having no paths: key to exclude anything.
+        """
+        self._scaffold_downstream_layout(target_dir)
+        run_init(str(target_dir))
+
+        rule_path = target_dir / ".claude" / "rules" / "source-code.md"
+        assert rule_path.exists(), "source-code.md must be written by clasi init"
+
+        content = rule_path.read_text(encoding="utf-8")
+        assert not content.startswith("---\n"), (
+            "source-code.md must have no frontmatter block, and therefore no "
+            "paths: key, so it loads unconditionally regardless of layout"
+        )
+        assert "You are modifying source code or tests" in content

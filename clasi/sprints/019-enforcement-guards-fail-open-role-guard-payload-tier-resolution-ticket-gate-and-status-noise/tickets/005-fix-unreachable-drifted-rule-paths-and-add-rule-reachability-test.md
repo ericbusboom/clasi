@@ -1,9 +1,12 @@
 ---
 id: '005'
 title: Fix unreachable/drifted rule paths and add rule-reachability test
-status: open
-use-cases: [SUC-006, SUC-010]
-depends-on: ['004']
+status: done
+use-cases:
+- SUC-006
+- SUC-010
+depends-on:
+- '004'
 github-issue: ''
 issue: enforcement-guards-fail-open-role-guard-payload-and-tier-resolution.md
 completes_issue: false
@@ -83,34 +86,34 @@ defect 4/5, broadened during architecture review (see
 
 ## Acceptance Criteria
 
-- [ ] `platforms/claude.py` `RULES["source-code.md"]` no longer includes
+- [x] `platforms/claude.py` `RULES["source-code.md"]` no longer includes
       a `paths:` key — the rule loads unconditionally.
-- [ ] `platforms/_rules.SOURCE_CODE_BODY` states the `.clasi/`,
+- [x] `platforms/_rules.SOURCE_CODE_BODY` states the `.clasi/`,
       `.claude/`, `docs/`, `*.md` exclusions in prose, and states that a
       commit message is not a process action (only an MCP call moves a
       ticket).
-- [ ] `platforms/copilot.py`'s equivalent `source-code` entry is fixed
+- [x] `platforms/copilot.py`'s equivalent `source-code` entry is fixed
       the same way (no scoped `applyTo:`/`paths:` restricting it to
       CLASI's own layout — check what "unconditional" means in
       Copilot's instructions-file format, which may differ from Claude
       Code's; document the equivalent if the mechanism differs).
-- [ ] `platforms/claude.py` `RULES["clasi-artifacts.md"]` emits
+- [x] `platforms/claude.py` `RULES["clasi-artifacts.md"]` emits
       `paths: [clasi/**]` (or an equivalent covering `clasi/sprints/**`,
       `clasi/issues/**`, `clasi/reflections/**`), not `.clasi/**`.
-- [ ] `platforms/copilot.py`'s equivalent entry fixed the same way.
-- [ ] `platforms/claude.py` `RULES["todo-dir.md"]` emits
+- [x] `platforms/copilot.py`'s equivalent entry fixed the same way.
+- [x] `platforms/claude.py` `RULES["todo-dir.md"]` emits
       `paths: [clasi/issues/**]`, not `.clasi/issues/**`. Verified this
       repo's on-disk `.claude/rules/todo-dir.md` already has the correct
       value (read it first) and needs no change, only the generator did.
-- [ ] New test: after `clasi init` into a fresh scratch/temp project,
+- [x] New test: after `clasi init` into a fresh scratch/temp project,
       for every generated `.claude/rules/*.md` file with a `paths:` key,
       assert at least one pattern matches a real path that exists in
       that project.
-- [ ] Test specifically confirms `source-code.md` demonstrably fires
+- [x] Test specifically confirms `source-code.md` demonstrably fires
       (present in context, no `paths:` key) in a scratch repo whose code
       lives under `source/` (not `src/clasi/`) — the acceptance bar
       specified as non-negotiable during architecture review.
-- [ ] This repo's own `.claude/rules/source-code.md` and
+- [x] This repo's own `.claude/rules/source-code.md` and
       `clasi-artifacts.md` are regenerated or hand-corrected to match
       the new generator output (verify via `clasi init --force` on this
       repo, or by direct comparison, per implementer's judgment — but
