@@ -1,8 +1,9 @@
 ---
 id: 009
 title: Skip drift-checking terminal/archived sprints in detect_inconsistencies
-status: open
-use-cases: [SUC-009]
+status: done
+use-cases:
+- SUC-009
 depends-on: []
 github-issue: ''
 issue: detect-inconsistencies-drift-checks-terminal-archived-sprints.md
@@ -39,18 +40,18 @@ done`. Fix the checker, not the data.
 
 ## Acceptance Criteria
 
-- [ ] A sprint archived via `Sprint.archive()` with legacy `status: done`
+- [x] A sprint archived via `Sprint.archive()` with legacy `status: done`
       in its frontmatter produces zero `state_drift` entries from
       `detect_inconsistencies`.
-- [ ] A non-terminal sprint whose declared status genuinely disagrees with
+- [x] A non-terminal sprint whose declared status genuinely disagrees with
       its computed state STILL reports drift — the fix must not
       over-broadly silence live drift, only terminal-state drift. This is
       the assertion that matters most; a skip that's too broad is worse
       than the current noise.
-- [ ] The 18 archived files remain byte-for-byte unmodified on disk
+- [x] The 18 archived files remain byte-for-byte unmodified on disk
       (`grep -lc "^status: done" clasi/sprints/done/*/sprint.md` still
       returns 18 after this ticket).
-- [ ] Terminal state is derived from `sprint.yaml`, not hardcoded —
+- [x] Terminal state is derived from `sprint.yaml`, not hardcoded —
       reuse or promote `_load_terminal_sprint_state` from
       `tests/unit/test_sprint.py` (added by `019-007`) rather than
       reimplementing the lookup.
@@ -77,3 +78,38 @@ declared/computed state, asserting drift still fires.
 **Documentation updates**: None required — this is an internal checker
 correctness fix with no user-facing behavior change beyond removing false
 positives.
+
+## Completion Notes
+
+**The fix**: `detect_inconsistencies` now skips drift-checking for any
+sprint whose computed state is in the state machine's terminal set. That
+terminal set is derived via a new `Machine.terminal_states()` method on
+`src/clasi/state_machine/models.py`, rather than hardcoding the string
+`"closed"` inline in `inconsistency.py`. The only literal `"closed"`
+remaining in `inconsistency.py` is inside a docstring explaining why it
+isn't hardcoded — the actual check goes through the machine.
+
+**Revert-check result (verified by team-lead)**: with `inconsistency.py`
+and `models.py` stashed back to their pre-fix versions,
+`test_archived_sprint_with_legacy_done_produces_no_drift` FAILS. With
+those two files restored, all 18 tests in
+`tests/unit/test_status/test_inconsistency.py` pass. The test genuinely
+distinguishes the fixed behavior from the unfixed behavior — it isn't a
+tautology that would pass either way.
+
+**On the 19 archived `sprint.md` files**: they were deliberately left
+untouched, still carrying legacy `status: done` in their frontmatter.
+That is the intended end state, not a missed step. Bulk-rewriting them
+was scoped as Part B of `019-007` and was explicitly cut by stakeholder
+decision — the archive is a record of what happened, and those sprints
+genuinely were archived under the old convention. Legacy `done` is
+tolerated on read by the checker fixed here, so no further migration is
+required.
+
+**Process note**: the programmer dispatched for this ticket completed
+the implementation correctly — code, tests, and behavior all matched the
+acceptance criteria — but returned incoherent without checking off
+acceptance criteria or committing (the fourth such incoherent return this
+session). The team-lead independently verified all four acceptance
+criteria against the code and test suite and dispatched this
+finalization pass to record the result and commit.

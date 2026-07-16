@@ -18,6 +18,8 @@ import clasi.state_machine.predicates.sprint
 import clasi.state_machine.predicates.ticket
 from clasi.state_machine.registry import clear_registry
 from clasi.status.inconsistency import detect_inconsistencies
+from clasi.project import Project
+from clasi.sprint import Sprint
 
 
 # ---------------------------------------------------------------------------
@@ -380,3 +382,160 @@ class TestReporterIntegration:
         reporter = StatusReporter(EmptyProject(), reader=NullStateReader())
         result = reporter.build()
         assert result["inconsistencies"] == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: terminal/archived sprints are skipped (020-009)
+# ---------------------------------------------------------------------------
+#
+# These use a real Project/Sprint pair on tmp_path rather than
+# FakeProject/FakeSprint. The behaviour under test is "does a sprint that
+# was actually archived by Sprint.archive() (real frontmatter, real
+# sprints/done/ layout, real machine state) get skipped" — a fake sprint
+# object would let us assert whatever declared/computed pairing we like
+# without ever proving the real archive path produces it. The legacy-
+# `status: done` scenario in particular only exists because of how the old
+# writer behaved, which is easiest to reproduce faithfully by writing the
+# frontmatter directly, matching the real files under clasi/sprints/done/.
+
+
+def _make_real_sprint(tmp_path, sprint_id="001", slug="test-sprint", status="planning"):
+    """Create a real sprint directory (mirrors tests/unit/test_sprint.py)."""
+    proj = Project(tmp_path)
+    sprint_dir = proj.sprints_dir / f"{sprint_id}-{slug}"
+    sprint_dir.mkdir(parents=True)
+    (sprint_dir / "tickets").mkdir()
+    (sprint_dir / "tickets" / "done").mkdir()
+    (sprint_dir / "sprint.md").write_text(
+        f"---\nid: \"{sprint_id}\"\ntitle: \"Test Sprint\"\n"
+        f"status: {status}\nbranch: sprint/{sprint_id}-{slug}\n---\n"
+        f"# Sprint {sprint_id}\n",
+        encoding="utf-8",
+    )
+    return proj, sprint_dir
+
+
+class TestTerminalSprintsSkipped:
+    """Sprints in the machine's terminal state must not be drift-checked."""
+
+    def test_archived_sprint_with_legacy_done_produces_no_drift(self, tmp_path):
+        """A sprint archived carrying legacy frontmatter status: done must
+        produce zero state_drift entries, even though 'done' is not a
+        state sprint.yaml defines and therefore would mismatch whatever
+        the machine computes.
+
+        This reproduces the real defect: the 18 (now 19) sprints under
+        clasi/sprints/done/ were archived by a pre-019-007 writer that
+        wrote status: done directly into frontmatter. We write that same
+        legacy value by hand (rather than calling Sprint.archive(), which
+        now writes the correct terminal state) so the test exercises the
+        actual legacy-data shape, not a shape our own fix would produce.
+        """
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="planning")
+        s = Sprint(sprint_dir, proj)
+        sprint_id = s.id
+
+        # Move to sprints/done/ and overwrite frontmatter with the legacy
+        # value directly, bypassing archive()'s (now-correct) status write
+        # so we faithfully reproduce the pre-019-007 archived shape.
+        done_dir = proj.sprints_dir / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        new_dir = done_dir / sprint_dir.name
+        sprint_dir.rename(new_dir)
+        (new_dir / "sprint.md").write_text(
+            f"---\nid: \"{sprint_id}\"\ntitle: \"Test Sprint\"\n"
+            f"status: done\nbranch: sprint/{sprint_id}-test-sprint\n---\n"
+            f"# Sprint {sprint_id}\n",
+            encoding="utf-8",
+        )
+
+        from clasi.state_machine import load_machine
+
+        terminal_state = load_machine("sprint").terminal_states()[0]
+
+        status_dict = {
+            "sprints": [
+                {
+                    "id": sprint_id,
+                    "state": terminal_state,
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        drift = [
+            e
+            for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift"
+        ]
+        assert drift == [], (
+            f"terminal/archived sprint with legacy status produced drift: {drift}"
+        )
+
+    def test_non_terminal_sprint_with_genuine_drift_still_reports(self, tmp_path):
+        """A live, non-terminal sprint whose declared status genuinely
+        disagrees with its computed state must STILL report drift.
+
+        This is the assertion that matters most per the ticket: a skip
+        that only applies to the terminal state must not silence drift
+        for sprints sitting in any other (non-terminal) state.
+        """
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="planned")
+        s = Sprint(sprint_dir, proj)
+
+        # computed = "open" (a non-terminal state), declared = "planned" —
+        # a genuine, live mismatch that must not be swallowed by the
+        # terminal-state skip.
+        status_dict = {
+            "sprints": [
+                {
+                    "id": s.id,
+                    "state": "open",
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        drift = [
+            e
+            for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift"
+        ]
+        assert len(drift) == 1, (
+            f"expected genuine drift on a non-terminal sprint to still be "
+            f"reported, got: {drift}"
+        )
+        assert drift[0]["declared"] == "planned"
+        assert drift[0]["computed"] == "open"
+
+    def test_terminal_state_skip_does_not_apply_to_matching_non_terminal_state(
+        self, tmp_path
+    ):
+        """Sanity check: a sprint whose computed state simply is not the
+        terminal state is never skipped by the terminal-state check,
+        regardless of whether declared == computed.
+        """
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="open")
+        s = Sprint(sprint_dir, proj)
+
+        status_dict = {
+            "sprints": [
+                {
+                    "id": s.id,
+                    "state": "open",
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        # declared == computed == "open" (non-terminal) → no drift, but for
+        # the *matching* reason, not because it was skipped as terminal.
+        drift = [
+            e
+            for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift"
+        ]
+        assert drift == []

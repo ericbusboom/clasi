@@ -17,19 +17,15 @@ def _load_terminal_sprint_state() -> str:
     archive-writes-a-real-state guarantee is expressed against the machine
     itself. If the terminal state is ever renamed, these tests follow it
     instead of silently asserting a stale literal.
-    """
-    import yaml
 
-    machine_path = (
-        Path(__file__).parent.parent.parent
-        / "src" / "clasi" / "schemas" / "state-machines" / "sprint.yaml"
-    )
-    machine = yaml.safe_load(machine_path.read_text(encoding="utf-8"))
-    terminal = [
-        name
-        for name, body in machine["states"].items()
-        if not (body or {}).get("transitions")
-    ]
+    Delegates to ``Machine.terminal_states()`` (020-009) — the production
+    code that ``detect_inconsistencies`` now uses to skip terminal/archived
+    sprints — rather than re-parsing sprint.yaml independently, so this
+    test and the production logic cannot silently diverge.
+    """
+    from clasi.state_machine import load_machine
+
+    terminal = load_machine("sprint").terminal_states()
     assert len(terminal) == 1, f"expected exactly one terminal state, got {terminal}"
     return terminal[0]
 
