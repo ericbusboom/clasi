@@ -572,6 +572,15 @@ def create_ticket(
     files are updated with ``status: in-progress``, the sprint ID, and
     the ticket ID.
 
+    When ``issue`` is omitted, the ticket is auto-linked to the sprint's
+    issue **only if the sprint has exactly one linked issue** — that is
+    the unambiguous case where "the sprint's issue" is a sensible default
+    for "this ticket's issue". If the sprint has more than one linked
+    issue, no auto-link is applied: the ticket's ``issue:`` frontmatter
+    is left empty and no issue's ``tickets:`` backlink is touched. Callers
+    working a multi-issue sprint must pass ``issue=`` explicitly per
+    ticket (or attach one later with ``add_issue_ref``).
+
     Args:
         sprint_id: The sprint ID (e.g., '001')
         title: The ticket title
@@ -583,13 +592,20 @@ def create_ticket(
     project = get_project()
     sprint = project.get_sprint(sprint_id)
 
-    # Auto-link to sprint issues when no explicit issue parameter given
+    # Auto-link to the sprint's issue only in the unambiguous single-issue
+    # case. With 2+ linked issues, "the sprint's issues" is not a sensible
+    # default for "this ticket's issue" — leave issue: empty rather than
+    # silently linking every issue to every ticket.
     if issue is None:
         sprint_issues = (
             sprint.sprint_doc.frontmatter.get("issues")
             or sprint.sprint_doc.frontmatter.get("todos")
         )
-        if sprint_issues and isinstance(sprint_issues, list):
+        if (
+            sprint_issues
+            and isinstance(sprint_issues, list)
+            and len(sprint_issues) == 1
+        ):
             issue = sprint_issues
 
     # Determine issue_arg for Sprint.create_ticket (single string or None)

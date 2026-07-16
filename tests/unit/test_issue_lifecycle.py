@@ -768,20 +768,22 @@ class TestIssueLinkageInstructionsPresent:
 class TestDocumentedLinkageSequenceProducesNonEmptyIssues:
     """Behavioral test: script the exact sequence the fixed docs now
     mandate (create_sprint -> link_sprint_issues -> detail_sprint ->
-    create_ticket without issue=) and assert it produces non-empty
-    sprint.md issues: frontmatter and correct per-ticket issue: fields --
-    the acceptance bar from ticket 020-004's third criterion.
+    create_ticket) and assert it produces non-empty sprint.md issues:
+    frontmatter and correct per-ticket issue: fields -- the acceptance
+    bar from ticket 020-004's third criterion.
 
     This does not hand-invoke the tools "out of band" in the sense the
     ticket warns against -- it invokes them in the literal order and
     manner the corrected agent docs prescribe (link at roadmap time,
-    before any ticket exists; then create tickets without passing issue=
-    per ticket, relying on the auto-link the docs now call out by name).
-    A regression that deletes the link_sprint_issues call from the docs
-    would not fail this test by itself (docs aren't parsed here) -- that
-    is what TestIssueLinkageInstructionsPresent guards. This test instead
-    guards that *following the documented sequence* still yields the
-    outcome the docs promise.
+    before any ticket exists; then create tickets per the multi-issue
+    rule ticket 020-005 introduced: create_ticket only auto-links when
+    the sprint has exactly one linked issue, so a 2+-issue sprint must
+    pass issue= explicitly per ticket). A regression that deletes the
+    link_sprint_issues call from the docs would not fail this test by
+    itself (docs aren't parsed here) -- that is what
+    TestIssueLinkageInstructionsPresent guards. This test instead guards
+    that *following the documented sequence* still yields the outcome
+    the docs promise.
     """
 
     def test_two_issues_linked_at_roadmap_time_appear_in_sprint_frontmatter(
@@ -812,28 +814,61 @@ class TestDocumentedLinkageSequenceProducesNonEmptyIssues:
             "bar (sprint.md showed issues: [] before this fix)"
         )
 
-        # Step matching Detail Mode Phase 4: advance to ticketing and
-        # create tickets WITHOUT issue= (agents shouldn't need to pass it
-        # explicitly once the sprint-level link exists).
+        # Step matching Detail Mode Phase 4: advance to ticketing. Per
+        # ticket 020-005, create_ticket only auto-links when the sprint
+        # has exactly one linked issue -- with two linked issues here,
+        # the docs require passing issue= explicitly per ticket.
         _advance_to_ticketing(work_dir, "001")
-        t1 = json.loads(create_ticket("001", "Implement Issue A"))
-        t2 = json.loads(create_ticket("001", "Implement Issue B"))
+        t1 = json.loads(
+            create_ticket("001", "Implement Issue A", issue="issue-a.md")
+        )
+        t2 = json.loads(
+            create_ticket("001", "Implement Issue B", issue="issue-b.md")
+        )
 
         t1_fm = read_frontmatter(t1["path"])
         t2_fm = read_frontmatter(t2["path"])
 
-        # create_ticket's auto-link (artifact_tools.py) reads sprint
-        # issues: and applies it when issue= is omitted. Because two
-        # issues are linked at the sprint level, both tickets pick up the
-        # full list unless a specific one is designated -- verify at least
-        # that neither ticket's issue: field is empty, matching the
-        # acceptance criterion "correct per-ticket issue: fields."
-        assert t1_fm.get("issue"), (
-            f"ticket 001 issue: field must be non-empty, got {t1_fm.get('issue')!r}"
+        # Each ticket carries exactly the issue it was created for --
+        # never "all sprint issues" (the bug 020-005 fixed).
+        assert t1_fm.get("issue") == "issue-a.md", (
+            f"ticket 001 issue: field must be 'issue-a.md', got {t1_fm.get('issue')!r}"
         )
-        assert t2_fm.get("issue"), (
-            f"ticket 002 issue: field must be non-empty, got {t2_fm.get('issue')!r}"
+        assert t2_fm.get("issue") == "issue-b.md", (
+            f"ticket 002 issue: field must be 'issue-b.md', got {t2_fm.get('issue')!r}"
         )
+
+    def test_omitting_issue_on_multi_issue_sprint_leaves_issue_field_empty(
+        self, work_dir
+    ):
+        """create_ticket without issue= on a 2+-issue sprint must NOT
+        auto-link -- this is the ticket 020-005 fix itself, exercised via
+        the same documented linkage sequence as the test above.
+        """
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "issue-a.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue A\n", encoding="utf-8"
+        )
+        (pending_pool / "issue-b.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue B\n", encoding="utf-8"
+        )
+
+        create_sprint("Linked Sprint")
+        link_sprint_issues("001", ["issue-a.md", "issue-b.md"])
+        _advance_to_ticketing(work_dir, "001")
+
+        result = json.loads(create_ticket("001", "Unrelated Work"))
+        ticket_fm = read_frontmatter(result["path"])
+        assert not ticket_fm.get("issue"), (
+            "issue: must be empty when issue= is omitted on a multi-issue "
+            f"sprint, got {ticket_fm.get('issue')!r}"
+        )
+
+        issue_a_fm = read_frontmatter(pending_pool / "issue-a.md")
+        issue_b_fm = read_frontmatter(pending_pool / "issue-b.md")
+        assert not issue_a_fm.get("tickets")
+        assert not issue_b_fm.get("tickets")
 
     def test_add_issue_ref_backfills_ticket_missing_from_autolink(self, work_dir):
         """When a ticket doesn't get an issue: from auto-link (e.g. it

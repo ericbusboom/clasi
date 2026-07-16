@@ -111,8 +111,10 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    immediately after `create_sprint`. This writes the sprint's `issues:`
    frontmatter and each issue's `sprint:` back-reference. Do this even for a
    single issue. Skipping this step is the single most common way sprint
-   issue linkage silently fails — every later ticket's auto-link depends on
-   this call having already happened.
+   issue linkage silently fails. Note: `create_ticket`'s auto-link (Phase 4)
+   only fires when the sprint ends up with **exactly one** linked issue —
+   on a multi-issue sprint you must pass `issue=` explicitly per ticket
+   regardless of this call.
 3. Edit `sprint.md` with goals, scope, and relevant TODO references.
 4. Repeat for additional sprints if needed. Return to team-lead.
 
@@ -128,9 +130,11 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    read `sprint.md`'s frontmatter `issues:` field. If this sprint claims any
    issue that is not yet listed there, call `link_sprint_issues(sprint_id,
    [filenames])` before proceeding. Do not assume Roadmap Mode already did
-   this — confirm it. This call is idempotent (safe to repeat) and is what
-   makes every ticket's `issue:` auto-link (Phase 4) work without needing to
-   pass `issue=` explicitly per ticket.
+   this — confirm it. This call is idempotent (safe to repeat). It enables
+   `create_ticket`'s auto-link (Phase 4) to populate `issue:` without
+   passing `issue=` explicitly **only if the sprint has exactly one linked
+   issue**. On any sprint with 2+ linked issues, auto-link does not fire —
+   pass `issue=<filename>` explicitly on every `create_ticket` call.
 3. Make the effort decision (see above). Write `sprint.md`'s Use Cases
    section with sprint-level use cases (SUC-NNN), sized to the decision —
    full use cases for a substantial sprint, "N/A — trivial" for a small one.
@@ -239,13 +243,15 @@ For a substantial/structural sprint, run the full review:
       documentation updates
 13. **Required — verify per-ticket issue back-references before moving on**:
     for every ticket that implements an issue, confirm its `issue:`
-    frontmatter field is set. `create_ticket` auto-links from the sprint's
-    `issues:` field when `issue=` is omitted (see Phase 1, step 2), but if a
-    ticket implements an issue not covered by that auto-link (e.g., an issue
-    added mid-ticketing, or a multi-ticket issue's later tickets), call
-    `add_issue_ref(ticket_path, issue_filename)` explicitly. Do not proceed
-    to Phase 5 with any ticket missing an `issue:` back-reference for work it
-    implements.
+    frontmatter field is set. `create_ticket` only auto-links from the
+    sprint's `issues:` field when `issue=` is omitted **and the sprint has
+    exactly one linked issue** (see Phase 1, step 2). On a multi-issue
+    sprint, pass `issue=<filename>` explicitly on every `create_ticket`
+    call — do not rely on auto-link. If a ticket implements an issue not
+    covered that way (e.g., an issue added mid-ticketing, or a multi-ticket
+    issue's later tickets), call `add_issue_ref(ticket_path, issue_filename)`
+    explicitly. Do not proceed to Phase 5 with any ticket missing an
+    `issue:` back-reference for work it implements.
 14. Propagate TODO and GitHub issue references to ticket frontmatter.
 15. Update sprint.md's `## Tickets` section with a summary table:
     - List each ticket's number, title, and `depends-on` values, in

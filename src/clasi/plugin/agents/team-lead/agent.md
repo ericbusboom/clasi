@@ -84,9 +84,11 @@ through the SE process, and there is no open sprint.
    every issue this sprint claims. Do this yourself, immediately after
    `create_sprint`, even if the sprint-planner is also expected to check
    linkage later — do not rely solely on the sprint-planner to remember.
-   This single call is what makes every ticket's `issue:` back-reference
-   auto-populate downstream; skipping it is the most common way issue
-   linkage silently fails.
+   Skipping it is the most common way issue linkage silently fails. Note:
+   `create_ticket`'s auto-link only populates a ticket's `issue:` field
+   without an explicit `issue=` when the sprint ends up with **exactly
+   one** linked issue — on any sprint with 2+ linked issues, the
+   sprint-planner must pass `issue=` explicitly per ticket instead.
 4. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
    tool with: sprint ID, directory, TODO references, goals, and path to
    `overview.md` and current architecture. The sprint-planner handles
@@ -189,7 +191,11 @@ The team-lead owns the full issue → done lifecycle. At each stage:
    [filenames])` for every issue claimed by the sprint. Do not write `issues:`
    frontmatter manually.
 2. **After planning**: Confirm that each ticket in the sprint carries an `issue:`
-   back-reference for any issue it implements. If back-refs are missing, call
+   back-reference for any issue it implements. This check matters most on
+   multi-issue sprints — `create_ticket` does not auto-link when a sprint
+   has 2+ linked issues, so every ticket's `issue:` field depends on the
+   sprint-planner having passed `issue=` explicitly or called
+   `add_issue_ref` afterward. If back-refs are missing, call
    `add_issue_ref(ticket_path, issue_filename)` to repair them.
 3. **After close**: Confirm resolved issues landed in `<sprint>/issues/done/`.
    Read the close result — if `unresolved_issues` is present, surface the

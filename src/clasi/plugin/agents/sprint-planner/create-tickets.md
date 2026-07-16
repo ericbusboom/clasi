@@ -27,8 +27,12 @@ handles ticket creation inline.
    field. If this sprint claims any issue not yet listed there, call
    `link_sprint_issues(sprint_id, [filenames])` before creating any tickets.
    Do not assume an earlier planning step already did this — confirm it.
-   This is what makes `create_ticket`'s auto-link (step 4 below) populate
-   each ticket's `issue:` field without needing `issue=` passed explicitly.
+   `create_ticket`'s auto-link (step 4 below) only fires when the sprint
+   has **exactly one** linked issue — that's the only case where "the
+   sprint's issue" is an unambiguous default for "this ticket's issue."
+   **On any multi-issue sprint (2+ linked issues), pass `issue=<filename>`
+   explicitly on every `create_ticket` call** — omitting it leaves the
+   ticket's `issue:` field empty rather than guessing.
 4. **Identify work units**: Break the Sprint Changes into coherent
    implementation units. Each unit should be completable in one focused
    session.
@@ -48,9 +52,11 @@ handles ticket creation inline.
    moved to done, `Issue.move_to_done()` is called automatically, which
    moves the file into `<sprint>/issues/done/`. No manual
    `move_issue_to_done` call is needed in the happy path. If step 2 already
-   linked the issue at the sprint level, omitting `issue=` still auto-links
-   via the sprint's `issues:` field — but always double-check the result
-   (step 7) rather than assuming the auto-link fired.
+   linked the issue at the sprint level **and it is the sprint's only
+   linked issue**, omitting `issue=` still auto-links via the sprint's
+   `issues:` field. On a sprint with 2+ linked issues, auto-link does
+   *not* fire — pass `issue=<filename>` explicitly, and always
+   double-check the result (step 7) rather than assuming it fired.
 
 7. **Propagate issue and GitHub issue references — verify, don't assume**:
    When creating tickets from issues, confirm the ticket's `issue`
