@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '020'
+tickets:
+- 020-008
 ---
 
 # Re-enable the MCP process-content tools

@@ -305,3 +305,69 @@ class TestGetVersion:
         assert isinstance(result["metadata_version"], str)
         assert isinstance(result["source_path"], str)
         assert len(result["source_path"]) > 0
+
+    def test_includes_staleness_fields(self):
+        """ticket 020-002: get_version() now also runs the staleness
+        check and reports it, so agents can see it via the MCP tool
+        directly (not just the status-inject hook surface)."""
+        result = json.loads(get_version())
+        assert "stale" in result
+        assert isinstance(result["stale"], bool)
+        assert "staleness_reasons" in result
+        assert isinstance(result["staleness_reasons"], list)
+
+    def test_ordinary_project_root_reports_not_stale(self, tmp_path, monkeypatch):
+        """When the active project is an ordinary CLASI-managed project
+        (not the CLASI source repo itself), get_version() must not report
+        dogfooding-drift staleness regardless of the real running
+        package's version — consumer projects are out of scope for that
+        signal."""
+        from clasi.mcp_server import set_project, reset_project
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".clasi").mkdir()
+        set_project(tmp_path)
+        try:
+            result = json.loads(get_version())
+            assert result["stale"] is False
+            assert result["staleness_reasons"] == []
+        finally:
+            reset_project()
+
+    def test_clasi_repo_with_version_mismatch_reports_stale(self, tmp_path, monkeypatch):
+        """When the active project root IS a CLASI source checkout (real
+        pyproject.toml naming clasi + src/clasi/__init__.py) whose
+        declared version deliberately differs from the real running
+        package's metadata_version, get_version() reports stale=True and
+        names both versions in staleness_reasons.
+
+        Revert-check: matching the declared version to the real live
+        metadata_version (not tested here directly; covered in
+        clasi.staleness's own test suite) makes this stop firing.
+        """
+        import importlib.metadata
+
+        from clasi.mcp_server import set_project, reset_project
+
+        real_version = importlib.metadata.version("clasi")
+        newer_fake_version = "0.99990101.1"
+        assert newer_fake_version != real_version
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".clasi").mkdir()
+        (tmp_path / "pyproject.toml").write_text(
+            f'[project]\nname = "clasi"\nversion = "{newer_fake_version}"\n',
+            encoding="utf-8",
+        )
+        src_clasi = tmp_path / "src" / "clasi"
+        src_clasi.mkdir(parents=True)
+        (src_clasi / "__init__.py").write_text('"""CLASI."""\n', encoding="utf-8")
+
+        set_project(tmp_path)
+        try:
+            result = json.loads(get_version())
+            assert result["stale"] is True
+            assert any(newer_fake_version in r for r in result["staleness_reasons"])
+            assert any(real_version in r for r in result["staleness_reasons"])
+        finally:
+            reset_project()

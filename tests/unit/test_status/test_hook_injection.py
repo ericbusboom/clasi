@@ -713,6 +713,108 @@ class TestSubagentStartStatusBlock:
 
 
 # ---------------------------------------------------------------------------
+# Staleness warning prepended to the status block (ticket 020-002)
+# ---------------------------------------------------------------------------
+
+
+def _write_clasi_repo_skeleton(root: Path, declared_version: str) -> None:
+    """Make *root* look like a CLASI source checkout with a declared
+    pyproject.toml version that differs from the real running package's
+    metadata_version — deterministically triggers the "dogfooding drift"
+    staleness signal (clasi.staleness._is_clasi_source_repo + version
+    mismatch), independent of the source_path check.
+    """
+    (root / "pyproject.toml").write_text(
+        f'[project]\nname = "clasi"\nversion = "{declared_version}"\n',
+        encoding="utf-8",
+    )
+    src_clasi = root / "src" / "clasi"
+    src_clasi.mkdir(parents=True, exist_ok=True)
+    (src_clasi / "__init__.py").write_text('"""CLASI."""\n', encoding="utf-8")
+
+
+class TestStatusInjectStalenessWarning:
+    """The real, unmocked _build_status_block prepends a staleness warning
+    when this repo IS the CLASI source repo and its declared pyproject.toml
+    version doesn't match the running package's real metadata_version —
+    this is the actual production surface (bare/uv-run `clasi hook
+    status-inject`) where sprint 019's stale-build incident would have
+    been visible on every turn, had this existed then.
+    """
+
+    def test_stale_dogfooding_repo_shows_warning_naming_both_versions(self, tmp_path):
+        import importlib.metadata
+
+        _make_clasi_dir(tmp_path)
+        real_version = importlib.metadata.version("clasi")
+        newer_fake_version = "0.99990101.1"
+        assert newer_fake_version != real_version
+        _write_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "STALE CLASI INSTALL DETECTED" in output
+        assert newer_fake_version in output
+        assert real_version in output
+
+    def test_matching_dogfooding_repo_shows_no_warning(self, tmp_path):
+        """Revert-check counterpart: repo version AND editable source path
+        both genuinely match the real running package -> no staleness
+        warning is prepended. src/clasi/__init__.py is a real symlink to
+        the actual running module's backing file — the only way to
+        construct a true match for the source_path signal without faking
+        clasi.staleness's internals."""
+        import importlib.metadata
+        import importlib.util
+
+        _make_clasi_dir(tmp_path)
+        real_version = importlib.metadata.version("clasi")
+
+        (tmp_path / "pyproject.toml").write_text(
+            f'[project]\nname = "clasi"\nversion = "{real_version}"\n',
+            encoding="utf-8",
+        )
+        src_clasi = tmp_path / "src" / "clasi"
+        src_clasi.mkdir(parents=True, exist_ok=True)
+        spec = importlib.util.find_spec("clasi")
+        real_init = Path(spec.origin).resolve()
+        (src_clasi / "__init__.py").symlink_to(real_init)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "STALE CLASI INSTALL DETECTED" not in output
+
+    def test_non_dogfooding_project_shows_no_warning(self, tmp_path):
+        """An ordinary CLASI-managed project (no pyproject.toml naming
+        clasi) never shows this warning, regardless of the running
+        package's real version — consumer projects are out of scope for
+        the dogfooding signal."""
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "STALE CLASI INSTALL DETECTED" not in output
+
+    def test_warning_present_even_when_rest_of_status_build_fails(self, tmp_path):
+        """The staleness check runs and is reported independently of
+        build_status — a broken status build must not swallow the
+        staleness warning, since that would defeat the whole point of
+        surfacing it on every turn."""
+        import importlib.metadata
+
+        _make_clasi_dir(tmp_path)
+        real_version = importlib.metadata.version("clasi")
+        newer_fake_version = "0.99990101.1"
+        _write_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        with patch("clasi.status.build_status", side_effect=RuntimeError("boom")):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "STALE CLASI INSTALL DETECTED" in output
+        assert newer_fake_version in output
+
+
+# ---------------------------------------------------------------------------
 # handle_hook dispatcher recognizes status-inject
 # ---------------------------------------------------------------------------
 

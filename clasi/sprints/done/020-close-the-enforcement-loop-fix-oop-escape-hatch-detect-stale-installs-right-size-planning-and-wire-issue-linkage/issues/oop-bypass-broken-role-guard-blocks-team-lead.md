@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 source: e2e-test-run-003
 clasi_version: 0.20260715.2
@@ -8,6 +8,9 @@ tags:
 - oop
 - guards
 - e2e
+sprint: '020'
+tickets:
+- 020-001
 ---
 
 # OOP bypass is broken: role-guard blocks team-lead from out-of-process edits

@@ -203,21 +203,67 @@ class TestCreateTicket:
         with pytest.raises(ValueError, match="roadmap.*phase"):
             create_ticket("001", "Too Early")
 
-    def test_auto_links_sprint_issues_when_no_issue_param(self, work_dir):
-        """create_ticket without issue param auto-links from sprint.md todos."""
+    def test_auto_links_single_sprint_issue_when_no_issue_param(self, work_dir):
+        """create_ticket without issue param auto-links the sole sprint todo.
+
+        Regression guard: the single-issue case is unambiguous and must keep
+        auto-linking exactly as before.
+        """
         create_sprint("My Sprint")
         _advance_to_ticketing(work_dir, "001")
-        # Add todos field to sprint.md frontmatter
+        # Add a single-entry todos field to sprint.md frontmatter
         sprint_md = (
             work_dir / ".clasi" / "sprints" / "001-my-sprint" / "sprint.md"
         )
         fm = read_frontmatter(sprint_md)
-        fm["todos"] = ["idea-a.md", "idea-b.md"]
+        fm["todos"] = ["idea-a.md"]
         write_frontmatter(sprint_md, fm)
 
         result = json.loads(create_ticket("001", "Auto Linked"))
         ticket_fm = read_frontmatter(result["path"])
-        assert ticket_fm["issue"] == ["idea-a.md", "idea-b.md"]
+        assert ticket_fm["issue"] == "idea-a.md"
+
+    def test_no_auto_link_when_sprint_has_multiple_issues(self, work_dir):
+        """create_ticket without issue param does NOT auto-link when the
+        sprint has 2+ linked issues — the ambiguous case must leave issue:
+        empty rather than silently attaching every sprint issue.
+
+        Uses a real multi-issue sprint fixture: two genuine issue files in
+        the pending pool, linked to the sprint via link_sprint_issues (the
+        real linkage path — mirrors this project's own sprint 020, which
+        carries 9 linked issues this way), not a synthetic todos-only
+        stand-in.
+        """
+        from clasi.tools.artifact_tools import link_sprint_issues
+
+        create_sprint("My Sprint")
+        _advance_to_ticketing(work_dir, "001")
+
+        pending_issues_dir = work_dir / ".clasi" / "issues"
+        pending_issues_dir.mkdir(parents=True, exist_ok=True)
+        issue_a_path = pending_issues_dir / "issue-a.md"
+        issue_b_path = pending_issues_dir / "issue-b.md"
+        issue_a_path.write_text("---\nstatus: pending\n---\n\n# Issue A\n")
+        issue_b_path.write_text("---\nstatus: pending\n---\n\n# Issue B\n")
+
+        link_result = json.loads(
+            link_sprint_issues("001", ["issue-a.md", "issue-b.md"])
+        )
+        assert link_result["linked"] == ["issue-a.md", "issue-b.md"]
+
+        result = json.loads(create_ticket("001", "Unrelated Work"))
+        ticket_fm = read_frontmatter(result["path"])
+
+        # Never "all sprint issues" — issue: field must be absent/empty.
+        assert not ticket_fm.get("issue")
+
+        # Neither issue's tickets: backlink may have gained this ticket.
+        # link_sprint_issues doesn't move issues out of the pending pool,
+        # so they're still at their original paths.
+        issue_a_fm = read_frontmatter(issue_a_path)
+        issue_b_fm = read_frontmatter(issue_b_path)
+        assert not issue_a_fm.get("tickets")
+        assert not issue_b_fm.get("tickets")
 
     def test_explicit_issue_not_overridden_by_sprint_todos(self, work_dir):
         """Explicit issue param takes priority over sprint.md todos."""

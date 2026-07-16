@@ -39,6 +39,13 @@ agent during planning, but can also be used standalone.
    moves the file into `<sprint>/issues/done/`. No manual
    `move_issue_to_done` call is needed in the happy path.
 
+   **Multi-issue sprints — pass `issue=` explicitly:** `create_ticket`
+   only auto-links a ticket to the sprint's issue when the sprint has
+   **exactly one** linked issue. On any sprint linked to 2+ issues, omit-
+   ting `issue=` leaves the ticket's `issue:` field empty (it does not
+   guess by linking every sprint issue). Pass `issue=<filename>`
+   explicitly on every `create_ticket` call for a multi-issue sprint.
+
    **Multi-ticket issue propagation:** When multiple tickets implement the
    same source issue, every ticket must carry the `issue:` back-reference.
    Use `create_ticket(issue=filename)` for the first ticket. For subsequent

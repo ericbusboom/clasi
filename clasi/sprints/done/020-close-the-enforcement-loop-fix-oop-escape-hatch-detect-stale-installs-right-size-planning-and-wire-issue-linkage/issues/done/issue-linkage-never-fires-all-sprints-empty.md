@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 source: e2e-test-run-003
 clasi_version: 0.20260715.2
@@ -8,6 +8,9 @@ tags:
 - linkage
 - lifecycle
 - e2e
+sprint: '020'
+tickets:
+- 020-004
 ---
 
 # Issue-to-sprint linkage never fires: all issues fields remain empty

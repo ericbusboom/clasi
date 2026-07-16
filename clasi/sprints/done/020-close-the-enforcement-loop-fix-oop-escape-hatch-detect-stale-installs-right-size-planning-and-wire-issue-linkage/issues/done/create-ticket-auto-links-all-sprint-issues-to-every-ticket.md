@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '020'
+tickets:
+- 020-005
 ---
 
 # create_ticket auto-links ALL sprint issues to every ticket (multi-issue sprints)

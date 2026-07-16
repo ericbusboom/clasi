@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '020'
+tickets:
+- 020-009
 ---
 
 # detect_inconsistencies drift-checks terminal, archived sprints

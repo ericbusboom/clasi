@@ -27,6 +27,31 @@ def get_project() -> Project:
     return Project(Path.cwd())
 
 
+def _normalize_to_root_relative(file_path: str) -> str:
+    """Normalize *file_path* to a root-relative path string (POSIX separators).
+
+    Claude Code's PreToolUse payloads carry ABSOLUTE file_path values, but
+    role-guard's allow/block prefixes (built via the ``_prefix()`` helper in
+    handle_role_guard) are root-relative strings like ``"clasi/issues/"``.
+    Without normalizing first, ``str.startswith()`` never matches an
+    absolute path against a relative prefix.
+
+    Three cases, mirroring ``_prefix()``'s own relative_to/fallback pattern:
+      - Absolute path under the project root -> root-relative path.
+      - Absolute path outside the project root -> returned unchanged (as a
+        plain string comparison); it cannot match any relative prefix, and
+        must not raise or be coerced into accidentally matching one.
+      - Already-relative path -> returned unchanged.
+    """
+    p = Path(file_path)
+    if not p.is_absolute():
+        return file_path
+    try:
+        return p.relative_to(get_project().root).as_posix()
+    except ValueError:
+        return file_path
+
+
 def read_payload() -> dict:
     """Read JSON payload from stdin."""
     try:
@@ -178,6 +203,18 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
+    # Normalize to a root-relative path string before any prefix comparison.
+    # Claude Code sends ABSOLUTE file_path values (e.g.
+    # "/Users/x/proj/clasi/issues/foo.md"), but every prefix this function
+    # compares against (_prefix() below, and the historical allow/block
+    # lists) is root-relative (e.g. "clasi/issues/"). Without this
+    # normalization, startswith() never matches for real Claude Code
+    # payloads and every tier-0/tier-1 allow-listed write is blocked. Runs
+    # before the no-path check, recovery-state lookup, and safe_prefixes
+    # check so all downstream comparisons see the same relative form.
+    if file_path:
+        file_path = _normalize_to_root_relative(file_path)
+
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
@@ -239,6 +276,40 @@ def handle_role_guard(payload: dict) -> None:
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
+
+    # Staleness fail-closed gate: when this repo IS the CLASI source repo
+    # (clasi.staleness._is_clasi_source_repo) and the running hook build
+    # does not match this repo's own working tree ("dogfooding drift"),
+    # block rather than silently enforce nothing. This is deliberately
+    # narrower than the full staleness report: ordinary dependency-version
+    # skew in a consumer project (signal 1, ambient importlib.metadata
+    # drift) stays warn-only — it is too common and too blunt a signal to
+    # fail closed on for every project that merely depends on clasi. Only
+    # the structural "this repo is running a build of itself that isn't
+    # its own source" case (signal 2) fails closed here, because that is
+    # exactly the condition that let sprint 019's entire enforcement story
+    # run inert while reporting success. Checked after OOP/recovery/
+    # safe-prefix so the escape hatches for fixing the stale pointer
+    # itself (.clasi/oop, editing .claude/ or .mcp.json via OOP) are never
+    # blocked by the same staleness they exist to let you repair.
+    from clasi import __version__ as _running_version
+    from clasi.staleness import check_staleness
+
+    _staleness = check_staleness(get_project().root, _running_version)
+    if _staleness.repo_version is not None and any(
+        "does not match this repo's editable source" in r
+        or "is not running this working tree's code" in r
+        for r in _staleness.reasons
+    ):
+        print(_staleness.warning(), file=sys.stderr)
+        print(
+            "CLASI ROLE VIOLATION: refusing to enforce role-guard from a "
+            "stale build of this repo's own tooling. Fix .mcp.json / "
+            ".claude/settings.json to invoke the editable install, or set "
+            ".clasi/oop to bypass.",
+            file=sys.stderr,
+        )
+        _exit_hook("role-guard", payload, 2, "stale-guard")
 
     # Ticket-state gate: if a sprint execution lock is held but zero
     # tickets in that sprint are `status: in-progress`, block the write
@@ -363,6 +434,29 @@ def handle_mcp_guard(payload: dict) -> None:
     # OOP bypass
     if _oop_active():
         _exit_hook("mcp-guard", payload, 0, "oop-bypass")
+
+    # Staleness fail-closed gate — see the matching gate and rationale in
+    # handle_role_guard. Same narrow scope: only the structural "this repo
+    # is running a build of itself that isn't its own source" signal fails
+    # closed; ordinary dependency-version skew stays warn-only.
+    from clasi import __version__ as _running_version
+    from clasi.staleness import check_staleness
+
+    _staleness = check_staleness(get_project().root, _running_version)
+    if _staleness.repo_version is not None and any(
+        "does not match this repo's editable source" in r
+        or "is not running this working tree's code" in r
+        for r in _staleness.reasons
+    ):
+        print(_staleness.warning(), file=sys.stderr)
+        print(
+            "CLASI ROLE VIOLATION: refusing to enforce mcp-guard from a "
+            "stale build of this repo's own tooling. Fix .mcp.json / "
+            ".claude/settings.json to invoke the editable install, or set "
+            ".clasi/oop to bypass.",
+            file=sys.stderr,
+        )
+        _exit_hook("mcp-guard", payload, 2, "stale-guard")
 
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
@@ -558,7 +652,25 @@ def _build_status_block(agent: str) -> str:
     available). Never raises — callers rely on this being safe. Failures
     are logged as a warning so a broken status hook is observable instead
     of silently indistinguishable from "nothing to report".
+
+    Prepends a staleness warning (see :mod:`clasi.staleness`) whenever the
+    running ``clasi hook`` invocation is stale relative to the project it
+    is serving — this is the actual production invocation path (bare
+    ``clasi hook status-inject`` from ``.claude/settings.json``), so this
+    is where drift like the one that voided sprint 019's enforcement is
+    actually visible to the operator, on every turn.
     """
+    staleness_block = ""
+    try:
+        from clasi import __version__ as _running_version
+        from clasi.staleness import check_staleness
+
+        report = check_staleness(get_project().root, _running_version)
+        if report.stale:
+            staleness_block = f"## CLASI staleness warning\n\n{report.warning()}\n\n"
+    except Exception:
+        logger.warning("status-inject: staleness check failed", exc_info=True)
+
     try:
         from clasi.status import build_status, narrow_status
         from clasi.status.formatting import to_yaml
@@ -578,10 +690,10 @@ def _build_status_block(agent: str) -> str:
         )
         _add_gate_imperative(narrowed, sprint_id, active_tickets)
         yaml_text = to_yaml(narrowed)
-        return f"## CLASI status\n\n```yaml\n{yaml_text}```\n"
+        return f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
         logger.warning("status-inject: failed to build status block", exc_info=True)
-        return ""
+        return staleness_block
 
 
 def handle_status_inject(payload: dict) -> None:
@@ -1140,7 +1252,14 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
     ``plan_to_issue_from_text`` to write a pending issue file.
 
     Always exits 0 — the Codex Stop hook fires after the session has ended,
-    so there is nothing to block.
+    so there is nothing to block. Unlike ``handle_plan_to_issue`` (the Claude
+    Code ``ExitPlanMode`` path), there is no live model turn left to hand a
+    "rewrite this into house format" instruction to, so the option 1 fix
+    (block-and-hand-off, see `handle_plan_to_issue`) does not apply here.
+    ``plan_to_issue_from_text`` still gets the mechanical, non-brittle part
+    of the fix — stripping a redundant ``issue-`` filename prefix — but the
+    resulting file may still carry plan-shaped prose that needs a later
+    manual or sprint-planner-side reshape.
     """
     import re
 
@@ -1185,8 +1304,27 @@ def handle_plan_to_issue(payload: dict) -> None:
                 "decision": "block",
                 "reason": (
                     f"CLASI: Plan saved as issue: {result}. "
-                    "This plan is now a pending issue for future sprint planning. "
-                    "Do NOT implement it now. Confirm the issue was created and stop."
+                    "This file is a verbatim copy of the plan and is NOT yet in "
+                    "house issue format — rewrite it now, in place, before doing "
+                    "anything else. The reader is a future sprint-planner with no "
+                    "session context, not the session that just ran.\n\n"
+                    "Rewrite steps:\n"
+                    "1. Read the file at the path above.\n"
+                    "2. Reshape its body into the house issue format: `# Title`, "
+                    "then `## Description`, `## Cause`, `## Proposed fix`, "
+                    "`## Verification`, `## Related` (omit any section with "
+                    "nothing to say).\n"
+                    "3. Drop plan-mode-only sections and framing that address the "
+                    "planning session rather than the issue's reader — e.g. "
+                    "'Scope of this plan', 'Do not implement', 'Deliverable', "
+                    "'Files to touch (this plan)', or any instruction to create "
+                    "the issue file that this document already is.\n"
+                    "4. Keep the `status: pending` frontmatter unchanged.\n"
+                    "5. If the filename starts with a redundant `issue-` prefix "
+                    "(it already lives in the issues directory), rename the file "
+                    "to drop that prefix.\n"
+                    "6. Do NOT implement the issue's contents. Confirm the "
+                    "rewritten issue file was saved and stop."
                 ),
             }),
             file=sys.stderr,

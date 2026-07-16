@@ -7,6 +7,15 @@ MCP tools registered here:
 - get_use_case_coverage — report use case coverage across sprints.
 - get_version — return the installed CLASI package version.
 - get_status — return narrowed project/sprint/ticket status for an agent.
+- list_agents — list all available agent definitions.
+- list_skills — list all available skill definitions.
+- list_instructions — list all available instruction files.
+- get_agent_definition — get the full content of a named agent definition.
+- get_skill_definition — get the full content of a named skill definition.
+- get_instruction — get the full content of a named instruction file.
+- list_language_instructions — list all available language instruction files.
+- get_language_instruction — get the full content of a language instruction file.
+- get_activity_guide — get tailored guidance for a specific SE activity.
 """
 
 import json
@@ -185,7 +194,7 @@ def get_se_overview() -> str:
     )
 
 
-#@server.tool()
+@server.tool()
 def list_agents() -> str:
     """List all available agent definitions.
 
@@ -195,7 +204,7 @@ def list_agents() -> str:
     return json.dumps(_list_agents_recursive(content_path("plugin", "agents")), indent=2)
 
 
-#@server.tool()
+@server.tool()
 def list_skills() -> str:
     """List all available skill definitions.
 
@@ -209,7 +218,7 @@ def list_skills() -> str:
     )
 
 
-#@server.tool()
+@server.tool()
 def list_instructions() -> str:
     """List all available instruction files.
 
@@ -218,7 +227,7 @@ def list_instructions() -> str:
     return json.dumps(_list_definitions(content_path("plugin", "instructions")), indent=2)
 
 
-#@server.tool()
+@server.tool()
 def get_agent_definition(name: str) -> str:
     """Get the full markdown content of a named agent definition.
 
@@ -304,7 +313,7 @@ def resolve_skill_body(raw: str, base_path: Path | None = None) -> str:
     return frontmatter + included_body
 
 
-#@server.tool()
+@server.tool()
 def get_skill_definition(name: str) -> str:
     """Get the full markdown content of a named skill definition.
 
@@ -336,7 +345,7 @@ def get_skill_definition(name: str) -> str:
 
 
 
-#@server.tool()
+@server.tool()
 def get_instruction(name: str) -> str:
     """Get the full markdown content of a named instruction file.
 
@@ -346,7 +355,7 @@ def get_instruction(name: str) -> str:
     return _get_definition(content_path("plugin", "instructions"), name)
 
 
-#@server.tool()
+@server.tool()
 def list_language_instructions() -> str:
     """List all available language instruction files.
 
@@ -355,7 +364,7 @@ def list_language_instructions() -> str:
     return json.dumps(_list_definitions(content_path("plugin", "instructions", "languages")), indent=2)
 
 
-#@server.tool()
+@server.tool()
 def get_language_instruction(language: str) -> str:
     """Get the full markdown content of a language instruction file.
 
@@ -411,7 +420,7 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
 }
 
 
-#@server.tool()
+@server.tool()
 def get_activity_guide(activity: str) -> str:
     """Get tailored guidance for a specific SE activity.
 
@@ -548,9 +557,14 @@ def get_version() -> str:
     Useful for verifying which version of the MCP server is running.
     Returns version (cached at import), metadata_version (live from
     importlib.metadata), and source_path so staleness is detectable.
+    Also runs the staleness check (clasi.staleness.check_staleness) and
+    includes a "stale" bool plus "staleness_reasons" naming any detected
+    drift — see that module's docstring for what the two signals catch.
     """
     import importlib.metadata
     import importlib.util
+
+    from clasi.staleness import check_staleness
 
     try:
         metadata_version = importlib.metadata.version("clasi")
@@ -560,10 +574,14 @@ def get_version() -> str:
     spec = importlib.util.find_spec("clasi")
     source_path = str(spec.origin) if spec and spec.origin else "unknown"
 
+    report = check_staleness(get_project().root, __version__)
+
     return json.dumps({
         "version": __version__,
         "metadata_version": metadata_version,
         "source_path": source_path,
+        "stale": report.stale,
+        "staleness_reasons": report.reasons,
     }, indent=2)
 
 

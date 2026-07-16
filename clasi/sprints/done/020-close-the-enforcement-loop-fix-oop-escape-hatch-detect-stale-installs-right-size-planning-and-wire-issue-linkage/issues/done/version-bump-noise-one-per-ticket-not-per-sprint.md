@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 source: e2e-test-run-003
 clasi_version: 0.20260715.2
@@ -7,6 +7,9 @@ tags:
 - versioning
 - git
 - e2e
+sprint: '020'
+tickets:
+- 020-003
 ---
 
 # Version bump noise: one bump per ticket, not per sprint

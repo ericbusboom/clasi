@@ -146,21 +146,44 @@ with the red-green-refactor cycle.
 
 ## Version Bumping
 
-After every substantive commit, run `dotconfig version bump` to advance the
-project version. Rationale: tools are installed editable (`pipx install -e`
-or `uv pip install -e`), so `clasi --version` is how a session tells which
-code it's actually running. If the version never changes, you can't tell
-whether your edit is live.
+Cadence: **once per sprint, at `close_sprint`** — not once per commit, and
+not once per ticket. `close_sprint` already bumps the version and tags it
+exactly once per sprint (gated by the `version_trigger` setting, default
+`every_change`, evaluated at sprint close via `should_version(trigger,
+"sprint_close")`). Do not run `dotconfig version bump` manually during
+ticket work on a sprint branch — a mid-sprint manual bump would double up
+against `close_sprint`'s own bump, not add signal, and is exactly the
+"11 bumps in 36 commits" noise this cadence replaces.
 
-- **After each commit**: run `dotconfig version bump` (no flags). This updates
-  the version source file. Commit that change too (a one-line follow-up
-  commit is fine: `chore: bump version`).
-- **When finishing a branch**: `close_sprint` bumps and tags automatically
-  at sprint close — do not bump manually immediately before it. For
-  non-sprint branches, run `dotconfig version bump --tag` before merging.
-- **On OOP commits direct to master**: bump after every commit.
-- **Don't batch**: one bump per commit keeps `git bisect` and "is my
-  change live?" checks honest.
+Rationale: tools are installed editable (`pipx install -e` or
+`uv pip install -e`), so the version has always existed to answer "which
+code is this session actually running." That need is real and hasn't gone
+away — but it no longer depends on a human (or agent) remembering to bump
+after each commit. CLASI's own staleness detection
+(`clasi.staleness.check_staleness`) compares the running build's
+`source_path`/`metadata_version` against the project's actual source on
+effectively every hook invocation (`get_version()`, role guard, MCP guard)
+and fails closed (`stale-guard`) the moment they diverge. A stale build is
+now caught automatically, continuously, and before it can do damage —
+strictly better coverage than a bump commit that only tells you the
+version *string* changed, not whether the process serving you is actually
+running that code. The bump remains useful as a once-per-sprint
+release-style marker, not as the live-build signal; that job moved to the
+automatic check.
+
+- **Sprint work**: no manual bump during ticket implementation. Only
+  `close_sprint` bumps (and tags), once, at the end of the sprint.
+- **Non-sprint / feature branches** (Option B, no sprint in use): run
+  `dotconfig version bump --tag` before merging to main — there is no
+  `close_sprint` event to anchor to, so the merge itself is the anchor.
+- **OOP commits direct to master**: bump after every OOP commit
+  (`dotconfig version bump`, then `chore: bump version`). OOP work has
+  no sprint and no merge gate, so per-commit is the only anchor available
+  — and OOP is meant for small, infrequent, targeted changes, so this
+  does not reproduce the noise problem.
+- **Do not batch multiple sprints' worth of changes into one bump** —
+  each `close_sprint` call still produces its own bump; the cadence
+  change is about eliminating *mid-sprint* bumps, not sprint-boundary ones.
 
 ## Safety Rules
 

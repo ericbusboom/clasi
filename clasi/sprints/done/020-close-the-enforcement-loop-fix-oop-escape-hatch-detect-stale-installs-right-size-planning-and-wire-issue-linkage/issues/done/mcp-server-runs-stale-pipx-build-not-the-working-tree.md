@@ -1,11 +1,14 @@
 ---
-status: pending
+status: done
 type: bug
 tags:
 - install
 - mcp
 - tooling
 - correctness
+sprint: '020'
+tickets:
+- 020-002
 ---
 
 # The MCP server runs a stale pipx build, not the working tree

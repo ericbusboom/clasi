@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook status-inject"
+            "command": "uv run clasi hook status-inject"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook subagent-start"
+            "command": "uv run clasi hook subagent-start"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook subagent-stop"
+            "command": "uv run clasi hook subagent-stop"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook task-created"
+            "command": "uv run clasi hook task-created"
           }
         ]
       }
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook task-completed"
+            "command": "uv run clasi hook task-completed"
           }
         ]
       }
@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook role-guard"
+            "command": "uv run clasi hook role-guard"
           }
         ]
       },
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook mcp-guard"
+            "command": "uv run clasi hook mcp-guard"
           }
         ]
       }
@@ -81,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook commit-check"
+            "command": "uv run clasi hook commit-check"
           }
         ]
       },
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "clasi hook plan-to-issue"
+            "command": "uv run clasi hook plan-to-issue"
           }
         ]
       }

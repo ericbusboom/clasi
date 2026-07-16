@@ -112,6 +112,19 @@ class Machine:
     def __post_init__(self) -> None:
         object.__setattr__(self, "states", dict(self.states))
 
+    def terminal_states(self) -> tuple[str, ...]:
+        """Return the names of states with no outbound transitions.
+
+        A terminal state is one nothing can leave — there is no next
+        action to unblock and no reconciliation to perform once an
+        artifact is declared to be in it. Derived structurally from the
+        loaded machine (rather than any hardcoded state name) so a
+        renamed or added terminal state is picked up automatically.
+        """
+        return tuple(
+            name for name, state in self.states.items() if not state.transitions
+        )
+
 
 # ---------------------------------------------------------------------------
 # Result type

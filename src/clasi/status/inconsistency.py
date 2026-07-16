@@ -59,6 +59,7 @@ def detect_inconsistencies(project: "Project", status_dict: dict) -> list[dict]:
         inconsistent artifact.
     """
     results: list[dict] = []
+    terminal_states = _sprint_terminal_states()
 
     for sprint_entry in status_dict.get("sprints", []):
         sprint_id = sprint_entry.get("id", "")
@@ -66,8 +67,14 @@ def detect_inconsistencies(project: "Project", status_dict: dict) -> list[dict]:
             continue
 
         # --- Sprint inconsistency check ---
-        sprint_results = _check_sprint(project, sprint_id, sprint_entry)
-        results.extend(sprint_results)
+        # Skip sprints already in the machine's terminal state (e.g.
+        # archived under sprints/done/). A terminal sprint has no
+        # outbound transitions, so a drift report there has no useful
+        # answer — it can't be unblocked or reconciled, only tolerated on
+        # read. See detect-inconsistencies-drift-checks-terminal-archived-sprints.
+        if sprint_entry.get("state") not in terminal_states:
+            sprint_results = _check_sprint(project, sprint_id, sprint_entry)
+            results.extend(sprint_results)
 
         # --- Ticket inconsistency checks ---
         tickets_block = sprint_entry.get("tickets", {})
@@ -84,6 +91,22 @@ def detect_inconsistencies(project: "Project", status_dict: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _sprint_terminal_states() -> tuple[str, ...]:
+    """Return the sprint machine's terminal state names (no outbound transitions).
+
+    Derived from ``sprint.yaml`` via the loaded :class:`Machine` rather than
+    hardcoding ``"closed"``, so a renamed or added terminal state is picked
+    up automatically. Falls back to an empty tuple if the machine cannot be
+    loaded, which preserves today's behaviour (every sprint is checked).
+    """
+    try:
+        from clasi.state_machine import load_machine
+
+        return load_machine("sprint").terminal_states()
+    except Exception:
+        return ()
 
 
 def _check_sprint(project: "Project", sprint_id: str, sprint_entry: dict) -> list[dict]:

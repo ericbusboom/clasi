@@ -13,6 +13,7 @@ from clasi.tools.artifact_tools import (
     close_sprint,
     create_sprint,
     create_ticket,
+    link_sprint_issues,
     list_issues,
     move_ticket_to_done,
 )
@@ -653,6 +654,261 @@ class TestSprintIssuesDirUnit:
         issues = sprint.list_issues()
         assert len(issues) == 3
         assert [i.path.name for i in issues] == ["aaa.md", "bbb.md", "ccc.md"]
+
+
+# ---------------------------------------------------------------------------
+# Ticket 020-004: issue-linkage instructions actually fire
+#
+# Root cause: sprint 018 replaced the standalone sprint-roadmap /
+# create-tickets skill invocations with a single inline sprint-planner
+# agent (src/clasi/plugin/agents/sprint-planner/agent.md +
+# create-tickets.md). That agent doc's Roadmap/Detail Mode workflows never
+# mentioned link_sprint_issues at all -- the call survived only in the
+# now-mostly-orphaned standalone SKILL.md docs and in team-lead's
+# non-actionable "Issue Lifecycle Responsibility" appendix, not in any
+# numbered workflow step an agent actually executes. create_ticket(issue=)
+# and add_issue_ref did get carried into the inline docs, but the one call
+# that seeds the sprint-level issues: frontmatter -- link_sprint_issues --
+# was dropped. These tests pin the fix: (1) the concrete instruction is
+# present in the docs agents actually follow, and (2) the tool chain that
+# the fixed instructions now mandate calling, in the order documented,
+# produces non-empty sprint issues: and correct per-ticket issue: fields.
+# ---------------------------------------------------------------------------
+
+
+class TestIssueLinkageInstructionsPresent:
+    """Static regression guard: the canonical agent docs must instruct
+    link_sprint_issues as a concrete, required step -- not just mention it
+    in an appendix or an orphaned skill doc nobody's live workflow reads.
+
+    Reads via clasi.project.Project.get_agent(name).definition, the same
+    accessor CLASI itself uses to load agent content (clasi/agent.py), so
+    this test exercises the real content-loading path rather than a
+    hardcoded file path duplicating platform-install logic.
+    """
+
+    def _agent_definition(self, name: str) -> str:
+        from clasi.project import Project
+
+        # Project() only needs a valid root for path resolution here; the
+        # agents directory is packaged, not project-scoped.
+        proj = Project(Path.cwd())
+        return proj.get_agent(name).definition
+
+    def test_sprint_planner_roadmap_mode_requires_link_sprint_issues(self):
+        text = self._agent_definition("sprint-planner")
+        roadmap_start = text.index("Roadmap Mode Workflow")
+        detail_start = text.index("Detail Mode Workflow")
+        roadmap_section = text[roadmap_start:detail_start]
+        assert "link_sprint_issues" in roadmap_section, (
+            "sprint-planner agent.md's Roadmap Mode Workflow must instruct "
+            "link_sprint_issues as a concrete step -- this is the call "
+            "agents actually follow when planning a sprint"
+        )
+        assert "Required" in roadmap_section, (
+            "the link_sprint_issues step must be marked required, not "
+            "merely mentioned, to survive being skipped as optional"
+        )
+
+    def test_sprint_planner_detail_mode_verifies_link_sprint_issues(self):
+        text = self._agent_definition("sprint-planner")
+        detail_start = text.index("Detail Mode Workflow")
+        phase2_start = text.index("Phase 2: Architecture")
+        phase1_section = text[detail_start:phase2_start]
+        assert "link_sprint_issues" in phase1_section, (
+            "sprint-planner agent.md's Detail Mode Phase 1 must verify/call "
+            "link_sprint_issues before writing Use Cases or Architecture"
+        )
+
+    def test_sprint_planner_create_tickets_doc_verifies_linkage(self):
+        # create-tickets.md sits alongside agent.md in the same agent dir;
+        # Agent.definition only exposes agent.md, so read this one directly
+        # via the same Project._agents_dir the Agent class resolves from.
+        from clasi.project import Project
+
+        proj = Project(Path.cwd())
+        create_tickets_path = proj._agents_dir / "sprint-planner" / "create-tickets.md"
+        assert create_tickets_path.exists(), (
+            "sprint-planner/create-tickets.md must exist alongside agent.md"
+        )
+        text = create_tickets_path.read_text(encoding="utf-8")
+        assert "link_sprint_issues" in text, (
+            "create-tickets.md must instruct verifying/calling "
+            "link_sprint_issues before ticket creation, not just "
+            "create_ticket(issue=) and add_issue_ref"
+        )
+        assert "add_issue_ref" in text, (
+            "create-tickets.md must instruct add_issue_ref for tickets "
+            "that don't get an issue: back-reference from auto-link"
+        )
+
+    def test_team_lead_main_workflow_calls_link_sprint_issues_inline(self):
+        text = self._agent_definition("team-lead")
+        exec_start = text.index("Execute Issues Through a Sprint")
+        add_issue_start = text.index("Add Issue to Existing Sprint")
+        exec_section = text[exec_start:add_issue_start]
+        assert "link_sprint_issues" in exec_section, (
+            "team-lead agent.md's numbered 'Execute Issues Through a "
+            "Sprint' workflow must call link_sprint_issues inline, not "
+            "only mention it in the separate 'Issue Lifecycle "
+            "Responsibility' appendix -- an agent following the numbered "
+            "steps literally must hit the call without cross-referencing "
+            "a different section"
+        )
+        # Must appear before sprint-planner is dispatched, not after.
+        create_sprint_idx = exec_section.index("create_sprint(title=")
+        link_idx = exec_section.index("link_sprint_issues")
+        planner_dispatch_idx = exec_section.index("Invoke the sprint-planner agent")
+        assert create_sprint_idx < link_idx < planner_dispatch_idx, (
+            "link_sprint_issues must be called after create_sprint but "
+            "before the sprint-planner dispatch"
+        )
+
+
+class TestDocumentedLinkageSequenceProducesNonEmptyIssues:
+    """Behavioral test: script the exact sequence the fixed docs now
+    mandate (create_sprint -> link_sprint_issues -> detail_sprint ->
+    create_ticket) and assert it produces non-empty sprint.md issues:
+    frontmatter and correct per-ticket issue: fields -- the acceptance
+    bar from ticket 020-004's third criterion.
+
+    This does not hand-invoke the tools "out of band" in the sense the
+    ticket warns against -- it invokes them in the literal order and
+    manner the corrected agent docs prescribe (link at roadmap time,
+    before any ticket exists; then create tickets per the multi-issue
+    rule ticket 020-005 introduced: create_ticket only auto-links when
+    the sprint has exactly one linked issue, so a 2+-issue sprint must
+    pass issue= explicitly per ticket). A regression that deletes the
+    link_sprint_issues call from the docs would not fail this test by
+    itself (docs aren't parsed here) -- that is what
+    TestIssueLinkageInstructionsPresent guards. This test instead guards
+    that *following the documented sequence* still yields the outcome
+    the docs promise.
+    """
+
+    def test_two_issues_linked_at_roadmap_time_appear_in_sprint_frontmatter(
+        self, work_dir
+    ):
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "issue-a.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue A\n", encoding="utf-8"
+        )
+        (pending_pool / "issue-b.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue B\n", encoding="utf-8"
+        )
+
+        # Step matching sprint-planner agent.md Roadmap Mode Workflow
+        # steps 1-2: create_sprint, then link_sprint_issues immediately.
+        create_sprint("Linked Sprint")
+        link_result = json.loads(
+            link_sprint_issues("001", ["issue-a.md", "issue-b.md"])
+        )
+        assert link_result["linked"] == ["issue-a.md", "issue-b.md"]
+
+        sprint_dir = _find_sprint_dir(work_dir, "001")
+        sprint_fm = read_frontmatter(sprint_dir / "sprint.md")
+        assert sprint_fm.get("issues") == ["issue-a.md", "issue-b.md"], (
+            "sprint.md frontmatter issues: must be non-empty and list both "
+            "issues after link_sprint_issues, matching the E2E acceptance "
+            "bar (sprint.md showed issues: [] before this fix)"
+        )
+
+        # Step matching Detail Mode Phase 4: advance to ticketing. Per
+        # ticket 020-005, create_ticket only auto-links when the sprint
+        # has exactly one linked issue -- with two linked issues here,
+        # the docs require passing issue= explicitly per ticket.
+        _advance_to_ticketing(work_dir, "001")
+        t1 = json.loads(
+            create_ticket("001", "Implement Issue A", issue="issue-a.md")
+        )
+        t2 = json.loads(
+            create_ticket("001", "Implement Issue B", issue="issue-b.md")
+        )
+
+        t1_fm = read_frontmatter(t1["path"])
+        t2_fm = read_frontmatter(t2["path"])
+
+        # Each ticket carries exactly the issue it was created for --
+        # never "all sprint issues" (the bug 020-005 fixed).
+        assert t1_fm.get("issue") == "issue-a.md", (
+            f"ticket 001 issue: field must be 'issue-a.md', got {t1_fm.get('issue')!r}"
+        )
+        assert t2_fm.get("issue") == "issue-b.md", (
+            f"ticket 002 issue: field must be 'issue-b.md', got {t2_fm.get('issue')!r}"
+        )
+
+    def test_omitting_issue_on_multi_issue_sprint_leaves_issue_field_empty(
+        self, work_dir
+    ):
+        """create_ticket without issue= on a 2+-issue sprint must NOT
+        auto-link -- this is the ticket 020-005 fix itself, exercised via
+        the same documented linkage sequence as the test above.
+        """
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "issue-a.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue A\n", encoding="utf-8"
+        )
+        (pending_pool / "issue-b.md").write_text(
+            "---\nstatus: pending\n---\n\n# Issue B\n", encoding="utf-8"
+        )
+
+        create_sprint("Linked Sprint")
+        link_sprint_issues("001", ["issue-a.md", "issue-b.md"])
+        _advance_to_ticketing(work_dir, "001")
+
+        result = json.loads(create_ticket("001", "Unrelated Work"))
+        ticket_fm = read_frontmatter(result["path"])
+        assert not ticket_fm.get("issue"), (
+            "issue: must be empty when issue= is omitted on a multi-issue "
+            f"sprint, got {ticket_fm.get('issue')!r}"
+        )
+
+        issue_a_fm = read_frontmatter(pending_pool / "issue-a.md")
+        issue_b_fm = read_frontmatter(pending_pool / "issue-b.md")
+        assert not issue_a_fm.get("tickets")
+        assert not issue_b_fm.get("tickets")
+
+    def test_add_issue_ref_backfills_ticket_missing_from_autolink(self, work_dir):
+        """When a ticket doesn't get an issue: from auto-link (e.g. it
+        targets one specific issue out of several linked to the sprint),
+        the documented add_issue_ref repair step must produce a correct
+        per-ticket back-reference.
+        """
+        from clasi.tools.artifact_tools import add_issue_ref
+
+        pending_pool = work_dir / ".clasi" / "issues"
+        pending_pool.mkdir(parents=True, exist_ok=True)
+        (pending_pool / "specific-issue.md").write_text(
+            "---\nstatus: pending\n---\n\n# Specific Issue\n", encoding="utf-8"
+        )
+
+        create_sprint("Backfill Sprint")
+        link_sprint_issues("001", ["specific-issue.md"])
+        _advance_to_ticketing(work_dir, "001")
+
+        # Ticket created with an explicit, different issue= than what
+        # auto-link would apply (simulates a ticket that doesn't cover the
+        # sprint's only linked issue and needs a manual add_issue_ref
+        # later for a second reference — here we simply verify the tool
+        # documented as the repair path establishes the back-reference).
+        result = json.loads(create_ticket("001", "Unrelated ticket"))
+        ticket_path = result["path"]
+        fm_before = read_frontmatter(ticket_path)
+        # Auto-link fires here too since only one issue is linked — clear
+        # it to simulate the "missing back-reference" case add_issue_ref
+        # is documented to repair.
+        fm_before.pop("issue", None)
+        write_frontmatter(ticket_path, fm_before)
+
+        add_issue_ref(ticket_path, "specific-issue.md")
+
+        fm_after = read_frontmatter(ticket_path)
+        assert fm_after.get("issue") == "specific-issue.md", (
+            "add_issue_ref must set the ticket's issue: field to the "
+            "referenced issue filename"
+        )
 
 
 # ---------------------------------------------------------------------------

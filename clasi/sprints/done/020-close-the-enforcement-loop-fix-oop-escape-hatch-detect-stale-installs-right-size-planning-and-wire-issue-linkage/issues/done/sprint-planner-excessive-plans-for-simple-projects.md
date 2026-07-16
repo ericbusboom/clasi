@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 source: e2e-test-run-003
 clasi_version: 0.20260715.2
@@ -7,6 +7,9 @@ tags:
 - planning
 - sprint-planner
 - e2e
+sprint: '020'
+tickets:
+- 020-006
 ---
 
 # Sprint-planner produces excessively heavy plans for simple projects

@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '020'
+tickets:
+- 020-007
 ---
 
 # plan-to-issue hook copies plans verbatim, producing plan-shaped issues
