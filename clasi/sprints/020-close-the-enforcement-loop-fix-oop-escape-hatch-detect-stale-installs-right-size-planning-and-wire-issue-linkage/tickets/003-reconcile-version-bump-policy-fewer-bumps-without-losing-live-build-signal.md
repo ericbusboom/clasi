@@ -1,9 +1,11 @@
 ---
 id: '003'
 title: 'Reconcile version-bump policy: fewer bumps without losing live-build signal'
-status: open
-use-cases: [SUC-003]
-depends-on: ['002']
+status: in-progress
+use-cases:
+- SUC-003
+depends-on:
+- '002'
 github-issue: ''
 issue: version-bump-noise-one-per-ticket-not-per-sprint.md
 completes_issue: true

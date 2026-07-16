@@ -1506,6 +1506,133 @@ class TestRoleGuardNestedPayloadShape:
 
 
 # ---------------------------------------------------------------------------
+# Absolute vs. relative file_path normalization (unplanned fix, sprint 020)
+# ---------------------------------------------------------------------------
+#
+# Every test above (and every existing _role_guard_payload() call prior to
+# this fix) exercises handle_role_guard with a RELATIVE file_path. Real
+# Claude Code PreToolUse payloads carry an ABSOLUTE file_path
+# (e.g. "/Users/x/proj/clasi/issues/foo.md"), which the allow/block prefix
+# checks (root-relative strings like "clasi/issues/") never matched via
+# startswith() before path normalization was added. _role_guard_payload()'s
+# own docstring warns that a wrong-shape fixture "silently validates the
+# wrong parse" — that warning was about payload nesting (fixed in sprint
+# 019) but applied equally to path FORM, which nobody had covered until now.
+#
+# _abs() below builds an absolute path under tmp_path (never a hardcoded
+# machine path) so these tests are portable across machines.
+
+
+def _abs(tmp_path: Path, rel_path: str) -> str:
+    """Return rel_path made absolute under tmp_path, POSIX-separated.
+
+    Never hardcode a real machine path (e.g. /Users/.../pipx/...) in a
+    test — a prior test did exactly that and had to be deleted. tmp_path
+    is pytest's own per-test temp directory, so this is portable.
+    """
+    return (tmp_path / rel_path).as_posix()
+
+
+class TestRoleGuardAbsolutePathNormalization:
+    """Role-guard must normalize an ABSOLUTE file_path to root-relative
+    before any prefix comparison, so real Claude Code payloads (which are
+    always absolute) are enforced identically to the relative-path form
+    used everywhere else in this test module.
+
+    Each case below is the absolute-path twin of an existing relative-path
+    assertion (team-lead allow-listed dirs, team-lead blocked dirs, tier 1
+    sprints allow, tier 2 unrestricted) so behavior is proven equivalent
+    across both path forms, not just individually plausible.
+    """
+
+    # --- Tier 0 (team-lead): allow-listed dirs, absolute form ---
+
+    def test_tier0_issues_dir_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/issues/foo.md"), "") == 0
+
+    def test_tier0_reflections_dir_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/reflections/foo.md"), "") == 0
+
+    def test_tier0_design_dir_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "docs/design/foo.md"), "") == 0
+
+    # --- Tier 0 (team-lead): blocked paths, absolute form ---
+
+    def test_tier0_sprints_dir_blocked_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(
+            tmp_path, _abs(tmp_path, "clasi/sprints/013-x/sprint.md"), ""
+        ) == 2
+
+    def test_tier0_source_code_blocked_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/project.py"), "") == 2
+
+    # --- Tier 1 (sprint-planner): sprints dir allowed, absolute form ---
+
+    def test_tier1_sprints_dir_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(
+            tmp_path, _abs(tmp_path, "clasi/sprints/013-x/tickets/001.md"), "1"
+        ) == 0
+
+    def test_tier1_source_code_blocked_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/project.py"), "1") == 2
+
+    # --- Tier 2 (programmer): unrestricted, absolute form ---
+
+    def test_tier2_source_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/project.py"), "2") == 0
+
+    def test_tier2_sprints_allowed_absolute(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(
+            tmp_path, _abs(tmp_path, "clasi/sprints/013-x/sprint.md"), "2"
+        ) == 0
+
+    # --- Absolute path OUTSIDE the project root must not crash or match ---
+
+    def test_absolute_path_outside_root_does_not_crash_and_is_blocked(self, tmp_path):
+        """An absolute file_path that is not under the project root (e.g. a
+        symlink escape or a misconfigured path) must not raise, and must
+        not accidentally satisfy an allow-prefix via string coincidence.
+        Tier 0, so falls through to the default BLOCK branch.
+        """
+        _write_fresh_config(tmp_path)
+        outside = (tmp_path.parent / "outside-project" / "clasi" / "issues" / "foo.md")
+        assert _run_role_guard(tmp_path, outside.as_posix(), "") == 2
+
+
+class TestRoleGuardAbsolutePathRevertCheck:
+    """Meta-test: proves the absolute-path tests above are not vacuous.
+
+    House standard: a new test suite covering a bug fix must fail against
+    the unfixed code, or it proves nothing. This is exercised procedurally
+    (see the ticket's revert-check instructions) rather than automated
+    here, but this class documents the specific assertion that must flip
+    from block to allow when normalization is removed, for anyone
+    re-running the revert check by hand:
+
+        _run_role_guard(tmp_path, _abs(tmp_path, "clasi/issues/foo.md"), "")
+
+    Unfixed: file_path stays absolute, "clasi/issues/" allow-prefix never
+    matches via startswith(), tier 0 falls through to the default BLOCK
+    branch -> exit 2 (wrong; should allow).
+    Fixed: file_path is normalized to "clasi/issues/foo.md" first,
+    startswith("clasi/issues/") matches -> exit 0 (correct).
+    """
+
+    def test_documents_the_revert_check_assertion(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/issues/foo.md"), "") == 0
+
+
+# ---------------------------------------------------------------------------
 # _oop_active() — unified OOP bypass helper (ticket 019-002)
 # ---------------------------------------------------------------------------
 

@@ -27,6 +27,31 @@ def get_project() -> Project:
     return Project(Path.cwd())
 
 
+def _normalize_to_root_relative(file_path: str) -> str:
+    """Normalize *file_path* to a root-relative path string (POSIX separators).
+
+    Claude Code's PreToolUse payloads carry ABSOLUTE file_path values, but
+    role-guard's allow/block prefixes (built via the ``_prefix()`` helper in
+    handle_role_guard) are root-relative strings like ``"clasi/issues/"``.
+    Without normalizing first, ``str.startswith()`` never matches an
+    absolute path against a relative prefix.
+
+    Three cases, mirroring ``_prefix()``'s own relative_to/fallback pattern:
+      - Absolute path under the project root -> root-relative path.
+      - Absolute path outside the project root -> returned unchanged (as a
+        plain string comparison); it cannot match any relative prefix, and
+        must not raise or be coerced into accidentally matching one.
+      - Already-relative path -> returned unchanged.
+    """
+    p = Path(file_path)
+    if not p.is_absolute():
+        return file_path
+    try:
+        return p.relative_to(get_project().root).as_posix()
+    except ValueError:
+        return file_path
+
+
 def read_payload() -> dict:
     """Read JSON payload from stdin."""
     try:
@@ -177,6 +202,18 @@ def handle_role_guard(payload: dict) -> None:
         or tool_input.get("new_path")
         or ""
     )
+
+    # Normalize to a root-relative path string before any prefix comparison.
+    # Claude Code sends ABSOLUTE file_path values (e.g.
+    # "/Users/x/proj/clasi/issues/foo.md"), but every prefix this function
+    # compares against (_prefix() below, and the historical allow/block
+    # lists) is root-relative (e.g. "clasi/issues/"). Without this
+    # normalization, startswith() never matches for real Claude Code
+    # payloads and every tier-0/tier-1 allow-listed write is blocked. Runs
+    # before the no-path check, recovery-state lookup, and safe_prefixes
+    # check so all downstream comparisons see the same relative form.
+    if file_path:
+        file_path = _normalize_to_root_relative(file_path)
 
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
