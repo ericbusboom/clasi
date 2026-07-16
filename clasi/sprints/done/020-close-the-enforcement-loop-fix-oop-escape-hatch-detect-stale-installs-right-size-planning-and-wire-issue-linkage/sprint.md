@@ -2,7 +2,7 @@
 id: '020'
 title: 'Close the enforcement loop: fix OOP escape hatch, detect stale installs, right-size
   planning, and wire issue linkage'
-status: planning-docs
+status: closed
 branch: sprint/020-close-the-enforcement-loop-fix-oop-escape-hatch-detect-stale-installs-right-size-planning-and-wire-issue-linkage
 use-cases: []
 issues:
