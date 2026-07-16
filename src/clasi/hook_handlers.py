@@ -1252,7 +1252,14 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
     ``plan_to_issue_from_text`` to write a pending issue file.
 
     Always exits 0 — the Codex Stop hook fires after the session has ended,
-    so there is nothing to block.
+    so there is nothing to block. Unlike ``handle_plan_to_issue`` (the Claude
+    Code ``ExitPlanMode`` path), there is no live model turn left to hand a
+    "rewrite this into house format" instruction to, so the option 1 fix
+    (block-and-hand-off, see `handle_plan_to_issue`) does not apply here.
+    ``plan_to_issue_from_text`` still gets the mechanical, non-brittle part
+    of the fix — stripping a redundant ``issue-`` filename prefix — but the
+    resulting file may still carry plan-shaped prose that needs a later
+    manual or sprint-planner-side reshape.
     """
     import re
 
@@ -1297,8 +1304,27 @@ def handle_plan_to_issue(payload: dict) -> None:
                 "decision": "block",
                 "reason": (
                     f"CLASI: Plan saved as issue: {result}. "
-                    "This plan is now a pending issue for future sprint planning. "
-                    "Do NOT implement it now. Confirm the issue was created and stop."
+                    "This file is a verbatim copy of the plan and is NOT yet in "
+                    "house issue format — rewrite it now, in place, before doing "
+                    "anything else. The reader is a future sprint-planner with no "
+                    "session context, not the session that just ran.\n\n"
+                    "Rewrite steps:\n"
+                    "1. Read the file at the path above.\n"
+                    "2. Reshape its body into the house issue format: `# Title`, "
+                    "then `## Description`, `## Cause`, `## Proposed fix`, "
+                    "`## Verification`, `## Related` (omit any section with "
+                    "nothing to say).\n"
+                    "3. Drop plan-mode-only sections and framing that address the "
+                    "planning session rather than the issue's reader — e.g. "
+                    "'Scope of this plan', 'Do not implement', 'Deliverable', "
+                    "'Files to touch (this plan)', or any instruction to create "
+                    "the issue file that this document already is.\n"
+                    "4. Keep the `status: pending` frontmatter unchanged.\n"
+                    "5. If the filename starts with a redundant `issue-` prefix "
+                    "(it already lives in the issues directory), rename the file "
+                    "to drop that prefix.\n"
+                    "6. Do NOT implement the issue's contents. Confirm the "
+                    "rewritten issue file was saved and stop."
                 ),
             }),
             file=sys.stderr,

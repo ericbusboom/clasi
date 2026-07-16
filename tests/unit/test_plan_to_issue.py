@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from clasi.plan_to_issue import _content_hash, plan_to_issue, plan_to_issue_from_text
+from clasi.plan_to_issue import (
+    _content_hash,
+    _strip_redundant_issue_prefix,
+    plan_to_issue,
+    plan_to_issue_from_text,
+)
 
 
 def _make_plan_file(plans_dir: Path, name: str = "my-plan.md", content: str = "# My Plan\n\nSome content.") -> Path:
@@ -221,3 +226,49 @@ class TestPlanToIssueFromText:
         assert result is not None
         content = result.read_text(encoding="utf-8")
         assert "status: pending" in content
+
+
+class TestStripRedundantIssuePrefix:
+    def test_strips_leading_issue_segment(self):
+        """A leading 'issue-' segment is dropped."""
+        assert _strip_redundant_issue_prefix("issue-re-enable-mcp-tools") == "re-enable-mcp-tools"
+
+    def test_leaves_non_prefixed_slug_untouched(self):
+        """A slug without a leading 'issue-' segment is unchanged."""
+        assert _strip_redundant_issue_prefix("re-enable-mcp-tools") == "re-enable-mcp-tools"
+
+    def test_does_not_strip_issue_appearing_mid_slug(self):
+        """'issue' appearing later in the slug (not as the leading segment) is kept."""
+        assert _strip_redundant_issue_prefix("fix-the-issue-tracker") == "fix-the-issue-tracker"
+
+    def test_never_reduces_to_empty(self):
+        """A slug that is exactly 'issue-' is not stripped down to an empty string."""
+        assert _strip_redundant_issue_prefix("issue-") == "issue-"
+
+
+class TestPlanToIssueFilenamePrefix:
+    def test_plan_to_issue_drops_redundant_issue_prefix(self, tmp_path):
+        """A plan titled '# Issue: ...' does not produce an 'issue-'-prefixed filename."""
+        plans_dir = tmp_path / "plans"
+        issue_dir = tmp_path / "issues"
+        _make_plan_file(
+            plans_dir,
+            content="# Issue: re-enable the MCP process-content tools\n\nBody here.",
+        )
+
+        result = plan_to_issue(plans_dir, issue_dir)
+
+        assert result is not None
+        assert not result.name.startswith("issue-")
+        assert result.name.startswith("re-enable-the-mcp-process-content-tools")
+
+    def test_from_text_drops_redundant_issue_prefix(self, tmp_path):
+        """Codex plan text titled '# Issue: ...' does not produce an 'issue-'-prefixed filename."""
+        issue_dir = tmp_path / "issues"
+        plan_text = "# Issue: re-enable the MCP process-content tools\n\nBody here."
+
+        result = plan_to_issue_from_text(plan_text, issue_dir)
+
+        assert result is not None
+        assert not result.name.startswith("issue-")
+        assert result.name.startswith("re-enable-the-mcp-process-content-tools")

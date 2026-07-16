@@ -950,6 +950,52 @@ class TestHandlePlanToIssue:
         assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") == Path("/tmp/my-plan.md")
 
+    def test_reason_instructs_model_to_rewrite_into_house_format(self, tmp_path, capsys):
+        """The block reason tells the model to rewrite the file, not just confirm it.
+
+        Drives the real plan_to_issue() (not a mock) with a plan containing the
+        actual plan-mode framing observed in production, so this exercises the
+        real path end to end.
+        """
+        plan_file = tmp_path / "my-plan.md"
+        plan_file.write_text(
+            "# Issue: re-enable the MCP process-content tools\n\n"
+            "## Scope of this plan\n\n"
+            "Write the issue file. Do not implement.\n\n"
+            "## Deliverable\n\n"
+            "Create the issue file.\n",
+            encoding="utf-8",
+        )
+        issue_dir = tmp_path / "issues"
+        payload = {"tool_input": {"planFilePath": str(plan_file)}}
+
+        with patch("clasi.hook_handlers.get_project") as mock_get_project:
+            mock_get_project.return_value.issues_dir = issue_dir
+            with pytest.raises(SystemExit) as exc:
+                handle_plan_to_issue(payload)
+
+        assert exc.value.code == 2
+        captured = capsys.readouterr()
+        data = json.loads(captured.err)
+        assert data["decision"] == "block"
+        reason = data["reason"]
+
+        # The reason must instruct the model to rewrite the file into house
+        # format, not merely "confirm the issue was created and stop."
+        assert "rewrite" in reason.lower()
+        assert "house" in reason.lower() or "Description" in reason
+        assert "## Description" in reason
+        assert "## Proposed fix" in reason
+        # It must not simply tell the model to accept the plan-shaped copy.
+        assert "Confirm the issue was created and stop." not in reason
+
+        # Regression: an issue file was actually written, unlinked source, pending status.
+        issue_files = list(issue_dir.glob("*.md"))
+        assert len(issue_files) == 1
+        assert not plan_file.exists()
+        assert "status: pending" in issue_files[0].read_text(encoding="utf-8")
+        assert not issue_files[0].name.startswith("issue-")
+
 
 # ---------------------------------------------------------------------------
 # handle_codex_plan_to_issue tests
@@ -1006,6 +1052,34 @@ class TestHandleCodexPlanToIssue:
         with pytest.raises(SystemExit) as exc:
             _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
         assert exc.value.code == 0
+
+    def test_drops_redundant_issue_prefix_from_filename(self, tmp_path):
+        """A Codex plan titled '# Issue: ...' does not land with an 'issue-' filename prefix.
+
+        The Codex Stop hook fires after the session ends, so there is no live
+        model turn to hand a rewrite instruction to (see the docstring on
+        handle_codex_plan_to_issue) — but the mechanical filename fix still
+        applies via plan_to_issue_from_text, exercised here through the real
+        hook path (no mocks).
+        """
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
+        message = (
+            "<proposed_plan>\n"
+            "# Issue: re-enable the MCP process-content tools\n\n"
+            "## Scope of this plan\n\nDo not implement.\n"
+            "</proposed_plan>"
+        )
+        payload = self._payload(message)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
+        assert exc.value.code == 0
+
+        issue_dir = tmp_path / ".clasi" / "issues"
+        issue_files = list(issue_dir.glob("*.md"))
+        assert len(issue_files) == 1
+        assert not issue_files[0].name.startswith("issue-")
 
     def test_dedup_second_call_creates_no_file(self, tmp_path):
         """Duplicate plan (same content hash): second call creates no file."""

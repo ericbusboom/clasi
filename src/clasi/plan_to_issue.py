@@ -12,6 +12,19 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _strip_redundant_issue_prefix(slug: str) -> str:
+    """Drop a leading ``issue-`` segment from *slug*.
+
+    Titles like "Issue: re-enable the MCP tools" slugify to
+    ``issue-re-enable-the-mcp-tools``. The word "issue" is redundant in a
+    filename that already lives in the issues directory, so strip a single
+    leading ``issue-`` segment (but never reduce the slug to empty).
+    """
+    if slug.startswith("issue-") and len(slug) > len("issue-"):
+        return slug[len("issue-"):]
+    return slug
+
+
 def _unique_path(directory: Path, slug: str) -> Path:
     """Return a unique .md path in directory, appending a number if needed."""
     candidate = directory / f"{slug}.md"
@@ -71,6 +84,7 @@ def plan_to_issue(
     slug = slugify(title) if title else slugify(plan_file.stem)
     if not slug:
         slug = "untitled-plan"
+    slug = _strip_redundant_issue_prefix(slug)
 
     issue_dir.mkdir(parents=True, exist_ok=True)
     out_path = _unique_path(issue_dir, slug)
@@ -117,6 +131,7 @@ def plan_to_issue_from_text(text: str, issue_dir: Path) -> Optional[Path]:
     slug = slugify(title) if title else "untitled-plan"
     if not slug:
         slug = "untitled-plan"
+    slug = _strip_redundant_issue_prefix(slug)
 
     out_path = _unique_path(issue_dir, slug)
     frontmatter = f"---\nstatus: pending\nsource: codex-plan\nsource_hash: {h}\n---\n\n"
