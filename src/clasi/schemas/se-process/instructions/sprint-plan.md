@@ -8,9 +8,11 @@ This skill creates sprint plans using a two-phase model:
 
 - **Phase 2 — Detail**: One sprint at a time. Produces full planning
   artifacts via the sprint-planner agent: a single `sprint.md` with
-  right-sized Architecture and Use Cases sections, plus tickets. Runs
-  architecture review inline (or records it `skipped` for a trivial/small
-  sprint).
+  right-sized Architecture and Use Cases sections, plus tickets. Sizing
+  is a three-tier decision (trivial / compact / substantial) — see the
+  sprint-planner `agent.md` for the full criteria and how each tier
+  handles diagrams and the architecture review gate (`skipped` for
+  trivial, a scoped review for compact, the full review for substantial).
 
 Branches are created later via `acquire_execution_lock`, not during
 planning. All planning happens on main.

@@ -71,7 +71,12 @@ Before starting, determine which mode applies:
 ## Effort Decision: Size the Sprint Before Writing
 
 Before writing `sprint.md`'s Architecture and Use Cases sections, make an
-explicit sizing decision based on the feature's scope:
+explicit sizing decision based on the feature's scope. There are three
+tiers, not two — the middle tier exists specifically so that "adds one
+new module" does not default to the same treatment as "introduces a new
+subsystem." Match the plan to the work; a diagram or an extra section
+must be justified by an actual cross-module concern, not included by
+default.
 
 - **Trivial / small** (a bug fix, a config tweak, a change confined to one
   module with no new component or data-model impact): write minimal or
@@ -80,22 +85,50 @@ explicit sizing decision based on the feature's scope:
   use case is warranted. Skip the architecture self-review (Phase 3
   below) and record the gate result as `skipped` via
   `record_gate_result(sprint_id, "architecture_review", "skipped")`.
-- **Substantial / structural** (new components, changed data model,
-  cross-module impact, new external integration): write full Architecture
-  and Use Cases sections using the complete 7-step methodology below, and
-  run the full self-review.
+- **Compact** (one new or changed module or component, and *all* of the
+  following hold: no new cross-module dependency, no dependency-direction
+  change, no data-model change): write the full Architecture section
+  structure (What Changed, Why, Impact, Migration Concerns) but apply the
+  compact variant of Phase 2 below — no Mermaid diagrams, prose sized to
+  the one module (typically about 300-500 words, as a natural consequence
+  of describing one module, not a truncation target). Run the
+  self-review, scoped to that one module's cohesion and boundary, not the
+  full five-category review.
+- **Substantial / structural** (any of: 3+ modules touched, a new or
+  changed cross-module dependency, a dependency-direction change, a data
+  model change, a new external integration): write full Architecture and
+  Use Cases sections using the complete 7-step methodology below,
+  including required diagrams, and run the full self-review.
+
+Judge the tier by these concrete signals — module count, whether
+dependencies change, whether the data model changes — not by guessing at
+a word count. If a sprint is borderline, prefer the heavier tier and
+justify the choice in the sizing sentence; a heuristic that undersizes a
+genuinely complex sprint is worse than one that occasionally over-sizes a
+simple one.
 
 State the sizing decision and its rationale in one sentence at the top of
 the Architecture section (e.g., "Trivial — single-function bug fix, no
-architectural impact" or "Substantial — introduces a new worktree
-lifecycle subsystem"). This sprint (018) is itself a worked example of
-the substantial path: it used the full 7-step methodology because it
-introduced new subsystems (worktree lifecycle, single-doc planning model).
-Note: sprint 018 was planned before this rewrite landed, so its own
-`sprint.md` predates the one-document model described here — it still
-has separate `usecases.md`/`architecture-update.md` files from the old
-three-document convention. That is expected and correct for a sprint
-planned before Issue B shipped; it is not a defect to "fix" retroactively.
+architectural impact"; "Compact — adds one new module (city-guessing
+game), no new cross-module dependency, no data-model change"; or
+"Substantial — introduces a new worktree lifecycle subsystem"). Two
+sprints are worked examples on record:
+- Sprint 018 (substantial): used the full 7-step methodology because it
+  introduced new subsystems (worktree lifecycle, single-doc planning
+  model) — 3+ modules and new cross-module dependencies. Note: 018 was
+  planned before this rewrite landed, so its own `sprint.md` predates the
+  one-document model described here — it still has separate
+  `usecases.md`/`architecture-update.md` files from the old
+  three-document convention. That is expected and correct for a sprint
+  planned before Issue B shipped; it is not a defect to "fix"
+  retroactively.
+- Sprint 020 (substantial, but deliberately no diagram): 9 largely
+  independent bugfix/process-quality issues touching many existing
+  modules with no new subsystem and no cross-module dependency change —
+  substantial by module count, but its own architecture doc explicitly
+  states a component diagram isn't warranted because nothing new is being
+  composed. This is the case for stating "no diagram" as a reasoned
+  exception even within the substantial tier, not just within compact.
 
 If the sprint already has a `sprint.md` with `status: roadmap`, you are in
 Detail Mode. Otherwise, start in Roadmap Mode.
@@ -137,15 +170,31 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    pass `issue=<filename>` explicitly on every `create_ticket` call.
 3. Make the effort decision (see above). Write `sprint.md`'s Use Cases
    section with sprint-level use cases (SUC-NNN), sized to the decision —
-   full use cases for a substantial sprint, "N/A — trivial" for a small one.
+   full use cases for a substantial or compact sprint, "N/A — trivial"
+   for a small one. A compact sprint's use case can be brief (a couple of
+   sentences per SUC) — it doesn't need the full narrative treatment a
+   substantial sprint's use cases get.
 
 #### Phase 2: Architecture
 
 4. Read the current consolidated architecture from `docs/architecture/`.
 5. If the effort decision was trivial/small, write "N/A — trivial" (with
    a one-sentence rationale) into `sprint.md`'s Architecture section and
-   skip to Phase 3's gate-recording step. Otherwise, write the
-   Architecture section using this 7-step methodology:
+   skip to Phase 3's gate-recording step. If the effort decision was
+   **compact**, use the same 7 steps below but with this variant of Step
+   4: **omit all diagrams** (component, ERD, dependency graph) — a
+   single-module addition with no new cross-module dependency has nothing
+   a diagram would clarify beyond the one-sentence purpose statement from
+   Step 3. Keep Steps 5-7 but write them compactly: one module means one
+   entry in "What Changed," one paragraph of "Why," and "Impact on
+   Existing Components" can be "None — additive" if true. Design
+   Rationale (Step 6) only needs an entry if there was a real choice to
+   justify; skip it if there wasn't. The result is naturally short
+   (typically 300-500 words) because there is only one module to
+   describe — do not pad to reach that range, and do not truncate an
+   honest description to force it below the range. For a substantial
+   sprint, write the Architecture section using the complete 7-step
+   methodology, diagrams included:
 
    **Step 1: Understand the Problem** — Read the sprint plan, use cases, and
    current architecture. Know what changes and why before writing anything.
@@ -159,7 +208,14 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    boundary (what is inside and outside), and the use cases it serves.
 
    **Step 4: Produce Diagrams** — Include required Mermaid diagrams:
-   - Component/module diagram (5-12 nodes, labeled edges)
+   - Component/module diagram (5-12 nodes, labeled edges) — required
+     whenever 3+ modules are touched or a new cross-module dependency is
+     introduced. Not required solely because a sprint is "substantial" —
+     e.g. a sprint that touches many existing modules for independent
+     bugfixes with no new composition between them (see sprint 020) can
+     state in one sentence why a diagram wouldn't clarify anything and
+     omit it. When in doubt, include it; the escape is for the case
+     where you can articulate why it adds nothing, not a default.
    - Entity-relationship diagram if the data model changes
    - Dependency graph if module dependencies change
 
@@ -188,6 +244,15 @@ If the effort decision was trivial/small (Architecture section reads
 `skipped`: `record_gate_result(sprint_id, "architecture_review",
 "skipped")`. Then advance to architecture-review phase and proceed to
 Phase 4.
+
+If the effort decision was **compact**, run a scoped-down review: check
+only that the one module passes the cohesion test (one sentence, no
+"and"), that its boundary is clear, and that it doesn't silently
+introduce a cross-module dependency the sizing decision said didn't
+exist (if it does, the sizing decision was wrong — revise it to
+substantial and redo Phase 2's Step 4 with diagrams). Record the gate
+result as `passed` and proceed; the full five-category review below is
+not required for this tier.
 
 For a substantial/structural sprint, run the full review:
 
