@@ -55,6 +55,15 @@ class TestToolRegistration:
         "get_use_case_coverage",
         "get_version",
         "get_status",
+        "list_agents",
+        "list_skills",
+        "list_instructions",
+        "get_agent_definition",
+        "get_skill_definition",
+        "get_instruction",
+        "list_language_instructions",
+        "get_language_instruction",
+        "get_activity_guide",
     }
 
     EXPECTED_ARTIFACT_TOOLS = {
@@ -115,7 +124,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 36
+        assert len(registered) == 45
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()

@@ -2,9 +2,11 @@
 id: 008
 title: Re-enable the 9 disabled MCP process-content tools (step 1 only; no discovery
   measurement, no installer shrink)
-status: open
-use-cases: [SUC-008]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-008
+depends-on:
+- '002'
 github-issue: ''
 issue: issue-re-enable-the-mcp-process-content-tools.md
 completes_issue: false
@@ -46,18 +48,18 @@ come from a stale build too if ticket 002 hasn't landed.
 
 ## Acceptance Criteria
 
-- [ ] All 9 `@server.tool()` decorators restored in `process_tools.py`.
-- [ ] `EXPECTED_PROCESS_TOOLS` (`tests/unit/test_mcp_server.py:62`) and the
+- [x] All 9 `@server.tool()` decorators restored in `process_tools.py`.
+- [x] `EXPECTED_PROCESS_TOOLS` (`tests/unit/test_mcp_server.py:62`) and the
       hardcoded tool count (`:144`, currently `== 36`) updated to match —
       `clasi mcp` now exposes 45 tools (36 + 9).
-- [ ] `get_skill_definition` resolving a `Load from:` skill is verified
+- [x] `get_skill_definition` resolving a `Load from:` skill is verified
       against the actual resolution path this repo now uses (post-ticket-
       002, ideally against the editable install, not a stale one) — sprint
       013 flagged the `_PACKAGE_ROOT` triple-parent coupling
       (`process_tools.py:259`) and asked for wheel-resolution proof; this
       ticket at minimum verifies resolution against whatever install path
       is now correct per ticket 002.
-- [ ] No discovery-reliability trial and no installer file-count change
+- [x] No discovery-reliability trial and no installer file-count change
       included in this ticket — explicitly out of scope, left for future
       tickets gated on the measurement.
 
