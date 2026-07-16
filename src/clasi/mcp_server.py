@@ -131,6 +131,32 @@ class Clasi:
         logger.info("  python: %s", sys.executable)
         logger.info("  log_file: %s", self.project.log_dir / "mcp-server.log")
 
+        # Staleness check: warn loudly at startup if this server is running
+        # a stale build relative to the project it is serving. See
+        # clasi.staleness for what the two signals catch and why the check
+        # is safe to run unconditionally (it never fires for ordinary
+        # consumer projects).
+        from clasi import __version__ as _running_version
+        from clasi.staleness import check_staleness
+
+        staleness_report = check_staleness(self.project.root, _running_version)
+        if staleness_report.stale:
+            for line in staleness_report.warning().splitlines():
+                logger.warning(line)
+            print(staleness_report.warning(), file=sys.stderr)
+            # Also surface in the MCP `instructions` field, which clients
+            # typically show/inject at session start — a more durable
+            # surface than a stderr line that scrolls past.
+            try:
+                self.server._mcp_server.instructions = (
+                    f"{self.server.instructions}\n\n{staleness_report.warning()}"
+                )
+            except AttributeError:
+                logger.warning(
+                    "staleness: could not append warning to MCP instructions "
+                    "field (FastMCP internals changed)"
+                )
+
         # Preflight: verify all required submodules are importable.
         # Catches stale editable installs or version mismatches at
         # startup rather than producing confusing per-tool errors.

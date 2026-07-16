@@ -1637,9 +1637,6 @@ import subprocess as _subprocess
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CURRENT_CLASI = _REPO_ROOT / ".venv" / "bin" / "clasi"
-_STALE_PIPX_CLASI = Path(
-    "/Volumes/Cache/User-Eric/.local/pipx/venvs/clasi/bin/clasi"
-)
 
 
 def _invoke_role_guard_cli(clasi_bin: Path, cwd: Path, payload: dict) -> _subprocess.CompletedProcess:
@@ -1694,45 +1691,19 @@ class TestRoleGuardRealCliInvocationPath:
         result = _invoke_role_guard_cli(_CURRENT_CLASI, tmp_path, payload)
         assert result.returncode == 0
 
-    @pytest.mark.skipif(
-        not _STALE_PIPX_CLASI.exists(),
-        reason="stale pipx build not present on this machine — nothing to "
-        "compare against",
-    )
-    def test_revert_check_stale_build_fails_open_regardless_of_oop_flag(
-        self, tmp_path,
-    ):
-        """Revert-check (house standard, sprint 019): this is the test that
-        must FAIL when pointed at the stale build, proving the two tests
-        above are actually distinguishing "correct build" from "stale
-        build" rather than passing unconditionally.
-
-        The stale pipx install predates the 019-001 nested-payload fix, so
-        it reads file_path from the payload ROOT (`payload.get(...)`)
-        instead of `payload["tool_input"]`. Given the real nested payload
-        shape, that resolves to file_path == "", which the stale build's
-        no-path branch treats as ALLOW (exit 0) — the pre-019 fail-open
-        default. So the stale build allows the write with NO .clasi/oop
-        flag present at all: it isn't bypassing via OOP, it's failing open
-        via the payload-parsing bug. Asserting != 0 here (i.e. "the stale
-        build must still enforce, which it does not") is what makes this a
-        genuine revert-check rather than a tautology.
-        """
-        _write_fresh_config(tmp_path)
-        # Deliberately NO .clasi/oop flag — if the stale build correctly
-        # enforced role-guard, this must block (exit 2), same as the
-        # current-build control test above.
-        payload = _role_guard_payload("src/clasi/hook_handlers.py")
-        result = _invoke_role_guard_cli(_STALE_PIPX_CLASI, tmp_path, payload)
-        # The stale build fails open here (returncode == 0) even with no
-        # OOP flag present — this assertion fails if run against a fixed
-        # build, which is exactly the revert-check property required.
-        assert result.returncode == 0, (
-            "expected the stale pre-019 pipx build to fail OPEN "
-            "(no-path branch mis-parsing the nested payload); if this "
-            "assertion fails, the 'stale build' at _STALE_PIPX_CLASI no "
-            "longer reproduces the symptom this test pins down"
-        )
+    # A third test, test_revert_check_stale_build_fails_open_regardless_of_oop_flag,
+    # was added by 020-001 and has been removed. It hardcoded a path to a
+    # pipx-installed `clasi` binary outside this working tree and asserted
+    # that binary fails open. That is not a test of this repo: it pins the
+    # observed behavior of a mutable artifact on one developer's machine.
+    # It broke when that pipx install was refreshed mid-sprint, exactly as
+    # its own error message predicted, and it could never have passed for
+    # any other developer either. The revert-check discipline it reached
+    # for is right, but it must run against code we control. That coverage
+    # now lives in tests/unit/test_staleness.py, which exercises
+    # check_staleness() against real importlib.metadata shapes for both
+    # stale and current versions without depending on any binary existing
+    # on disk.
 
 
 # ---------------------------------------------------------------------------
@@ -2259,3 +2230,163 @@ class TestRoleGuardTicketStateGate:
         assert sprint_id == "019"
         assert active == []
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+
+# ---------------------------------------------------------------------------
+# Staleness fail-closed gate (ticket 020-002) — role-guard / mcp-guard
+# ---------------------------------------------------------------------------
+
+
+def _write_stale_clasi_repo_skeleton(root: Path, declared_version: str) -> None:
+    """Make *root* look like a CLASI source checkout (real pyproject.toml +
+    src/clasi/__init__.py on disk) whose declared version differs from
+    the real running package's metadata_version — deterministically
+    triggers clasi.staleness's "dogfooding drift" signal via the version
+    mismatch alone (source_path will also legitimately mismatch here,
+    since this __init__.py is a throwaway file, not the real running
+    module's backing file — see _write_matching_clasi_repo_skeleton for
+    the counterpart that neutralizes that).
+    """
+    (root / "pyproject.toml").write_text(
+        f'[project]\nname = "clasi"\nversion = "{declared_version}"\n',
+        encoding="utf-8",
+    )
+    src_clasi = root / "src" / "clasi"
+    src_clasi.mkdir(parents=True, exist_ok=True)
+    (src_clasi / "__init__.py").write_text('"""CLASI."""\n', encoding="utf-8")
+
+
+def _write_matching_clasi_repo_skeleton(root: Path, declared_version: str) -> None:
+    """Like _write_stale_clasi_repo_skeleton, but src/clasi/__init__.py is
+    a real symlink to the actual running clasi module's real __init__.py
+    file, so the source_path signal also genuinely agrees — the only way
+    to construct a true "not stale" case for the dogfooding signal without
+    faking clasi.staleness's internals.
+    """
+    import importlib.util
+
+    (root / "pyproject.toml").write_text(
+        f'[project]\nname = "clasi"\nversion = "{declared_version}"\n',
+        encoding="utf-8",
+    )
+    src_clasi = root / "src" / "clasi"
+    src_clasi.mkdir(parents=True, exist_ok=True)
+    spec = importlib.util.find_spec("clasi")
+    real_init = Path(spec.origin).resolve()
+    (src_clasi / "__init__.py").symlink_to(real_init)
+
+
+def _real_running_clasi_version() -> str:
+    import importlib.metadata
+
+    return importlib.metadata.version("clasi")
+
+
+class TestRoleGuardStalenessFailClosed:
+    """Ticket 020-002: role-guard refuses to enforce (fails closed) when
+    this repo IS the CLASI source repo and the running build's declared
+    version doesn't match the working tree's own pyproject.toml — the
+    same "dogfooding drift" signal from clasi.staleness. Ordinary
+    dependency-version skew in a ordinary project stays out of scope for
+    this gate (see clasi.staleness tests); this class only covers the
+    fail-closed wiring in hook_handlers.
+    """
+
+    def test_dogfooding_drift_blocks_tier0_write(self, tmp_path):
+        """Tier 0, source write, repo pyproject.toml version deliberately
+        ahead of the running package's real metadata_version -> exit 2."""
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        assert newer_fake_version != _real_running_clasi_version()
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 2
+
+    def test_dogfooding_drift_blocks_tier2_write(self, tmp_path):
+        """Tier 2 (normally unrestricted) is also blocked by the staleness
+        gate — it runs before the tier-2 unrestricted early return."""
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+    def test_matching_version_does_not_block(self, tmp_path):
+        """Revert-check counterpart: when the repo's declared version AND
+        editable source path both match the running package for real, the
+        gate does not fire and the normal tier-2 unrestricted-write allow
+        applies."""
+        _write_fresh_config(tmp_path)
+        _write_matching_clasi_repo_skeleton(tmp_path, _real_running_clasi_version())
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_non_clasi_repo_project_root_never_blocked_by_staleness(self, tmp_path):
+        """A project root that is NOT the CLASI source repo (no
+        pyproject.toml naming clasi) never triggers this gate, regardless
+        of the running package's real version — the consumer-project
+        no-op path from clasi.staleness."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
+
+    def test_oop_bypass_still_works_when_stale(self, tmp_path):
+        """.clasi/oop must still bypass everything, including the
+        staleness gate — OOP is the designed escape hatch for exactly
+        this situation (a broken/stale guard)."""
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+        (tmp_path / ".clasi" / "oop").touch()
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 0
+
+    def test_safe_prefix_still_allowed_when_stale(self, tmp_path):
+        """.claude/, CLAUDE.md, AGENTS.md remain writable even when the
+        staleness gate is active — otherwise there would be no way to
+        fix .mcp.json / .claude/settings.json from inside the guarded
+        session itself without OOP."""
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        assert _run_role_guard(tmp_path, "CLAUDE.md", "") == 0
+
+
+class TestMcpGuardStalenessFailClosed:
+    """Same fail-closed gate, wired into handle_mcp_guard."""
+
+    def test_dogfooding_drift_blocks_tier1_mcp_call(self, tmp_path):
+        """Tier 1 is normally allowed by mcp-guard (only tier 0 is
+        blocked by default) — the staleness gate blocks it anyway,
+        proving the gate runs before the tier-allowed exit rather than
+        being masked by it."""
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        assert newer_fake_version != _real_running_clasi_version()
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 2
+
+    def test_matching_version_does_not_block_tier1_mcp_call(self, tmp_path):
+        """Revert-check counterpart: matching version and source path ->
+        tier 1's normal allow applies."""
+        _write_fresh_config(tmp_path)
+        _write_matching_clasi_repo_skeleton(tmp_path, _real_running_clasi_version())
+
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+
+    def test_oop_bypass_still_works_when_stale(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        newer_fake_version = "0.99990101.1"
+        _write_stale_clasi_repo_skeleton(tmp_path, newer_fake_version)
+        (tmp_path / ".clasi" / "oop").touch()
+
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    def test_non_clasi_repo_project_root_tier_allowed_path_unaffected(self, tmp_path):
+        """Tier 1/2 callers are unaffected by the staleness gate either
+        way (they exit allow before reaching it in the tier-allowed
+        path) — confirms the gate doesn't regress the ordinary
+        tier-allowed exit."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0

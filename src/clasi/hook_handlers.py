@@ -240,6 +240,40 @@ def handle_role_guard(payload: dict) -> None:
         if file_path == prefix or file_path.startswith(prefix):
             _exit_hook("role-guard", payload, 0, "safe-prefix")
 
+    # Staleness fail-closed gate: when this repo IS the CLASI source repo
+    # (clasi.staleness._is_clasi_source_repo) and the running hook build
+    # does not match this repo's own working tree ("dogfooding drift"),
+    # block rather than silently enforce nothing. This is deliberately
+    # narrower than the full staleness report: ordinary dependency-version
+    # skew in a consumer project (signal 1, ambient importlib.metadata
+    # drift) stays warn-only — it is too common and too blunt a signal to
+    # fail closed on for every project that merely depends on clasi. Only
+    # the structural "this repo is running a build of itself that isn't
+    # its own source" case (signal 2) fails closed here, because that is
+    # exactly the condition that let sprint 019's entire enforcement story
+    # run inert while reporting success. Checked after OOP/recovery/
+    # safe-prefix so the escape hatches for fixing the stale pointer
+    # itself (.clasi/oop, editing .claude/ or .mcp.json via OOP) are never
+    # blocked by the same staleness they exist to let you repair.
+    from clasi import __version__ as _running_version
+    from clasi.staleness import check_staleness
+
+    _staleness = check_staleness(get_project().root, _running_version)
+    if _staleness.repo_version is not None and any(
+        "does not match this repo's editable source" in r
+        or "is not running this working tree's code" in r
+        for r in _staleness.reasons
+    ):
+        print(_staleness.warning(), file=sys.stderr)
+        print(
+            "CLASI ROLE VIOLATION: refusing to enforce role-guard from a "
+            "stale build of this repo's own tooling. Fix .mcp.json / "
+            ".claude/settings.json to invoke the editable install, or set "
+            ".clasi/oop to bypass.",
+            file=sys.stderr,
+        )
+        _exit_hook("role-guard", payload, 2, "stale-guard")
+
     # Ticket-state gate: if a sprint execution lock is held but zero
     # tickets in that sprint are `status: in-progress`, block the write
     # regardless of tier — including tier 2. This is the gate that was
@@ -363,6 +397,29 @@ def handle_mcp_guard(payload: dict) -> None:
     # OOP bypass
     if _oop_active():
         _exit_hook("mcp-guard", payload, 0, "oop-bypass")
+
+    # Staleness fail-closed gate — see the matching gate and rationale in
+    # handle_role_guard. Same narrow scope: only the structural "this repo
+    # is running a build of itself that isn't its own source" signal fails
+    # closed; ordinary dependency-version skew stays warn-only.
+    from clasi import __version__ as _running_version
+    from clasi.staleness import check_staleness
+
+    _staleness = check_staleness(get_project().root, _running_version)
+    if _staleness.repo_version is not None and any(
+        "does not match this repo's editable source" in r
+        or "is not running this working tree's code" in r
+        for r in _staleness.reasons
+    ):
+        print(_staleness.warning(), file=sys.stderr)
+        print(
+            "CLASI ROLE VIOLATION: refusing to enforce mcp-guard from a "
+            "stale build of this repo's own tooling. Fix .mcp.json / "
+            ".claude/settings.json to invoke the editable install, or set "
+            ".clasi/oop to bypass.",
+            file=sys.stderr,
+        )
+        _exit_hook("mcp-guard", payload, 2, "stale-guard")
 
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
@@ -558,7 +615,25 @@ def _build_status_block(agent: str) -> str:
     available). Never raises — callers rely on this being safe. Failures
     are logged as a warning so a broken status hook is observable instead
     of silently indistinguishable from "nothing to report".
+
+    Prepends a staleness warning (see :mod:`clasi.staleness`) whenever the
+    running ``clasi hook`` invocation is stale relative to the project it
+    is serving — this is the actual production invocation path (bare
+    ``clasi hook status-inject`` from ``.claude/settings.json``), so this
+    is where drift like the one that voided sprint 019's enforcement is
+    actually visible to the operator, on every turn.
     """
+    staleness_block = ""
+    try:
+        from clasi import __version__ as _running_version
+        from clasi.staleness import check_staleness
+
+        report = check_staleness(get_project().root, _running_version)
+        if report.stale:
+            staleness_block = f"## CLASI staleness warning\n\n{report.warning()}\n\n"
+    except Exception:
+        logger.warning("status-inject: staleness check failed", exc_info=True)
+
     try:
         from clasi.status import build_status, narrow_status
         from clasi.status.formatting import to_yaml
@@ -578,10 +653,10 @@ def _build_status_block(agent: str) -> str:
         )
         _add_gate_imperative(narrowed, sprint_id, active_tickets)
         yaml_text = to_yaml(narrowed)
-        return f"## CLASI status\n\n```yaml\n{yaml_text}```\n"
+        return f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
         logger.warning("status-inject: failed to build status block", exc_info=True)
-        return ""
+        return staleness_block
 
 
 def handle_status_inject(payload: dict) -> None:

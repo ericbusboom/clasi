@@ -548,9 +548,14 @@ def get_version() -> str:
     Useful for verifying which version of the MCP server is running.
     Returns version (cached at import), metadata_version (live from
     importlib.metadata), and source_path so staleness is detectable.
+    Also runs the staleness check (clasi.staleness.check_staleness) and
+    includes a "stale" bool plus "staleness_reasons" naming any detected
+    drift — see that module's docstring for what the two signals catch.
     """
     import importlib.metadata
     import importlib.util
+
+    from clasi.staleness import check_staleness
 
     try:
         metadata_version = importlib.metadata.version("clasi")
@@ -560,10 +565,14 @@ def get_version() -> str:
     spec = importlib.util.find_spec("clasi")
     source_path = str(spec.origin) if spec and spec.origin else "unknown"
 
+    report = check_staleness(get_project().root, __version__)
+
     return json.dumps({
         "version": __version__,
         "metadata_version": metadata_version,
         "source_path": source_path,
+        "stale": report.stale,
+        "staleness_reasons": report.reasons,
     }, indent=2)
 
 

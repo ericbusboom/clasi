@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "clasi": {
-      "command": "clasi",
+      "command": "uv",
       "args": [
+        "run",
+        "clasi",
         "mcp"
       ]
     }
