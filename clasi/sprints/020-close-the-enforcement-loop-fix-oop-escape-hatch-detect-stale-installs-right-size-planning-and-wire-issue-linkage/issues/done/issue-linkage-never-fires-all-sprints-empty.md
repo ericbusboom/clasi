@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 type: bug
 source: e2e-test-run-003
 clasi_version: 0.20260715.2
