@@ -79,28 +79,38 @@ through the SE process, and there is no open sprint.
 1. **Capture issues.** If the stakeholder provides raw ideas, invoke the
    `issue` skill. For GitHub issues, invoke `gh-import`.
 2. **Create the sprint.** Call `create_sprint(title=<title>)`.
-3. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
+3. **Link issues to the sprint — required, before dispatching the
+   sprint-planner.** Call `link_sprint_issues(sprint_id, [filenames])` for
+   every issue this sprint claims. Do this yourself, immediately after
+   `create_sprint`, even if the sprint-planner is also expected to check
+   linkage later — do not rely solely on the sprint-planner to remember.
+   This single call is what makes every ticket's `issue:` back-reference
+   auto-populate downstream; skipping it is the most common way issue
+   linkage silently fails.
+4. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
    tool with: sprint ID, directory, TODO references, goals, and path to
    `overview.md` and current architecture. The sprint-planner handles
    architecture, review, and ticket creation inline.
-4. **Stakeholder review.** Present the plan. Record:
+5. **Stakeholder review.** Present the plan. Record:
    `record_gate_result(sprint_id, "stakeholder_approval", "passed")`.
-5. **Acquire execution lock.** Call `acquire_execution_lock(sprint_id)`.
-6. **Execute tickets.** Invoke the `execute-sprint` skill, which
+6. **Acquire execution lock.** Call `acquire_execution_lock(sprint_id)`.
+7. **Execute tickets.** Invoke the `execute-sprint` skill, which
    dispatches programmer agents one at a time in dependency order on
    the sprint branch.
-7. **Validate.** Invoke the `sprint-review` skill. If it fails, address
+8. **Validate.** Invoke the `sprint-review` skill. If it fails, address
    the issues and re-validate.
-8. **Close.** Invoke the `close-sprint` skill.
+9. **Close.** Invoke the `close-sprint` skill.
 
 ### Add Issue to Existing Sprint
 
 **When:** There is an open sprint and the stakeholder wants to add work.
 
 1. Identify the open sprint via `list_sprints()`.
-2. Invoke the sprint-planner agent to create new ticket(s) for the issue.
-3. Execute only the new ticket(s) via the programmer agent.
-4. Report the result.
+2. **Link the issue — required.** Call `link_sprint_issues(sprint_id,
+   [filename])` for the issue being added before dispatching sprint-planner.
+3. Invoke the sprint-planner agent to create new ticket(s) for the issue.
+4. Execute only the new ticket(s) via the programmer agent.
+5. Report the result.
 
 ### Out-of-Process Change
 
@@ -113,9 +123,11 @@ Invoke the `oop` skill. Make the change directly, run tests, commit.
 
 **When:** The stakeholder wants to plan but not execute yet.
 
-1. Create the sprint and invoke the sprint-planner agent.
-2. Present the plan for stakeholder review.
-3. Stop. Do not execute.
+1. Create the sprint. Link any claimed issues via `link_sprint_issues`
+   before invoking the sprint-planner agent.
+2. Invoke the sprint-planner agent.
+3. Present the plan for stakeholder review.
+4. Stop. Do not execute.
 
 ### Sprint Closure
 

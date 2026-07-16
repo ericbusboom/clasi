@@ -106,8 +106,15 @@ Detail Mode. Otherwise, start in Roadmap Mode.
 
 1. Call `create_sprint(title)`. This creates the sprint directory and writes
    `sprint.md` with `status: roadmap`. Only `sprint.md` is created.
-2. Edit `sprint.md` with goals, scope, and relevant TODO references.
-3. Repeat for additional sprints if needed. Return to team-lead.
+2. **Required — link issues before writing anything else**: for every issue
+   this sprint claims, call `link_sprint_issues(sprint_id, [filenames])`
+   immediately after `create_sprint`. This writes the sprint's `issues:`
+   frontmatter and each issue's `sprint:` back-reference. Do this even for a
+   single issue. Skipping this step is the single most common way sprint
+   issue linkage silently fails — every later ticket's auto-link depends on
+   this call having already happened.
+3. Edit `sprint.md` with goals, scope, and relevant TODO references.
+4. Repeat for additional sprints if needed. Return to team-lead.
 
 ### Detail Mode Workflow
 
@@ -117,14 +124,21 @@ Detail Mode. Otherwise, start in Roadmap Mode.
    `tickets/done/`, and advances the sprint phase to `planning-docs`.
    (Use cases and architecture live as sections in `sprint.md` — nothing
    separate is scaffolded for them.)
-2. Make the effort decision (see above). Write `sprint.md`'s Use Cases
+2. **Required — verify issue linkage now, before writing anything else**:
+   read `sprint.md`'s frontmatter `issues:` field. If this sprint claims any
+   issue that is not yet listed there, call `link_sprint_issues(sprint_id,
+   [filenames])` before proceeding. Do not assume Roadmap Mode already did
+   this — confirm it. This call is idempotent (safe to repeat) and is what
+   makes every ticket's `issue:` auto-link (Phase 4) work without needing to
+   pass `issue=` explicitly per ticket.
+3. Make the effort decision (see above). Write `sprint.md`'s Use Cases
    section with sprint-level use cases (SUC-NNN), sized to the decision —
    full use cases for a substantial sprint, "N/A — trivial" for a small one.
 
 #### Phase 2: Architecture
 
-3. Read the current consolidated architecture from `docs/architecture/`.
-4. If the effort decision was trivial/small, write "N/A — trivial" (with
+4. Read the current consolidated architecture from `docs/architecture/`.
+5. If the effort decision was trivial/small, write "N/A — trivial" (with
    a one-sentence rationale) into `sprint.md`'s Architecture section and
    skip to Phase 3's gate-recording step. Otherwise, write the
    Architecture section using this 7-step methodology:
@@ -173,7 +187,7 @@ Phase 4.
 
 For a substantial/structural sprint, run the full review:
 
-5. Review your own architecture section against these five categories:
+6. Review your own architecture section against these five categories:
 
    **Consistency** — Does the Sprint Changes section match the document body?
    Is the updated architecture internally consistent? Is design rationale
@@ -194,7 +208,7 @@ For a substantial/structural sprint, run the full review:
    **Risks** — Data migration issues, breaking changes, performance or security
    implications, deployment sequencing concerns.
 
-6. Issue a verdict using these levels:
+7. Issue a verdict using these levels:
    - **APPROVE**: No significant issues — proceed to ticketing.
    - **APPROVE WITH CHANGES**: Minor issues addressable during implementation
      (single contained anti-pattern, missing rationale for non-critical
@@ -203,34 +217,43 @@ For a substantial/structural sprint, run the full review:
      broken interfaces, or inconsistency between Sprint Changes and document
      body. Fix before proceeding.
 
-7. If REVISE, fix the Architecture section and re-review. If APPROVE or
+8. If REVISE, fix the Architecture section and re-review. If APPROVE or
    APPROVE WITH CHANGES, advance to architecture-review phase
    (`advance_sprint_phase`).
-8. Record the architecture review gate result (`record_gate_result`) as
+9. Record the architecture review gate result (`record_gate_result`) as
    `passed` or `failed`.
 
 #### Phase 4: Ticket Creation
 
-9. Advance to ticketing phase (`advance_sprint_phase`).
-10. Break the Sprint Changes into coherent implementation tickets:
+10. Advance to ticketing phase (`advance_sprint_phase`).
+11. Break the Sprint Changes into coherent implementation tickets:
     - Each ticket is a single unit of work completable in one focused session.
     - Number tickets per-sprint (001, 002, ...).
     - Order by dependency — foundation work before features.
     - Each ticket traces to at least one use case.
     - Every use case is covered by at least one ticket.
-11. For each ticket, create a file in `tickets/NNN-slug.md` with:
+12. For each ticket, create a file in `tickets/NNN-slug.md` with:
     - YAML frontmatter: id, title, status (open), use-cases, depends-on
     - Description and acceptance criteria (checkboxes)
     - Implementation plan: approach, files to create/modify, testing plan,
       documentation updates
-12. Propagate TODO and GitHub issue references to ticket frontmatter.
-13. Update sprint.md's `## Tickets` section with a summary table:
+13. **Required — verify per-ticket issue back-references before moving on**:
+    for every ticket that implements an issue, confirm its `issue:`
+    frontmatter field is set. `create_ticket` auto-links from the sprint's
+    `issues:` field when `issue=` is omitted (see Phase 1, step 2), but if a
+    ticket implements an issue not covered by that auto-link (e.g., an issue
+    added mid-ticketing, or a multi-ticket issue's later tickets), call
+    `add_issue_ref(ticket_path, issue_filename)` explicitly. Do not proceed
+    to Phase 5 with any ticket missing an `issue:` back-reference for work it
+    implements.
+14. Propagate TODO and GitHub issue references to ticket frontmatter.
+15. Update sprint.md's `## Tickets` section with a summary table:
     - List each ticket's number, title, and `depends-on` values, in
       dependency order. Tickets execute serially in this order.
 
 #### Phase 5: Return
 
-14. Return the completed sprint plan to team-lead.
+16. Return the completed sprint plan to team-lead.
 
 ## Planning Decisions You Own
 
