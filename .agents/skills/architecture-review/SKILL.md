@@ -6,15 +6,22 @@ description: Review sprint architecture updates for consistency, quality, and ri
 # Architecture Review Skill
 
 Evaluate a sprint's architecture update for consistency with the existing
-system, design quality, risks, and completeness.
+system, design quality, risks, and completeness. Skippable for
+trivial/small sprints -- record the gate result as `skipped` rather than
+running the review.
 
 ## Process
 
 1. **Read the current architecture** in `docs/clasi/architecture/`.
-2. **Read the sprint's architecture update** (`architecture-update.md`).
+2. **Read the sprint's architecture update** (the Architecture section of
+   the sprint's `sprint.md`).
 3. **Explore the codebase** to check alignment between documented and
    actual architecture.
 4. **Review against the criteria below.**
+
+Sprints planned before the single-doc rewrite (sprints 001-017) may still
+carry this content in a separate `architecture-update.md` file in the
+sprint directory -- read that file instead for those sprints.
 
 ## Review Criteria
 

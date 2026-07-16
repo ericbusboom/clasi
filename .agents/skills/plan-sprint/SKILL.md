@@ -12,8 +12,12 @@ This skill creates sprint plans using a two-phase model:
   TODO references). No branches created.
 
 - **Phase 2 — Detail**: One sprint at a time. Produces full planning
-  artifacts via the sprint-planner agent: `usecases.md`,
-  `architecture-update.md`, and tickets. Runs architecture review inline.
+  artifacts via the sprint-planner agent: a single `sprint.md` with
+  right-sized Architecture and Use Cases sections, plus tickets. Sizing
+  is a three-tier decision (trivial / compact / substantial) — see the
+  sprint-planner `agent.md` for the full criteria and how each tier
+  handles diagrams and the architecture review gate (`skipped` for
+  trivial, a scoped review for compact, the full review for substantial).
 
 Branches are created later via `acquire_execution_lock`, not during
 planning. All planning happens on main.
@@ -32,6 +36,16 @@ reject attempts before that phase.
 **DO NOT create a git branch** during planning. Branches are created
 at execution time by `acquire_execution_lock`.
 
+## Issue Linkage
+
+During the planning-docs phase (Phase 1, after `create_sprint`), call
+`link_sprint_issues(sprint_id, issue_filenames)` to associate issues with
+the sprint. This writes the `issues:` list in the sprint's frontmatter and
+updates each issue file's `sprint:` field. Do not write the `issues:` field
+manually via `write_artifact_frontmatter`.
+
+The correct tool signature is: `link_sprint_issues(sprint_id, issue_filenames)`
+
 ## Phase 1: Roadmap Mode
 
 For batch roadmap planning of multiple sprints.
@@ -49,10 +63,14 @@ For batch roadmap planning of multiple sprints.
 4. **Write sprint.md**: Lightweight plan with:
    - Frontmatter: `status: roadmap`
    - Goals and feature scope
-   - TODO references
+   - Issue references
    - No tickets, no architecture, no use cases
 
-5. **Repeat** for additional sprints as needed.
+5. **Link issues**: Call `link_sprint_issues(sprint_id, issue_filenames)`
+   for each issue claimed by this sprint. Do not set `issues:` frontmatter
+   manually.
+
+6. **Repeat** for additional sprints as needed.
 
 ## Phase 2: Detail Mode
 

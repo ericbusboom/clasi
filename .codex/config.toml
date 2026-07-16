@@ -1,9 +1,0 @@
-codex_hooks = true
-
-[mcp_servers.clasi]
-command = "uv"
-args = [
-    "run",
-    "clasi",
-    "mcp",
-]

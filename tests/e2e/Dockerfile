@@ -22,9 +22,30 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code \
     && claude --version
 
-# clasi — spec-driven dev system under test (pinned GitHub release)
-RUN pip install --no-cache-dir \
-    git+https://github.com/ericbusboom/clasi.git@v0.20260715.3
+# clasi — spec-driven dev system under test.
+# CLASI_SOURCE selects what gets installed (build-arg, so the image is
+# reproducible and the choice is recorded in `docker history`):
+#   - a git ref (tag/branch/sha):
+#       docker build --build-arg CLASI_SOURCE=v0.20260715.3 tests/e2e
+#   - the local working tree, via a wheel in the build context:
+#       uv build --wheel && cp dist/clasi-*.whl tests/e2e/clasi-local.whl
+#       docker build --build-arg CLASI_SOURCE=local tests/e2e
+# The [l] glob makes the COPY a no-op when no wheel is present, so git-ref
+# builds don't require one.
+ARG CLASI_SOURCE=v0.20260716.1
+# Local-wheel path: copy any clasi-*.whl present in the build context (the
+# [w] glob makes this a no-op when none is; git-ref builds need no wheel).
+# Keep the wheel's real PEP 427 filename — pip validates it, and renaming
+# would also lie to clasi's own staleness/version checks.
+COPY clasi-*.wh[l] /tmp/
+RUN if [ "$CLASI_SOURCE" = "local" ]; then \
+        pip install --no-cache-dir /tmp/clasi-*.whl; \
+    else \
+        pip install --no-cache-dir \
+            "git+https://github.com/ericbusboom/clasi.git@${CLASI_SOURCE}"; \
+    fi \
+    && rm -f /tmp/clasi-*.whl \
+    && clasi --version
 
 # Entrypoint script (copy as root first)
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

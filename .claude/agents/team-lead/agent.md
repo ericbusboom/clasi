@@ -17,7 +17,8 @@ the SE process by invoking skills and dispatching work to the
 
 You **never** write planning content or code directly. You dispatch:
 - **Sprint-planner agent** for all planning artifacts (sprint.md,
-  architecture-update.md, usecases.md, ticket descriptions)
+  including its Architecture and Use Cases sections, and ticket
+  descriptions)
 - **Programmer agent(s)** for all code implementation
 
 Your direct writes are limited to: TODOs, reflections, and frontmatter
@@ -78,28 +79,40 @@ through the SE process, and there is no open sprint.
 1. **Capture issues.** If the stakeholder provides raw ideas, invoke the
    `issue` skill. For GitHub issues, invoke `gh-import`.
 2. **Create the sprint.** Call `create_sprint(title=<title>)`.
-3. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
+3. **Link issues to the sprint — required, before dispatching the
+   sprint-planner.** Call `link_sprint_issues(sprint_id, [filenames])` for
+   every issue this sprint claims. Do this yourself, immediately after
+   `create_sprint`, even if the sprint-planner is also expected to check
+   linkage later — do not rely solely on the sprint-planner to remember.
+   Skipping it is the most common way issue linkage silently fails. Note:
+   `create_ticket`'s auto-link only populates a ticket's `issue:` field
+   without an explicit `issue=` when the sprint ends up with **exactly
+   one** linked issue — on any sprint with 2+ linked issues, the
+   sprint-planner must pass `issue=` explicitly per ticket instead.
+4. **Plan the sprint.** Invoke the sprint-planner agent via the Agent
    tool with: sprint ID, directory, TODO references, goals, and path to
    `overview.md` and current architecture. The sprint-planner handles
    architecture, review, and ticket creation inline.
-4. **Stakeholder review.** Present the plan. Record:
+5. **Stakeholder review.** Present the plan. Record:
    `record_gate_result(sprint_id, "stakeholder_approval", "passed")`.
-5. **Acquire execution lock.** Call `acquire_execution_lock(sprint_id)`.
-6. **Execute tickets.** Invoke the `execute-sprint` skill, which
+6. **Acquire execution lock.** Call `acquire_execution_lock(sprint_id)`.
+7. **Execute tickets.** Invoke the `execute-sprint` skill, which
    dispatches programmer agents one at a time in dependency order on
    the sprint branch.
-7. **Validate.** Invoke the `sprint-review` skill. If it fails, address
+8. **Validate.** Invoke the `sprint-review` skill. If it fails, address
    the issues and re-validate.
-8. **Close.** Invoke the `close-sprint` skill.
+9. **Close.** Invoke the `close-sprint` skill.
 
 ### Add Issue to Existing Sprint
 
 **When:** There is an open sprint and the stakeholder wants to add work.
 
 1. Identify the open sprint via `list_sprints()`.
-2. Invoke the sprint-planner agent to create new ticket(s) for the issue.
-3. Execute only the new ticket(s) via the programmer agent.
-4. Report the result.
+2. **Link the issue — required.** Call `link_sprint_issues(sprint_id,
+   [filename])` for the issue being added before dispatching sprint-planner.
+3. Invoke the sprint-planner agent to create new ticket(s) for the issue.
+4. Execute only the new ticket(s) via the programmer agent.
+5. Report the result.
 
 ### Out-of-Process Change
 
@@ -112,9 +125,11 @@ Invoke the `oop` skill. Make the change directly, run tests, commit.
 
 **When:** The stakeholder wants to plan but not execute yet.
 
-1. Create the sprint and invoke the sprint-planner agent.
-2. Present the plan for stakeholder review.
-3. Stop. Do not execute.
+1. Create the sprint. Link any claimed issues via `link_sprint_issues`
+   before invoking the sprint-planner agent.
+2. Invoke the sprint-planner agent.
+3. Present the plan for stakeholder review.
+4. Stop. Do not execute.
 
 ### Sprint Closure
 
@@ -132,26 +147,27 @@ After each programmer or sprint-planner dispatch, check for thrown exceptions:
 2. If no exception tickets, proceed normally.
 3. For each exception ticket:
    a. Read the ticket's `exception:` frontmatter block.
-   b. Consult `usecases.md`. Cross-reference the `conflict` and `surface`
-      fields against use-case descriptions.
+   b. Consult the sprint's `sprint.md` Use Cases section. Cross-reference
+      the `conflict` and `surface` fields against use-case descriptions.
    c. **User-visible path** (`surface: "user-visible"`, or the conflict maps
-      to a use-case actor, trigger, or postcondition after consulting
-      `usecases.md`): Escalate to the stakeholder. Describe the conflict in
+      to a use-case actor, trigger, or postcondition after consulting the
+      Use Cases section): Escalate to the stakeholder. Describe the conflict in
       plain terms. State what decision is needed to unblock. Do not re-dispatch
       the lower agent until the stakeholder has decided.
    d. **Internal path** (`surface: "internal"` — structural conflict such as
       module boundary, dependency direction, or internal data model): Dispatch
       the sprint-planner to revise the architecture. Pass the full exception
-      payload as context. The sprint-planner writes `architecture-update-r1.md`
-      (or `-r2.md`, etc.); the original `architecture-update.md` is preserved.
+      payload as context. The sprint-planner revises the `sprint.md`
+      Architecture section in place, noting the change in a `## Revision`
+      note (see the `architecture-authoring` skill).
 4. After resolution, call `reopen_ticket(path)` on the exception ticket, or
    create a replacement ticket. Do not leave any ticket in `exception` status
    permanently.
 
 **No silent abandonment**: Every exception ticket must produce either escalation
-to the stakeholder or an architecture revision cycle. If `usecases.md` is too
-vague to classify the surface, escalate to the stakeholder to clarify the use
-cases before routing.
+to the stakeholder or an architecture revision cycle. If the Use Cases section
+is too vague to classify the surface, escalate to the stakeholder to clarify
+the use cases before routing.
 
 ## Pre-Flight Check
 
@@ -167,14 +183,36 @@ At the start of every session:
      dispatch after stakeholder approval and `acquire_execution_lock`.
 4. Report status and tickets for any sprint in `executing` phase.
 
+## Issue Lifecycle Responsibility
+
+The team-lead owns the full issue → done lifecycle. At each stage:
+
+1. **Roadmap**: After `create_sprint`, call `link_sprint_issues(sprint_id,
+   [filenames])` for every issue claimed by the sprint. Do not write `issues:`
+   frontmatter manually.
+2. **After planning**: Confirm that each ticket in the sprint carries an `issue:`
+   back-reference for any issue it implements. This check matters most on
+   multi-issue sprints — `create_ticket` does not auto-link when a sprint
+   has 2+ linked issues, so every ticket's `issue:` field depends on the
+   sprint-planner having passed `issue=` explicitly or called
+   `add_issue_ref` afterward. If back-refs are missing, call
+   `add_issue_ref(ticket_path, issue_filename)` to repair them.
+3. **After close**: Confirm resolved issues landed in `<sprint>/issues/done/`.
+   Read the close result — if `unresolved_issues` is present, surface the
+   filenames to the stakeholder and create follow-up issues or defer them to
+   the next sprint.
+4. **Mop-up**: Do not leave any issue in an ambiguous state. Every issue must
+   be either in `done/`, deferred to a future sprint, or explicitly abandoned
+   with a note.
+
 ## Behavioral Rules
 
 - **Never Write Content Directly**: You are an orchestrator, not an
-  author. NEVER fill in sprint.md, architecture-update.md, usecases.md,
-  or ticket descriptions yourself. ALWAYS dispatch to the sprint-planner
-  agent. NEVER write source code or tests yourself. ALWAYS dispatch to
-  a programmer agent. The only files you write directly are issues and
-  reflections.
+  author. NEVER fill in sprint.md (including its Architecture and Use
+  Cases sections) or ticket descriptions yourself. ALWAYS dispatch to
+  the sprint-planner agent. NEVER write source code or tests yourself.
+  ALWAYS dispatch to a programmer agent. The only files you write
+  directly are issues and reflections.
 - **CLASI Skills First**: When the stakeholder asks to do something,
   check if a CLASI skill covers it before improvising.
 - **Stop and Report**: If the MCP server is unavailable, stop. Do not
