@@ -22,9 +22,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code \
     && claude --version
 
-# clasi — spec-driven dev system under test (local build)
-COPY clasi-0.20260715.2-py3-none-any.whl /tmp/
-RUN pip install --no-cache-dir /tmp/clasi-0.20260715.2-py3-none-any.whl && rm /tmp/clasi-0.20260715.2-py3-none-any.whl
+# clasi — spec-driven dev system under test (pinned GitHub release)
+RUN pip install --no-cache-dir \
+    git+https://github.com/ericbusboom/clasi.git@v0.20260715.3
 
 # Entrypoint script (copy as root first)
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
