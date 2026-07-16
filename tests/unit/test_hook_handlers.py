@@ -1614,6 +1614,128 @@ class TestOopBypassHandlerLevel:
 
 
 # ---------------------------------------------------------------------------
+# Real invocation path (ticket 020-001): the tests above all call
+# handle_role_guard() in-process, via direct Python import. That proves the
+# *function* is correct but never proves the installed CLI entrypoint that
+# .claude/settings.json actually shells out to (`clasi hook role-guard`)
+# runs this code at all. Sprint 020 planning found a live discrepancy: the
+# repo's bare `clasi` on PATH resolves to a stale pipx install (18+ days
+# old, predating _oop_active() and the 019-001 nested-payload-parsing fix
+# entirely), while `.venv/bin/clasi` (equivalent to `uv run clasi`) is the
+# current editable install. These tests invoke the real CLI entrypoint via
+# subprocess, with a real nested PreToolUse payload piped over stdin
+# exactly as Claude Code does, against BOTH resolutions — proving OOP
+# bypass works on the correct build and reproducing the stale-build
+# fail-open on the other, so the distinction is pinned down by a test
+# rather than asserted only in prose.
+# ---------------------------------------------------------------------------
+
+
+import os as _os
+import shutil as _shutil
+import subprocess as _subprocess
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CURRENT_CLASI = _REPO_ROOT / ".venv" / "bin" / "clasi"
+_STALE_PIPX_CLASI = Path(
+    "/Volumes/Cache/User-Eric/.local/pipx/venvs/clasi/bin/clasi"
+)
+
+
+def _invoke_role_guard_cli(clasi_bin: Path, cwd: Path, payload: dict) -> _subprocess.CompletedProcess:
+    """Invoke `<clasi_bin> hook role-guard` as a real subprocess, piping a
+    real nested payload over stdin exactly as Claude Code's PreToolUse hook
+    does. This is the actual invocation path configured in
+    .claude/settings.json (`clasi hook role-guard`), not an in-process
+    call to handle_role_guard().
+    """
+    return _subprocess.run(
+        [str(clasi_bin), "hook", "role-guard"],
+        input=json.dumps(payload),
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+@pytest.mark.skipif(
+    not _CURRENT_CLASI.exists(),
+    reason="requires the project's own .venv/bin/clasi (editable install)",
+)
+class TestRoleGuardRealCliInvocationPath:
+    """Ticket 020-001: exercise OOP bypass through the real `clasi hook
+    role-guard` CLI entrypoint (subprocess), not handle_role_guard() called
+    in-process. Confirms the finding that E2E run 003's reported OOP-bypass
+    failure was a symptom of a stale pipx install (which lacks
+    _oop_active() and the 019-001 nested-payload fix), not a genuine bug
+    in the current hook_handlers.py.
+    """
+
+    def test_current_build_blocks_without_oop_flag(self, tmp_path):
+        """Control: the current build enforces role-guard normally (no
+        .clasi/oop present) — exit 2, real nested payload, real CLI.
+        """
+        _write_fresh_config(tmp_path)
+        payload = _role_guard_payload("src/clasi/hook_handlers.py")
+        result = _invoke_role_guard_cli(_CURRENT_CLASI, tmp_path, payload)
+        assert result.returncode == 2
+        assert "src/clasi/hook_handlers.py" in result.stderr
+
+    def test_current_build_bypasses_with_oop_flag(self, tmp_path):
+        """Core AC: with .clasi/oop present, a real captured nested
+        PreToolUse payload for a Write call, run through the actual `clasi
+        hook role-guard` CLI entrypoint, is allowed (exit 0).
+        """
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi").mkdir(exist_ok=True)
+        (tmp_path / ".clasi" / "oop").touch()
+        payload = _role_guard_payload("src/clasi/hook_handlers.py")
+        result = _invoke_role_guard_cli(_CURRENT_CLASI, tmp_path, payload)
+        assert result.returncode == 0
+
+    @pytest.mark.skipif(
+        not _STALE_PIPX_CLASI.exists(),
+        reason="stale pipx build not present on this machine — nothing to "
+        "compare against",
+    )
+    def test_revert_check_stale_build_fails_open_regardless_of_oop_flag(
+        self, tmp_path,
+    ):
+        """Revert-check (house standard, sprint 019): this is the test that
+        must FAIL when pointed at the stale build, proving the two tests
+        above are actually distinguishing "correct build" from "stale
+        build" rather than passing unconditionally.
+
+        The stale pipx install predates the 019-001 nested-payload fix, so
+        it reads file_path from the payload ROOT (`payload.get(...)`)
+        instead of `payload["tool_input"]`. Given the real nested payload
+        shape, that resolves to file_path == "", which the stale build's
+        no-path branch treats as ALLOW (exit 0) — the pre-019 fail-open
+        default. So the stale build allows the write with NO .clasi/oop
+        flag present at all: it isn't bypassing via OOP, it's failing open
+        via the payload-parsing bug. Asserting != 0 here (i.e. "the stale
+        build must still enforce, which it does not") is what makes this a
+        genuine revert-check rather than a tautology.
+        """
+        _write_fresh_config(tmp_path)
+        # Deliberately NO .clasi/oop flag — if the stale build correctly
+        # enforced role-guard, this must block (exit 2), same as the
+        # current-build control test above.
+        payload = _role_guard_payload("src/clasi/hook_handlers.py")
+        result = _invoke_role_guard_cli(_STALE_PIPX_CLASI, tmp_path, payload)
+        # The stale build fails open here (returncode == 0) even with no
+        # OOP flag present — this assertion fails if run against a fixed
+        # build, which is exactly the revert-check property required.
+        assert result.returncode == 0, (
+            "expected the stale pre-019 pipx build to fail OPEN "
+            "(no-path branch mis-parsing the nested payload); if this "
+            "assertion fails, the 'stale build' at _STALE_PIPX_CLASI no "
+            "longer reproduces the symptom this test pins down"
+        )
+
+
+# ---------------------------------------------------------------------------
 # _ensure_log_gitignore
 # ---------------------------------------------------------------------------
 
