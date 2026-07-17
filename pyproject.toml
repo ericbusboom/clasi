@@ -73,6 +73,7 @@ clasi = [
     "plugin/**/*",
     "schemas/**/*",
     "templates/*.md",
+    "design/templates/*.md",
     "se-overview-template.md",
 ]
 clasr = ["*.md", "platforms/*.md"]

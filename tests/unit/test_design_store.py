@@ -12,6 +12,7 @@ from clasi.design.store import (
     read_doc_set,
     read_readme,
     read_system_doc,
+    subsystem_template,
     write_design_doc,
     write_readme,
     write_system_doc,
@@ -353,3 +354,47 @@ class TestOverwriteSemantics:
         )
 
         assert read_readme(subsystem).content == "hand-edited notes"
+
+
+# ---------------------------------------------------------------------------
+# subsystem_template — packaged template resource
+# ---------------------------------------------------------------------------
+
+
+class TestSubsystemTemplate:
+    def test_returns_nonempty_text(self):
+        text = subsystem_template()
+        assert isinstance(text, str)
+        assert len(text) > 0
+
+    def test_has_placeholder_frontmatter_fields(self):
+        text = subsystem_template()
+        assert text.startswith("<!--")
+        # Frontmatter block, delimited by --- lines, appears after the
+        # leading HTML-comment guidance block and carries the
+        # design-doc schema's placeholder fields.
+        assert "source_paths:" in text
+        assert "readme_path:" in text
+
+    def test_preserves_html_comment_guidance_and_section_structure(self):
+        text = subsystem_template()
+        # HTML-comment guidance blocks are preserved, not stripped.
+        assert "<!--" in text and "-->" in text
+        # Section structure (1-6) survives the move into the package.
+        for heading in (
+            "## 1. Purpose",
+            "## 2. Orientation",
+            "## 3. Constraints and Invariants",
+            "## 4. Design",
+            "## 5. Interfaces",
+            "## 6. Open Questions / Known Limitations",
+        ):
+            assert heading in text
+
+    def test_matches_packaged_file_on_disk(self):
+        from importlib import resources
+
+        packaged_path = (
+            resources.files("clasi.design.templates") / "subsystem-design.md"
+        )
+        assert subsystem_template() == packaged_path.read_text(encoding="utf-8")

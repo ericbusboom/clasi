@@ -10,6 +10,21 @@ Reads architecture documentation scattered across sprint history —
 files alike — plus the current source code, and produces a single
 up-to-date consolidated architecture document.
 
+## Relationship to bootstrap-design
+
+Since sprint 021, projects that have opted into the persistent
+per-subsystem design-doc set (`docs/design/design.md` + one doc per
+subsystem, `sources:` configured in `.clasi/config.yaml`) should use the
+**bootstrap-design** skill instead of this one to establish their
+initial doc set — it absorbs this skill's reason for existing for that
+model going forward, writing a doc *set* with mechanically-derived
+filenames and validator support rather than one free-form document. This
+skill is retained, unmodified, for sprints still on the pre-021
+single-document model, and remains available any time a quick, disposable
+single-file architecture snapshot is wanted rather than the maintained
+doc set. See `bootstrap-design/SKILL.md`'s "How This Differs from
+consolidate-architecture" section for the full comparison.
+
 ## When to Use
 
 Run on demand when:

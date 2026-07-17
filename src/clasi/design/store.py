@@ -59,6 +59,7 @@ sprint.md section 6).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -297,3 +298,29 @@ def read_system_doc(project: Project) -> Artifact:
     before reading ``.frontmatter``/``.content``.
     """
     return Artifact(project.design_dir / system_doc_name())
+
+
+def subsystem_template() -> str:
+    """Return the packaged subsystem design-doc template's full text.
+
+    The template (``clasi/design/templates/subsystem-design.md``) ships
+    as package data (see ``pyproject.toml``'s
+    ``[tool.setuptools.package-data]``) so it is available regardless of
+    the caller's working directory or install mode (editable or wheel).
+    It carries placeholder YAML frontmatter (``source_paths``,
+    ``readme_path``) matching this module's design-doc frontmatter
+    contract, plus the HTML-comment authoring guidance and section
+    structure an agent fills in.
+
+    The **bootstrap-design** skill instructs agents to start every new
+    subsystem design doc from this template's body, replacing the
+    placeholder frontmatter values with the real subsystem
+    ``source_paths``/``readme_path`` before writing via
+    :func:`write_design_doc`.
+
+    Returns:
+        The template file's full text, including its placeholder
+        frontmatter block.
+    """
+    template_path = resources.files("clasi.design.templates") / "subsystem-design.md"
+    return template_path.read_text(encoding="utf-8")
