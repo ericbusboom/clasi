@@ -266,6 +266,42 @@ def schema_validate(path: str) -> None:
 
 
 @cli.group()
+def design():
+    """Design doc set validation tools."""
+
+
+@design.command("validate")
+@click.argument("path", default=".", type=click.Path(exists=True))
+@click.option(
+    "--overlay",
+    "overlay_dir",
+    default=None,
+    type=click.Path(),
+    help="Path to a sprint design/ overlay directory to additionally validate.",
+)
+def design_validate(path: str, overlay_dir: str | None) -> None:
+    """Validate the persistent design doc set (and optionally a sprint overlay).
+
+    PATH is the project root (defaults to the current directory).
+    """
+    from clasi.design import validate
+    from clasi.project import Project
+
+    project = Project(path)
+
+    result = validate(project, overlay_dir)
+
+    for info_message in result.info:
+        click.echo(f"INFO: {info_message}")
+
+    if not result.ok:
+        click.echo("\n".join(result.messages), err=True)
+        raise SystemExit(1)
+
+    click.echo("Design doc set valid.")
+
+
+@cli.group()
 def sprint() -> None:
     """Sprint lifecycle commands."""
 

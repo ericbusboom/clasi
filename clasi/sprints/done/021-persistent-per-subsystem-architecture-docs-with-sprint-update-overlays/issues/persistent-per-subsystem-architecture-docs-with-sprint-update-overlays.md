@@ -1,5 +1,18 @@
 ---
-status: pending
+status: in-progress
+sprint: '021'
+tickets:
+- 021-001
+- 021-002
+- 021-003
+- 021-004
+- 021-005
+- 021-006
+- 021-007
+- 021-008
+- 021-009
+- 021-010
+- 021-011
 ---
 
 # Persistent per-subsystem architecture docs with sprint update overlays
@@ -44,9 +57,10 @@ The single-big-document and per-sprint-section models both fail the same way: no
 ### 5. Sprint-time updates: full-copy overlay, diff derived
 
 - Sprint planning no longer writes an Architecture section into `sprint.md`. Instead the sprint-planner writes **update files** in `clasi/sprints/NNN-slug/design/`, with the **same filename** as the canonical doc being updated (`design.md` for the top-level doc, `<subsystem-slug>.md` otherwise).
+- **Git-anchored diffing:** when the sprint is created, the canonical docs to be updated are copied into the sprint `design/` directory verbatim and **committed immediately, before any changes are made** to them. The sprint-planner's edits to those copies then stay **uncommitted until the stakeholder approves the sprint for execution** (the pre-execution gate, `review_sprint_pre_execution`). Because the pristine copies are in git and the edits are in the working tree, the stakeholder reviews exactly what changed using VS Code's built-in git diff viewer — no custom tooling needed for human review. The moment the stakeholder says "run the sprint," the edited copies are committed. The dirty-tree window therefore spans only planning and review — execution starts with a clean tree, so programmer ticket commits, worktrees, and the close merge are unaffected.
 - Each update file is a **complete updated copy** of the design doc (chosen over hand-written unified diffs — agents write whole documents reliably; hand-built diffs drift). The diff is *derived*: comparing the sprint copy against the canonical doc reproduces the change, and copying the sprint file over the canonical one applies it — the round-trip property, without storing patch syntax.
 - Update-file frontmatter references (a) the canonical doc it updates in `docs/design/` and (b) the subsystem README.
-- **Derived diff files for review:** the final step in producing the sprint design set is to diff each canonical doc against its updated sprint copy and write a **human-readable diff** named `<same-name>.diff.md` in the same sprint `design/` directory (e.g. `design/mcp-server.md` full copy plus `design/mcp-server.diff.md`). These diff files are generated artifacts (tool-produced, regenerable), formatted for human reading rather than raw `patch(1)` input — e.g. fenced ```diff blocks or section-grouped before/after — and are what the architecture reviewer reads.
+- **Derived diff files for review:** the final step in producing the sprint design set is to diff each canonical doc against its updated sprint copy and write a **human-readable diff** named `<same-name>.diff.md` in the same sprint `design/` directory (e.g. `design/mcp-server.md` full copy plus `design/mcp-server.diff.md`). These diff files are generated artifacts (tool-produced, regenerable), formatted for human reading rather than raw `patch(1)` input — e.g. fenced ```diff blocks or section-grouped before/after — and are what the architecture reviewer (agent) reads. Open question for planning: with the git-anchored workflow above, the stakeholder's view is VS Code's git diff, so the `.diff.md` files may be needed only for the reviewing agent — or may be droppable entirely if the reviewer runs `git diff` instead.
 - The validator also covers sprint design dirs: filenames match canonical docs, frontmatter refs resolve, and each update file has a matching up-to-date `.diff.md`.
 
 ### 6. Sprint review and application
@@ -66,7 +80,7 @@ The single-big-document and per-sprint-section models both fail the same way: no
 - With no doc set and no recorded opt-out, the team-lead prompts the stakeholder to authorize creating one; on decline, sprints proceed with no `design/` overlays and no architecture review; on approval, a dispatched sub-agent (following the bootstrap skill) produces the doc set.
 - `clasi design validate` (CLI) and the matching MCP tool pass on a correctly linked doc set and fail with actionable errors on: missing `design.md`, an unmapped source root, a design doc with no README backlink (and vice versa), and a sprint update file with a stale or missing `.diff.md`.
 - After a bootstrap agent run on this repo, `docs/design/` contains `design.md` plus one doc per subsystem, each subsystem directory has a frontmattered `README.md`, and validation passes.
-- A trial sprint produces `design/` update files plus generated `.diff.md` files, architecture review reads the diffs, and sprint close applies the copies to `docs/design/` with validation passing afterward.
+- A trial sprint: at creation, pristine copies of the affected canonical docs land in the sprint `design/` directory and are committed before any edit; through planning and review the edited copies remain uncommitted, so `git diff` / VS Code's diff viewer shows exactly the design changes; at pre-execution approval the copies are committed and execution starts with a clean tree; at sprint close the copies are applied to `docs/design/`, with validation passing afterward.
 
 ## Related
 

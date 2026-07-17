@@ -263,7 +263,24 @@ For each ticket in dependency order:
    - Path to the ticket plan (if separate)
    - Sprint ID and ticket ID
    - Sprint branch name (the agent works on this branch directly)
-   - Relevant architecture sections
+   - Architecture context, sourced per `Project.design_docs_opt_in`:
+     - **Not opted in**: the relevant Architecture section of the
+       sprint's `sprint.md` (as today).
+     - **Opted in**: the path(s) to the relevant canonical subsystem
+       doc(s) under `docs/design/` (e.g. `docs/design/clasi-tools.md`)
+       *plus* the path to this sprint's edited overlay copy of that same
+       doc under `clasi/sprints/NNN-slug/design/<name>.md` — both paths,
+       not just one. The canonical doc gives the agent the subsystem's
+       settled, pre-sprint understanding; the overlay copy gives it this
+       sprint's planned changes to that understanding. Identify which
+       doc(s) apply by checking which canonical filenames the sprint's
+       `design/` directory contains (the same doc_names the
+       sprint-planner passed to `seed_sprint_design_overlay`) and
+       matching against the ticket's scope; a ticket touching a subsystem
+       with no corresponding overlay file gets only the canonical doc
+       path (nothing changed there this sprint). If the sprint carries no
+       `design/` directory at all (trivial/compact sprint, or opted-out
+       project), fall back to the not-opted-in behavior above.
 4. Wait for the programmer agent to complete before moving on.
 5. Verify `status: done` is set in the ticket's frontmatter.
 6. Call `move_ticket_to_done(ticket_path)` where `ticket_path` is the

@@ -154,6 +154,18 @@ class Sprint:
         """Path to the issues/done/ directory within this sprint."""
         return self._path / "issues" / "done"
 
+    @property
+    def design_dir(self) -> Path:
+        """Path to this sprint's design/ overlay directory (sprint 021).
+
+        Holds full-copy overlays of canonical ``docs/design/*.md`` docs
+        this sprint touches — see ``clasi.design.overlay``. Only present
+        when the doc-set opt-in is enabled and the sprint-planner has
+        seeded at least one overlay file; callers must check
+        ``.exists()`` before treating this as populated.
+        """
+        return self._path / "design"
+
     # --- Ticket management ---
 
     def list_tickets(self, status: str | None = None) -> list[Ticket]:

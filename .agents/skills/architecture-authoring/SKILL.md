@@ -18,15 +18,39 @@ exists yet.
 Given `.clasi/design/overview.md` and `.clasi/design/usecases.md`, produce
 the first architecture document following steps 1-7 below.
 
+This mode is superseded, for a project that has opted into the persistent
+per-subsystem design-doc set (`Project.design_docs_opt_in` is `True`), by
+the `bootstrap-design` skill, which produces `docs/design/design.md` plus
+one doc per subsystem instead of a single architecture document. Use
+Mode 1 only for a project that has not opted in.
+
 ### Mode 2: Sprint Architecture Update
 
-Write the Architecture section of the sprint's `sprint.md`, sized to the
-change — or write "N/A — trivial" when the change has no architectural
-impact. This section is authored after the effort decision is made and
-use cases are defined, and **before tickets exist** — tickets are derived
-from it, not the other way around. The guiding question throughout is:
-"Is this description clear enough that tickets can be derived from it
-without ambiguity?"
+Write the sprint's architecture output, sized to the change — or write
+"N/A — trivial" when the change has no architectural impact. This output
+is authored after the effort decision is made and use cases are defined,
+and **before tickets exist** — tickets are derived from it, not the other
+way around. The guiding question throughout is: "Is this description
+clear enough that tickets can be derived from it without ambiguity?"
+
+**Where the output goes** depends on `Project.design_docs_opt_in`:
+
+- **Not opted in** (`design_docs_opt_in` is `None` or `False`): write the
+  Architecture section of the sprint's `sprint.md`, exactly as before.
+  Nothing below in this subsection changes that path.
+- **Opted in** (`design_docs_opt_in` is `True`) and the sizing decision is
+  **compact or substantial**: the output goes into the sprint's `design/`
+  overlay instead of a `sprint.md` Architecture section (Mode 2a below).
+- **Opted in** and the sizing decision is **trivial**: no overlay is
+  created and no `sprint.md` Architecture section is written either — same
+  "N/A — trivial" skip as the not-opted-in path (Open Question 4's
+  resolution: trivial-sprint behavior is unchanged by opt-in). Do not call
+  `seed_sprint_design_overlay` for a trivial sprint.
+
+The tiering decision itself — and everything in Steps 1-7 below about
+*how* to reason about the content — is identical regardless of where the
+output lands. Opt-in changes the output's destination, not the sizing
+logic or the seven-step process that produces it.
 
 Make an explicit sizing decision first, using three tiers, not two:
 
@@ -52,21 +76,85 @@ worse than one that occasionally treats a simple sprint as substantial.
 When borderline, prefer the heavier tier and say why in the sizing
 sentence.
 
-At authoring time the section is a structural plan; after the sprint
-closes it accumulates as a historical record (an ADR at sprint
-granularity, embedded in that sprint's `sprint.md`). It is not merged
-back into the canonical architecture docs — it stands on its own. See
-the `consolidate-architecture` skill for how these per-sprint sections
-are later merged into a consolidated architecture document, if needed.
+At authoring time the section (or, under opt-in, the overlay copy) is a
+structural plan. Not-opted-in behavior: after the sprint closes it
+accumulates as a historical record (an ADR at sprint granularity,
+embedded in that sprint's `sprint.md`). It is not merged back into the
+canonical architecture docs — it stands on its own. See the
+`consolidate-architecture` skill for how these per-sprint sections are
+later merged into a consolidated architecture document, if needed.
+Opted-in behavior is the opposite: the overlay is applied back onto the
+canonical `docs/design/` doc set at sprint close (see Mode 2a below and
+the `close-sprint` skill) — the whole point of opting in is that the
+content *does* merge back, instead of standing alone.
 
-Given the sprint plan and current architecture, write the Architecture
-section with: Planned Changes, Rationale, Impact on Existing Components,
-Migration Concerns.
+Given the sprint plan and current architecture, write the content with:
+Planned Changes, Rationale, Impact on Existing Components, Migration
+Concerns. Under opt-in this becomes the body of each edited overlay
+document rather than a `sprint.md` section — see Mode 2a.
+
+### Mode 2a: Authoring the sprint's `design/` overlay (opt-in)
+
+When `design_docs_opt_in` is `True` and the sizing decision is compact or
+substantial, the sprint's architecture output is written into the
+sprint's `clasi/sprints/NNN-slug/design/` overlay directory instead of a
+`sprint.md` Architecture section. This is authored during Phase 2 detail
+planning (see the `plan-sprint` skill for exactly where in that phase),
+after the tiering decision above and after use cases are defined, same
+as Mode 2's timing rule.
+
+1. **Identify affected canonical docs.** Decide which of the persistent
+   `docs/design/` docs this sprint's changes touch — the system-level
+   `design.md`, one or more subsystem docs, or both. This is a judgment
+   call over the sprint's planned changes, the same "one sentence, no
+   'and'" cohesion reasoning Step 2 below already asks for, applied to
+   *which existing docs* rather than *which new modules*.
+
+2. **Seed the overlay.** Call `seed_sprint_design_overlay(sprint_id,
+   doc_names)` with the filenames identified in step 1 (e.g.
+   `["design.md", "clasi-tools.md"]`). This copies each named canonical
+   doc verbatim into `clasi/sprints/NNN-slug/design/` and commits the
+   pristine copies immediately, before any edits — do not skip this step
+   or edit a file that hasn't been seeded first; the diff-generation step
+   below depends on a committed pristine baseline existing. This call is
+   a no-op if `doc_names` is empty or opt-in is off, so skipping it
+   entirely is exactly how a trivial sprint (see above) avoids creating an
+   overlay.
+
+3. **Edit the seeded copies in place.** Open each file under the sprint's
+   `design/` directory and write a complete, updated copy of that
+   document reflecting the sprint's planned changes — not a diff, not a
+   patch, a full document, the same way the pristine copy itself is a
+   full document. Reuse the seven-step process below (Understand the
+   Problem through Flag Open Questions) to decide what the updated
+   content should say; only the destination differs from Mode 2.
+
+4. **Generate diffs.** Once edits are complete, run the diff-generation
+   step of `clasi.design.overlay` (`generate_diffs`) to produce a
+   `<name>.diff.md` sibling for each edited file. These diff files are
+   what `architecture-review` reads (see that skill) — they are agent-
+   reviewer input, not something the stakeholder is expected to read
+   directly (the stakeholder reviews via `git diff` in VS Code instead,
+   per the sprint 021 issue's framing).
+
+5. **Validate before handoff.** Run `clasi design validate` (or the
+   `validate_design` MCP tool) with `overlay_dir` pointed at the sprint's
+   `design/` directory before handing off to `architecture-review`. Fix
+   any reported failure (unresolved frontmatter reference, stale or
+   missing `.diff.md`) and re-validate — do not hand off a failing
+   overlay.
+
+**What this changes and does not change**: the sizing tiers, the
+seven-step authoring process, and the section content (Planned Changes,
+Rationale, Impact, Migration Concerns) are identical to Mode 2 — only the
+file(s) the content is written into differ (full document per affected
+canonical doc, under `design/`, instead of one `sprint.md` section).
 
 ### Revising in place
 
-When an exception loop triggers an architecture revision, revise the
-Architecture section of `sprint.md` **in place** — edit the section
+When an exception loop triggers an architecture revision under the
+not-opted-in path, revise the Architecture section of `sprint.md` **in
+place** — edit the section
 directly rather than creating a separate revision file. Add a brief
 `## Revision` note (or update the section's Design Rationale) describing
 what changed and why, so the revision is visible without relying on file
@@ -79,6 +167,13 @@ original `architecture-update.md` untouched. Sprints planned under the
 old three-document model may still have those files on disk as a
 historical record — that is expected for sprints 001-017 and is not a
 defect. New sprints revise the `sprint.md` Architecture section in place.
+
+Under opt-in (Mode 2a), the equivalent "in place" revision target is the
+already-edited overlay copy under `clasi/sprints/NNN-slug/design/`, not
+`sprint.md` — edit the overlay file directly and re-run diff generation
+(`generate_diffs`) so its `.diff.md` sibling reflects the revision;
+`architecture-review` re-reads the regenerated diff. Do not create a
+second overlay file for the revision.
 
 The team-lead and sprint-planner both reference this convention. The full
 rule lives here; the sprint-planner agent carries only a brief

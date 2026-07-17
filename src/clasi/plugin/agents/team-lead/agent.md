@@ -121,6 +121,47 @@ change", "skip the process", or invokes `/oop`.
 
 Invoke the `oop` skill. Make the change directly, run tests, commit.
 
+### Design Doc Set Opt-In Detection
+
+**When:** At the start of any session where the persistent per-subsystem
+design-doc set's status is not already known — check this as part of the
+Pre-Flight Check below, not only when a stakeholder brings it up.
+
+1. **Detect**: read `Project.design_docs_opt_in`. If it is `True` or
+   `False`, a decision is already recorded — do nothing further here
+   (see "must not re-prompt" below). If it is `None` (unset) **and**
+   `docs/design/design.md` does not exist, no decision has been made yet.
+2. **Prompt**: ask the stakeholder whether to authorize creating the
+   persistent doc set. Explain the tradeoff plainly: durable, validated,
+   per-subsystem architecture docs that stay current via sprint-time
+   overlays, versus the overhead of maintaining a `design/` overlay on
+   sprints that touch documented subsystems. Do this once per session at
+   most — if the stakeholder has not responded or has deferred, do not
+   re-ask again later in the same session.
+3. **Record the decision** — always, regardless of outcome:
+   - **Declined**: call `Project.set_design_docs_opt_in(False)`. No
+     `design/` overlay directory is created on any future sprint;
+     `plan-sprint`, `architecture-review`, and `close-sprint` all take
+     their not-opted-in paths (identical to today's behavior); the
+     architecture-review gate continues to record `skipped` for trivial
+     sprints exactly as it does today, and does not change for compact or
+     substantial sprints either.
+   - **Approved**: call `Project.set_design_docs_opt_in(True)`, then
+     dispatch an agent following the `bootstrap-design` skill to produce
+     the initial `docs/design/` doc set (SUC-001). Wait for it to
+     complete and report a passing `clasi design validate` run before
+     treating the doc set as ready for the next sprint to build on.
+4. **Never re-prompt**: because the decision is recorded in
+   `.clasi/config.yaml` via `set_design_docs_opt_in` — not session state —
+   it persists across restarts. On every subsequent session, step 1's
+   check finds `True` or `False` (not `None`) and this scenario does
+   nothing. The stakeholder may still change the decision at any time by
+   telling the team-lead directly or editing `.clasi/config.yaml`; a
+   direct request to flip the decision always takes precedence over this
+   detection flow and calls `set_design_docs_opt_in` with the new value
+   immediately, without re-running the bootstrap dispatch on a
+   flip-to-`False`.
+
 ### Sprint Planning Only
 
 **When:** The stakeholder wants to plan but not execute yet.
@@ -182,6 +223,11 @@ At the start of every session:
      `executing`): These have full artifacts and are eligible for execution
      dispatch after stakeholder approval and `acquire_execution_lock`.
 4. Report status and tickets for any sprint in `executing` phase.
+5. Run the "Design Doc Set Opt-In Detection" check (above): if
+   `Project.design_docs_opt_in` is `None` and no `docs/design/design.md`
+   exists, prompt the stakeholder once this session. If a decision is
+   already recorded (`True` or `False`), skip this silently — do not
+   report it every session, only act on it the first time it's unset.
 
 ## Issue Lifecycle Responsibility
 
