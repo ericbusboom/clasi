@@ -29,19 +29,18 @@ ARTIFACT_PATH_DEFAULTS: dict[str, str] = {
 }
 
 
-def _load_paths_config(root: Path) -> dict:
-    """Read .clasi/config.yaml and return the paths: mapping.
+def _load_config(root: Path) -> dict:
+    """Read .clasi/config.yaml and return the full parsed mapping.
 
-    Returns data["paths"] when it is a dict[str, str], returns {} on
-    FileNotFoundError, YAMLError, or wrong type. Never raises.
+    Returns the parsed dict when top-level YAML is a dict, returns {} on
+    FileNotFoundError, YAMLError, wrong top-level type, or any other
+    exception. Never raises.
     """
     config_path = root / ".clasi" / "config.yaml"
     try:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         if isinstance(data, dict):
-            paths = data.get("paths")
-            if isinstance(paths, dict):
-                return paths
+            return data
         return {}
     except FileNotFoundError:
         return {}
@@ -49,6 +48,49 @@ def _load_paths_config(root: Path) -> dict:
         return {}
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _load_paths_config(root: Path) -> dict:
+    """Read .clasi/config.yaml and return the paths: mapping.
+
+    Returns data["paths"] when it is a dict[str, str], returns {} on
+    FileNotFoundError, YAMLError, or wrong type. Never raises.
+    """
+    data = _load_config(root)
+    paths = data.get("paths")
+    if isinstance(paths, dict):
+        return paths
+    return {}
+
+
+def _load_sources_config(root: Path) -> list:
+    """Read .clasi/config.yaml and return the sources: list.
+
+    Returns data["sources"] when it is a list, returns [] on any error
+    or wrong type (missing key, malformed YAML, non-list value). Never
+    raises.
+    """
+    data = _load_config(root)
+    sources = data.get("sources")
+    if isinstance(sources, list):
+        return sources
+    return []
+
+
+def _load_design_docs_opt_in(root: Path) -> str | None:
+    """Read .clasi/config.yaml and return the design_docs opt-in tri-state.
+
+    Returns the raw string value of the top-level ``design_docs`` key
+    (expected ``"enabled"`` or ``"disabled"``) when present, or ``None``
+    when the key is absent, the config is missing/malformed, or the value
+    is not a string. ``None`` represents "unset" — distinct from an
+    explicit opt-out. Never raises.
+    """
+    data = _load_config(root)
+    value = data.get("design_docs")
+    if isinstance(value, str):
+        return value
+    return None
 
 
 class SprintNotFoundError(ValueError):
@@ -70,6 +112,7 @@ class Project:
         self._root = Path(root).resolve()
         self._db: StateDB | None = None
         self._paths: dict | None = None
+        self._sources: list | None = None
 
     @property
     def root(self) -> Path:
@@ -130,6 +173,64 @@ class Project:
     def mcp_config_path(self) -> Path:
         """Path to .mcp.json in the project root."""
         return self._root / ".mcp.json"
+
+    # --- Persistent design-doc-set config (sprint 021) ---
+
+    @property
+    def sources(self) -> list[Path]:
+        """Resolved source-tree roots for the persistent design-doc set.
+
+        Reads the top-level ``sources:`` list from ``.clasi/config.yaml``
+        (repo-relative directory paths, e.g. ``[src]`` or
+        ``[src, tests]``). Missing or malformed config yields an empty
+        list — "no sources declared" is not an error; callers (validator,
+        bootstrap) are responsible for treating that as "doc-set not
+        usable yet." Whether a single or multiple source roots are
+        configured is derivable from the length of this list.
+
+        Returns absolute, resolved ``Path`` objects, one per configured
+        root, in config order.
+        """
+        if self._sources is None:
+            self._sources = _load_sources_config(self._root)
+        return [(self._root / rel).resolve() for rel in self._sources]
+
+    @property
+    def design_docs_opt_in(self) -> bool | None:
+        """The stakeholder's opt-in/opt-out/unset decision for the design-doc set.
+
+        Reads the top-level ``design_docs:`` key from
+        ``.clasi/config.yaml``: ``"enabled"`` -> ``True``, ``"disabled"``
+        -> ``False``, absent or any other value -> ``None`` ("unset").
+        ``None`` is distinguishable from an explicit ``False`` so the
+        team-lead knows whether to prompt the stakeholder rather than
+        silently assuming opt-out.
+        """
+        value = _load_design_docs_opt_in(self._root)
+        if value == "enabled":
+            return True
+        if value == "disabled":
+            return False
+        return None
+
+    def set_design_docs_opt_in(self, enabled: bool) -> None:
+        """Record the stakeholder's opt-in/opt-out decision in config.yaml.
+
+        Writes ``design_docs: enabled`` or ``design_docs: disabled`` at
+        the top level of ``.clasi/config.yaml``, preserving any other
+        existing keys (``paths:``, ``sources:``, ``process:``, etc.).
+        Creates ``.clasi/config.yaml`` (and ``.clasi/`` if needed) when it
+        does not yet exist.
+        """
+        data = _load_config(self._root)
+        data["design_docs"] = "enabled" if enabled else "disabled"
+
+        config_dir = self._root / ".clasi"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(data, sort_keys=False), encoding="utf-8"
+        )
 
     @property
     def db(self) -> StateDB:
