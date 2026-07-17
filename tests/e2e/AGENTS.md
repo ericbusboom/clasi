@@ -20,11 +20,29 @@ Drive the guessing-game project (spec baked into the container at
 `/project/docs/guessing-game-spec.md`) through 4 sprints and 3
 out-of-process changes **the way a human stakeholder would drive
 CLASI** — not by feeding the subject a rigid script of pre-written
-prompts. Read `stakeholder-persona.md` before you start; it is the
-source for how a real stakeholder phrases things and it is what makes
-this a meaningful test of CLASI's natural-language front end rather
-than a test of your own prompt templates. Once all 4 sprints and all 3
-OOP changes are done, validate mechanically with `./validate.sh`.
+prompts. Once it's all done, grade the run two ways: mechanically with
+`./validate.sh`, and for process integrity with `rubric.md`.
+
+Three files work together — read all three before you start:
+
+- **`stakeholder-persona.md`** — *how to phrase* things. The register a
+  real stakeholder uses (natural language, no slash commands). This is
+  what makes the run a meaningful test of CLASI's natural-language front
+  end rather than a test of your own prompt templates.
+- **`script.md`** — *what happens when*. The chronological timeline of
+  milestones for one full run, with the specific variation each milestone
+  exercises (which sprints run straight through vs. stop for review vs.
+  stay open, when issues get added, when the reversal and the bug report
+  happen, which repo state each OOP change lands in). **Follow `script.md`
+  milestone by milestone** — it is the spine of the run.
+- **`rubric.md`** — *how it's graded*. The process-integrity checklist
+  you walk at the end (did the subject follow the process honestly, or
+  find ways around it), complementing `validate.sh`'s product checks.
+
+The situation → action playbook further down in this file is the
+reference for *how to behave* in a given situation; `script.md` tells you
+*which situation you're in and when*. When they overlap, `script.md` sets
+the order and the playbook fills in the behavior.
 
 ## What You're Testing
 
@@ -184,17 +202,23 @@ and tell the subject to keep moving. Convey "don't stop for
 confirmation, run it all the way through" without turning it into a
 procedural instruction.
 
-### Situation: between sprints (OOP change)
+### Situation: out-of-process change
 
-After a sprint closes and before you kick off the next one, make the
-scripted out-of-process change for that slot. The content of the
-change comes from `oop.sh` — run `./oop.sh <N>` to see what change N
-actually is (menu title case after sprint 1, `__version__` after
-sprint 2, a TODO comment after sprint 3; see the table below). Don't
-send the raw `oop.sh` output as your prompt — rephrase it in the
-stakeholder's OOP register (see persona doc section 4): casual,
-explicit that this bypasses the sprint process, and clear that it
-should run now, directly, with tests and a commit.
+At several points in the run (see `script.md` for exactly when and in
+what repo state), you make a small out-of-process change — a direct edit
+that deliberately skips the sprint process. There's no script to consult
+for these and no canned prompt: you decide the specific small change (the
+three scripted ones are described in `script.md` → "The three scripted
+OOP changes" — menu title-case, a package `__version__`, a TODO comment,
+each chosen so a careless later sprint might undo it) and ask for it in
+the stakeholder's OOP register (see persona doc section 4): casual,
+explicit that this bypasses the sprint process, and clear that it should
+run now, directly, with tests and a commit. Phrasings that fit the
+register: "hey, OOP this real quick — ...", "just get this done outside
+the process, run the tests and commit", "don't bother with a sprint for
+this one." What matters is that the subject treats it as a genuine
+out-of-process change (direct edit + test + commit, no ticket), not that
+you use any particular words.
 
 ### Situation: sprint hits max-turns
 
@@ -221,37 +245,43 @@ This mirrors real stakeholder behavior — "why is sprint X still open?"
 — and it's a better test of the subject's diagnostic path than a blind
 "fix it" would be.
 
-## OOP Change Table
+## The three scripted OOP changes
 
-`oop.sh` is unchanged from ticket 001 — these are still the 3 scripted
-changes, in order:
+The run makes three small out-of-process code edits, each landing in a
+specific repo state (see `script.md` for when). They are described in
+`script.md` → "The three scripted OOP changes"; in short:
 
-| After sprint | Script | What it changes | What it tests |
-|-------------|--------|-----------------|---------------|
-| 001 | `./oop.sh 1` | Fix menu title capitalization (title case for all 3 game names) | Next sprint doesn't revert the fix |
-| 002 | `./oop.sh 2` | Add `__version__` to package `__init__.py` | Next sprint preserves the version |
-| 003 | `./oop.sh 3` | Add a TODO comment to `number_game.py` | Next sprint doesn't strip the comment |
+| Slot | What it changes | What it tests |
+|------|-----------------|---------------|
+| after sprint 1, on master | Menu game titles to title case | Next sprint doesn't revert the wording |
+| after sprint 2, sprint open | Add `__version__` to package `__init__.py` | Next sprint preserves the version |
+| after sprint 3, on master | Add a TODO comment near the top of the number-game module | Next sprint doesn't strip the comment |
 
-## The Rubric
+You compose these yourself in the OOP register — there is no `oop.sh` and
+no canned prompt. The exact wording can vary run to run; what's fixed is
+the *kind* of edit and the repo state it lands in.
 
-`./validate.sh` **is** the rubric — it's a mechanical check script,
-not a description to reproduce by hand. Run it after all 4 sprints and
-3 OOP changes:
+## Grading the run
+
+There are two rubrics, and you run both at the end (Milestone 6 of
+`script.md`):
+
+### 1. `./validate.sh` — the mechanical product rubric
 
 ```bash
 ./validate.sh
 ```
 
-It checks, against the real clasi artifact layout (globbing both live
-and archived sprint locations under `/project/clasi/sprints/`):
-process artifacts (`docs/design/overview.md`, each sprint's
-`sprint.md`), ticket lifecycle (tickets present, completed ones in
-`tickets/done/` with `status: done`, acceptance criteria present),
-sprint closure (each sprint archived under `clasi/sprints/done/`),
-code quality (the package runs, the menu displays, `q` quits, tests
-pass), exact spec strings from the guessing-game behavior, git hygiene
-(commit count, clean tree), and OOP change resilience (all 3 scripted
-edits survived into the final state).
+A check script, not a description to reproduce by hand. It checks,
+against the real clasi artifact layout (globbing both live and archived
+sprint locations under `/project/clasi/sprints/`): process artifacts
+(`docs/design/overview.md`, each sprint's `sprint.md`), ticket lifecycle
+(tickets present, completed ones in `tickets/done/` with `status: done`,
+acceptance criteria present), sprint closure (each sprint archived under
+`clasi/sprints/done/`), code quality (the package runs, the menu
+displays, `q` quits, tests pass), exact spec strings from the
+guessing-game behavior, git hygiene (commit count, clean tree), and OOP
+change resilience (all 3 scripted edits survived into the final state).
 
 Do not invent or expect artifacts `validate.sh` doesn't check for —
 there is no `close-report.md` (clasi never produces one), no
@@ -264,6 +294,18 @@ document's prose.
 project (all checks FAIL, exit 1, no crash) — if you want a sanity
 check that the rubric itself is wired correctly before or between
 sprints, it's safe to run early.
+
+### 2. `rubric.md` — the process-integrity rubric
+
+`validate.sh` proves the *product* is right. `rubric.md` proves the
+*process* was followed honestly — that the subject didn't skip gates,
+didn't have the team-lead write code directly, didn't fabricate
+completion, retired the reversed issue the CLASI way, and kept the design
+docs current. Walk each `rubric.md` item against the run's artifacts and
+git history, record PASS/FAIL/N/A with evidence, and report it alongside
+the `validate.sh` result. A clean `validate.sh` with a Category-A
+`rubric.md` failure is still a failed run — that's the whole reason
+`rubric.md` exists.
 
 ## Environment Noise Notes
 
@@ -284,15 +326,16 @@ bug:
 
 | File | Purpose |
 |------|---------|
-| `AGENTS.md` | **This file** — tester instructions |
+| `AGENTS.md` | **This file** — tester instructions and behavior playbook |
+| `script.md` | Chronological milestone timeline for one full run — the spine of the test; follow it milestone by milestone |
 | `stakeholder-persona.md` | Phrasing register for prompts to the subject — read before composing any prompt |
+| `rubric.md` | Process-integrity grading rubric — walk it at the end alongside `validate.sh` |
 | `Dockerfile` | Container image with Python, Node, Claude Code, clasi |
 | `entrypoint.sh` | Runs inside container: clasi init → git → spec → tmux keep-alive |
 | `start.sh` | Build image (local wheel by default) + probe bind mount + wipe (unless `--resume`) + start container |
 | `stop.sh` | Stop and remove container; `--wipe` also clears the project dir |
 | `connect.sh` | Attach to the container's tmux session for interactive/manual poking |
-| `validate.sh` | Mechanical rubric checker — run after all sprints and OOP changes |
-| `oop.sh` | Source content for the 3 out-of-process change prompts (rephrase, don't paste verbatim) |
+| `validate.sh` | Mechanical product-rubric checker — run after all sprints and OOP changes |
 | `guessing-game-spec.md` | The 4-sprint spec baked into the container image |
 | `e2e-project/` | Project directory — real dir, or a symlink to `~/.clasi/e2e-project/` on the fallback path (see Harness usage above); gitignored, transient |
 | `.gitignore` | Excludes `e2e-project/` and built wheels (`clasi-*.whl`) from the repo |
