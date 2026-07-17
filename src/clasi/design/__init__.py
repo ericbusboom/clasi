@@ -9,6 +9,15 @@ ticket).
 
 from __future__ import annotations
 
+from clasi.design.overlay import (
+    OverlayApplyError,
+    OverlayError,
+    OverlayGitError,
+    apply,
+    commit_edits,
+    generate_diffs,
+    seed_and_commit,
+)
 from clasi.design.paths import (
     DesignPathError,
     design_doc_slug,
@@ -49,4 +58,11 @@ __all__ = [
     "ValidationResult",
     "validate",
     "validate_or_raise",
+    "OverlayError",
+    "OverlayGitError",
+    "OverlayApplyError",
+    "seed_and_commit",
+    "generate_diffs",
+    "commit_edits",
+    "apply",
 ]
