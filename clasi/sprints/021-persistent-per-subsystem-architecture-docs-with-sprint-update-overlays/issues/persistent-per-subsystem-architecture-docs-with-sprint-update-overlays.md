@@ -11,6 +11,8 @@ tickets:
 - 021-007
 - 021-008
 - 021-009
+- 021-010
+- 021-011
 ---
 
 # Persistent per-subsystem architecture docs with sprint update overlays

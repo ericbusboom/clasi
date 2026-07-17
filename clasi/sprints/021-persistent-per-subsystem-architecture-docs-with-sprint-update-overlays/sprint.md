@@ -228,10 +228,11 @@ map to separate modules rather than one "architecture stuff" blob.
 ### 3. Define Subsystems and Modules
 
 - **`clasi.design.paths`** (new) — Purpose: derive canonical design-doc
-  and README paths from source-root and subsystem-directory configuration.
-  Boundary: pure functions over `Project`'s resolved `sources:` config and
-  path strings; no file I/O, no git. Outside: reading/writing any actual
-  file. Serves: SUC-001, SUC-002.
+  and README paths from source-root and subsystem-directory configuration,
+  disambiguating a subsystem slug that would otherwise collide with the
+  reserved system-doc name. Boundary: pure functions over `Project`'s
+  resolved `sources:` config and path strings; no file I/O, no git.
+  Outside: reading/writing any actual file. Serves: SUC-001, SUC-002.
 - **`clasi.design.store`** (new) — Purpose: read and write the persistent
   `docs/design/` doc set (design.md, subsystem docs, README frontmatter)
   as `Artifact` objects. Boundary: wraps `Artifact`/`frontmatter.py` for
@@ -511,6 +512,61 @@ recommendation for stakeholder confirmation, not a deferral.
    sprint's architecture output looks like (overlay instead of inline
    section).
 
+## Revision
+
+Ticket 009 (bootstrap run against this repo) threw an internal
+exception: `src/clasi/design` slugifies under the single-root rule to
+`design.md`, colliding with `SYSTEM_DOC_NAME` — both resolve to
+`docs/design/design.md`, and the validator's `expected_names` set
+silently collapses the collision so it goes undetected.
+
+Resolution: `clasi.design.paths.design_doc_slug` now falls back to the
+existing multi-root (root-qualified) form for a single subsystem only
+when its single-root slug would equal `design.md` (e.g.
+`src/clasi/design` -> `src-clasi-design.md`), and raises
+`DesignPathError` if a residual collision remains. This reuses the
+already-implemented multi-root rule rather than adding a new naming
+concept, so every other subsystem's filename is unaffected and
+`design.md` stays reserved for the system doc. The validator's
+`_check_subsystem_docs` orphan/unmapped check is revised to detect a
+slug collision explicitly instead of collapsing it into a set. See
+ticket 009's `exception:` frontmatter for the full incident and ticket
+010 for the implementation.
+
+**Second exception (ticket 009, re-run after ticket 010 landed)**: after
+the collision fix, the bootstrap's full write succeeded and produced no
+filename collision (Open Question 2's coexistence recommendation holds
+in practice), but `clasi design validate` exited 1 with five "Orphaned
+design doc" messages — one per frozen initiation doc (`overview.md`,
+`specification.md`, `state-machines.md`, `usecases.md`,
+`worktree-process.md`) that Open Question 2 already approved as
+coexisting at the top level of `docs/design/`. The orphan check
+(`_check_subsystem_docs`'s `expected_names` membership test) had no way
+to recognize non-subsystem content — Open Question 2 addressed filename
+collision, not validator recognition, and nothing in tickets 001-004
+taught the validator that these docs are legitimate.
+
+Resolution: the orphan check is revised to key off **frontmatter shape**,
+not filename. A `.md` file under `docs/design/` (other than the system
+doc) is treated as a subsystem doc — and subject to orphan-checking
+against a declared subsystem — only if its frontmatter carries the
+subsystem-doc shape (`source_paths`/`readme_path`). This covers the five
+frozen initiation docs and any future non-subsystem prose in
+`docs/design/` without hardcoding filenames. A plain exempt list of the
+five names was rejected: it doesn't generalize to future non-subsystem
+docs, and it still wouldn't help the case an exempt list can't express
+anyway. The frontmatter-shape test alone was also rejected as insufficient
+on its own: a stale subsystem doc whose frontmatter got stripped or
+corrupted would silently evade orphan detection, which defeats the
+check's purpose. Final rule: a `.md` file without the subsystem-doc
+frontmatter shape is **not** reported as an orphan error (so legitimate
+non-subsystem content like the initiation docs doesn't fail validation),
+but it **is** surfaced as a separate informational message (not counted
+toward `ValidationResult.ok`/exit code) so a stale or corrupted subsystem
+doc stays visible instead of disappearing from view entirely. See ticket
+009's second `exception:` entry for the full incident and ticket 011 for
+the implementation.
+
 ## Use Cases
 
 Substantial sprint — full use case treatment.
@@ -751,6 +807,13 @@ Before tickets can be created, all of the following must be true:
 | 006 | Sprint lifecycle integration: hook overlay steps into create/acquire/pre-execution/close | 005 |
 | 007 | Bootstrap skill: create/rework consolidate-architecture into bootstrap-design | 003, 004 |
 | 008 | Rework architecture-authoring, architecture-review, plan-sprint, close-sprint, execute-sprint skills and team-lead role | 004, 005, 006, 007 |
-| 009 | Bootstrap run: produce docs/design/ subsystem doc set for this repo | 001, 007 |
+| 009 | Bootstrap run: produce docs/design/ subsystem doc set for this repo | 001, 007, 010, 011 |
+| 010 | Fix design-doc slug collision: paths fallback + validator collision detection | — |
+| 011 | Fix validator orphan check: frontmatter-shape gate for non-subsystem docs | 010 |
 
-Tickets execute serially in the order listed.
+Tickets execute serially in the order listed. Tickets 010 and 011 were
+each added after ticket 009 threw an exception (see `## Revision` under
+Architecture) — 010 for the slug-collision defect, 011 for the
+orphan-check defect surfaced by the re-run after 010 landed. Neither has
+an open dependency outside this sprint (002 is done); both must complete
+before 009 is reopened and re-run.
