@@ -1,5 +1,15 @@
 ---
-status: pending
+status: in-progress
+sprint: '022'
+tickets:
+- 022-001
+- 022-002
+- 022-003
+- 022-004
+- 022-005
+- 022-006
+- 022-007
+- 022-008
 ---
 
 # Co-locate design docs as DESIGN.md in each source directory, replacing README
