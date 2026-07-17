@@ -246,7 +246,7 @@ class TestApply:
         overlay_file = sprint_design_dir / "clasi-tools.md"
         overlay_file.write_text("# Tools\n\nFinal.\n", encoding="utf-8")
 
-        applied = apply(sprint_design_dir, repo / "docs" / "design")
+        applied = apply(sprint_design_dir)
 
         assert applied == [canonical]
         assert canonical.read_text(encoding="utf-8") == overlay_file.read_text(
@@ -265,7 +265,7 @@ class TestApply:
         generate_diffs(sprint_design_dir, repo_root=repo)
         assert (sprint_design_dir / "clasi-tools.diff.md").exists()
 
-        applied = apply(sprint_design_dir, repo / "docs" / "design")
+        applied = apply(sprint_design_dir)
 
         assert applied == [canonical]
         assert not (repo / "docs" / "design" / "clasi-tools.diff.md").exists()
@@ -281,22 +281,123 @@ class TestApply:
             "# Tools\n\nFinal.\n", encoding="utf-8"
         )
 
-        # Nonexistent canonical design dir -> target cannot be determined.
-        missing_canonical_dir = repo / "docs" / "nonexistent"
+        # Delete the recorded canonical directory -> target cannot be
+        # resolved even though the manifest still names it.
+        import shutil as _shutil
+
+        _shutil.rmtree(repo / "docs" / "design")
+
+        with pytest.raises(OverlayApplyError):
+            apply(sprint_design_dir)
+
+        # Canonical dir was never recreated -- no partial apply.
+        assert not canonical.exists()
+
+    def test_raises_when_overlay_file_has_no_manifest_entry(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        canonical = _make_canonical_doc(repo, "clasi-tools.md", "# Tools\n\nOriginal.\n")
+        sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
+        seed_and_commit([canonical], sprint_design_dir, repo_root=repo)
+
+        # A stray overlay file with no seed-time manifest entry at all
+        # (e.g. hand-added, or a pre-022 overlay directory).
+        stray = sprint_design_dir / "stray.md"
+        stray.write_text("# Stray\n", encoding="utf-8")
+
         original_canonical_content = canonical.read_text(encoding="utf-8")
 
         with pytest.raises(OverlayApplyError):
-            apply(sprint_design_dir, missing_canonical_dir)
+            apply(sprint_design_dir)
 
-        # Original canonical doc must be untouched (no partial apply).
         assert canonical.read_text(encoding="utf-8") == original_canonical_content
+
+    def test_resolves_colliding_basenames_to_distinct_subsystem_targets(
+        self, tmp_path
+    ):
+        """The concrete regression case a name-based/flat-join lookup would
+        get wrong: two subsystems whose overlay files share the same
+        basename (DESIGN.md) must still resolve to their own distinct
+        canonical targets."""
+        repo = _init_repo(tmp_path)
+
+        def _make_subsystem_doc(subsystem: str, content: str) -> Path:
+            subsystem_dir = repo / "src" / subsystem
+            subsystem_dir.mkdir(parents=True, exist_ok=True)
+            path = subsystem_dir / "DESIGN.md"
+            path.write_text(content, encoding="utf-8")
+            _run(["add", str(path)], repo)
+            _run(["commit", "-m", f"add {subsystem} DESIGN.md"], repo)
+            return path
+
+        canonical_a = _make_subsystem_doc("alpha", "# Alpha\n\nOriginal alpha.\n")
+        canonical_b = _make_subsystem_doc("beta", "# Beta\n\nOriginal beta.\n")
+
+        sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
+        overlay_a = sprint_design_dir / "alpha__DESIGN.md"
+        overlay_b = sprint_design_dir / "beta__DESIGN.md"
+
+        # Seed each subsystem's DESIGN.md under a distinct overlay
+        # filename (both source files are literally named "DESIGN.md",
+        # so seeding must not collide/overwrite on disk).
+        sprint_design_dir.mkdir(parents=True, exist_ok=True)
+        import shutil as _shutil
+
+        _shutil.copyfile(canonical_a, overlay_a)
+        _shutil.copyfile(canonical_b, overlay_b)
+        from clasi.design.overlay import _write_sources_manifest
+
+        _write_sources_manifest(
+            sprint_design_dir,
+            {
+                overlay_a.name: str(canonical_a.resolve()),
+                overlay_b.name: str(canonical_b.resolve()),
+            },
+        )
+        _run(["add", str(sprint_design_dir)], repo)
+        _run(["commit", "-m", "chore: seed sprint design overlay"], repo)
+
+        overlay_a.write_text("# Alpha\n\nFinal alpha.\n", encoding="utf-8")
+        overlay_b.write_text("# Beta\n\nFinal beta.\n", encoding="utf-8")
+
+        applied = apply(sprint_design_dir)
+
+        assert set(applied) == {canonical_a, canonical_b}
+        assert canonical_a.read_text(encoding="utf-8") == "# Alpha\n\nFinal alpha.\n"
+        assert canonical_b.read_text(encoding="utf-8") == "# Beta\n\nFinal beta.\n"
+
+    def test_no_partial_apply_when_one_of_several_files_unresolvable(
+        self, tmp_path
+    ):
+        repo = _init_repo(tmp_path)
+        canonical_a = _make_canonical_doc(repo, "a.md", "A original\n")
+        canonical_b = _make_canonical_doc(repo, "b.md", "B original\n")
+        sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
+        seed_and_commit([canonical_a, canonical_b], sprint_design_dir, repo_root=repo)
+
+        (sprint_design_dir / "a.md").write_text("A final\n", encoding="utf-8")
+        (sprint_design_dir / "b.md").write_text("B final\n", encoding="utf-8")
+
+        # Make b.md unresolvable by deleting its manifest entry.
+        from clasi.design.overlay import _manifest_path
+        import json as _json
+
+        manifest_path = _manifest_path(sprint_design_dir)
+        manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+        del manifest["b.md"]
+        manifest_path.write_text(_json.dumps(manifest), encoding="utf-8")
+
+        with pytest.raises(OverlayApplyError):
+            apply(sprint_design_dir)
+
+        # Zero canonical files written -- not even the resolvable one.
+        assert canonical_a.read_text(encoding="utf-8") == "A original\n"
+        assert canonical_b.read_text(encoding="utf-8") == "B original\n"
 
 
 class TestFullLifecycle:
     def test_seed_diff_commit_apply_round_trip(self, tmp_path):
         repo = _init_repo(tmp_path)
         canonical = _make_canonical_doc(repo, "clasi-tools.md", "# Tools\n\nOriginal.\n")
-        canonical_design_dir = repo / "docs" / "design"
         sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
 
         seed_and_commit([canonical], sprint_design_dir, repo_root=repo)
@@ -313,6 +414,6 @@ class TestFullLifecycle:
         status = _run(["status", "--porcelain"], repo)
         assert status.stdout.strip() == ""
 
-        applied = apply(sprint_design_dir, canonical_design_dir)
+        applied = apply(sprint_design_dir)
         assert applied == [canonical]
         assert canonical.read_text(encoding="utf-8") == "# Tools\n\nUpdated during sprint.\n"

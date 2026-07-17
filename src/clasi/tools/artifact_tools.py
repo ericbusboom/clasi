@@ -1667,7 +1667,7 @@ def _close_sprint_full(
         from clasi.design.overlay import OverlayError
 
         try:
-            applied = apply_design_overlay(sprint.design_dir, project.design_dir)
+            applied = apply_design_overlay(sprint.design_dir)
             validation = validate_design_docs(project)
             if not validation.ok:
                 raise DesignError("\n".join(validation.messages))
