@@ -142,6 +142,16 @@ class TestCollisionFreedom:
         # false guarantee, OR assert they differ if uniqueness holds.
         # The two slugs are byte-identical under naive hyphen-joining —
         # this test exists to make that fact visible rather than silent.
+        #
+        # Note (sprint 021 ticket 010): the fallback/raise behavior added
+        # by ticket 010 only covers a single-root slug colliding with the
+        # reserved SYSTEM_DOC_NAME ("design.md"); it does not attempt to
+        # detect or resolve an adversarial multi-root-vs-multi-root
+        # collision like this one (design_doc_slug has no visibility into
+        # sibling subsystems' slugs to catch this on its own — that is
+        # cross-subsystem collision detection, which lives in
+        # clasi.design.validator, not here). This remains a known,
+        # documented limitation.
         if slug_a == slug_b:
             pytest.skip(
                 "Known limitation: adversarially chosen root/subsystem "
@@ -182,6 +192,70 @@ class TestCollisionFreedom:
         assert design_doc_slug(subsystem_a, sources) != design_doc_slug(
             subsystem_b, sources
         )
+
+
+# ---------------------------------------------------------------------------
+# Single-root collision fallback (sprint 021 ticket 010)
+# ---------------------------------------------------------------------------
+
+
+class TestSingleRootSystemDocCollisionFallback:
+    def test_subsystem_named_design_falls_back_to_root_qualified_slug(self):
+        """A top-level subsystem directory literally named 'design' would
+        otherwise slugify to 'design.md' under the single-root rule,
+        colliding with SYSTEM_DOC_NAME. It must fall back to the
+        root-qualified form instead."""
+        root = REPO_ROOT / "src"
+        subsystem = root / "design"
+        slug = design_doc_slug(subsystem, [root])
+        assert slug != system_doc_name()
+        assert slug == "src-design.md"
+
+    def test_this_repos_actual_src_clasi_design_case(self):
+        """Regression test for the exact case that threw ticket 009's
+        exception: this repo's own src/clasi/design directory, with the
+        declared source root src/clasi (as recorded in ticket 009's
+        exception frontmatter — src/clasi was chosen over bare src so
+        Project.sources/_subsystem_dirs enumerates real subsystems rather
+        than build artifacts like src/clasi.egg-info). With that root,
+        'design' is a top-level subsystem directory, so its single-root
+        slug would be 'design.md' — byte-identical to SYSTEM_DOC_NAME —
+        without this fix."""
+        root = Path("/repo/src/clasi")
+        subsystem = root / "design"
+        slug = design_doc_slug(subsystem, [root])
+        assert slug != "design.md"
+        assert slug == "clasi-design.md"
+
+    def test_non_colliding_subsystems_are_unaffected(self):
+        """The fallback must not change output for any subsystem whose
+        single-root slug does not collide with SYSTEM_DOC_NAME — no
+        behavior change for the non-colliding case."""
+        root = REPO_ROOT / "src"
+        sources = [root]
+        assert design_doc_slug(root / "clasi" / "tools", sources) == "clasi-tools.md"
+        assert (
+            design_doc_slug(root / "clasi" / "schemas", sources) == "clasi-schemas.md"
+        )
+        assert design_doc_slug(root / "clasi", sources) == "clasi.md"
+
+    def test_residual_collision_raises_when_root_itself_is_named_design(self):
+        """Synthetic pathological case: a source root literally named
+        'design', with subsystem_path == the root itself. The single-root
+        slug is 'design.md' (root-name fallback for subsystem == root);
+        the root-qualified fallback is also 'design.md' (qualifying with
+        the root's own name adds nothing when there's no relative path).
+        Both forms collide with SYSTEM_DOC_NAME, so this must raise
+        rather than silently return the colliding name."""
+        root = REPO_ROOT / "design"
+        with pytest.raises(DesignPathError):
+            design_doc_slug(root, [root])
+
+    def test_residual_collision_error_message_is_actionable(self):
+        root = REPO_ROOT / "design"
+        with pytest.raises(DesignPathError) as excinfo:
+            design_doc_slug(root, [root])
+        assert "design.md" in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------------

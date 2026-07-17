@@ -244,6 +244,89 @@ class TestSprintOverlay:
 
 
 # ---------------------------------------------------------------------------
+# Filename collision detection (sprint 021 ticket 010)
+# ---------------------------------------------------------------------------
+
+
+class TestFilenameCollisionDetection:
+    def test_subsystem_colliding_with_system_doc_name_is_flagged(
+        self, tmp_path, monkeypatch
+    ):
+        """design_doc_slug's residual-collision raise (see
+        test_design_paths.py) is only reachable when subsystem_path ==
+        the source root itself — a degenerate case
+        clasi.design.store._subsystem_dirs never produces via normal
+        doc-set enumeration (it only enumerates *subdirectories* of a
+        root, never the root itself). The validator's own
+        DesignPathError handling around design_doc_slug is nonetheless
+        real defensive code (any future paths.py change could reach it
+        via a different degenerate path), so exercise it directly by
+        constructing a DesignDocSet whose subsystem_docs contains such a
+        path, matching how _check_subsystem_docs actually consumes it."""
+        from clasi.artifact import Artifact
+        from clasi.design import validator as validator_module
+        from clasi.design.store import DesignDocSet
+
+        project = _make_project(tmp_path, ["design"])
+        write_system_doc(project, "# System design\n")
+
+        colliding_root = (tmp_path / "design").resolve()
+        colliding_root.mkdir(parents=True, exist_ok=True)
+        fake_doc_set = DesignDocSet(
+            system_doc=Artifact(project.design_dir / "design.md"),
+            subsystem_docs={colliding_root: Artifact(project.design_dir / "x.md")},
+            readmes={},
+        )
+        monkeypatch.setattr(
+            validator_module, "read_doc_set", lambda _project: fake_doc_set
+        )
+
+        result = validate(project)
+        assert not result.ok
+        assert any(
+            "Cannot derive a design-doc filename" in m for m in result.messages
+        )
+
+    def test_two_subsystems_colliding_with_each_other_is_flagged(self, tmp_path):
+        """Two distinct subsystem directories under the same single root
+        that both fall back to the same root-qualified slug (because one
+        of them is named 'design' and the other is named identically to
+        what the first one's fallback produces) must be reported as a
+        distinct, actionable collision message rather than silently
+        collapsing into one set entry."""
+        project = _make_project(tmp_path, ["src"])
+        subsystem_design = _make_subsystem(tmp_path, "src", "design")
+        subsystem_lookalike = _make_subsystem(tmp_path, "src", "src-design")
+        write_system_doc(project, "# System design\n")
+        write_readme(subsystem_design, project, name="design", description="d")
+        write_readme(subsystem_lookalike, project, name="src-design", description="d")
+
+        result = validate(project)
+        assert not result.ok
+        assert any(
+            "Design doc filename collision" in m and "src-design.md" in m
+            for m in result.messages
+        )
+
+    def test_cli_and_mcp_surface_the_collision_message_identically(self, tmp_path):
+        """validate() and validate_or_raise() must produce equivalent
+        results for the collision case, per the module's
+        CLI/MCP-equivalence contract."""
+        project = _make_project(tmp_path, ["src"])
+        subsystem_design = _make_subsystem(tmp_path, "src", "design")
+        subsystem_lookalike = _make_subsystem(tmp_path, "src", "src-design")
+        write_system_doc(project, "# System design\n")
+        write_readme(subsystem_design, project, name="design", description="d")
+        write_readme(subsystem_lookalike, project, name="src-design", description="d")
+
+        result = validate(project)
+        with pytest.raises(DesignError) as excinfo:
+            validate_or_raise(project)
+
+        assert set(result.messages) == set(str(excinfo.value).split("\n"))
+
+
+# ---------------------------------------------------------------------------
 # Collect-all-failures behavior
 # ---------------------------------------------------------------------------
 

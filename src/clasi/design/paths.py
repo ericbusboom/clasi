@@ -15,6 +15,20 @@ Naming rules (see the sprint 021 issue, "Naming convention"):
   ``tests/e2e/`` -> ``tests-e2e.md``.
 - The system-level document is always named ``design.md``, independent of
   root count or path.
+- **Collision fallback**: if a subsystem's single-root slug would be
+  byte-identical to the reserved system-doc name (``design.md`` — e.g. a
+  subsystem directory literally named ``design``, such as this repo's own
+  ``src/clasi/design``), the slug falls back to that one subsystem's
+  root-qualified (multi-root-style) form instead, e.g.
+  ``src/clasi/design`` -> ``src-clasi-design.md``. This reuses the
+  existing multi-root disambiguation rule rather than introducing a new
+  naming concept, so every other subsystem's filename is unaffected and
+  ``design.md`` stays reserved for the system document. If the
+  root-qualified fallback itself still equals ``design.md``, or still
+  collides with another subsystem's slug, ``design_doc_slug`` raises
+  ``DesignPathError`` — deterministic and total, but fails loud on a
+  residual pathological case rather than guessing further or silently
+  colliding.
 """
 
 from __future__ import annotations
@@ -98,8 +112,11 @@ def design_doc_slug(subsystem_path: Path, sources: list[Path]) -> str:
         A filename such as ``"clasi-tools.md"`` or ``"tests-e2e.md"``.
 
     Raises:
-        DesignPathError: If *sources* is empty, or *subsystem_path* is not
-            located under any declared source root.
+        DesignPathError: If *sources* is empty, *subsystem_path* is not
+            located under any declared source root, or the computed slug
+            (including, for a single-root collision, the root-qualified
+            fallback — see the module docstring's "Collision fallback")
+            still equals the reserved system-doc name.
     """
     if not sources:
         raise DesignPathError(
@@ -117,11 +134,35 @@ def design_doc_slug(subsystem_path: Path, sources: list[Path]) -> str:
             # subsystem_path == the root itself: fall back to the root's
             # own name, since there is no relative path to slugify.
             parts = (containing_root.name,)
-    else:
-        # Multiple roots: root name included to disambiguate.
-        parts = (containing_root.name, *rel_to_root.parts)
 
-    return f"{_slugify(parts)}.md"
+        slug = f"{_slugify(parts)}.md"
+        if slug == SYSTEM_DOC_NAME:
+            # Single-root slug collides with the reserved system-doc name
+            # (e.g. a subsystem directory literally named "design"). Fall
+            # back to the multi-root (root-qualified) form for this one
+            # subsystem only — reuses the disambiguation rule below rather
+            # than inventing a new naming concept.
+            qualified_parts = (containing_root.name, *rel_to_root.parts)
+            slug = f"{_slugify(qualified_parts)}.md"
+            if slug == SYSTEM_DOC_NAME:
+                raise DesignPathError(
+                    f"Cannot derive a design-doc slug for {subsystem_path!s}: "
+                    f"both the single-root slug and the root-qualified "
+                    f"fallback collide with the reserved system-doc name "
+                    f"({SYSTEM_DOC_NAME!r})."
+                )
+        return slug
+
+    # Multiple roots: root name included to disambiguate.
+    parts = (containing_root.name, *rel_to_root.parts)
+    slug = f"{_slugify(parts)}.md"
+    if slug == SYSTEM_DOC_NAME:
+        raise DesignPathError(
+            f"Cannot derive a design-doc slug for {subsystem_path!s}: "
+            f"the root-qualified slug collides with the reserved "
+            f"system-doc name ({SYSTEM_DOC_NAME!r})."
+        )
+    return slug
 
 
 def readme_path_for(subsystem_path: Path) -> Path:

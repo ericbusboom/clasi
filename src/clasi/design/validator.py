@@ -154,14 +154,46 @@ def _check_subsystem_docs(project: Project, messages: list[str]) -> None:
                 f"{design_doc_path_value!s} which does not exist."
             )
 
+    # --- Filename collisions: two subsystems, or a subsystem and the
+    # system doc, resolving to the same expected filename. Computed
+    # individually (not via set-union) so a collision is detected and
+    # reported explicitly instead of silently collapsing into one set
+    # entry, which would let both "system doc present" and "subsystem has
+    # a doc" checks pass even though only one file can physically exist.
+    name_to_subsystems: dict[str, list[Path]] = {}
+    for subsystem_path in doc_set.subsystem_docs:
+        try:
+            slug = design_doc_slug(subsystem_path, project.sources)
+        except DesignPathError as exc:
+            messages.append(
+                f"Cannot derive a design-doc filename for subsystem "
+                f"{subsystem_path}: {exc}"
+            )
+            continue
+        name_to_subsystems.setdefault(slug, []).append(subsystem_path)
+
+    system_name = system_doc_name()
+    for name, subsystem_paths in sorted(name_to_subsystems.items()):
+        if name == system_name:
+            for subsystem_path in subsystem_paths:
+                messages.append(
+                    f"Design doc filename collision: subsystem "
+                    f"{subsystem_path} resolves to {name!r}, which is the "
+                    "reserved top-level system document name."
+                )
+        if len(subsystem_paths) > 1:
+            joined = ", ".join(str(p) for p in subsystem_paths)
+            messages.append(
+                f"Design doc filename collision: subsystems {joined} all "
+                f"resolve to {name!r}."
+            )
+
+    expected_names = {system_name} | set(name_to_subsystems)
+
     # --- Orphaned docs: doc in docs/design/ with no matching source dir ---
     if not design_dir.is_dir():
         return
 
-    expected_names = {system_doc_name()} | {
-        design_doc_slug(subsystem_path, project.sources)
-        for subsystem_path in doc_set.subsystem_docs
-    }
     for entry in sorted(design_dir.iterdir()):
         if not entry.is_file() or entry.suffix != ".md":
             continue
