@@ -47,42 +47,42 @@ fi
 
 echo "--- Process Artifacts ---"
 check      "overview.md exists" \
-           "test -f /project/docs/clasi/overview.md"
-check      "Sprint 001 plan" \
-           "test -d /project/docs/clasi/sprints/001/planning-docs && ls /project/docs/clasi/sprints/001/planning-docs/*.md 2>/dev/null"
-check      "Sprint 002 plan" \
-           "test -d /project/docs/clasi/sprints/002/planning-docs && ls /project/docs/clasi/sprints/002/planning-docs/*.md 2>/dev/null"
-check      "Sprint 003 plan" \
-           "test -d /project/docs/clasi/sprints/003/planning-docs && ls /project/docs/clasi/sprints/003/planning-docs/*.md 2>/dev/null"
-check      "Sprint 004 plan" \
-           "test -d /project/docs/clasi/sprints/004/planning-docs && ls /project/docs/clasi/sprints/004/planning-docs/*.md 2>/dev/null"
+           "test -f /project/docs/design/overview.md"
+check      "Sprint 001 planned" \
+           "ls /project/clasi/sprints/{done/,}001-*/sprint.md 2>/dev/null"
+check      "Sprint 002 planned" \
+           "ls /project/clasi/sprints/{done/,}002-*/sprint.md 2>/dev/null"
+check      "Sprint 003 planned" \
+           "ls /project/clasi/sprints/{done/,}003-*/sprint.md 2>/dev/null"
+check      "Sprint 004 planned" \
+           "ls /project/clasi/sprints/{done/,}004-*/sprint.md 2>/dev/null"
 
 echo ""
 echo "--- Ticket Lifecycle ---"
 check      "Sprint 001 has tickets" \
-           "ls /project/docs/clasi/sprints/001/tickets/*.md 2>/dev/null"
+           "ls /project/clasi/sprints/{done/,}001-*/tickets/*.md /project/clasi/sprints/{done/,}001-*/tickets/done/*.md 2>/dev/null"
 check      "Sprint 002 has tickets" \
-           "ls /project/docs/clasi/sprints/002/tickets/*.md 2>/dev/null"
+           "ls /project/clasi/sprints/{done/,}002-*/tickets/*.md /project/clasi/sprints/{done/,}002-*/tickets/done/*.md 2>/dev/null"
 check      "Sprint 003 has tickets" \
-           "ls /project/docs/clasi/sprints/003/tickets/*.md 2>/dev/null"
+           "ls /project/clasi/sprints/{done/,}003-*/tickets/*.md /project/clasi/sprints/{done/,}003-*/tickets/done/*.md 2>/dev/null"
 check      "Sprint 004 has tickets" \
-           "ls /project/docs/clasi/sprints/004/tickets/*.md 2>/dev/null"
+           "ls /project/clasi/sprints/{done/,}004-*/tickets/*.md /project/clasi/sprints/{done/,}004-*/tickets/done/*.md 2>/dev/null"
 
-check_content "Ticket files mention 'done'" \
-              "/project/docs/clasi/sprints/001/tickets" "done"
+check      "Sprint 001 tickets completed (status: done in tickets/done/)" \
+           "grep -rli 'status: done' /project/clasi/sprints/{done/,}001-*/tickets/done/*.md 2>/dev/null"
 check      "Ticket files have acceptance criteria" \
-           "grep -rli 'acceptance criteria\|Acceptance Criteria\|AC:' /project/docs/clasi/sprints/*/tickets/*.md 2>/dev/null"
+           "grep -rli 'acceptance criteria\|Acceptance Criteria\|AC:' /project/clasi/sprints/{done/,}*/tickets/*.md /project/clasi/sprints/{done/,}*/tickets/done/*.md 2>/dev/null"
 
 echo ""
 echo "--- Sprint Closure ---"
-check      "Sprint 001 close report" \
-           "test -f /project/docs/clasi/sprints/001/close-report.md"
-check      "Sprint 002 close report" \
-           "test -f /project/docs/clasi/sprints/002/close-report.md"
-check      "Sprint 003 close report" \
-           "test -f /project/docs/clasi/sprints/003/close-report.md"
-check      "Sprint 004 close report" \
-           "test -f /project/docs/clasi/sprints/004/close-report.md"
+check      "Sprint 001 archived to clasi/sprints/done/" \
+           "ls -d /project/clasi/sprints/done/001-* 2>/dev/null"
+check      "Sprint 002 archived to clasi/sprints/done/" \
+           "ls -d /project/clasi/sprints/done/002-* 2>/dev/null"
+check      "Sprint 003 archived to clasi/sprints/done/" \
+           "ls -d /project/clasi/sprints/done/003-* 2>/dev/null"
+check      "Sprint 004 archived to clasi/sprints/done/" \
+           "ls -d /project/clasi/sprints/done/004-* 2>/dev/null"
 
 echo ""
 echo "--- Code Quality ---"
@@ -94,6 +94,17 @@ check      "q quits cleanly" \
            "cd /project && python -m guessing_game <<< 'q' 2>&1 | grep -qi 'Thanks for playing'"
 check      "Tests pass" \
            "cd /project && python -m pytest 2>&1 | grep -E '[0-9]+ passed'"
+
+echo ""
+echo "--- Game Behavior (exact spec strings) ---"
+check      "Correct-guess message matches spec exactly" \
+           "grep -rq 'Correct! You got it!' /project/guessing_game/"
+check      "Wrong-guess message matches spec exactly" \
+           "grep -rq 'Nope, try again.' /project/guessing_game/"
+check      "Out-of-guesses message matches spec exactly" \
+           "grep -rq 'Sorry! The answer was 7.' /project/guessing_game/"
+check      "Non-numeric-input message matches spec exactly" \
+           "grep -rq 'Please enter a number.' /project/guessing_game/"
 
 echo ""
 echo "--- Git Hygiene ---"
