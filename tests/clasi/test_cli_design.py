@@ -73,3 +73,17 @@ class TestDesignValidateFailure:
         runner = CliRunner()
         result = runner.invoke(cli, ["design", "validate"])
         assert result.exit_code == 0
+
+
+class TestDesignValidateInfo:
+    def test_non_subsystem_doc_exits_zero_with_info_notice(self, tmp_path):
+        _write_valid_doc_set(tmp_path)
+        (tmp_path / "docs" / "design" / "overview.md").write_text(
+            "# Overview\n\nNo frontmatter.\n", encoding="utf-8"
+        )
+        runner = CliRunner()
+        result = runner.invoke(cli, ["design", "validate", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "INFO" in result.output
+        assert "overview.md" in result.output
+        assert "valid" in result.output.lower()

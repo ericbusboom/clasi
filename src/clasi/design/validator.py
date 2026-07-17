@@ -38,6 +38,34 @@ diff was generated (see ``clasi.design.overlay``, ticket 005) — chosen
 over mtime comparison because mtimes are not preserved across git
 clones/checkouts and would produce false "stale" positives after a
 fresh checkout of an up-to-date overlay.
+
+Informational vs. error messages (sprint 021, ticket 011)
+-----------------------------------------------------------
+
+The orphan check in ``_check_subsystem_docs`` only applies to ``.md``
+files under ``docs/design/`` (other than the system doc, ``design.md``)
+whose frontmatter carries the *subsystem-doc shape* — both
+``source_paths`` and ``readme_path`` keys present. This is the shape
+:func:`clasi.design.store.write_design_doc` always writes.
+
+A ``.md`` file in ``docs/design/`` without that shape (no frontmatter,
+or frontmatter missing one or both of those keys) is not a subsystem
+doc as far as this validator is concerned, and is therefore never
+reported as an "Orphaned design doc" *error* — this covers non-subsystem
+prose such as the project's frozen initiation docs (``overview.md``,
+``specification.md``, ``usecases.md``, ``state-machines.md``,
+``worktree-process.md``) living alongside the subsystem doc set.
+
+It is, however, not silently ignored: it is recorded as a distinct
+*informational* entry in ``ValidationResult.info``, separate from
+``ValidationResult.messages``. This keeps a stale or corrupted
+subsystem doc (frontmatter accidentally stripped) visible in validator
+output rather than disappearing from view, while not failing
+``ok``/the CLI exit code. ``ValidationResult.ok`` is defined purely off
+``messages`` — ``info`` entries never affect it. A genuine orphan (a
+file *with* the subsystem-doc frontmatter shape but no matching
+declared subsystem) is still reported as an "Orphaned design doc" error
+in ``messages``, exactly as before.
 """
 
 from __future__ import annotations
@@ -72,9 +100,16 @@ class ValidationResult:
         messages: One entry per independently-detected failure, each an
             actionable, specific string (see module docstring). Empty on
             success.
+        info: One entry per independently-detected informational
+            condition — currently, ``.md`` files under ``docs/design/``
+            that lack the subsystem-doc frontmatter shape and are
+            therefore not orphan-checked (see the module docstring's
+            "Informational vs. error messages" section). Never affects
+            ``ok`` or exit codes. Empty when there is nothing to report.
     """
 
     messages: list[str] = field(default_factory=list)
+    info: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -99,7 +134,24 @@ def _check_system_doc_present(project: Project, messages: list[str]) -> None:
         )
 
 
-def _check_subsystem_docs(project: Project, messages: list[str]) -> None:
+def _has_subsystem_doc_shape(frontmatter: dict) -> bool:
+    """Return whether *frontmatter* carries the subsystem design-doc shape.
+
+    The shape is both ``source_paths`` and ``readme_path`` keys present —
+    the shape :func:`clasi.design.store.write_design_doc` always writes.
+    Presence, not truthiness, is what's tested: ``write_system_doc`` sets
+    ``readme_path`` to ``None`` for the (separately special-cased) system
+    doc, and a subsystem doc could legitimately have an empty
+    ``source_paths`` list, so a falsy-but-present value still counts as
+    the shape. A ``.md`` file without this shape is not orphan-checked —
+    see the module docstring.
+    """
+    return "source_paths" in frontmatter and "readme_path" in frontmatter
+
+
+def _check_subsystem_docs(
+    project: Project, messages: list[str], info: list[str]
+) -> None:
     """Check one-doc-per-subsystem, bidirectional links, and orphans/unmapped roots."""
     doc_set = read_doc_set(project)
     design_dir = project.design_dir
@@ -197,6 +249,14 @@ def _check_subsystem_docs(project: Project, messages: list[str]) -> None:
     for entry in sorted(design_dir.iterdir()):
         if not entry.is_file() or entry.suffix != ".md":
             continue
+        if entry.name == system_name:
+            continue
+        if not _has_subsystem_doc_shape(Artifact(entry).frontmatter):
+            info.append(
+                f"Non-subsystem doc (no frontmatter shape recognized): "
+                f"{entry} — not orphan-checked."
+            )
+            continue
         if entry.name not in expected_names:
             messages.append(
                 f"Orphaned design doc: {entry} does not correspond to any "
@@ -204,9 +264,11 @@ def _check_subsystem_docs(project: Project, messages: list[str]) -> None:
             )
 
 
-def _check_canonical_doc_set(project: Project, messages: list[str]) -> None:
+def _check_canonical_doc_set(
+    project: Project, messages: list[str], info: list[str]
+) -> None:
     _check_system_doc_present(project, messages)
-    _check_subsystem_docs(project, messages)
+    _check_subsystem_docs(project, messages, info)
 
 
 # ---------------------------------------------------------------------------
@@ -312,10 +374,11 @@ def validate(project: Project, overlay_dir: str | Path | None = None) -> Validat
         :func:`validate_or_raise` for a raising variant.
     """
     messages: list[str] = []
-    _check_canonical_doc_set(project, messages)
+    info: list[str] = []
+    _check_canonical_doc_set(project, messages, info)
     if overlay_dir is not None:
         _check_overlay(project, Path(overlay_dir), messages)
-    return ValidationResult(messages=messages)
+    return ValidationResult(messages=messages, info=info)
 
 
 def validate_or_raise(project: Project, overlay_dir: str | Path | None = None) -> ValidationResult:

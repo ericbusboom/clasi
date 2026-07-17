@@ -39,11 +39,17 @@ def validate_design(overlay_dir: str | None = None) -> str:
             the canonical doc set.
 
     Returns:
-        JSON object: ``{"ok": bool, "messages": [str, ...]}``. ``messages``
-        is empty when ``ok`` is ``True``; otherwise each entry is an
-        independently actionable failure description, so a caller can
-        act on individual failures rather than parsing a single blob.
+        JSON object: ``{"ok": bool, "messages": [str, ...], "info": [str,
+        ...]}``. ``messages`` is empty when ``ok`` is ``True``; otherwise
+        each entry is an independently actionable failure description, so
+        a caller can act on individual failures rather than parsing a
+        single blob. ``info`` carries informational notices (e.g.
+        non-subsystem docs in ``docs/design/`` not orphan-checked) that
+        never affect ``ok``.
     """
     project = get_project()
     result = validate(project, overlay_dir)
-    return json.dumps({"ok": result.ok, "messages": result.messages}, indent=2)
+    return json.dumps(
+        {"ok": result.ok, "messages": result.messages, "info": result.info},
+        indent=2,
+    )

@@ -284,15 +284,18 @@ def design_validate(path: str, overlay_dir: str | None) -> None:
 
     PATH is the project root (defaults to the current directory).
     """
-    from clasi.design import DesignError, validate_or_raise
+    from clasi.design import validate
     from clasi.project import Project
 
     project = Project(path)
 
-    try:
-        validate_or_raise(project, overlay_dir)
-    except DesignError as e:
-        click.echo(str(e), err=True)
+    result = validate(project, overlay_dir)
+
+    for info_message in result.info:
+        click.echo(f"INFO: {info_message}")
+
+    if not result.ok:
+        click.echo("\n".join(result.messages), err=True)
         raise SystemExit(1)
 
     click.echo("Design doc set valid.")

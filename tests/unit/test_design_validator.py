@@ -163,11 +163,118 @@ class TestOrphanedDocs:
     def test_orphaned_design_doc_is_flagged(self, tmp_path):
         project = _write_valid_doc_set(tmp_path)
         orphan = project.design_dir / "no-such-subsystem.md"
-        orphan.write_text("---\nsource_paths: []\n---\nOrphan.\n", encoding="utf-8")
+        # Must carry the subsystem-doc frontmatter shape (both
+        # source_paths and readme_path) to be orphan-checked at all —
+        # see sprint 021 ticket 011.
+        orphan.write_text(
+            "---\nsource_paths: []\nreadme_path: null\n---\nOrphan.\n",
+            encoding="utf-8",
+        )
 
         result = validate(project)
         assert not result.ok
         assert any("Orphaned design doc" in m for m in result.messages)
+
+
+# ---------------------------------------------------------------------------
+# Non-subsystem docs: frontmatter-shape gate (sprint 021 ticket 011)
+# ---------------------------------------------------------------------------
+
+
+class TestNonSubsystemDocInformational:
+    def test_doc_with_no_frontmatter_is_not_an_orphan_error(self, tmp_path):
+        project = _write_valid_doc_set(tmp_path)
+        non_subsystem = project.design_dir / "overview.md"
+        non_subsystem.write_text("# Overview\n\nSome prose, no frontmatter.\n", encoding="utf-8")
+
+        result = validate(project)
+        assert result.ok
+        assert not any("Orphaned design doc" in m for m in result.messages)
+
+    def test_doc_with_no_frontmatter_produces_informational_message(self, tmp_path):
+        project = _write_valid_doc_set(tmp_path)
+        non_subsystem = project.design_dir / "overview.md"
+        non_subsystem.write_text("# Overview\n\nSome prose, no frontmatter.\n", encoding="utf-8")
+
+        result = validate(project)
+        assert result.ok  # info does not flip ok to False
+        assert any(
+            "overview.md" in m and "not orphan-checked" in m for m in result.info
+        )
+
+    def test_doc_with_partial_frontmatter_shape_is_informational_not_error(self, tmp_path):
+        """Frontmatter present but missing one of the two required keys
+        (source_paths/readme_path) still fails the shape test."""
+        project = _write_valid_doc_set(tmp_path)
+        partial = project.design_dir / "specification.md"
+        partial.write_text(
+            "---\ntitle: Specification\n---\nBody.\n", encoding="utf-8"
+        )
+
+        result = validate(project)
+        assert result.ok
+        assert not any("Orphaned design doc" in m for m in result.messages)
+        assert any("specification.md" in m for m in result.info)
+
+    def test_five_frozen_initiation_docs_alongside_subsystem_docs_validates_clean(
+        self, tmp_path
+    ):
+        """Matches this repo's actual post-bootstrap docs/design/ shape:
+        five frontmatter-less initiation docs coexisting with a correct
+        subsystem doc set and the system doc."""
+        project = _write_valid_doc_set(tmp_path)
+        for name in (
+            "overview.md",
+            "specification.md",
+            "usecases.md",
+            "state-machines.md",
+            "worktree-process.md",
+        ):
+            (project.design_dir / name).write_text(
+                f"# {name}\n\nFrozen initiation doc, no frontmatter.\n",
+                encoding="utf-8",
+            )
+
+        result = validate(project)
+        assert result.ok
+        assert result.messages == []
+        assert len(result.info) == 5
+
+    def test_genuine_orphan_still_reported_alongside_non_subsystem_docs(self, tmp_path):
+        """A real orphan (subsystem-doc shape, no matching subsystem) must
+        still be flagged even when non-subsystem docs are also present."""
+        project = _write_valid_doc_set(tmp_path)
+        (project.design_dir / "overview.md").write_text(
+            "# Overview\n\nNo frontmatter.\n", encoding="utf-8"
+        )
+        genuine_orphan = project.design_dir / "no-such-subsystem.md"
+        genuine_orphan.write_text(
+            "---\nsource_paths: []\nreadme_path: null\n---\nOrphan.\n",
+            encoding="utf-8",
+        )
+
+        result = validate(project)
+        assert not result.ok
+        assert any("Orphaned design doc" in m for m in result.messages)
+        assert any("overview.md" in m for m in result.info)
+
+    def test_stale_subsystem_doc_with_stripped_frontmatter_is_visible_via_info(
+        self, tmp_path
+    ):
+        """A subsystem doc whose frontmatter got stripped/corrupted must
+        not silently evade orphan detection — it should surface via the
+        informational channel instead of vanishing entirely."""
+        project = _write_valid_doc_set(tmp_path)
+        subsystem_doc = project.design_dir / "clasi.md"
+        assert subsystem_doc.exists()
+        # Simulate corruption: strip frontmatter down to nothing.
+        subsystem_doc.write_text(
+            "# clasi subsystem\n\nFrontmatter got stripped somehow.\n",
+            encoding="utf-8",
+        )
+
+        result = validate(project)
+        assert any("clasi.md" in m and "not orphan-checked" in m for m in result.info)
 
 
 # ---------------------------------------------------------------------------

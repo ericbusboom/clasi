@@ -45,7 +45,7 @@ class TestValidateDesignPass:
         write_readme(subsystem, project_reload, name="clasi", description="desc")
 
         result = json.loads(validate_design())
-        assert result == {"ok": True, "messages": []}
+        assert result == {"ok": True, "messages": [], "info": []}
 
 
 class TestValidateDesignFail:
@@ -68,3 +68,23 @@ class TestValidateDesignFail:
 
         result = json.loads(validate_design(overlay_dir=None))
         assert result["ok"] is True
+
+
+class TestValidateDesignInfo:
+    def test_non_subsystem_doc_surfaces_as_info_not_error(self, work_dir):
+        _configure_sources(work_dir, ["src"])
+        project_reload = set_project(work_dir)
+        subsystem = _make_subsystem(work_dir, "src", "clasi")
+
+        write_system_doc(project_reload, "# System design\n")
+        write_design_doc(project_reload, subsystem, "# clasi subsystem\n")
+        write_readme(subsystem, project_reload, name="clasi", description="desc")
+
+        (project_reload.design_dir / "overview.md").write_text(
+            "# Overview\n\nNo frontmatter.\n", encoding="utf-8"
+        )
+
+        result = json.loads(validate_design())
+        assert result["ok"] is True
+        assert result["messages"] == []
+        assert any("overview.md" in m for m in result["info"])
