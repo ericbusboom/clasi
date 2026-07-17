@@ -25,6 +25,12 @@ from clasi.design.store import (
     write_readme,
     write_system_doc,
 )
+from clasi.design.validator import (
+    DesignError,
+    ValidationResult,
+    validate,
+    validate_or_raise,
+)
 
 __all__ = [
     "DesignPathError",
@@ -39,4 +45,8 @@ __all__ = [
     "write_design_doc",
     "write_readme",
     "write_system_doc",
+    "DesignError",
+    "ValidationResult",
+    "validate",
+    "validate_or_raise",
 ]

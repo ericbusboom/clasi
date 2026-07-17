@@ -2,9 +2,12 @@
 id: '004'
 title: 'Validator core: clasi.design.validator + clasi design validate CLI + validate_design
   MCP tool'
-status: open
-use-cases: [SUC-003]
-depends-on: ['002', '003']
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '002'
+- '003'
 github-issue: ''
 issue: persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 completes_issue: false
@@ -34,34 +37,34 @@ Expose it two ways, both thin wrappers around the same validation logic:
 
 ## Acceptance Criteria
 
-- [ ] Validates the canonical doc set: `design.md` present; one doc per
+- [x] Validates the canonical doc set: `design.md` present; one doc per
       declared subsystem (per `Project.sources` + `clasi.design.paths`);
       every design doc's frontmatter references a source path/README that
       resolves; every subsystem README's frontmatter references a design
       doc that resolves; no orphaned docs (doc with no matching source
       directory); no unmapped source roots (subsystem directory with no
       doc).
-- [ ] Validates a sprint overlay directory (`clasi/sprints/NNN-slug/design/`)
+- [x] Validates a sprint overlay directory (`clasi/sprints/NNN-slug/design/`)
       when given one: every overlay filename matches an existing
       canonical doc's filename; overlay frontmatter references resolve;
       every overlay `.md` file (excluding `.diff.md` files themselves)
       has a corresponding `<name>.diff.md` that is not stale (content
       hash or mtime comparison against the current overlay file content —
       pick one and document it).
-- [ ] Each of the four failure modes named in the issue's Verification
+- [x] Each of the four failure modes named in the issue's Verification
       section is independently triggerable in tests and produces a
       distinct, actionable message: missing `design.md`; unmapped source
       root; design doc with no README backlink (and the reverse: README
       with no design-doc-side reference); sprint overlay file with a
       stale or missing `.diff.md`.
-- [ ] `clasi design validate` exits 0 on a valid doc set, exit 1 with the
+- [x] `clasi design validate` exits 0 on a valid doc set, exit 1 with the
       failure messages on stderr otherwise — same contract as `clasi
       schema validate` (`cli.py:250-266`).
-- [ ] `validate_design` MCP tool returns an equivalent pass/fail plus
+- [x] `validate_design` MCP tool returns an equivalent pass/fail plus
       message list as structured output (not just a formatted string),
       so an agent caller can act on individual failures programmatically
       if needed.
-- [ ] Both entry points call the same underlying validation function —
+- [x] Both entry points call the same underlying validation function —
       no logic duplicated between CLI and MCP paths.
 
 ## Implementation Plan

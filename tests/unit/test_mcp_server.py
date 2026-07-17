@@ -7,6 +7,7 @@ from clasi.mcp_server import server, content_path, _strip_none_sentinel
 # Trigger lazy tool registration (normally done by run_server)
 import clasi.tools.process_tools  # noqa: F401
 import clasi.tools.artifact_tools  # noqa: F401
+import clasi.tools.design_tools  # noqa: F401
 
 
 class TestContentPath:
@@ -104,7 +105,11 @@ class TestToolRegistration:
 
     EXPECTED_DISPATCH_TOOLS: set[str] = set()
 
-    EXPECTED_ALL = EXPECTED_PROCESS_TOOLS | EXPECTED_ARTIFACT_TOOLS
+    EXPECTED_DESIGN_TOOLS = {
+        "validate_design",
+    }
+
+    EXPECTED_ALL = EXPECTED_PROCESS_TOOLS | EXPECTED_ARTIFACT_TOOLS | EXPECTED_DESIGN_TOOLS
 
     def _registered_tool_names(self) -> set[str]:
         """Get the set of tool names registered on the server."""
@@ -124,7 +129,7 @@ class TestToolRegistration:
 
     def test_tool_count(self):
         registered = self._registered_tool_names()
-        assert len(registered) == 45
+        assert len(registered) == 46
 
     def test_process_tools_registered(self):
         registered = self._registered_tool_names()
