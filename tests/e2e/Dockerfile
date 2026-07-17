@@ -32,7 +32,7 @@ RUN npm install -g @anthropic-ai/claude-code \
 #       docker build --build-arg CLASI_SOURCE=local tests/e2e
 # The [l] glob makes the COPY a no-op when no wheel is present, so git-ref
 # builds don't require one.
-ARG CLASI_SOURCE=v0.20260716.1
+ARG CLASI_SOURCE=local
 # Local-wheel path: copy any clasi-*.whl present in the build context (the
 # [w] glob makes this a no-op when none is; git-ref builds need no wheel).
 # Keep the wheel's real PEP 427 filename — pip validates it, and renaming
