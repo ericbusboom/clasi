@@ -1,9 +1,12 @@
 ---
 id: '003'
 title: 'Design doc store: clasi.design.store module'
-status: open
-use-cases: [SUC-001, SUC-002]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-001
+- SUC-002
+depends-on:
+- '002'
 github-issue: ''
 issue: persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 completes_issue: false
@@ -29,24 +32,24 @@ subsystem name and one-line description.
 
 ## Acceptance Criteria
 
-- [ ] A function/class to read the canonical doc set given a `Project`:
+- [x] A function/class to read the canonical doc set given a `Project`:
       enumerates expected design docs and READMEs via `clasi.design.paths`
       + `Project.sources`, and returns `Artifact` handles (not
       necessarily requiring they exist yet — existence checking is the
       validator's job).
-- [ ] A function to write a design doc: given a subsystem path and
+- [x] A function to write a design doc: given a subsystem path and
       content, writes `docs/design/<slug>.md` with frontmatter containing
       at minimum the source path(s) and the README path.
-- [ ] A function to write a subsystem README: given a subsystem path,
+- [x] A function to write a subsystem README: given a subsystem path,
       name, one-line description, and design-doc reference, writes
       `<subsystem>/README.md` with the required frontmatter fields.
-- [ ] A function to write the top-level `design.md` (system document).
-- [ ] Frontmatter round-trips: writing then reading a design doc or
+- [x] A function to write the top-level `design.md` (system document).
+- [x] Frontmatter round-trips: writing then reading a design doc or
       README returns the same structured fields (uses `Artifact.write`/
       `Artifact.frontmatter`, matching the existing round-trip guarantee
       `frontmatter.py` already provides — see its test coverage as the
       pattern to match).
-- [ ] Does not overwrite an existing README's non-frontmatter body content
+- [x] Does not overwrite an existing README's non-frontmatter body content
       unless explicitly told to (bootstrap creates fresh; later
       re-bootstrap or hand-edits should not be silently destroyed) — at
       minimum, document this module's overwrite semantics clearly even if
