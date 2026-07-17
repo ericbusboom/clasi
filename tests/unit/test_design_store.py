@@ -1,20 +1,16 @@
-"""Tests for clasi.design.store — persistent design doc set read/write."""
+"""Tests for clasi.design.store — co-located DESIGN.md doc set read/write."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from clasi.design.store import (
     DesignDocSet,
     read_design_doc,
     read_doc_set,
-    read_readme,
     read_system_doc,
     subsystem_template,
     write_design_doc,
-    write_readme,
     write_system_doc,
 )
 from clasi.project import Project
@@ -42,7 +38,9 @@ def _make_subsystem(tmp_path: Path, *parts: str) -> Path:
 
 
 class TestDesignDocRoundTrip:
-    def test_write_then_read_round_trips_content_and_frontmatter(self, tmp_path):
+    def test_write_then_read_round_trips_content_with_no_frontmatter(
+        self, tmp_path
+    ):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi", "tools")
 
@@ -51,21 +49,27 @@ class TestDesignDocRoundTrip:
         artifact = read_design_doc(project, subsystem)
         assert artifact.exists
         assert artifact.content == "# clasi.tools\n\nDoes things.\n"
-        fm = artifact.frontmatter
-        assert fm["source_paths"] == [str(subsystem)]
-        assert fm["readme_path"] == str(subsystem / "README.md")
+        assert artifact.frontmatter == {}
 
-    def test_written_at_expected_slugified_path(self, tmp_path):
+    def test_write_produces_no_frontmatter_fence_on_disk(self, tmp_path):
+        project = _make_project(tmp_path, ["src"])
+        subsystem = _make_subsystem(tmp_path, "src", "clasi")
+
+        artifact = write_design_doc(project, subsystem, "# clasi\n")
+
+        raw = artifact.path.read_text(encoding="utf-8")
+        assert raw == "# clasi\n"
+        assert not raw.startswith("---")
+
+    def test_written_at_colocated_design_md_path(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi", "tools")
 
         artifact = write_design_doc(project, subsystem, "content")
 
-        assert artifact.path == project.design_dir / "clasi-tools.md"
+        assert artifact.path == subsystem / "DESIGN.md"
 
-    def test_extra_frontmatter_is_merged_and_does_not_override_required(
-        self, tmp_path
-    ):
+    def test_extra_frontmatter_is_written_as_given(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
 
@@ -73,12 +77,12 @@ class TestDesignDocRoundTrip:
             project,
             subsystem,
             "content",
-            extra_frontmatter={"source_paths": "should-not-win", "owner": "team-x"},
+            extra_frontmatter={"owner": "team-x"},
         )
 
         fm = artifact.frontmatter
-        assert fm["source_paths"] == [str(subsystem)]
-        assert fm["owner"] == "team-x"
+        assert fm == {"owner": "team-x"}
+        assert artifact.content == "content"
 
     def test_overwrite_replaces_prior_content(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -89,6 +93,20 @@ class TestDesignDocRoundTrip:
 
         artifact = read_design_doc(project, subsystem)
         assert artifact.content == "second version"
+
+    def test_overwrite_from_frontmatter_to_bare_body_drops_fence(self, tmp_path):
+        project = _make_project(tmp_path, ["src"])
+        subsystem = _make_subsystem(tmp_path, "src", "clasi")
+
+        write_design_doc(
+            project, subsystem, "content", extra_frontmatter={"owner": "team-x"}
+        )
+        write_design_doc(project, subsystem, "content")
+
+        artifact = read_design_doc(project, subsystem)
+        assert artifact.frontmatter == {}
+        raw = artifact.path.read_text(encoding="utf-8")
+        assert not raw.startswith("---")
 
 
 # ---------------------------------------------------------------------------
@@ -125,83 +143,12 @@ class TestSystemDocRoundTrip:
             str((tmp_path / "tests").resolve()),
         }
 
-
-# ---------------------------------------------------------------------------
-# write_readme / read_readme — round-trip
-# ---------------------------------------------------------------------------
-
-
-class TestReadmeRoundTrip:
-    def test_write_then_read_round_trips(self, tmp_path):
+    def test_frontmatter_has_no_readme_path_field(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi", "tools")
 
-        write_readme(
-            subsystem,
-            project,
-            name="tools",
-            description="MCP tool implementations.",
-            content="# clasi.tools\n",
-        )
+        artifact = write_system_doc(project, "content")
 
-        artifact = read_readme(subsystem)
-        assert artifact.exists
-        assert artifact.content == "# clasi.tools\n"
-        fm = artifact.frontmatter
-        assert fm["subsystem"] == "tools"
-        assert fm["description"] == "MCP tool implementations."
-        assert fm["design_doc_path"] == str(project.design_dir / "clasi-tools.md")
-
-    def test_written_at_subsystem_readme_path(self, tmp_path):
-        project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi")
-
-        artifact = write_readme(
-            subsystem, project, name="clasi", description="Root package."
-        )
-
-        assert artifact.path == subsystem / "README.md"
-
-    def test_default_content_is_empty(self, tmp_path):
-        project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi")
-
-        artifact = write_readme(
-            subsystem, project, name="clasi", description="Root package."
-        )
-
-        assert artifact.content == ""
-
-    def test_extra_frontmatter_merged_without_overriding_required(self, tmp_path):
-        project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi")
-
-        artifact = write_readme(
-            subsystem,
-            project,
-            name="clasi",
-            description="Root package.",
-            extra_frontmatter={"subsystem": "should-not-win", "maintainer": "eric"},
-        )
-
-        fm = artifact.frontmatter
-        assert fm["subsystem"] == "clasi"
-        assert fm["maintainer"] == "eric"
-
-    def test_overwrite_replaces_prior_body(self, tmp_path):
-        project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi")
-
-        write_readme(
-            subsystem, project, name="clasi", description="v1", content="first"
-        )
-        write_readme(
-            subsystem, project, name="clasi", description="v2", content="second"
-        )
-
-        artifact = read_readme(subsystem)
-        assert artifact.content == "second"
-        assert artifact.frontmatter["description"] == "v2"
+        assert "readme_path" not in artifact.frontmatter
 
 
 # ---------------------------------------------------------------------------
@@ -237,19 +184,15 @@ class TestReadDocSetSingleRoot:
         # Only the immediate subdirectory of the source root ("clasi") is
         # a subsystem; nested dirs (tools, schemas) belong to it.
         assert set(doc_set.subsystem_docs.keys()) == {root_clasi}
-        assert set(doc_set.readmes.keys()) == {root_clasi}
 
-    def test_subsystem_doc_and_readme_paths_are_correct(self, tmp_path):
+    def test_subsystem_doc_path_is_colocated_design_md(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         _make_subsystem(tmp_path, "src", "clasi")
         root_clasi = (tmp_path / "src" / "clasi").resolve()
 
         doc_set = read_doc_set(project)
 
-        assert doc_set.subsystem_docs[root_clasi].path == (
-            project.design_dir / "clasi.md"
-        )
-        assert doc_set.readmes[root_clasi].path == root_clasi / "README.md"
+        assert doc_set.subsystem_docs[root_clasi].path == root_clasi / "DESIGN.md"
 
     def test_handles_do_not_require_files_to_exist(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -260,8 +203,6 @@ class TestReadDocSetSingleRoot:
         assert not doc_set.system_doc.exists
         for artifact in doc_set.subsystem_docs.values():
             assert not artifact.exists
-        for artifact in doc_set.readmes.values():
-            assert not artifact.exists
 
     def test_empty_source_root_yields_no_subsystems(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -270,7 +211,6 @@ class TestReadDocSetSingleRoot:
         doc_set = read_doc_set(project)
 
         assert doc_set.subsystem_docs == {}
-        assert doc_set.readmes == {}
 
     def test_nonexistent_source_root_yields_no_subsystems(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -292,16 +232,14 @@ class TestReadDocSetMultiRoot:
 
         assert len(doc_set.subsystem_docs) == 3
 
-    def test_multi_root_slugs_are_root_qualified(self, tmp_path):
+    def test_multi_root_subsystems_still_colocate_by_path(self, tmp_path):
         project = _make_project(tmp_path, ["src", "tests"])
         _make_subsystem(tmp_path, "src", "clasi")
         root_clasi = (tmp_path / "src" / "clasi").resolve()
 
         doc_set = read_doc_set(project)
 
-        assert doc_set.subsystem_docs[root_clasi].path == (
-            project.design_dir / "src-clasi.md"
-        )
+        assert doc_set.subsystem_docs[root_clasi].path == root_clasi / "DESIGN.md"
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +248,7 @@ class TestReadDocSetMultiRoot:
 
 
 class TestOverwriteSemantics:
-    def test_write_readme_does_not_preserve_body_by_default(self, tmp_path):
+    def test_write_design_doc_does_not_preserve_body_by_default(self, tmp_path):
         """Re-bootstrapping without passing the old content silently
         replaces the body — this is the documented behavior, not a merge.
         A caller wanting to preserve hand-edits must read first and pass
@@ -318,42 +256,24 @@ class TestOverwriteSemantics:
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
 
-        write_readme(
-            subsystem,
-            project,
-            name="clasi",
-            description="v1",
-            content="hand-edited notes",
-        )
+        write_design_doc(project, subsystem, "hand-edited notes")
         # Caller re-bootstraps without reading first.
-        write_readme(subsystem, project, name="clasi", description="v2")
+        write_design_doc(project, subsystem, "")
 
-        artifact = read_readme(subsystem)
+        artifact = read_design_doc(project, subsystem)
         assert artifact.content == ""
 
     def test_caller_can_preserve_existing_body_by_reading_first(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
 
-        write_readme(
-            subsystem,
-            project,
-            name="clasi",
-            description="v1",
-            content="hand-edited notes",
-        )
-        existing = read_readme(subsystem)
+        write_design_doc(project, subsystem, "hand-edited notes")
+        existing = read_design_doc(project, subsystem)
         preserved_content = existing.content
 
-        write_readme(
-            subsystem,
-            project,
-            name="clasi",
-            description="v2",
-            content=preserved_content,
-        )
+        write_design_doc(project, subsystem, preserved_content)
 
-        assert read_readme(subsystem).content == "hand-edited notes"
+        assert read_design_doc(project, subsystem).content == "hand-edited notes"
 
 
 # ---------------------------------------------------------------------------
@@ -366,15 +286,6 @@ class TestSubsystemTemplate:
         text = subsystem_template()
         assert isinstance(text, str)
         assert len(text) > 0
-
-    def test_has_placeholder_frontmatter_fields(self):
-        text = subsystem_template()
-        assert text.startswith("<!--")
-        # Frontmatter block, delimited by --- lines, appears after the
-        # leading HTML-comment guidance block and carries the
-        # design-doc schema's placeholder fields.
-        assert "source_paths:" in text
-        assert "readme_path:" in text
 
     def test_preserves_html_comment_guidance_and_section_structure(self):
         text = subsystem_template()
