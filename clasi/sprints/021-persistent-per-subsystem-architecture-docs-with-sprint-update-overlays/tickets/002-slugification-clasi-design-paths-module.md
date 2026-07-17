@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: 'Slugification: clasi.design.paths module'
-status: open
-use-cases: [SUC-002]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-002
+depends-on:
+- '001'
 github-issue: ''
 issue: persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 completes_issue: false
@@ -29,25 +31,25 @@ logic, consumed by store (003), validator (004), and overlay (005).
 
 ## Acceptance Criteria
 
-- [ ] Given a single declared source root and a subsystem directory
+- [x] Given a single declared source root and a subsystem directory
       under it, returns the correct root-omitted slug (e.g.
       `src/clasi/tools/` with root `src` -> `clasi-tools.md`, matching
       the issue's own worked example).
-- [ ] Given multiple declared source roots, returns the correct
+- [x] Given multiple declared source roots, returns the correct
       root-included slug (e.g. `tests/e2e/` -> `tests-e2e.md`).
-- [ ] The system-level doc is always named `design.md`, independent of
+- [x] The system-level doc is always named `design.md`, independent of
       root count or path.
-- [ ] Function(s) are pure: same input always produces same output, no
+- [x] Function(s) are pure: same input always produces same output, no
       filesystem or git calls.
-- [ ] Two distinct subsystem paths never produce the same slug within a
+- [x] Two distinct subsystem paths never produce the same slug within a
       valid configuration (collision-freedom) — cover with a test that
       constructs a plausible multi-root case designed to almost collide
       and asserts it doesn't.
-- [ ] Also derive the corresponding subsystem `README.md` path (the
+- [x] Also derive the corresponding subsystem `README.md` path (the
       subsystem source directory itself, not `docs/design/`) from the
       same input, since SUC-001's bootstrap and SUC-003's validator both
       need this pairing.
-- [ ] Raises a clear, typed error (not a bare exception) for a subsystem
+- [x] Raises a clear, typed error (not a bare exception) for a subsystem
       path that isn't under any declared source root.
 
 ## Implementation Plan
