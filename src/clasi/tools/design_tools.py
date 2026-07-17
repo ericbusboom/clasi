@@ -24,13 +24,12 @@ logger = logging.getLogger("clasi.design_tools")
 def validate_design(overlay_dir: str | None = None) -> str:
     """Validate the project's persistent design doc set.
 
-    Checks the canonical ``docs/design/`` doc set structure (top-level
-    ``design.md`` present, one design doc per declared subsystem,
-    bidirectional design-doc/README links resolve, no orphaned docs, no
-    unmapped source roots) and, when *overlay_dir* is given, a sprint's
-    ``design/`` overlay directory (overlay filenames match a canonical
-    doc, overlay frontmatter references resolve, every overlay file has a
-    non-stale ``.diff.md``).
+    Checks the canonical doc set structure (top-level ``docs/design/
+    design.md`` present, every declared subsystem has a co-located
+    ``DESIGN.md`` that exists and is non-empty) and, when *overlay_dir* is
+    given, a sprint's ``design/`` overlay directory (overlay filenames
+    match a canonical doc, overlay frontmatter references resolve, every
+    overlay file has a non-stale ``.diff.md``).
 
     Args:
         overlay_dir: Optional path to a sprint's
@@ -43,8 +42,8 @@ def validate_design(overlay_dir: str | None = None) -> str:
         ...]}``. ``messages`` is empty when ``ok`` is ``True``; otherwise
         each entry is an independently actionable failure description, so
         a caller can act on individual failures rather than parsing a
-        single blob. ``info`` carries informational notices (e.g.
-        non-subsystem docs in ``docs/design/`` not orphan-checked) that
+        single blob. ``info`` carries informational notices (e.g. the
+        5 project-level docs alongside ``docs/design/design.md``) that
         never affect ``ok``.
     """
     project = get_project()

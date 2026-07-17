@@ -122,6 +122,25 @@ class TestSprintProperties:
         s = Sprint(sprint_dir, proj)
         assert s.worktree is False
 
+    def test_design_docs_absent_is_not_an_error(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        assert s.design_docs == []
+
+    def test_design_docs_round_trip(self, tmp_path):
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        sprint_md = sprint_dir / "sprint.md"
+        sprint_md.write_text(
+            sprint_md.read_text(encoding="utf-8").replace(
+                "status: planning\n",
+                "status: planning\n"
+                "design_docs: [\"docs/design/design.md\", \"src/clasi/design/DESIGN.md\"]\n",
+            ),
+            encoding="utf-8",
+        )
+        s = Sprint(sprint_dir, proj)
+        assert s.design_docs == ["docs/design/design.md", "src/clasi/design/DESIGN.md"]
+
     def test_path(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
