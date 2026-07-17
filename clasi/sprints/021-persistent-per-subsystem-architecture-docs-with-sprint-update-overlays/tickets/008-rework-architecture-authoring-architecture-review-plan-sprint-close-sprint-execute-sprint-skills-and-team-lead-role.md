@@ -1,10 +1,18 @@
 ---
-id: '008'
+id: 008
 title: Rework architecture-authoring, architecture-review, plan-sprint, close-sprint,
   execute-sprint skills and team-lead role
-status: open
-use-cases: [SUC-004, SUC-005, SUC-006, SUC-007]
-depends-on: ['004', '005', '006', '007']
+status: done
+use-cases:
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
+depends-on:
+- '004'
+- '005'
+- '006'
+- '007'
 github-issue: ''
 issue: persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 completes_issue: false
@@ -52,32 +60,32 @@ Scope, one change per skill:
 
 ## Acceptance Criteria
 
-- [ ] Each of the five skill files and the team-lead `agent.md` is
+- [x] Each of the five skill files and the team-lead `agent.md` is
       updated in place (following this project's own convention of
       revising skills in place rather than versioning them, consistent
       with the "Revising in place" convention already documented in
       `architecture-authoring`).
-- [ ] `architecture-authoring`'s tiering rules (trivial/compact/
+- [x] `architecture-authoring`'s tiering rules (trivial/compact/
       substantial) are preserved unchanged — this ticket changes *where*
       the output goes (overlay vs. inline section), not the sizing logic.
-- [ ] `architecture-review`'s verdict levels (APPROVE / APPROVE WITH
+- [x] `architecture-review`'s verdict levels (APPROVE / APPROVE WITH
       CHANGES / REVISE) and REVISE-triggering conditions are unchanged —
       only the input source changes.
-- [ ] `plan-sprint` explicitly states the sequencing resolution from
+- [x] `plan-sprint` explicitly states the sequencing resolution from
       ticket 006 (when seed-and-commit fires relative to
       `create_sprint`/Phase 2) so there's one authoritative source for
       that timing, not two skills disagreeing.
-- [ ] `close-sprint` explicitly states that a failed apply blocks
+- [x] `close-sprint` explicitly states that a failed apply blocks
       tag/merge, matching ticket 006's implementation.
-- [ ] `execute-sprint`'s dispatch-context change is described concretely
+- [x] `execute-sprint`'s dispatch-context change is described concretely
       enough that a programmer agent reading it knows exactly which
       files it receives (subsystem doc path(s) + sprint overlay path, not
       a vague "relevant docs").
-- [ ] Team-lead `agent.md` update covers all four SUC-006 acceptance
+- [x] Team-lead `agent.md` update covers all four SUC-006 acceptance
       criteria: no `design/` overlays on decline; decision persists
       across sessions (read from config, not session state); no
       re-prompting once recorded; opt-in dispatches the bootstrap agent.
-- [ ] None of the six documents' *unrelated* existing content is altered
+- [x] None of the six documents' *unrelated* existing content is altered
       beyond what this ticket's scope requires — this is a targeted
       rework, not a rewrite.
 
