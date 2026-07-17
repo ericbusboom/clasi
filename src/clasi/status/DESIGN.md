@@ -1,8 +1,3 @@
----
-source_paths:
-- /Volumes/Proj/proj/ai-projects/clasi/src/clasi/status
-readme_path: /Volumes/Proj/proj/ai-projects/clasi/src/clasi/status/README.md
----
 # clasi.status
 
 **Owner:** clasi maintainers · **Last reviewed:** 2026-07-16 · **Status:** stable

@@ -1,9 +1,11 @@
 ---
 id: '003'
 title: Migrate this repo's 8 subsystem docs + READMEs to DESIGN.md
-status: open
-use-cases: [SUC-001]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-001
+depends-on:
+- '002'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -43,19 +45,24 @@ this is a normal migration despite the old file's unusual name.
 
 ## Acceptance Criteria
 
-- [ ] All 8 subsystems have a `DESIGN.md` in their source directory
+- [x] All 8 subsystems have a `DESIGN.md` in their source directory
       with content equivalent to (not rewritten from) their prior
       `docs/design/<slug>.md` body, minus frontmatter.
-- [ ] All 8 corresponding `docs/design/<slug>.md` files are deleted.
-- [ ] All 8 corresponding `<subsystem>/README.md` files are deleted.
-- [ ] `docs/design/design.md` and the 5 project-level docs are
+- [x] All 8 corresponding `docs/design/<slug>.md` files are deleted.
+- [x] All 8 corresponding `<subsystem>/README.md` files are deleted.
+- [x] `docs/design/design.md` and the 5 project-level docs are
       untouched by this ticket.
-- [ ] Internal cross-references inside the migrated `DESIGN.md` bodies
+- [x] Internal cross-references inside the migrated `DESIGN.md` bodies
       that pointed at old `docs/design/<slug>.md` paths (e.g. any
       subsystem doc that linked to a sibling subsystem's doc) are
       updated to point at the sibling's new `<subsystem>/DESIGN.md`
-      path.
-- [ ] `git status` shows the migration as file moves/deletes/adds
+      path. (No sibling-to-sibling `docs/design/<slug>.md` links were
+      found in any of the 8 docs — grepped for all 8 slug filenames
+      across all 8 docs, zero matches. The two `docs/design/` mentions
+      that do exist point at `design.md` and `state-machines.md`,
+      both project-level docs that stay in place, so no rewrite was
+      needed.)
+- [x] `git status` shows the migration as file moves/deletes/adds
       scoped to this ticket's commit — no unrelated files touched.
 
 ## Testing
