@@ -148,9 +148,12 @@ Pre-Flight Check below, not only when a stakeholder brings it up.
      substantial sprints either.
    - **Approved**: call `Project.set_design_docs_opt_in(True)`, then
      dispatch an agent following the `bootstrap-design` skill to produce
-     the initial `docs/design/` doc set (SUC-001). Wait for it to
-     complete and report a passing `clasi design validate` run before
-     treating the doc set as ready for the next sprint to build on.
+     the initial doc set (SUC-001): the system-level `docs/design/design.md`
+     plus one co-located `<subsystem>/DESIGN.md` per subsystem inside
+     `src/clasi/` (or the project's configured source root(s)) — not a
+     flat `docs/design/` collection. Wait for it to complete and report a
+     passing `clasi design validate` run before treating the doc set as
+     ready for the next sprint to build on.
 4. **Never re-prompt**: because the decision is recorded in
    `.clasi/config.yaml` via `set_design_docs_opt_in` — not session state —
    it persists across restarts. On every subsequent session, step 1's

@@ -1,9 +1,12 @@
 ---
 id: '007'
 title: Finalize docs/design/design.md content and update team-lead/agent references
-status: open
-use-cases: [SUC-003]
-depends-on: ['003', '006']
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '003'
+- '006'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -44,17 +47,17 @@ co-located `DESIGN.md` files instead.
 
 ## Acceptance Criteria
 
-- [ ] The sprint's overlay copy of `design.md` accurately reflects the
+- [x] The sprint's overlay copy of `design.md` accurately reflects the
       as-built Subsystem Map (links to each subsystem's real
       `<subsystem>/DESIGN.md` path) — verified against ticket 003's
       actual migration output, not just the plan.
-- [ ] `generate_diffs` re-run (if the overlay copy needed edits) so
+- [x] `generate_diffs` re-run (if the overlay copy needed edits) so
       `design.diff.md` is not stale before architecture-review/
       stakeholder-review would re-read it.
-- [ ] `team-lead/agent.md`'s `docs/design/` references are accurate:
+- [x] `team-lead/agent.md`'s `docs/design/` references are accurate:
       system-doc existence check preserved, subsystem-doc framing
       corrected to co-located `DESIGN.md`.
-- [ ] `grep -rn "docs/design/<slug>\|docs/design/.*-design.md" src/clasi/plugin/`
+- [x] `grep -rn "docs/design/<slug>\|docs/design/.*-design.md" src/clasi/plugin/`
       (or equivalent pattern for the old per-subsystem flat-file shape)
       returns no matches referring to a subsystem doc — only the 5
       project-level docs and `design.md` itself should still show
