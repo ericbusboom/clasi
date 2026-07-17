@@ -1,10 +1,14 @@
 ---
 id: '022'
 title: Co-locate subsystem design docs as DESIGN.md in source, replacing READMEs
-status: planning-docs
+status: closed
 branch: sprint/022-co-locate-subsystem-design-docs-as-design-md-in-source-replacing-readmes
 worktree: false
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
 issues:
 - co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 ---
