@@ -1,10 +1,17 @@
 ---
 id: '021'
 title: Persistent per-subsystem architecture docs with sprint update overlays
-status: planning-docs
+status: closed
 branch: sprint/021-persistent-per-subsystem-architecture-docs-with-sprint-update-overlays
 worktree: false
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004, SUC-005, SUC-006, SUC-007]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+- SUC-006
+- SUC-007
 issues:
 - persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 ---
