@@ -1,9 +1,12 @@
 ---
 id: '006'
 title: 'Sprint lifecycle integration: hook overlay steps into create/acquire/pre-execution/close'
-status: open
-use-cases: [SUC-005, SUC-006]
-depends-on: ['005']
+status: done
+use-cases:
+- SUC-005
+- SUC-006
+depends-on:
+- '005'
 github-issue: ''
 issue: persistent-per-subsystem-architecture-docs-with-sprint-update-overlays.md
 completes_issue: false
@@ -45,7 +48,7 @@ opt-in flag is unset or explicitly off.
 
 ## Acceptance Criteria
 
-- [ ] With opt-in **off** (default/unset), `create_sprint`,
+- [x] With opt-in **off** (default/unset), `create_sprint`,
       `acquire_execution_lock`, `review_sprint_pre_execution`, and
       `close_sprint` behave byte-for-byte identically to their current
       behavior — no `design/` directory is created, no extra git
@@ -53,25 +56,25 @@ opt-in flag is unset or explicitly off.
       existing lifecycle test suite (or the relevant subset) with opt-in
       unset and diffs behavior/output against pre-sprint-021 baseline
       expectations.
-- [ ] With opt-in **on**: pristine copies are seeded and committed before
+- [x] With opt-in **on**: pristine copies are seeded and committed before
       any sprint-planner edit lands (verify via git log ordering in a
       fixture, matching SUC-005's acceptance criteria).
-- [ ] With opt-in **on**: `review_sprint_pre_execution` commits the
+- [x] With opt-in **on**: `review_sprint_pre_execution` commits the
       edited `design/` copies as its new final step, only after existing
       validation checks pass — a sprint that fails existing
       pre-execution checks (wrong branch, tickets not ready, etc.) must
       not get a design commit either.
-- [ ] With opt-in **on**: `acquire_execution_lock`'s branch creation
+- [x] With opt-in **on**: `acquire_execution_lock`'s branch creation
       happens from a tree that already includes the edited-copies commit
       (per Open Question 3's resolution — both commits happen on `main`
       before the branch is cut), so the sprint branch starts clean with
       respect to `design/`.
-- [ ] With opt-in **on**: `_close_sprint_full`'s apply step runs after
+- [x] With opt-in **on**: `_close_sprint_full`'s apply step runs after
       `sprint.archive()` and before the version-bump/tag step; if apply
       fails, the function returns/raises before reaching the tag step,
       and `completed_steps` (or equivalent) reflects that the process
       stopped at apply, not tag.
-- [ ] Validator (ticket 004) is invoked at the end of the apply step (or
+- [x] Validator (ticket 004) is invoked at the end of the apply step (or
       immediately after) to confirm canonical `docs/design/` still passes
       validation post-apply — a broken apply must be caught here, not
       discovered later.
@@ -109,3 +112,41 @@ calls; this ticket's job is integration, not a lifecycle rewrite.
 - None beyond code comments at each hook point explaining why the call is
   there and what it's gated on — skill-level documentation of this
   behavior is ticket 008's responsibility.
+
+## Implementation Notes (as built)
+
+Sequencing resolution: the seed step is **not** hardcoded into the
+`create_sprint` MCP tool. Since the affected-doc list is only known once
+the sprint-planner reaches Phase 2 planning (a fact `create_sprint` itself
+predates), this ticket adds a new MCP tool,
+`seed_sprint_design_overlay(sprint_id, doc_names)`, that the
+sprint-planner calls once it has identified the affected canonical docs.
+It is a no-op (`{"opted_in": ..., "seeded": []}`) when opt-in is off or
+`doc_names` is empty, and otherwise seeds + commits pristine copies via
+`clasi.design.overlay.seed_and_commit` — satisfying SUC-005's "committed
+before any edit lands" requirement regardless of which MCP call site
+triggers it. Ticket 008 documents exactly when in Phase 2 the
+sprint-planner is expected to call this tool.
+
+Hook points implemented:
+- `seed_sprint_design_overlay` (new tool, `artifact_tools.py`) — Step 1.
+- `review_sprint_pre_execution` (`artifact_tools.py`) — after all existing
+  checks, if `passed` and opt-in and `sprint.design_dir` exists: runs
+  `generate_diffs` then `commit_edits`; a git failure during either flips
+  `passed` back to `False` and is reported via `issues`. Response gains a
+  `design_overlay` key.
+- `_close_sprint_full` (`artifact_tools.py`) — new `design_overlay_apply`
+  step inserted between `db_update` and `version_bump` in both
+  `completed_steps`/`all_steps`: applies the overlay via
+  `clasi.design.overlay.apply`, then runs `clasi.design.validate`; either
+  raising blocks the response before `version_bump`/tag/merge, matching
+  the failed-test-run error shape (`status: error`, `completed_steps`
+  truncated at the failing step).
+- `Sprint.design_dir` (`sprint.py`) — new property, `self._path / "design"`
+  (moves correctly with `sprint.archive()` since it's derived from
+  `self._path`).
+- `acquire_execution_lock` was **not** modified — it already creates the
+  branch from whatever `main` currently is, so once
+  `review_sprint_pre_execution` commits the edited overlay on `main`,
+  the subsequent branch cut already includes it. No code change was
+  needed there, only the ordering guaranteed by the other two hooks.

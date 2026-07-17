@@ -277,6 +277,58 @@ def detail_sprint(sprint_id: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@server.tool()
+def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None) -> str:
+    """Seed and commit pristine copies of canonical design docs into a sprint's overlay.
+
+    Gated on the doc-set opt-in flag (``Project.design_docs_opt_in``); a
+    no-op when opt-in is unset or off, or when *doc_names* is empty/omitted
+    (no design/ directory is created and no commit is made). Otherwise
+    copies each named canonical ``docs/design/<name>.md`` doc verbatim into
+    the sprint's ``design/`` directory and commits them in a single commit,
+    before any sprint-planner edits land (SUC-005).
+
+    Called by the sprint-planner once it has identified which canonical
+    docs the sprint's changes affect (Phase 2 planning) — not necessarily
+    at ``create_sprint`` time, since the affected doc list is not known
+    that early. Runs on ``main``, before ``acquire_execution_lock`` branches
+    the sprint off of it (see sprint.md Open Question 3's resolution), so
+    the sprint branch, once created, already contains this commit.
+
+    Args:
+        sprint_id: The sprint ID (e.g., '021').
+        doc_names: Canonical design doc filenames to seed (e.g.
+            ``["design.md", "clasi-tools.md"]``), relative to
+            ``docs/design/``. Omit (or pass "NONE"/empty) to no-op.
+
+    Returns JSON with {sprint_id, opted_in, seeded: [str, ...]}.
+    """
+    project = get_project()
+    opted_in = bool(project.design_docs_opt_in)
+    if not opted_in or not doc_names:
+        return json.dumps({
+            "sprint_id": sprint_id,
+            "opted_in": opted_in,
+            "seeded": [],
+        }, indent=2)
+
+    from clasi.design.overlay import seed_and_commit
+
+    sprint = project.get_sprint(sprint_id)
+    canonical_paths = [project.design_dir / name for name in doc_names]
+    seeded = seed_and_commit(
+        canonical_paths,
+        sprint.design_dir,
+        repo_root=project.root,
+        commit_message=f"chore: seed sprint {sprint_id} design overlay",
+    )
+    return json.dumps({
+        "sprint_id": sprint_id,
+        "opted_in": True,
+        "seeded": [str(p) for p in seeded],
+    }, indent=2)
+
+
 def _list_active_sprints() -> list[dict]:
     """Return all active (non-done) sprints sorted by numeric ID.
 
@@ -1492,7 +1544,7 @@ def _close_sprint_full(
     completed_steps.append("precondition_verification")
 
     # ── Step 2: Run tests ──
-    all_steps = ["precondition_verification", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"]
+    all_steps = ["precondition_verification", "tests", "archive", "db_update", "design_overlay_apply", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"]
 
     if test_command == "":
         # Explicitly skip tests (non-Python projects, etc.)
@@ -1603,6 +1655,45 @@ def _close_sprint_full(
             pass
 
     completed_steps.append("db_update")
+
+    # ── Step 4b: Apply design overlay to canonical docs (sprint 021) ──
+    # Gated on opt-in; no-op (and no-op silently) when unset/off or the
+    # sprint carries no design/ dir (trivial/compact sprint, or opted-out
+    # project). Must run — and succeed — before the version-bump/tag step,
+    # per sprint.md's Migration Concerns: a failed apply blocks tag/merge
+    # exactly like a failed test run does today.
+    if project.design_docs_opt_in and sprint.design_dir.exists():
+        from clasi.design import DesignError, apply as apply_design_overlay, validate as validate_design_docs
+        from clasi.design.overlay import OverlayError
+
+        try:
+            applied = apply_design_overlay(sprint.design_dir, project.design_dir)
+            validation = validate_design_docs(project)
+            if not validation.ok:
+                raise DesignError("\n".join(validation.messages))
+        except (OverlayError, DesignError) as e:
+            error_msg = f"Design overlay apply/validation failed: {e}"
+            if db.path.exists():
+                db.write_recovery_state(sprint_id, "design_overlay_apply", [], error_msg)
+            return json.dumps({
+                "status": "error",
+                "error": {
+                    "step": "design_overlay_apply",
+                    "message": error_msg,
+                    "recovery": {
+                        "recorded": db.path.exists(),
+                        "allowed_paths": [str(project.design_dir), str(sprint.design_dir)],
+                        "instruction": (
+                            "Fix the design overlay or canonical docs/design/ "
+                            "content, then call close_sprint again."
+                        ),
+                    },
+                },
+                "completed_steps": completed_steps,
+                "remaining_steps": [s for s in all_steps if s not in completed_steps],
+            }, indent=2)
+
+    completed_steps.append("design_overlay_apply")
 
     # ── Step 5: Version bump ──
     version = None
@@ -2652,9 +2743,41 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
                         "path": t["path"],
                     })
 
+    passed = not any(i["severity"] == "error" for i in issues)
+
+    # ── Design overlay: commit edited copies (sprint 021, opt-in only) ──
+    # Runs only after all existing checks above have passed — a sprint
+    # that fails precondition checks (wrong branch, tickets not ready,
+    # etc.) must not get a design commit either.
+    project = get_project()
+    design_overlay: dict = {"opted_in": bool(project.design_docs_opt_in)}
+    if passed and design_overlay["opted_in"] and sprint.design_dir.exists():
+        from clasi.design.overlay import OverlayError, commit_edits, generate_diffs
+
+        try:
+            diffs_written = generate_diffs(sprint.design_dir, repo_root=project.root)
+            committed = commit_edits(
+                sprint.design_dir,
+                repo_root=project.root,
+                commit_message=f"chore: commit sprint {sprint_id} design overlay edits",
+            )
+            design_overlay["diffs_written"] = [str(p) for p in diffs_written]
+            design_overlay["committed"] = committed
+        except OverlayError as e:
+            issues.append({
+                "severity": "error",
+                "check": "design_overlay_commit",
+                "message": f"Failed to commit sprint design overlay edits: {e}",
+                "fix": "Resolve the git error and re-run review_sprint_pre_execution.",
+                "path": str(sprint.design_dir),
+            })
+            passed = False
+            design_overlay["error"] = str(e)
+
     return json.dumps({
-        "passed": not any(i["severity"] == "error" for i in issues),
+        "passed": passed,
         "issues": issues,
+        "design_overlay": design_overlay,
     }, indent=2)
 
 
