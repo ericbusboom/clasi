@@ -1,7 +1,7 @@
 ---
 id: '023'
 title: 'E2E Harness Rework: Fresh Bind-Mounted Project and Reactive Tester Script'
-status: planning-docs
+status: closed
 branch: sprint/023-e2e-harness-rework-fresh-bind-mounted-project-and-reactive-tester-script
 worktree: false
 use-cases: []
