@@ -241,12 +241,11 @@ def subsystem_template() -> str:
     as package data (see ``pyproject.toml``'s
     ``[tool.setuptools.package-data]``) so it is available regardless of
     the caller's working directory or install mode (editable or wheel).
-    As of this ticket the template file on disk still carries legacy
-    placeholder YAML frontmatter (``source_paths``, ``readme_path``) —
-    updating the template body to match the no-frontmatter contract is
-    ticket 006's scope, not this function's. This function only returns
-    whatever the packaged file currently contains, plus the HTML-comment
-    authoring guidance and section structure an agent fills in.
+    The template carries no frontmatter block — a co-located
+    ``DESIGN.md`` requires none, since its location under the subsystem's
+    own source directory is its identity. This function returns the
+    packaged file's HTML-comment authoring guidance and section structure
+    verbatim for an agent to fill in.
 
     The **bootstrap-design** skill instructs agents to start every new
     subsystem design doc from this template's body before writing via

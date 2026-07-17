@@ -105,21 +105,43 @@ as Mode 2's timing rule.
 
 1. **Identify affected canonical docs.** Decide which of the persistent
    `docs/design/` docs this sprint's changes touch — the system-level
-   `design.md`, one or more subsystem docs, or both. This is a judgment
+   `design.md`, one or more subsystem `DESIGN.md` files (co-located in
+   each subsystem's own source directory), or both. This is a judgment
    call over the sprint's planned changes, the same "one sentence, no
    'and'" cohesion reasoning Step 2 below already asks for, applied to
-   *which existing docs* rather than *which new modules*.
+   *which existing docs* rather than *which new modules*. For example, a
+   sprint might touch `design.md` (system-level context changed) and
+   `src/clasi/tools/DESIGN.md` (one subsystem's contract changed) —
+   name both.
+
+   **Relocation is not a content change.** This judgment call is only
+   for sprints making *content-only* changes to a doc at its existing,
+   stable location. A sprint that *moves* a doc — renaming it, or
+   changing which directory it lives in (this sprint's own move from
+   flat `docs/design/<slug>.md` files to co-located `<subsystem>/
+   DESIGN.md` is the worked example, see this sprint's Design
+   Rationale) — should not run that move through the overlay lifecycle
+   at all. A relocation is a direct, ticket-scoped file operation
+   (`git mv` plus updating whatever code/prose points at the old path),
+   done once, in a ticket, not something `seed_sprint_design_overlay`
+   /`generate_diffs`/`apply` are built to represent: the overlay
+   lifecycle diffs *content* against a pristine baseline at a fixed
+   path, not a path change.
 
 2. **Seed the overlay.** Call `seed_sprint_design_overlay(sprint_id,
    doc_names)` with the filenames identified in step 1 (e.g.
-   `["design.md", "clasi-tools.md"]`). This copies each named canonical
-   doc verbatim into `clasi/sprints/NNN-slug/design/` and commits the
-   pristine copies immediately, before any edits — do not skip this step
-   or edit a file that hasn't been seeded first; the diff-generation step
-   below depends on a committed pristine baseline existing. This call is
-   a no-op if `doc_names` is empty or opt-in is off, so skipping it
-   entirely is exactly how a trivial sprint (see above) avoids creating an
-   overlay.
+   `["design.md", "DESIGN.md"]` — note that `DESIGN.md` is not a unique
+   name across subsystems; the seed step records each seeded file's full
+   canonical source path in the overlay directory's `_sources.json`
+   manifest so `apply` can resolve it back to the right subsystem later,
+   even when multiple overlay files share the `DESIGN.md` basename).
+   This copies each named canonical doc verbatim into
+   `clasi/sprints/NNN-slug/design/` and commits the pristine copies
+   immediately, before any edits — do not skip this step or edit a file
+   that hasn't been seeded first; the diff-generation step below depends
+   on a committed pristine baseline existing. This call is a no-op if
+   `doc_names` is empty or opt-in is off, so skipping it entirely is
+   exactly how a trivial sprint (see above) avoids creating an overlay.
 
 3. **Edit the seeded copies in place.** Open each file under the sprint's
    `design/` directory and write a complete, updated copy of that

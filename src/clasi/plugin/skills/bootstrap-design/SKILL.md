@@ -1,17 +1,19 @@
 ---
 name: bootstrap-design
-description: Bootstrap the persistent per-subsystem architecture doc set (docs/design/) by reading declared source roots and writing design.md, per-subsystem docs, and frontmattered READMEs
+description: Bootstrap the persistent per-subsystem architecture doc set (docs/design/) by reading declared source roots and writing design.md plus one co-located DESIGN.md per subsystem
 ---
 
 # Bootstrap Design Skill
 
 This skill produces the *first* persistent, per-subsystem architecture
 doc set for a project: a system-level `docs/design/design.md` plus one
-design doc per logical subsystem, plus a frontmattered `README.md` in
-each subsystem's own source directory linking back to its doc. It is
-run once per project (or once per newly declared source root) to
-establish the doc set that `architecture-authoring`'s Mode 2 (sprint
-overlays) then maintains going forward.
+design doc per logical subsystem, co-located as `<subsystem>/DESIGN.md`
+directly in that subsystem's own source directory. There is no README
+step — the doc's location under the subsystem's own directory is its
+identity, so nothing needs to backlink to it. It is run once per project
+(or once per newly declared source root) to establish the doc set that
+`architecture-authoring`'s Mode 2 (sprint overlays) then maintains going
+forward.
 
 ## When to Use
 
@@ -76,8 +78,10 @@ judgment when grouping responsibilities into modules:
   silently merged into a neighbor's doc is harder to notice is
   missing.
 
-Do **not** hand-slugify directory names into filenames — that
-derivation is `clasi.design.paths.design_doc_slug`'s job (see Step 3).
+Do **not** hand-construct a subsystem's design-doc path — that
+derivation is `clasi.design.paths.design_doc_path_for`'s job (see Step
+3): the doc always lives at `<subsystem_path>/DESIGN.md`, no
+slugification or source-root disambiguation involved.
 
 ### 2. Read the Code
 
@@ -91,54 +95,45 @@ reality, not aspiration.
 ### 3. Start Each Subsystem Doc from the Packaged Template
 
 Do not write a subsystem design doc from a blank page. Call
-`clasi.design.subsystem_template()` (or, from the CLI/MCP surface, read
-the equivalent packaged resource) to get the full template text —
+`clasi.design.store.subsystem_template()` (or, from the CLI/MCP surface,
+read the equivalent packaged resource) to get the full template text —
 HTML-comment section guidance included — and fill in each section from
 what Step 2 turned up. Delete each HTML comment once its section is
 written, per the template's own instructions.
 
-The template's frontmatter block ships with **placeholder** values
-(`source_paths`, `readme_path`) — replace those placeholders with the
-subsystem's real values before writing; do not pass the placeholder
-text through to `write_design_doc`, which sets the real
-`source_paths`/`readme_path` fields itself from `subsystem_path` and
-`project.sources` (see Step 4). The template's placeholders exist so a
-human skimming the raw template file can see the frontmatter shape at
-a glance, not so an agent copies them verbatim.
+The template carries **no frontmatter block** — a co-located
+`DESIGN.md` requires none, since the doc's location under the
+subsystem's own source directory already is its identity. Write the six
+body sections only; there are no placeholder fields to replace.
 
-### 4. Derive Filenames and Write via the Design Store — Never by Hand
+### 4. Derive Paths and Write via the Design Store — Never by Hand
 
 This is the load-bearing rule of this skill: **use
-`clasi.design.paths` to name files and `clasi.design.store` to write
-them.** Do not hand-write frontmatter, hand-slugify a subsystem path
-into a filename, or hand-construct a `docs/design/<name>.md` path
-string. That logic already exists (tickets 002/003) specifically so
-this skill doesn't reimplement it in prose, drift from it, or get a
-naming edge case (multi-root disambiguation, nested-path subsystems)
-wrong in a way the validator then has to catch.
+`clasi.design.paths` to locate files and `clasi.design.store` to write
+them.** Do not hand-construct a `<subsystem>/DESIGN.md` path string or
+a `docs/design/<name>.md` path string. That logic already exists
+(tickets 002/003) specifically so this skill doesn't reimplement it in
+prose, drift from it, or get a naming edge case wrong in a way the
+validator then has to catch.
 
 Concretely:
-- Call `clasi.design.paths.design_doc_slug(subsystem_path, sources)` to
-  get the canonical filename for a subsystem doc — never construct it
-  by joining path segments yourself.
+- Call `clasi.design.paths.design_doc_path_for(subsystem_path)` to get
+  the canonical path for a subsystem doc — always
+  `<subsystem_path>/DESIGN.md` — never construct it by joining path
+  segments yourself.
 - Call `clasi.design.store.write_design_doc(project, subsystem_path,
-  content)` to write the subsystem doc. It sets `source_paths` and
-  `readme_path` in frontmatter automatically from `subsystem_path` and
-  `project.sources` — do not pass those as `extra_frontmatter`.
-- Call `clasi.design.store.write_readme(subsystem_path, project,
-  name=..., description=..., content=...)` to write the subsystem's
-  `README.md`. It sets `subsystem`, `description`, and
-  `design_doc_path` automatically.
+  content)` to write the subsystem doc. No frontmatter is written by
+  default; do not pass `extra_frontmatter` unless there is a specific
+  reason to attach optional metadata.
 - Call `clasi.design.store.write_system_doc(project, content)` once,
   for `docs/design/design.md`, covering system-wide context: what the
   project is, the subsystem map (one line per subsystem, linking to
   its doc), and any global conventions every subsystem doc is allowed
   to assume without repeating.
-- If a subsystem doc or README already exists (a partial prior
-  bootstrap, or a hand-edited file), read it first
-  (`clasi.design.store.read_design_doc` /
-  `clasi.design.store.read_readme`) and decide whether to preserve its
-  body — the write functions are full-overwrite, per `store.py`'s
+- If a subsystem doc already exists (a partial prior bootstrap, or a
+  hand-edited file), read it first
+  (`clasi.design.store.read_design_doc`) and decide whether to preserve
+  its body — the write functions are full-overwrite, per `store.py`'s
   documented overwrite semantics. Do not silently clobber hand-edited
   content.
 
@@ -147,15 +142,14 @@ Concretely:
 After writing the doc set, run `clasi design validate` (or the
 `validate_design` MCP tool for the equivalent programmatic check).
 Read the reported failures — they are specific, actionable, one
-message per defect (missing README, unresolved backlink, orphaned doc,
-unmapped source root, etc.).
+message per defect (missing design doc, orphaned doc, unmapped source
+root, empty doc, etc.).
 
 On any failure: fix the specific thing the message names (write the
-missing file, correct a frontmatter field, remove an orphaned doc that
-no longer maps to a subsystem) and re-run validation. Repeat until
-`clasi design validate` passes cleanly. Do not consider the bootstrap
-complete while validation fails — this is SUC-001's acceptance
-criterion, not an optional nicety.
+missing file, remove an orphaned doc that no longer maps to a
+subsystem) and re-run validation. Repeat until `clasi design validate`
+passes cleanly. Do not consider the bootstrap complete while validation
+fails — this is SUC-001's acceptance criterion, not an optional nicety.
 
 ## How This Differs from `consolidate-architecture`
 
@@ -165,11 +159,11 @@ things:
 
 | | `bootstrap-design` | `consolidate-architecture` |
 |---|---|---|
-| **Output** | Persistent doc *set*: `docs/design/design.md` + one doc per subsystem + subsystem READMEs, each independently updatable | One single `docs/design/architecture.md` file |
+| **Output** | Persistent doc *set*: `docs/design/design.md` + one co-located `DESIGN.md` per subsystem, each independently updatable | One single `docs/design/architecture.md` file |
 | **When it runs** | Once, to establish the doc set (or to fill in a newly added subsystem/source root) | On demand, any time a fresh consolidated snapshot is wanted |
 | **What happens after** | Maintained incrementally per-subsystem via sprint `design/` overlays (`architecture-authoring` Mode 2) and applied back at sprint close | Overwritten wholesale the next time it's run; no incremental update path |
-| **Filenames/frontmatter** | Derived mechanically via `clasi.design.paths`/`clasi.design.store` — never hand-written | No fixed schema; a single free-form document |
-| **Validation** | `clasi design validate` checks structure and bidirectional links | No validator; nothing to check structural correctness against |
+| **Filenames/paths** | Derived mechanically via `clasi.design.paths`/`clasi.design.store` — never hand-written | No fixed schema; a single free-form document |
+| **Validation** | `clasi design validate` checks structure and doc-set completeness | No validator; nothing to check structural correctness against |
 
 **Rule of thumb for choosing:** if the project has (or is opting into)
 `sources:` config and wants each subsystem's architecture to live in
@@ -187,8 +181,7 @@ document model.
 ## Output
 
 - `docs/design/design.md` (system-level document)
-- One `docs/design/<slug>.md` per identified subsystem, named via
-  `clasi.design.paths.design_doc_slug`
-- One `README.md` per subsystem, in the subsystem's own source
-  directory, with frontmatter linking back to its design doc
+- One `<subsystem>/DESIGN.md` per identified subsystem, co-located in
+  the subsystem's own source directory, at the path produced by
+  `clasi.design.paths.design_doc_path_for`
 - A passing `clasi design validate` run

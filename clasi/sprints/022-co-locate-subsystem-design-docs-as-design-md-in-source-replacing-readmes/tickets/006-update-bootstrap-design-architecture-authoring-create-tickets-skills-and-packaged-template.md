@@ -2,9 +2,14 @@
 id: '006'
 title: Update bootstrap-design, architecture-authoring, create-tickets skills and
   packaged template
-status: open
-use-cases: [SUC-001, SUC-003]
-depends-on: ['003', '004', '005']
+status: done
+use-cases:
+- SUC-001
+- SUC-003
+depends-on:
+- '003'
+- '004'
+- '005'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -55,16 +60,16 @@ correct guidance:
 
 ## Acceptance Criteria
 
-- [ ] `bootstrap-design` skill's Process section describes only
+- [x] `bootstrap-design` skill's Process section describes only
       `DESIGN.md` writing, no `write_readme` step, no slug derivation.
-- [ ] `architecture-authoring` skill's Mode 2a worked example names
+- [x] `architecture-authoring` skill's Mode 2a worked example names
       both `design.md`-style and co-located `<subsystem>/DESIGN.md`-style
       targets, and states the relocation-vs-content-change distinction.
-- [ ] Packaged `subsystem-design.md` template has no frontmatter block;
+- [x] Packaged `subsystem-design.md` template has no frontmatter block;
       `bootstrap-design`'s Step 3 prose no longer references
       "replace the placeholders with the subsystem's real
       `source_paths`/`readme_path` values."
-- [ ] `grep -r "readme_path\|design_doc_slug\|write_readme" src/clasi/plugin/skills/`
+- [x] `grep -r "readme_path\|design_doc_slug\|write_readme" src/clasi/plugin/skills/`
       returns no matches after this ticket.
 
 ## Testing
