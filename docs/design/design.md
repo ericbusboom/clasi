@@ -1,7 +1,6 @@
 ---
 source_paths:
 - /Volumes/Proj/proj/ai-projects/clasi/src/clasi
-readme_path: null
 ---
 # CLASI: System Design
 

@@ -2,9 +2,12 @@
 id: '004'
 title: Retarget clasi.design.validator to single-file existence check, add design_docs
   linkage field
-status: open
-use-cases: [SUC-002, SUC-003]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-002
+- SUC-003
+depends-on:
+- '002'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -61,21 +64,27 @@ frontmatter list (c.f. `use-cases:`, `depends-on:`).
 
 ## Acceptance Criteria
 
-- [ ] Validator reports a specific, actionable message per subsystem
+- [x] Validator reports a specific, actionable message per subsystem
       missing a `DESIGN.md`, and per subsystem with an empty
       `DESIGN.md`.
-- [ ] No code path in `validator.py` references `readme_path`,
+- [x] No code path in `validator.py` references `readme_path`,
       `design_doc_slug`, `readme_path_for`, or the collision-check
-      logic after this ticket.
-- [ ] The 5 project-level `docs/design/*.md` docs remain
+      logic after this ticket. (`_check_subsystem_docs`'s bidirectional
+      backlink logic and `design_doc_slug`/`readme_path_for`/collision
+      checks are fully removed. `_check_overlay`'s frontmatter
+      reference-resolution loop still names `readme_path` as one of two
+      generic keys it may find in overlay frontmatter — deliberately
+      preserved per the ticket's own Description: "Overlay checks
+      (`_check_overlay`) are unchanged in shape.")
+- [x] The 5 project-level `docs/design/*.md` docs remain
       informational-only (not orphan-errors) after ticket 003's
       migration removes the subsystem docs that used to share that
       directory.
-- [ ] `sprint.md` frontmatter accepts a `design_docs:` list field
+- [x] `sprint.md` frontmatter accepts a `design_docs:` list field
       (read/write round-trip verified); absence of the field is not an
       error (it's optional, matching `use-cases:`'s existing
       "may be empty" pattern).
-- [ ] A ticket file accepts the same `design_docs:` field for
+- [x] A ticket file accepts the same `design_docs:` field for
       per-ticket granularity, if a future sprint wants it (schema
       support only — no MCP tool call is required to add in this
       ticket beyond what's needed for the field to round-trip).

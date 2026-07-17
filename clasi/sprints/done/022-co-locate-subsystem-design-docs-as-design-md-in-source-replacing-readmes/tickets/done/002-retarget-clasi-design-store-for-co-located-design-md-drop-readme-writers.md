@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: Retarget clasi.design.store for co-located DESIGN.md, drop README writers
-status: open
-use-cases: [SUC-001]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-001
+depends-on:
+- '001'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -44,17 +46,17 @@ required frontmatter:
 
 ## Acceptance Criteria
 
-- [ ] `write_design_doc`/`read_design_doc` operate on
+- [x] `write_design_doc`/`read_design_doc` operate on
       `<subsystem_path>/DESIGN.md`.
-- [ ] No required frontmatter is written by `write_design_doc` — a
+- [x] No required frontmatter is written by `write_design_doc` — a
       `DESIGN.md` with a bare markdown body (no `---` block) is a valid
       write/read round-trip.
-- [ ] `write_readme`/`read_readme` are removed; no remaining caller
+- [x] `write_readme`/`read_readme` are removed; no remaining caller
       imports them (grep confirms zero references outside this
       ticket's own diff).
-- [ ] `DesignDocSet.readmes` is removed; `read_doc_set` no longer
+- [x] `DesignDocSet.readmes` is removed; `read_doc_set` no longer
       enumerates README paths.
-- [ ] Module docstring's "Frontmatter contract" section rewritten to
+- [x] Module docstring's "Frontmatter contract" section rewritten to
       state DESIGN.md requires no frontmatter (matching sprint.md's
       Design Rationale).
 

@@ -86,6 +86,21 @@ class Ticket:
         return list(val) if val else []
 
     @property
+    def design_docs(self) -> list[str]:
+        """From frontmatter 'design_docs' field: repo-relative DESIGN.md
+        paths this ticket touched.
+
+        Optional, per-ticket granularity of the same linkage mechanism as
+        ``Sprint.design_docs`` — see sprint.md's "Sprint-Change Linkage"
+        (sprint 022). Absence is not an error; matches the "may be empty"
+        pattern already established by ``use_cases``/``depends_on``.
+        """
+        val = self.frontmatter.get("design_docs", [])
+        if isinstance(val, str):
+            return [val] if val else []
+        return list(val) if val else []
+
+    @property
     def exception_payload(self) -> dict | None:
         """From frontmatter 'exception' block; None if absent.
 

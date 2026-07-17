@@ -1,4 +1,4 @@
-"""Tests for clasi.design.validator — doc set and sprint overlay validation."""
+"""Tests for clasi.design.validator — co-located doc set and sprint overlay validation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from clasi.design.store import write_design_doc, write_readme, write_system_doc
+from clasi.design.store import write_design_doc, write_system_doc
 from clasi.design.validator import DesignError, validate, validate_or_raise
 from clasi.project import Project
 
@@ -35,7 +35,6 @@ def _write_valid_doc_set(tmp_path: Path) -> Project:
 
     write_system_doc(project, "# System design\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n")
-    write_readme(subsystem, project, name="clasi", description="The clasi package.")
 
     return project
 
@@ -67,7 +66,6 @@ class TestMissingSystemDoc:
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
         write_design_doc(project, subsystem, "# clasi subsystem\n")
-        write_readme(subsystem, project, name="clasi", description="desc")
         # system doc intentionally not written
 
         result = validate(project)
@@ -78,7 +76,6 @@ class TestMissingSystemDoc:
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
         write_design_doc(project, subsystem, "content")
-        write_readme(subsystem, project, name="clasi", description="desc")
 
         with pytest.raises(DesignError, match="Missing top-level design document"):
             validate_or_raise(project)
@@ -98,129 +95,56 @@ class TestUnmappedSourceRoot:
 
         result = validate(project)
         assert not result.ok
-        assert any("Unmapped source root" in m for m in result.messages)
+        assert any("Missing design doc" in m for m in result.messages)
         assert any("orphan_subsystem" in m for m in result.messages)
 
 
 # ---------------------------------------------------------------------------
-# Failure mode 3: design doc <-> README backlink, both directions
+# Failure mode 3: DESIGN.md present but empty / whitespace-only
 # ---------------------------------------------------------------------------
 
 
-class TestBacklinkFailures:
-    def test_design_doc_with_no_readme_backlink(self, tmp_path):
+class TestEmptyDesignDoc:
+    def test_empty_design_doc_is_flagged(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
         write_system_doc(project, "# System design\n")
-        write_design_doc(project, subsystem, "# clasi subsystem\n")
-        # README intentionally not written.
-
-        result = validate(project)
-        assert not result.ok
-        assert any(
-            "has no README.md" in m or "no design_doc_path" in m
-            for m in result.messages
-        )
-
-    def test_readme_with_no_design_doc_side_reference(self, tmp_path):
-        project = _make_project(tmp_path, ["src"])
-        subsystem = _make_subsystem(tmp_path, "src", "clasi")
-        write_system_doc(project, "# System design\n")
-        write_readme(subsystem, project, name="clasi", description="desc")
-        # Design doc intentionally not written -> "unmapped source root"
-        # fires, but we also want to exercise the reverse-direction check
-        # directly: write the design doc but strip its readme_path.
         doc = write_design_doc(project, subsystem, "# clasi subsystem\n")
-        fm, body = doc.read_document()
-        fm["readme_path"] = None
-        doc.write(fm, body)
+        doc.path.write_text("", encoding="utf-8")
 
         result = validate(project)
         assert not result.ok
-        assert any("has no readme_path" in m for m in result.messages)
+        assert any("Empty design doc" in m for m in result.messages)
 
-    def test_readme_referencing_nonexistent_design_doc(self, tmp_path):
+    def test_whitespace_only_design_doc_is_flagged(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         subsystem = _make_subsystem(tmp_path, "src", "clasi")
         write_system_doc(project, "# System design\n")
-        write_design_doc(project, subsystem, "# clasi subsystem\n")
-        readme = write_readme(subsystem, project, name="clasi", description="desc")
-        fm, body = readme.read_document()
-        fm["design_doc_path"] = str(project.design_dir / "does-not-exist.md")
-        readme.write(fm, body)
+        doc = write_design_doc(project, subsystem, "# clasi subsystem\n")
+        doc.path.write_text("   \n\n\t\n", encoding="utf-8")
 
         result = validate(project)
         assert not result.ok
-        assert any("does not exist" in m for m in result.messages)
+        assert any("Empty design doc" in m for m in result.messages)
 
-
-# ---------------------------------------------------------------------------
-# Orphaned docs
-# ---------------------------------------------------------------------------
-
-
-class TestOrphanedDocs:
-    def test_orphaned_design_doc_is_flagged(self, tmp_path):
+    def test_non_empty_design_doc_passes(self, tmp_path):
         project = _write_valid_doc_set(tmp_path)
-        orphan = project.design_dir / "no-such-subsystem.md"
-        # Must carry the subsystem-doc frontmatter shape (both
-        # source_paths and readme_path) to be orphan-checked at all —
-        # see sprint 021 ticket 011.
-        orphan.write_text(
-            "---\nsource_paths: []\nreadme_path: null\n---\nOrphan.\n",
-            encoding="utf-8",
-        )
-
-        result = validate(project)
-        assert not result.ok
-        assert any("Orphaned design doc" in m for m in result.messages)
-
-
-# ---------------------------------------------------------------------------
-# Non-subsystem docs: frontmatter-shape gate (sprint 021 ticket 011)
-# ---------------------------------------------------------------------------
-
-
-class TestNonSubsystemDocInformational:
-    def test_doc_with_no_frontmatter_is_not_an_orphan_error(self, tmp_path):
-        project = _write_valid_doc_set(tmp_path)
-        non_subsystem = project.design_dir / "overview.md"
-        non_subsystem.write_text("# Overview\n\nSome prose, no frontmatter.\n", encoding="utf-8")
-
         result = validate(project)
         assert result.ok
-        assert not any("Orphaned design doc" in m for m in result.messages)
 
-    def test_doc_with_no_frontmatter_produces_informational_message(self, tmp_path):
-        project = _write_valid_doc_set(tmp_path)
-        non_subsystem = project.design_dir / "overview.md"
-        non_subsystem.write_text("# Overview\n\nSome prose, no frontmatter.\n", encoding="utf-8")
 
-        result = validate(project)
-        assert result.ok  # info does not flip ok to False
-        assert any(
-            "overview.md" in m and "not orphan-checked" in m for m in result.info
-        )
+# ---------------------------------------------------------------------------
+# The 5 project-level docs/design/*.md docs remain informational-only —
+# never orphan-errors, but surfaced via ValidationResult.info.
+# ---------------------------------------------------------------------------
 
-    def test_doc_with_partial_frontmatter_shape_is_informational_not_error(self, tmp_path):
-        """Frontmatter present but missing one of the two required keys
-        (source_paths/readme_path) still fails the shape test."""
-        project = _write_valid_doc_set(tmp_path)
-        partial = project.design_dir / "specification.md"
-        partial.write_text(
-            "---\ntitle: Specification\n---\nBody.\n", encoding="utf-8"
-        )
 
-        result = validate(project)
-        assert result.ok
-        assert not any("Orphaned design doc" in m for m in result.messages)
-        assert any("specification.md" in m for m in result.info)
-
+class TestProjectLevelDocsInformationalOnly:
     def test_five_frozen_initiation_docs_alongside_subsystem_docs_validates_clean(
         self, tmp_path
     ):
-        """Matches this repo's actual post-bootstrap docs/design/ shape:
-        five frontmatter-less initiation docs coexisting with a correct
+        """Matches this repo's actual post-migration docs/design/ shape:
+        five project-level docs coexisting with a correct co-located
         subsystem doc set and the system doc."""
         project = _write_valid_doc_set(tmp_path)
         for name in (
@@ -231,7 +155,7 @@ class TestNonSubsystemDocInformational:
             "worktree-process.md",
         ):
             (project.design_dir / name).write_text(
-                f"# {name}\n\nFrozen initiation doc, no frontmatter.\n",
+                f"# {name}\n\nProject-level doc, no frontmatter.\n",
                 encoding="utf-8",
             )
 
@@ -240,45 +164,50 @@ class TestNonSubsystemDocInformational:
         assert result.messages == []
         assert len(result.info) == 5
 
-    def test_genuine_orphan_still_reported_alongside_non_subsystem_docs(self, tmp_path):
-        """A real orphan (subsystem-doc shape, no matching subsystem) must
-        still be flagged even when non-subsystem docs are also present."""
+    def test_project_level_doc_produces_info_entry_not_error(self, tmp_path):
         project = _write_valid_doc_set(tmp_path)
         (project.design_dir / "overview.md").write_text(
             "# Overview\n\nNo frontmatter.\n", encoding="utf-8"
         )
-        genuine_orphan = project.design_dir / "no-such-subsystem.md"
-        genuine_orphan.write_text(
-            "---\nsource_paths: []\nreadme_path: null\n---\nOrphan.\n",
-            encoding="utf-8",
-        )
 
         result = validate(project)
-        assert not result.ok
-        assert any("Orphaned design doc" in m for m in result.messages)
-        assert any("overview.md" in m for m in result.info)
-
-    def test_stale_subsystem_doc_with_stripped_frontmatter_is_visible_via_info(
-        self, tmp_path
-    ):
-        """A subsystem doc whose frontmatter got stripped/corrupted must
-        not silently evade orphan detection — it should surface via the
-        informational channel instead of vanishing entirely."""
-        project = _write_valid_doc_set(tmp_path)
-        subsystem_doc = project.design_dir / "clasi.md"
-        assert subsystem_doc.exists()
-        # Simulate corruption: strip frontmatter down to nothing.
-        subsystem_doc.write_text(
-            "# clasi subsystem\n\nFrontmatter got stripped somehow.\n",
-            encoding="utf-8",
+        assert result.ok
+        assert not any("Orphaned design doc" in m for m in result.messages)
+        assert any(
+            "overview.md" in i and "not orphan-checked" in i for i in result.info
         )
-
-        result = validate(project)
-        assert any("clasi.md" in m and "not orphan-checked" in m for m in result.info)
 
 
 # ---------------------------------------------------------------------------
-# Failure mode 4: sprint overlay — stale or missing .diff.md
+# Orphaned docs: stray DESIGN.md not matching a recognized subsystem path
+# ---------------------------------------------------------------------------
+
+
+class TestOrphanedStrayDesignDoc:
+    def test_design_md_nested_too_deep_is_flagged(self, tmp_path):
+        """A DESIGN.md placed under a subsystem's own subdirectory (not
+        the subsystem root itself) is a stray orphan, not a subsystem
+        doc — store._subsystem_dirs only enumerates immediate
+        subdirectories of a source root as subsystems."""
+        project = _write_valid_doc_set(tmp_path)
+        nested_dir = tmp_path / "src" / "clasi" / "nested"
+        nested_dir.mkdir(parents=True)
+        (nested_dir / "DESIGN.md").write_text("# stray\n", encoding="utf-8")
+
+        result = validate(project)
+        assert not result.ok
+        assert any(
+            "Orphaned design doc" in m and "nested" in m for m in result.messages
+        )
+
+    def test_valid_subsystem_docs_are_never_flagged_as_orphans(self, tmp_path):
+        project = _write_valid_doc_set(tmp_path)
+        result = validate(project)
+        assert not any("Orphaned design doc" in m for m in result.messages)
+
+
+# ---------------------------------------------------------------------------
+# Sprint overlay — stale or missing .diff.md
 # ---------------------------------------------------------------------------
 
 
@@ -341,6 +270,22 @@ class TestSprintOverlay:
         assert not result.ok
         assert any("does not match any existing canonical" in m for m in result.messages)
 
+    def test_overlay_matching_a_subsystem_doc_filename_passes(self, tmp_path):
+        """DESIGN.md is a valid overlay filename target once a subsystem
+        doc exists with that name (co-located model, ticket 004)."""
+        project = _write_valid_doc_set(tmp_path)
+        overlay_dir = tmp_path / "clasi" / "sprints" / "001-x" / "design"
+        overlay_dir.mkdir(parents=True)
+        content = "# Updated clasi subsystem\n"
+        (overlay_dir / "DESIGN.md").write_text(content, encoding="utf-8")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        (overlay_dir / "DESIGN.diff.md").write_text(
+            f"---\nsource_hash: {digest}\n---\nDiff.\n", encoding="utf-8"
+        )
+
+        result = validate(project, overlay_dir)
+        assert result.ok
+
     def test_missing_overlay_directory_is_flagged(self, tmp_path):
         project = _write_valid_doc_set(tmp_path)
         overlay_dir = tmp_path / "clasi" / "sprints" / "999-missing" / "design"
@@ -351,86 +296,34 @@ class TestSprintOverlay:
 
 
 # ---------------------------------------------------------------------------
-# Filename collision detection (sprint 021 ticket 010)
+# No collision logic remains (co-located docs cannot collide)
 # ---------------------------------------------------------------------------
 
 
-class TestFilenameCollisionDetection:
-    def test_subsystem_colliding_with_system_doc_name_is_flagged(
-        self, tmp_path, monkeypatch
-    ):
-        """design_doc_slug's residual-collision raise (see
-        test_design_paths.py) is only reachable when subsystem_path ==
-        the source root itself — a degenerate case
-        clasi.design.store._subsystem_dirs never produces via normal
-        doc-set enumeration (it only enumerates *subdirectories* of a
-        root, never the root itself). The validator's own
-        DesignPathError handling around design_doc_slug is nonetheless
-        real defensive code (any future paths.py change could reach it
-        via a different degenerate path), so exercise it directly by
-        constructing a DesignDocSet whose subsystem_docs contains such a
-        path, matching how _check_subsystem_docs actually consumes it."""
-        from clasi.artifact import Artifact
-        from clasi.design import validator as validator_module
-        from clasi.design.store import DesignDocSet
-
-        project = _make_project(tmp_path, ["design"])
-        write_system_doc(project, "# System design\n")
-
-        colliding_root = (tmp_path / "design").resolve()
-        colliding_root.mkdir(parents=True, exist_ok=True)
-        fake_doc_set = DesignDocSet(
-            system_doc=Artifact(project.design_dir / "design.md"),
-            subsystem_docs={colliding_root: Artifact(project.design_dir / "x.md")},
-            readmes={},
-        )
-        monkeypatch.setattr(
-            validator_module, "read_doc_set", lambda _project: fake_doc_set
-        )
-
-        result = validate(project)
-        assert not result.ok
-        assert any(
-            "Cannot derive a design-doc filename" in m for m in result.messages
-        )
-
-    def test_two_subsystems_colliding_with_each_other_is_flagged(self, tmp_path):
-        """Two distinct subsystem directories under the same single root
-        that both fall back to the same root-qualified slug (because one
-        of them is named 'design' and the other is named identically to
-        what the first one's fallback produces) must be reported as a
-        distinct, actionable collision message rather than silently
-        collapsing into one set entry."""
+class TestNoCollisionLogic:
+    def test_distinct_subsystems_never_collide(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
-        subsystem_design = _make_subsystem(tmp_path, "src", "design")
-        subsystem_lookalike = _make_subsystem(tmp_path, "src", "src-design")
+        sub_a = _make_subsystem(tmp_path, "src", "alpha")
+        sub_b = _make_subsystem(tmp_path, "src", "beta")
         write_system_doc(project, "# System design\n")
-        write_readme(subsystem_design, project, name="design", description="d")
-        write_readme(subsystem_lookalike, project, name="src-design", description="d")
+        write_design_doc(project, sub_a, "# alpha\n")
+        write_design_doc(project, sub_b, "# beta\n")
 
         result = validate(project)
-        assert not result.ok
-        assert any(
-            "Design doc filename collision" in m and "src-design.md" in m
-            for m in result.messages
-        )
+        assert result.ok
+        assert not any("collision" in m.lower() for m in result.messages)
 
-    def test_cli_and_mcp_surface_the_collision_message_identically(self, tmp_path):
-        """validate() and validate_or_raise() must produce equivalent
-        results for the collision case, per the module's
-        CLI/MCP-equivalence contract."""
+    def test_subsystem_named_design_does_not_collide_with_system_doc(self, tmp_path):
+        """A subsystem literally named 'design' resolves to
+        <path>/DESIGN.md — a different filename/path from the system
+        doc's docs/design/design.md, so no collision is possible."""
         project = _make_project(tmp_path, ["src"])
-        subsystem_design = _make_subsystem(tmp_path, "src", "design")
-        subsystem_lookalike = _make_subsystem(tmp_path, "src", "src-design")
+        subsystem = _make_subsystem(tmp_path, "src", "design")
         write_system_doc(project, "# System design\n")
-        write_readme(subsystem_design, project, name="design", description="d")
-        write_readme(subsystem_lookalike, project, name="src-design", description="d")
+        write_design_doc(project, subsystem, "# design subsystem\n")
 
         result = validate(project)
-        with pytest.raises(DesignError) as excinfo:
-            validate_or_raise(project)
-
-        assert set(result.messages) == set(str(excinfo.value).split("\n"))
+        assert result.ok
 
 
 # ---------------------------------------------------------------------------
@@ -449,3 +342,15 @@ class TestCollectsAllFailures:
         result = validate(project)
         assert not result.ok
         assert len(result.messages) >= 2
+
+    def test_cli_and_mcp_surface_messages_identically(self, tmp_path):
+        """validate() and validate_or_raise() must produce equivalent
+        results, per the module's CLI/MCP-equivalence contract."""
+        project = _make_project(tmp_path, ["src"])
+        _make_subsystem(tmp_path, "src", "orphan")
+
+        result = validate(project)
+        with pytest.raises(DesignError) as excinfo:
+            validate_or_raise(project)
+
+        assert set(result.messages) == set(str(excinfo.value).split("\n"))

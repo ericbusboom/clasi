@@ -43,15 +43,26 @@ git state:
    nothing outside it was staged or committed.
 
 4. :func:`apply` — copies each overlay ``.md`` file (excluding
-   ``*.diff.md`` files) over its corresponding canonical
-   ``docs/design/<name>.md``. Intended to run at sprint close.
-   Precondition: none beyond the overlay directory existing.
-   Postcondition: every canonical doc named by an overlay file is
-   byte-identical to that overlay file. Raises :class:`OverlayApplyError`
-   without writing anything if any overlay file cannot be mapped to a
-   canonical doc — a partial apply would leave the canonical doc set in
-   an inconsistent state, and ticket 006 gates the version-bump/tag step
-   on apply succeeding.
+   ``*.diff.md`` files) over its corresponding canonical doc. Intended to
+   run at sprint close. Precondition: none beyond the overlay directory
+   existing. Postcondition: every canonical doc named by an overlay file
+   is byte-identical to that overlay file. Raises
+   :class:`OverlayApplyError` without writing anything if any overlay
+   file cannot be mapped to a canonical doc — a partial apply would leave
+   the canonical doc set in an inconsistent state, and ticket 006 gates
+   the version-bump/tag step on apply succeeding.
+
+   Canonical targets are **not** re-derived from the overlay directory's
+   own layout (``canonical_design_dir / overlay_file.name``) — under the
+   co-located ``DESIGN.md`` model (sprint 022), that flat join is wrong
+   for every subsystem doc, and ``DESIGN.md`` is not even a unique
+   filename across subsystems. Instead, :func:`seed_and_commit` records
+   each overlay file's recorded canonical (source) path in a small JSON
+   manifest (``_sources.json``) written alongside the overlay files, and
+   :func:`apply` resolves targets by reading that manifest — never by
+   filename matching. This is what lets a multi-subsystem overlay
+   directory hold several files all named ``DESIGN.md`` and still resolve
+   each one back to its own distinct subsystem directory.
 
 This is the only module in ``clasi.design`` that shells out to git for
 design-doc purposes; it composes ``clasi.design.paths``,
@@ -66,10 +77,19 @@ idiom already established in ``clasi.sprint``/``clasi.tools.artifact_tools``
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+_SOURCES_MANIFEST_NAME = "_sources.json"
+"""Filename of the seed-time overlay-file -> canonical-path manifest.
+
+Deliberately not a ``.md`` file so :func:`_overlay_md_files` (and every
+validator/diff routine that lists ``.md`` files in the overlay directory)
+never mistakes it for an overlay doc.
+"""
 
 
 class OverlayError(Exception):
@@ -124,6 +144,42 @@ def _overlay_md_files(design_dir: Path) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
+def _manifest_path(sprint_design_dir: Path) -> Path:
+    return sprint_design_dir / _SOURCES_MANIFEST_NAME
+
+
+def _read_sources_manifest(sprint_design_dir: Path) -> dict[str, str]:
+    """Return the overlay-filename -> canonical-path manifest, or ``{}``.
+
+    Missing manifest (e.g. a pre-022 overlay directory, or one built by
+    hand in a test) is treated as "no recorded sources" rather than an
+    error here — callers decide whether that is fatal.
+    """
+    manifest_path = _manifest_path(sprint_design_dir)
+    if not manifest_path.is_file():
+        return {}
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def _write_sources_manifest(
+    sprint_design_dir: Path, mapping: dict[str, str]
+) -> Path:
+    """Merge *mapping* into the existing manifest (if any) and write it back."""
+    manifest_path = _manifest_path(sprint_design_dir)
+    existing = _read_sources_manifest(sprint_design_dir)
+    existing.update(mapping)
+    manifest_path.write_text(
+        json.dumps(existing, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return manifest_path
+
+
 def seed_and_commit(
     canonical_paths: list[Path],
     sprint_design_dir: Path,
@@ -134,14 +190,17 @@ def seed_and_commit(
     """Copy each canonical doc into *sprint_design_dir* and commit them.
 
     Copies each path in *canonical_paths* verbatim (byte-identical at
-    copy time) into ``sprint_design_dir/<name>``, then stages and commits
-    exactly those copied files in a single commit before returning. This
-    establishes the "pristine" baseline that :func:`generate_diffs`
-    compares against.
+    copy time) into ``sprint_design_dir/<name>``, records each seeded
+    file's canonical source path in the overlay directory's
+    ``_sources.json`` manifest (read later by :func:`apply` to resolve
+    targets), then stages and commits exactly those copied files plus the
+    manifest in a single commit before returning. This establishes the
+    "pristine" baseline that :func:`generate_diffs` compares against.
 
     Args:
-        canonical_paths: Absolute paths to canonical ``docs/design/*.md``
-            documents to seed into the sprint.
+        canonical_paths: Absolute paths to canonical design documents
+            (the system doc, or a subsystem's ``DESIGN.md``) to seed into
+            the sprint.
         sprint_design_dir: The sprint's ``design/`` directory (created if
             it does not exist).
         repo_root: The git repository root to run git commands in.
@@ -157,15 +216,21 @@ def seed_and_commit(
     sprint_design_dir.mkdir(parents=True, exist_ok=True)
 
     seeded: list[Path] = []
+    manifest_update: dict[str, str] = {}
     for canonical_path in canonical_paths:
         dest = sprint_design_dir / canonical_path.name
         shutil.copyfile(canonical_path, dest)
         seeded.append(dest)
+        manifest_update[dest.name] = str(canonical_path.resolve())
 
     if not seeded:
         return seeded
 
-    add_result = _run_git(["add", *[str(p) for p in seeded]], repo_root)
+    manifest_path = _write_sources_manifest(sprint_design_dir, manifest_update)
+
+    add_result = _run_git(
+        ["add", *[str(p) for p in seeded], str(manifest_path)], repo_root
+    )
     if add_result.returncode != 0:
         raise OverlayGitError(
             f"Failed to stage seeded overlay files: {add_result.stderr.strip()}"
@@ -365,14 +430,25 @@ class ApplyPlan:
     overlay_to_canonical: dict[Path, Path]
 
 
-def _resolve_apply_plan(
-    sprint_design_dir: Path, canonical_design_dir: Path
-) -> ApplyPlan:
+def _resolve_apply_plan(sprint_design_dir: Path) -> ApplyPlan:
+    """Resolve each overlay file's canonical target from the seed manifest.
+
+    Reads ``_sources.json`` (written by :func:`seed_and_commit`) rather
+    than deriving a target from the overlay file's name or the overlay
+    directory's own layout — a name-based/flat-join lookup cannot
+    distinguish two subsystems whose overlay files share the basename
+    ``DESIGN.md`` but belong under different source directories.
+    """
+    manifest = _read_sources_manifest(sprint_design_dir)
     mapping: dict[Path, Path] = {}
     unresolved: list[Path] = []
 
     for overlay_file in _overlay_md_files(sprint_design_dir):
-        canonical_path = canonical_design_dir / overlay_file.name
+        recorded = manifest.get(overlay_file.name)
+        if recorded is None:
+            unresolved.append(overlay_file)
+            continue
+        canonical_path = Path(recorded)
         if not canonical_path.parent.is_dir():
             unresolved.append(overlay_file)
             continue
@@ -388,29 +464,32 @@ def _resolve_apply_plan(
     return ApplyPlan(overlay_to_canonical=mapping)
 
 
-def apply(sprint_design_dir: Path, canonical_design_dir: Path) -> list[Path]:
+def apply(sprint_design_dir: Path) -> list[Path]:
     """Copy each overlay ``.md`` file over its corresponding canonical doc.
 
     Resolves the full overlay-to-canonical mapping *before* writing
-    anything: if any overlay file's canonical target cannot be
-    determined, raises :class:`OverlayApplyError` and leaves every
-    canonical file untouched (fail loudly, no partial apply — ticket 006
-    gates the version-bump/tag step on this succeeding).
+    anything, by reading each overlay file's recorded canonical (source)
+    path from the ``_sources.json`` manifest that :func:`seed_and_commit`
+    wrote alongside it — never by re-deriving a target from the overlay
+    file's name or a flat target directory (see the module docstring). If
+    any overlay file's canonical target cannot be determined, raises
+    :class:`OverlayApplyError` and leaves every canonical file untouched
+    (fail loudly, no partial apply — ticket 006 gates the
+    version-bump/tag step on this succeeding).
 
     Args:
         sprint_design_dir: The sprint's ``design/`` directory.
-        canonical_design_dir: The project's canonical ``docs/design/``
-            directory.
 
     Returns:
         The list of canonical paths written, in filename order.
 
     Raises:
         OverlayApplyError: If any overlay file cannot be mapped to a
-            canonical doc (e.g. the canonical ``docs/design/`` directory
-            does not exist). No files are modified in this case.
+            canonical doc (e.g. no manifest entry for it, or its recorded
+            canonical directory no longer exists). No files are modified
+            in this case.
     """
-    plan = _resolve_apply_plan(sprint_design_dir, canonical_design_dir)
+    plan = _resolve_apply_plan(sprint_design_dir)
 
     applied: list[Path] = []
     for overlay_file, canonical_path in plan.overlay_to_canonical.items():

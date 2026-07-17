@@ -8,7 +8,7 @@ from clasi.ticket import Ticket
 
 
 def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
-           depends_on=None, issue="", use_cases=None):
+           depends_on=None, issue="", use_cases=None, design_docs=None):
     """Create a project + sprint + ticket for testing."""
     proj = Project(tmp_path)
     sprint_dir = proj.sprints_dir / "001-test-sprint"
@@ -30,9 +30,13 @@ def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
     deps_str = str(deps)
     ucs_str = str(ucs)
     issue_val = f'"{issue}"' if issue else '""'
+    design_docs_line = ""
+    if design_docs is not None:
+        design_docs_line = f"design_docs: {design_docs!r}\n"
     ticket_path.write_text(
         f"---\nid: \"{ticket_id}\"\ntitle: \"{title}\"\nstatus: {status}\n"
-        f"use-cases: {ucs_str}\ndepends-on: {deps_str}\nissue: {issue_val}\n---\n"
+        f"use-cases: {ucs_str}\ndepends-on: {deps_str}\nissue: {issue_val}\n"
+        f"{design_docs_line}---\n"
         f"# {title}\n\n## Description\n\nSome work.\n",
         encoding="utf-8",
     )
@@ -80,6 +84,16 @@ class TestTicketProperties:
     def test_use_cases(self, tmp_path):
         _, _, t = _setup(tmp_path, use_cases=["UC-1", "UC-2"])
         assert t.use_cases == ["UC-1", "UC-2"]
+
+    def test_design_docs_absent_is_not_an_error(self, tmp_path):
+        _, _, t = _setup(tmp_path)
+        assert t.design_docs == []
+
+    def test_design_docs_round_trip(self, tmp_path):
+        _, _, t = _setup(
+            tmp_path, design_docs=["src/clasi/design/DESIGN.md", "docs/design/design.md"]
+        )
+        assert t.design_docs == ["src/clasi/design/DESIGN.md", "docs/design/design.md"]
 
     def test_sprint_reference(self, tmp_path):
         _, sprint, t = _setup(tmp_path)

@@ -1,8 +1,3 @@
----
-source_paths:
-- /Volumes/Proj/proj/ai-projects/clasi/src/clasi/templates
-readme_path: /Volumes/Proj/proj/ai-projects/clasi/src/clasi/templates/README.md
----
 # clasi.templates (directory)
 
 **Owner:** clasi maintainers · **Last reviewed:** 2026-07-16 · **Status:** stable

@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from clasi.design.store import write_design_doc, write_readme, write_system_doc
+from clasi.design.store import write_design_doc, write_system_doc
 from clasi.frontmatter import read_frontmatter, write_frontmatter
 from clasi.mcp_server import set_project
 from clasi.state_db import advance_phase, record_gate
@@ -95,7 +95,6 @@ def _seed_canonical_docs(root: Path) -> None:
     subsystem.mkdir(parents=True, exist_ok=True)
     write_system_doc(project, "# System design\n\nOriginal system doc.\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n\nOriginal.\n")
-    write_readme(subsystem, project, name="clasi", description="desc")
     _commit_all(root, "docs: seed canonical design doc set")
 
 

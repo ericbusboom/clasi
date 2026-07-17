@@ -81,6 +81,23 @@ class Sprint:
         return bool(self.sprint_doc.frontmatter.get("worktree", False))
 
     @property
+    def design_docs(self) -> list[str]:
+        """From sprint.md frontmatter 'design_docs' field: repo-relative
+        DESIGN.md paths this sprint touched.
+
+        The default, lightweight linkage mechanism described in
+        sprint.md's "Sprint-Change Linkage" section (sprint 022) — a
+        sprint records which DESIGN.md file(s) it changed without
+        necessarily running them through the full overlay lifecycle.
+        Optional; absence is not an error, matching the existing
+        "may be empty" pattern used by ``Ticket.use_cases``/``depends_on``.
+        """
+        val = self.sprint_doc.frontmatter.get("design_docs", [])
+        if isinstance(val, str):
+            return [val] if val else []
+        return list(val) if val else []
+
+    @property
     def phase(self) -> str:
         """From StateDB if available, else inferred from directory location."""
         sid = self.id

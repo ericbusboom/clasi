@@ -10,12 +10,11 @@ Prompts in HTML comments are instructions for whoever (human or agent) fills
 the section in. Delete each comment once its section is written. Keep prose
 tight; the code carries the mechanism, this document carries what the code
 cannot say about itself.
+
+No frontmatter is required or written for this file. The doc's location
+under its subsystem's own source directory is its identity — there is
+nothing to backlink.
 -->
----
-source_paths:
-- <REPLACE: repo-relative path(s) to this subsystem's source directory, e.g. src/clasi/design>
-readme_path: <REPLACE: repo-relative path to this subsystem's README.md, e.g. src/clasi/design/README.md>
----
 
 # <Subsystem Name>
 

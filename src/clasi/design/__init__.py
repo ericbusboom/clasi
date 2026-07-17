@@ -19,20 +19,16 @@ from clasi.design.overlay import (
     seed_and_commit,
 )
 from clasi.design.paths import (
-    DesignPathError,
-    design_doc_slug,
-    readme_path_for,
+    design_doc_path_for,
     system_doc_name,
 )
 from clasi.design.store import (
     DesignDocSet,
     read_design_doc,
     read_doc_set,
-    read_readme,
     read_system_doc,
     subsystem_template,
     write_design_doc,
-    write_readme,
     write_system_doc,
 )
 from clasi.design.validator import (
@@ -43,18 +39,14 @@ from clasi.design.validator import (
 )
 
 __all__ = [
-    "DesignPathError",
-    "design_doc_slug",
-    "readme_path_for",
+    "design_doc_path_for",
     "system_doc_name",
     "DesignDocSet",
     "read_design_doc",
     "read_doc_set",
-    "read_readme",
     "read_system_doc",
     "subsystem_template",
     "write_design_doc",
-    "write_readme",
     "write_system_doc",
     "DesignError",
     "ValidationResult",

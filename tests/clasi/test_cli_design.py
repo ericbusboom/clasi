@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from clasi.cli import cli
-from clasi.design.store import write_design_doc, write_readme, write_system_doc
+from clasi.design.store import write_design_doc, write_system_doc
 from clasi.project import Project
 
 
@@ -33,7 +33,6 @@ def _write_valid_doc_set(tmp_path: Path) -> Project:
     subsystem = _make_subsystem(tmp_path, "src", "clasi")
     write_system_doc(project, "# System design\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n")
-    write_readme(subsystem, project, name="clasi", description="The clasi package.")
     return project
 
 
@@ -67,6 +66,18 @@ class TestDesignValidateFailure:
         assert result.exit_code != 0
         assert "Missing top-level design document" in result.output
 
+    def test_empty_design_doc_exits_nonzero(self, tmp_path):
+        project = _make_project(tmp_path, ["src"])
+        subsystem = _make_subsystem(tmp_path, "src", "clasi")
+        write_system_doc(project, "# System design\n")
+        doc = write_design_doc(project, subsystem, "# clasi subsystem\n")
+        doc.path.write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["design", "validate", str(tmp_path)])
+        assert result.exit_code != 0
+        assert "Empty design doc" in result.output
+
     def test_default_path_is_current_directory(self, tmp_path, monkeypatch):
         _write_valid_doc_set(tmp_path)
         monkeypatch.chdir(tmp_path)
@@ -75,8 +86,8 @@ class TestDesignValidateFailure:
         assert result.exit_code == 0
 
 
-class TestDesignValidateInfo:
-    def test_non_subsystem_doc_exits_zero_with_info_notice(self, tmp_path):
+class TestDesignValidateProjectLevelDocs:
+    def test_project_level_doc_exits_zero_with_info_notice(self, tmp_path):
         _write_valid_doc_set(tmp_path)
         (tmp_path / "docs" / "design" / "overview.md").write_text(
             "# Overview\n\nNo frontmatter.\n", encoding="utf-8"

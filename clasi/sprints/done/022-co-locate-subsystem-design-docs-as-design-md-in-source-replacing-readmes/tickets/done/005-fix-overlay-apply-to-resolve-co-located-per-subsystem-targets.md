@@ -1,9 +1,12 @@
 ---
 id: '005'
 title: Fix overlay.apply to resolve co-located per-subsystem targets
-status: open
-use-cases: [SUC-004]
-depends-on: ['001', '002']
+status: done
+use-cases:
+- SUC-004
+depends-on:
+- '001'
+- '002'
 github-issue: ''
 issue: co-locate-design-docs-as-design-md-in-source-replacing-readme.md
 completes_issue: false
@@ -49,17 +52,17 @@ be resolved.
 
 ## Acceptance Criteria
 
-- [ ] `apply` correctly resolves a co-located subsystem `DESIGN.md`
+- [x] `apply` correctly resolves a co-located subsystem `DESIGN.md`
       target from an overlay file, given a multi-subsystem fixture
       tree with 2+ subsystems whose overlay files share the same
       basename (`DESIGN.md`) but different canonical targets — this is
       the concrete regression case a name-based lookup would get wrong.
-- [ ] `apply` still correctly resolves `docs/design/design.md`'s
+- [x] `apply` still correctly resolves `docs/design/design.md`'s
       unmoved flat target (the case this sprint's own close exercises).
-- [ ] No partial apply on a resolution failure — verified by a test
+- [x] No partial apply on a resolution failure — verified by a test
       that makes one of several overlay files unresolvable and asserts
       zero canonical files were written.
-- [ ] `tools/artifact_tools.py`'s `design_overlay_apply` call site
+- [x] `tools/artifact_tools.py`'s `design_overlay_apply` call site
       (`close_sprint`, around line 1665-1696) and the `commit_edits`
       call site (around line 2754-2772) are updated if their calling
       convention needs to change to supply the new resolution
