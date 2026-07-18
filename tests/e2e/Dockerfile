@@ -56,8 +56,8 @@ COPY guessing-game-spec.md /spec/guessing-game-spec.md
 
 # Create non-root user (Claude refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash agent && \
-    mkdir -p /project && \
-    chown -R agent:agent /project
+    mkdir -p /project /home/agent/.claude && \
+    chown -R agent:agent /project /home/agent/.claude
 
 # Switch to non-root user
 USER agent
@@ -67,5 +67,7 @@ WORKDIR /project
 RUN git config --global user.email "agent@clasi-e2e.test" \
     && git config --global user.name "CLASI E2E Agent"
 
-# API key is passed via ANTHROPIC_API_KEY env var at runtime
+# Auth is passed at runtime: either ANTHROPIC_API_KEY (OpenRouter) env vars,
+# or a read-only bind-mounted OAuth credentials file at
+# /home/agent/.claude/.credentials.json (E2E_AUTH=subscription in start.sh).
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

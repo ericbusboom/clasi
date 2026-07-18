@@ -59,6 +59,13 @@ fi
 # versions. Safe no-op once nothing uses it. ---
 docker volume rm clasi-data 2>/dev/null || true
 
+# --- Remove staged subscription-auth credentials copy, if any ---
+CREDS_STAGE_DIR="$SCRIPT_DIR/.creds-stage"
+if [ -d "$CREDS_STAGE_DIR" ]; then
+    echo "Removing staged credentials at $CREDS_STAGE_DIR..."
+    rm -rf "$CREDS_STAGE_DIR"
+fi
+
 if [ "$WIPE" -eq 1 ]; then
     if [ -e "$CANONICAL_DIR" ]; then
         HOST_PROJECT_DIR="$(cd -P "$CANONICAL_DIR" && pwd)"

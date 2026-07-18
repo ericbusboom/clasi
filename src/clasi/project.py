@@ -77,6 +77,40 @@ def _load_sources_config(root: Path) -> list:
     return []
 
 
+def _load_protected_paths_config(root: Path) -> list:
+    """Read .clasi/config.yaml and return the protected_paths: list.
+
+    Returns data["protected_paths"] when it is a list, returns [] on any
+    error or wrong type (missing key, malformed YAML, non-list value).
+    Never raises. An empty return means "not configured" — callers must
+    treat that as distinct from an explicit empty list, since role-guard
+    falls back to its pre-existing allow-list-based blocking when this is
+    empty, rather than allowing everything.
+    """
+    data = _load_config(root)
+    protected = data.get("protected_paths")
+    if isinstance(protected, list):
+        return protected
+    return []
+
+
+def _load_excluded_paths_config(root: Path) -> list:
+    """Read .clasi/config.yaml and return the excluded_paths: list.
+
+    Returns data["excluded_paths"] when it is a list, returns [] on any
+    error or wrong type. Never raises. Carves out subdirectories of a
+    protected_paths prefix that are not actually source/tests — e.g. a
+    project whose tests/ is protected but that also has a
+    tests/e2e/ Docker test-harness (scripts, Dockerfile, fixtures) which
+    is tooling, not the test suite itself.
+    """
+    data = _load_config(root)
+    excluded = data.get("excluded_paths")
+    if isinstance(excluded, list):
+        return excluded
+    return []
+
+
 def _load_design_docs_opt_in(root: Path) -> str | None:
     """Read .clasi/config.yaml and return the design_docs opt-in tri-state.
 
@@ -194,6 +228,57 @@ class Project:
         if self._sources is None:
             self._sources = _load_sources_config(self._root)
         return [(self._root / rel).resolve() for rel in self._sources]
+
+    @property
+    def protected_paths(self) -> list[str]:
+        """Root-relative directory prefixes role-guard treats as source/tests.
+
+        Reads the top-level ``protected_paths:`` list from
+        ``.clasi/config.yaml`` (e.g. ``[src, tests]``), set by ``clasi
+        init`` when it detects (or is told) the project's source and test
+        directories. Each entry is normalized to a root-relative string
+        with a trailing slash, suitable for ``str.startswith()`` prefix
+        checks against the same normalized paths role-guard already uses.
+
+        An empty list means "not configured" — role-guard must treat this
+        as distinct from an explicit empty list of protected paths: it
+        falls back to its pre-``protected_paths`` behavior (block anything
+        not on the artifact allow-list) rather than allowing everything,
+        so existing projects that have not re-run ``clasi init`` keep
+        their current enforcement instead of silently losing it.
+        """
+        raw = _load_protected_paths_config(self._root)
+        result = []
+        for rel in raw:
+            rel = str(rel).strip("/")
+            if rel:
+                result.append(rel + "/")
+        return result
+
+    @property
+    def excluded_paths(self) -> list[str]:
+        """Root-relative prefixes carved out of protected_paths.
+
+        Reads the top-level ``excluded_paths:`` list from
+        ``.clasi/config.yaml`` (e.g. ``[tests/e2e]``). A path under one of
+        these prefixes is allowed even if it also falls under a
+        ``protected_paths`` prefix — e.g. a project that protects ``tests/``
+        broadly but has a ``tests/e2e/`` Docker test-harness (scripts,
+        Dockerfile, fixtures — tooling, not the test suite itself) that
+        should stay editable without an OOP bypass.
+
+        Normalized the same way as ``protected_paths`` (root-relative,
+        trailing slash). Only meaningful when ``protected_paths`` is also
+        configured — with no protected_paths, role-guard never reaches the
+        prefix check this feeds into.
+        """
+        raw = _load_excluded_paths_config(self._root)
+        result = []
+        for rel in raw:
+            rel = str(rel).strip("/")
+            if rel:
+                result.append(rel + "/")
+        return result
 
     @property
     def design_docs_opt_in(self) -> bool | None:

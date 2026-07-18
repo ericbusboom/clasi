@@ -9,3 +9,8 @@ process: se
 design_docs: enabled
 sources:
 - src/clasi
+protected_paths:
+- src
+- tests
+excluded_paths:
+- tests/e2e

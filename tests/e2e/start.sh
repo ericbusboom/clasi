@@ -1,12 +1,16 @@
 #!/bin/bash
 # CLASI E2E — Start the test environment
 # Builds the Docker image and launches a container with Claude Code in tmux,
-# bind-mounted to a fresh, host-visible project directory. Uses OpenRouter
-# as the API backend (ANTHROPIC_BASE_URL redirect).
+# bind-mounted to a fresh, host-visible project directory. Auth backend is
+# selectable via E2E_AUTH:
+#   - openrouter (default): API key over OpenRouter (ANTHROPIC_BASE_URL redirect).
+#   - subscription: bind-mounts a throwaway copy of the host's Claude Code
+#     OAuth credentials so claude -p authenticates as the logged-in
+#     subscription instead of an API key. See --auth flag below.
 #
 # Order of responsibilities: flags -> prereq checks -> wheel build ->
 # docker build -> probe/choose project dir -> container down -> wipe
-# (unless --resume) -> env file -> docker run -> readiness wait.
+# (unless --resume) -> env/credentials staging -> docker run -> readiness wait.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -14,14 +18,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 IMAGE_NAME="clasi-e2e"
 CONTAINER_NAME="clasi-e2e"
 ENV_FILE=""
+# Stable (not mktemp -d) so the mounted file survives after start.sh exits —
+# the container keeps running detached and needs the bind source to persist.
+# Cleaned up by stop.sh, not by this script's exit trap.
+CREDS_STAGE_DIR="$SCRIPT_DIR/.creds-stage"
 RESUME=0
 
 CANONICAL_DIR="$SCRIPT_DIR/e2e-project"
 FALLBACK_DIR="$HOME/.clasi/e2e-project"
 
-E2E_MODEL="${E2E_MODEL:-anthropic/claude-opus-4.8}"
 E2E_SMALL_MODEL="${E2E_SMALL_MODEL:-}"
 CLASI_SOURCE="${CLASI_SOURCE:-}"
+E2E_AUTH="${E2E_AUTH:-openrouter}"
+# Model ID format differs by backend: OpenRouter wants a provider-prefixed
+# string ("anthropic/claude-opus-4.8"); direct subscription auth wants the
+# bare Anthropic model ID ("claude-opus-4-8") — a prefixed string against
+# api.anthropic.com fails with "model may not exist or you may not have
+# access to it". Pick the default AFTER E2E_AUTH is resolved (see below);
+# E2E_MODEL, if the caller sets it explicitly, always wins over either
+# default.
 
 # --- Flags ---
 for arg in "$@"; do
@@ -29,13 +44,30 @@ for arg in "$@"; do
         --resume)
             RESUME=1
             ;;
+        --auth=*)
+            E2E_AUTH="${arg#--auth=}"
+            ;;
         *)
             echo "ERROR: Unknown argument '$arg'." >&2
-            echo "  Usage: ./start.sh [--resume]" >&2
+            echo "  Usage: ./start.sh [--resume] [--auth=openrouter|subscription]" >&2
             exit 1
             ;;
     esac
 done
+
+case "$E2E_AUTH" in
+    openrouter|subscription) ;;
+    *)
+        echo "ERROR: --auth must be 'openrouter' or 'subscription' (got '$E2E_AUTH')." >&2
+        exit 1
+        ;;
+esac
+
+if [ "$E2E_AUTH" = "openrouter" ]; then
+    E2E_MODEL="${E2E_MODEL:-anthropic/claude-opus-4.8}"
+else
+    E2E_MODEL="${E2E_MODEL:-claude-opus-4-8}"
+fi
 
 cleanup() {
     if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
@@ -45,7 +77,39 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Prerequisites ---
-if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+# Credential source resolution for --auth=subscription (checked here, at
+# prereq time, so we fail fast rather than mid-run):
+#   1. macOS Keychain entry "Claude Code-credentials" — this is what
+#      Claude Code on macOS actually keeps refreshed; the on-disk
+#      ~/.claude/.credentials.json fallback file is NOT updated by the
+#      macOS client and can sit expired for weeks while Keychain-backed
+#      sessions work fine. Confirmed live: a copy of the stale on-disk
+#      file authenticated but then failed with "Not logged in" (expired
+#      access token, no refresh attempted by headless `claude -p`);
+#      swapping in the Keychain copy fixed it immediately.
+#   2. ~/.claude/.credentials.json — used when Keychain is unavailable
+#      (non-macOS hosts, where this file IS kept current).
+# CREDS_SOURCE_CMD is a shell command that prints the credentials JSON to
+# stdout; staged into CREDS_STAGE_DIR further down, once, right before
+# docker run (as close to container start as practical, since a Keychain
+# access token can itself expire between resolution here and use).
+CREDS_SOURCE_CMD=""
+if [ "$E2E_AUTH" = "subscription" ]; then
+    if command -v security &>/dev/null && \
+       security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
+        CREDS_SOURCE_CMD='security find-generic-password -s "Claude Code-credentials" -w'
+    elif [ -f "$HOME/.claude/.credentials.json" ]; then
+        CREDS_SOURCE_CMD="cat \"$HOME/.claude/.credentials.json\""
+    else
+        echo "ERROR: --auth=subscription found no usable Claude Code credentials." >&2
+        echo "  Checked macOS Keychain (\"Claude Code-credentials\") and" >&2
+        echo "  $HOME/.claude/.credentials.json. Log in with 'claude' interactively" >&2
+        echo "  on this host first." >&2
+        exit 1
+    fi
+fi
+
+if [ "$E2E_AUTH" = "openrouter" ] && [ -z "${OPENROUTER_API_KEY:-}" ]; then
     echo "ERROR: OPENROUTER_API_KEY is not set."
     echo "  export OPENROUTER_API_KEY=sk-or-..."
     exit 1
@@ -171,21 +235,45 @@ fi
 # --- Write env file (safe for keys with special characters) ---
 ENV_FILE="$(mktemp)"
 {
-    echo "ANTHROPIC_API_KEY=${OPENROUTER_API_KEY}"
-    echo "ANTHROPIC_BASE_URL=https://openrouter.ai/api/v1"
+    if [ "$E2E_AUTH" = "openrouter" ]; then
+        echo "ANTHROPIC_API_KEY=${OPENROUTER_API_KEY}"
+        echo "ANTHROPIC_BASE_URL=https://openrouter.ai/api/v1"
+    fi
     echo "ANTHROPIC_MODEL=${E2E_MODEL}"
     if [ -n "$E2E_SMALL_MODEL" ]; then
         echo "ANTHROPIC_SMALL_FAST_MODEL=${E2E_SMALL_MODEL}"
     fi
     echo "E2E_RESUME=${RESUME}"
+    echo "E2E_AUTH=${E2E_AUTH}"
 } > "$ENV_FILE"
+
+# --- Stage a throwaway credentials copy for subscription auth ---
+# Never bind-mount the host's live ~/.claude directly: the container must
+# not be able to write back into the real credential store. We resolve
+# CREDS_SOURCE_CMD (Keychain or the on-disk fallback file, decided above)
+# into a scratch dir under $SCRIPT_DIR (gitignored), mount that read-only.
+# This dir must outlive start.sh (the container runs detached) — stop.sh
+# removes it, not this script. Staged as late as practical (right before
+# docker run) since a Keychain-sourced access token can itself expire
+# between an earlier resolution and actual use.
+DOCKER_RUN_MOUNTS=(-v "${HOST_PROJECT_DIR}:/project")
+if [ "$E2E_AUTH" = "subscription" ]; then
+    rm -rf "$CREDS_STAGE_DIR"
+    mkdir -p "$CREDS_STAGE_DIR"
+    eval "$CREDS_SOURCE_CMD" > "$CREDS_STAGE_DIR/.credentials.json"
+    chmod 700 "$CREDS_STAGE_DIR"
+    chmod 600 "$CREDS_STAGE_DIR/.credentials.json"
+    DOCKER_RUN_MOUNTS+=(-v "${CREDS_STAGE_DIR}/.credentials.json:/home/agent/.claude/.credentials.json:ro")
+    echo "=== Staged read-only copy of subscription credentials ==="
+    echo "  (kept at $CREDS_STAGE_DIR for the container's lifetime; ./stop.sh removes it)"
+fi
 
 # --- Run ---
 echo "=== Starting container '$CONTAINER_NAME'... ==="
 docker run -d \
     --name "$CONTAINER_NAME" \
     --env-file "$ENV_FILE" \
-    -v "${HOST_PROJECT_DIR}:/project" \
+    "${DOCKER_RUN_MOUNTS[@]}" \
     "$IMAGE_NAME"
 
 # Clean up env file now (trap also covers early-exit paths).
@@ -202,6 +290,7 @@ for i in $(seq 1 30); do
         echo "    docker exec clasi-e2e claude -p '...'"
         echo "  Project dir: $HOST_PROJECT_DIR"
         echo "  Model: $E2E_MODEL"
+        echo "  Auth: $E2E_AUTH"
         echo "============================================"
         exit 0
     fi

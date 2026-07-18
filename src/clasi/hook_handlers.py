@@ -65,19 +65,44 @@ def read_payload() -> dict:
         return {}
 
 
+def _find_project_root(start: Path) -> Path:
+    """Walk up from *start* looking for a `.clasi/` directory.
+
+    Returns the first ancestor (inclusive of *start*) containing
+    ``.clasi/``, or *start* unchanged if none is found — preserving the
+    historical cwd-is-root assumption as the fallback so behavior is
+    unchanged when *start* already is the project root.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / ".clasi").is_dir():
+            return candidate
+    return start
+
+
 def _oop_active() -> bool:
-    """Return True if out-of-process (OOP) bypass is active for this cwd.
+    """Return True if out-of-process (OOP) bypass is active for this project.
 
     Checks ``.clasi/oop`` first (canonical — matches the documented escape
     hatch in ``.claude/rules/*.md`` and the ``oop`` skill), then falls back
     to the legacy ``.clasi-oop`` (repo root, hyphen) so any session already
     relying on the old flag file keeps working.
 
-    This is the single source of truth for OOP bypass. No handler in this
-    module may check either flag-file path directly — always call this
-    helper, so the two flag files can never drift out of sync again.
+    Resolves the project root by walking up from the current working
+    directory (see ``_find_project_root``) rather than assuming cwd is the
+    repo root — a PreToolUse hook can fire with cwd set to a subdirectory
+    (e.g. editing a file two directories deep), and a bare relative-path
+    check silently returns False in that case even though the flag file
+    exists at the real project root. This was confirmed to make
+    `.clasi/oop` invisible to this check when cwd was `tests/e2e/` while
+    the flag lived at the repo root.
+
+    This is the single result and root-resolution point for OOP bypass. No
+    handler in this module may check either flag-file path directly —
+    always call this helper, so the two flag files can never drift out of
+    sync and the cwd-vs-root resolution is never duplicated.
     """
-    return Path(".clasi/oop").exists() or Path(".clasi-oop").exists()
+    root = _find_project_root(Path.cwd())
+    return (root / ".clasi" / "oop").exists() or (root / ".clasi-oop").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +196,17 @@ def handle_role_guard(payload: dict) -> None:
     Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
     (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
+
+    "Source / tests / config" above means: when Project.protected_paths is
+    NOT configured (the default — no `protected_paths:` key in
+    config.yaml), anything not on the tier-0 allow list is blocked, same
+    as always. When protected_paths IS configured (typically written by
+    `clasi init` after detecting/being told the project's source and test
+    directories), the meaning flips for tier 0/1: ONLY paths under those
+    configured prefixes (plus .clasi/sprints/**, still handled separately)
+    are blocked — everything else (test-harness scripts, misc repo
+    tooling, docs) is allowed even without an OOP bypass. See the
+    protected_paths gate below, after the tier-1 sprints-dir check.
 
     Tier 0 = team-lead / interactive session (CLASI_AGENT_TIER unset or "0")
     Tier 1 = sprint-planner
@@ -394,6 +430,31 @@ def handle_role_guard(payload: dict) -> None:
     _sprints_prefix = _block_prefixes[0]
     if agent_tier == "1" and file_path.startswith(_sprints_prefix):
         _exit_hook("role-guard", payload, 0, "tier-1")
+
+    # protected_paths gate: when the stakeholder has explicitly configured
+    # protected_paths: in config.yaml (typically at `clasi init`, pointing
+    # at the project's actual source/test directories), tier 0/1 writes
+    # are blocked ONLY under those prefixes (plus sprints_dir, already
+    # handled above) — anything else (test harnesses, docs, misc repo
+    # tooling that isn't product source or tests) is allowed through.
+    #
+    # An empty protected_paths (the "not configured" case — see
+    # Project.protected_paths) is deliberately NOT treated as "nothing is
+    # protected": that would silently disable enforcement for every
+    # existing project that hasn't re-run `clasi init` since this feature
+    # shipped. Only an explicitly non-empty list switches to this
+    # allow-by-default mode; otherwise control falls through to the
+    # pre-existing block-by-default behavior below.
+    _protected = _proj.protected_paths
+    if _protected:
+        # excluded_paths carves out subdirectories of a protected prefix
+        # that aren't actually source/tests (e.g. tests/e2e/ Docker
+        # harness scripts under a protected tests/ root) — checked first
+        # so an exclusion always wins over a broader protected prefix.
+        if any(file_path.startswith(p) for p in _proj.excluded_paths):
+            _exit_hook("role-guard", payload, 0, "excluded-path")
+        if not any(file_path.startswith(p) for p in _protected):
+            _exit_hook("role-guard", payload, 0, "outside-protected-paths")
 
     # --- BLOCK ---
     # If we reach here, the write is not permitted for this tier.

@@ -52,6 +52,51 @@ class TestProject:
         proj = Project(sub)
         assert proj.root == sub.resolve()
 
+    def test_protected_paths_empty_when_unconfigured(self, tmp_path):
+        proj = Project(tmp_path)
+        assert proj.protected_paths == []
+
+    def test_protected_paths_reads_config(self, tmp_path):
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True)
+        (clasi_dir / "config.yaml").write_text(
+            "protected_paths:\n  - src\n  - tests\n", encoding="utf-8"
+        )
+        proj = Project(tmp_path)
+        assert proj.protected_paths == ["src/", "tests/"]
+
+    def test_protected_paths_normalizes_trailing_slash(self, tmp_path):
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True)
+        (clasi_dir / "config.yaml").write_text(
+            "protected_paths:\n  - src/\n  - tests/\n", encoding="utf-8"
+        )
+        proj = Project(tmp_path)
+        assert proj.protected_paths == ["src/", "tests/"]
+
+    def test_protected_paths_ignores_non_list_value(self, tmp_path):
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True)
+        (clasi_dir / "config.yaml").write_text(
+            "protected_paths: not-a-list\n", encoding="utf-8"
+        )
+        proj = Project(tmp_path)
+        assert proj.protected_paths == []
+
+    def test_excluded_paths_empty_when_unconfigured(self, tmp_path):
+        proj = Project(tmp_path)
+        assert proj.excluded_paths == []
+
+    def test_excluded_paths_reads_config(self, tmp_path):
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True)
+        (clasi_dir / "config.yaml").write_text(
+            "protected_paths:\n  - tests\nexcluded_paths:\n  - tests/e2e\n",
+            encoding="utf-8",
+        )
+        proj = Project(tmp_path)
+        assert proj.excluded_paths == ["tests/e2e/"]
+
     def test_db_property_returns_state_db(self, tmp_path):
         proj = Project(tmp_path)
         # Ensure the clasi dir exists so db can initialize

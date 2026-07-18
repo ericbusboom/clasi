@@ -1813,6 +1813,163 @@ class TestOopBypassHandlerLevel:
         _write_fresh_config(tmp_path)
         assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
 
+    # --- cwd below project root: _oop_active() must still find the flag ---
+    #
+    # Discovered live during an e2e-harness OOP session: a PreToolUse hook
+    # can fire with cwd set to a subdirectory of the project (e.g. editing
+    # a file two directories deep), and the original _oop_active() did a
+    # bare Path(".clasi/oop").exists() check relative to cwd — which
+    # silently returned False even though .clasi/oop existed at the real
+    # project root, causing the guard to enforce as if OOP were not active.
+
+    def test_role_guard_bypasses_with_flag_at_root_when_cwd_is_subdir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 0
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_role_guard_still_enforces_from_subdir_with_no_flag(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 2
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestRoleGuardProtectedPaths:
+    """protected_paths: config gate — when configured, tier 0/1 blocking
+    inverts from "block anything not on the artifact allow-list" to "block
+    only under these configured prefixes" (plus .clasi/sprints/**, still
+    handled separately). Unconfigured (empty) protected_paths must leave
+    the pre-existing block-by-default behavior untouched — this is an
+    additive, opt-in gate, not a default-behavior change.
+    """
+
+    def _write_config_with_protected_paths(self, root: Path, paths: list) -> None:
+        import yaml
+
+        clasi_dir = root / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        data = {"process": "se", "protected_paths": paths}
+        (clasi_dir / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def test_tier0_protected_path_still_blocked(self, tmp_path):
+        self._write_config_with_protected_paths(tmp_path, ["src", "tests"])
+        assert _run_role_guard(tmp_path, "src/clasi/project.py", "") == 2
+
+    def test_tier0_unprotected_path_allowed_when_configured(self, tmp_path):
+        """A path outside the configured protected_paths (e.g. a
+        test-harness script under tests/e2e/ that isn't in src/ or the
+        configured tests/ dir) is allowed once protected_paths is set,
+        even though the same path would be blocked by default."""
+        self._write_config_with_protected_paths(tmp_path, ["src", "clasi_pkg_tests"])
+        assert _run_role_guard(tmp_path, "tests/e2e/start.sh", "") == 0
+
+    def test_tier0_pyproject_allowed_when_not_in_protected_paths(self, tmp_path):
+        self._write_config_with_protected_paths(tmp_path, ["src", "tests"])
+        assert _run_role_guard(tmp_path, "pyproject.toml", "") == 0
+
+    def test_tier1_protected_path_still_blocked(self, tmp_path):
+        self._write_config_with_protected_paths(tmp_path, ["src", "tests"])
+        assert _run_role_guard(tmp_path, "src/clasi/project.py", "1") == 2
+
+    def test_tier1_unprotected_path_allowed_when_configured(self, tmp_path):
+        """tests/e2e/ here is a stand-in for a test-harness script that
+        lives outside the project's configured source/test roots — use
+        protected_paths that do NOT cover it (unlike the "tests" prefix,
+        which genuinely would cover tests/e2e/)."""
+        self._write_config_with_protected_paths(tmp_path, ["src", "clasi_pkg_tests"])
+        assert _run_role_guard(tmp_path, "tests/e2e/start.sh", "1") == 0
+
+    def test_sprints_dir_still_blocked_even_outside_protected_paths(self, tmp_path):
+        """.clasi/sprints/** stays blocked for tier 0 regardless of
+        protected_paths — that block is independent (sprint-planner/MCP
+        ownership), not something protected_paths controls."""
+        self._write_config_with_protected_paths(tmp_path, ["src", "tests"])
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+
+    def test_no_protected_paths_configured_preserves_block_by_default(self, tmp_path):
+        """Regression guard: an empty/unconfigured protected_paths must
+        NOT be treated as 'nothing is protected' — that would silently
+        disable enforcement for every existing project. Same assertion as
+        TestRoleGuardFreshLayout.test_tier0_pyproject_toml_blocked-style
+        cases, restated here to anchor the protected_paths-specific
+        behavior explicitly."""
+        _write_fresh_config(tmp_path)  # no protected_paths key at all
+        assert _run_role_guard(tmp_path, "pyproject.toml", "") == 2
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+
+    # --- excluded_paths: carve-outs within a protected prefix ---
+
+    def _write_config_with_protected_and_excluded(
+        self, root: Path, protected: list, excluded: list
+    ) -> None:
+        import yaml
+
+        clasi_dir = root / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        data = {
+            "process": "se",
+            "protected_paths": protected,
+            "excluded_paths": excluded,
+        }
+        (clasi_dir / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def test_excluded_subdir_of_protected_tests_is_allowed(self, tmp_path):
+        """The motivating case: tests/ is protected (the real pytest
+        suite), but tests/e2e/ is a Docker test-harness (scripts,
+        Dockerfile, fixtures) that isn't the test suite itself and should
+        stay editable without an OOP bypass."""
+        self._write_config_with_protected_and_excluded(
+            tmp_path, ["src", "tests"], ["tests/e2e"]
+        )
+        assert _run_role_guard(tmp_path, "tests/e2e/start.sh", "") == 0
+
+    def test_non_excluded_part_of_protected_tests_still_blocked(self, tmp_path):
+        self._write_config_with_protected_and_excluded(
+            tmp_path, ["src", "tests"], ["tests/e2e"]
+        )
+        assert _run_role_guard(tmp_path, "tests/unit/test_project.py", "") == 2
+
+    def test_excluded_paths_without_protected_paths_is_a_no_op(self, tmp_path):
+        """excluded_paths only matters once protected_paths is configured
+        — with no protected_paths at all, role-guard never reaches the
+        prefix check, so the pre-existing block-by-default behavior
+        applies regardless of excluded_paths."""
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        import yaml
+
+        data = {"process": "se", "excluded_paths": ["tests/e2e"]}
+        (clasi_dir / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+        assert _run_role_guard(tmp_path, "tests/e2e/start.sh", "") == 2
+
 
 # ---------------------------------------------------------------------------
 # Real invocation path (ticket 020-001): the tests above all call
