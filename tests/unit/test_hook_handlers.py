@@ -2222,6 +2222,206 @@ class TestRoleGuardTierResolutionByCallerIdentity:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
 
 
+class TestRealDispatchTierResolutionEndToEnd:
+    """024-002: a REAL dispatch pipeline (handle_subagent_start registering
+    the agent, then handle_role_guard reading that registration back) must
+    resolve sprint-planner to tier-1 and programmer to tier-2 — not a
+    fixture insert via register_active_agent() called directly, and not a
+    hand-set CLASI_AGENT_TIER env var.
+
+    Root cause / investigation finding (issue:
+    sprint-planner-tier-1-may-never-be-set-verify-clasi-agent-tier-wiring):
+    CLASI_AGENT_TIER is never set as an environment variable anywhere in
+    this repo (no hook, no .claude/settings.json entry, no wrapper script
+    sets it for any agent type — confirmed by grep and by every real
+    hooks.log line for both agent types carrying no tier=N field). The
+    ONLY mechanism that resolves tier for sprint-planner OR programmer is
+    the active_agents DB fallback: handle_subagent_start (hook_handlers.py)
+    maps agent_type -> tier via _AGENT_TYPE_TIERS ({"programmer": "2",
+    "sprint-planner": "1"}) and calls register_active_agent(); the guard
+    handlers then look up that same row via get_active_tier(caller_id) in
+    handle_role_guard/handle_mcp_guard. This is symmetric for both agent
+    types — there is no asymmetry in the resolution *mechanism* itself.
+    The DB fallback is therefore load-bearing, not dead code (the issue's
+    "0 rows" observation was a stale snapshot from an earlier triage, not
+    a structural property — this repo's live active_agents table is
+    non-empty during real sprint work, e.g. carrying a tier-2 programmer
+    row during this very ticket's own dispatch). clear_stale_agents's TTL
+    sweep (2 hours, no agent_type filter) does not explain any asymmetry
+    either: it runs at the START of handle_subagent_start, before the
+    current dispatch's own register_active_agent call, so it can never
+    purge a row the current dispatch just wrote, and it purges both agent
+    types identically by age alone.
+
+    These tests close the actual gap the issue named: every existing test
+    (TestRoleGuardTierResolutionByCallerIdentity /
+    TestMcpGuardTierResolutionByCallerIdentity above) inserts its own row
+    via register_active_agent(...) directly and never calls
+    handle_subagent_start at all — so nothing proved a real dispatch's own
+    registration call produces a row the guard can actually read back.
+    """
+
+    def test_dispatched_sprint_planner_resolves_tier1_and_writes_sprints_dir(
+        self, tmp_path,
+    ):
+        """A real dispatch pipeline for sprint-planner: handle_subagent_start
+        registers the agent (agent_type="sprint-planner") using the same
+        agent_id/session_id a real SubagentStart payload carries, then
+        handle_role_guard — called with a payload sharing that identity —
+        must resolve tier-1 via the DB fallback (no CLASI_AGENT_TIER env
+        var set at any point) and allow a write under clasi/sprints/**."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="099")
+
+        # The ticket-state gate (applies to every tier, including the tier
+        # this test is proving out) blocks all writes unless a ticket in
+        # the locked sprint is in-progress — satisfy it so the assertion
+        # below is actually about tier resolution, not this unrelated gate.
+        sprint_dir = tmp_path / "clasi" / "sprints" / "099-example"
+        _make_in_progress_ticket(sprint_dir, "001", "Example ticket")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            assert "CLASI_AGENT_TIER" not in os.environ
+
+            start_payload = {
+                "agent_type": "sprint-planner",
+                "agent_id": "planner-e2e-001",
+                "session_id": "sess-planner-e2e",
+                "hook_event_name": "SubagentStart",
+            }
+            with pytest.raises(SystemExit) as start_exc:
+                _run_with_cwd(tmp_path, handle_subagent_start, start_payload)
+            assert start_exc.value.code == 0
+
+            # The dispatch pipeline's own registration call must have
+            # produced a readable row — not asserted anywhere before this.
+            db_path = str(tmp_path / ".clasi" / ".clasi.db")
+            resolved_tier = get_active_tier(db_path, "planner-e2e-001")
+            assert resolved_tier == "1"
+
+            write_payload = _role_guard_payload(
+                "clasi/sprints/099-example/tickets/001-x.md",
+            )
+            write_payload["agent_id"] = "planner-e2e-001"
+            write_payload["agent_type"] = "sprint-planner"
+
+            assert "CLASI_AGENT_TIER" not in os.environ  # still never set
+
+            with pytest.raises(SystemExit) as write_exc:
+                _run_with_cwd(tmp_path, handle_role_guard, write_payload)
+            assert write_exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        # hooks.log must show the specific, attributable reason for this
+        # write — tier-1 — not a fallback-to-block (blk-write/blk-sprint)
+        # and not a fabricated/hand-set reason.
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        assert hooks_log.exists()
+        log_lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [
+            ln for ln in log_lines
+            if "role-guard" in ln and "agent_id=planner-e2e-001" in ln
+        ]
+        assert matching, f"no role-guard log line found for planner-e2e-001: {log_lines}"
+        assert any(" 0 tier-1" in ln for ln in matching), (
+            f"expected reason 'tier-1' with exit 0, got: {matching}"
+        )
+
+    def test_dispatched_programmer_still_resolves_tier2_regression(self, tmp_path):
+        """Regression: the same real-dispatch pipeline for agent_type=
+        programmer must still resolve tier-2 and allow an unrestricted
+        write (e.g. source code), unaffected by whatever fix this ticket
+        applies for sprint-planner."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="099")
+
+        sprint_dir = tmp_path / "clasi" / "sprints" / "099-example"
+        _make_in_progress_ticket(sprint_dir, "001", "Example ticket")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            start_payload = {
+                "agent_type": "programmer",
+                "agent_id": "prog-e2e-001",
+                "session_id": "sess-prog-e2e",
+                "hook_event_name": "SubagentStart",
+            }
+            with pytest.raises(SystemExit) as start_exc:
+                _run_with_cwd(tmp_path, handle_subagent_start, start_payload)
+            assert start_exc.value.code == 0
+
+            db_path = str(tmp_path / ".clasi" / ".clasi.db")
+            assert get_active_tier(db_path, "prog-e2e-001") == "2"
+
+            write_payload = _role_guard_payload("src/clasi/some_module.py")
+            write_payload["agent_id"] = "prog-e2e-001"
+            write_payload["agent_type"] = "programmer"
+
+            with pytest.raises(SystemExit) as write_exc:
+                _run_with_cwd(tmp_path, handle_role_guard, write_payload)
+            assert write_exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        log_lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [
+            ln for ln in log_lines
+            if "role-guard" in ln and "agent_id=prog-e2e-001" in ln
+        ]
+        assert any(" 0 tier-2" in ln for ln in matching), (
+            f"expected reason 'tier-2' with exit 0, got: {matching}"
+        )
+
+    def test_team_lead_no_dispatch_remains_blocked_from_sprints_and_source(
+        self, tmp_path,
+    ):
+        """Regression: a team-lead caller — no SubagentStart registration
+        ever happened for this identity, no CLASI_AGENT_TIER set — must
+        remain blocked from both clasi/sprints/** and source-code writes.
+        The fix for sprint-planner's tier resolution must not make the
+        unresolved (no-dispatch-context) case permissive."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+
+        # Some other agent IS registered (as would be true mid-sprint),
+        # to prove team-lead's own unregistered identity isn't leaked
+        # someone else's tier.
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            sprints_payload = _role_guard_payload(
+                "clasi/sprints/099-example/tickets/001-x.md",
+            )
+            sprints_payload["agent_id"] = "team-lead-no-dispatch"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, sprints_payload)
+            assert exc.value.code == 2
+
+            source_payload = _role_guard_payload("src/clasi/some_module.py")
+            source_payload["agent_id"] = "team-lead-no-dispatch"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, source_payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
 class TestMcpGuardTierResolutionByCallerIdentity:
     """handle_mcp_guard must key its DB tier lookup on caller identity too."""
 
@@ -2270,6 +2470,28 @@ class TestMcpGuardTierResolutionByCallerIdentity:
         finally:
             if old_tier is not None:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardBlocksCreateSprintAtTierZero:
+    """Ticket 024-001: the team-lead agent doc was rewritten to dispatch
+    sprint-planner for sprint creation instead of calling `create_sprint`
+    directly, aligning the doc to this guard behavior rather than the
+    guard to the doc. This test asserts the guard side of that alignment
+    holds: `mcp__clasi__create_sprint` (the fully-prefixed tool name Claude
+    Code's PreToolUse hook actually sends, and the exact string matched by
+    the `mcp__clasi__create_ticket|mcp__clasi__create_sprint` matcher in
+    `.claude/settings.json`) is still denied for a tier-0 caller.
+    """
+
+    def test_create_sprint_denied_for_tier_zero(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "") == 2
+
+    def test_create_sprint_allowed_for_tier_one(self, tmp_path):
+        """Regression control: sprint-planner (tier 1) must still be able
+        to call create_sprint — only tier 0 is blocked."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "1") == 0
 
 
 # ---------------------------------------------------------------------------
