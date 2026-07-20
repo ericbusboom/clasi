@@ -189,6 +189,7 @@ def handle_role_guard(payload: dict) -> None:
     ─────────────────────────────────────────────────────────────────────────
     Path                          tier 0   tier 1   tier 2   OOP
     ────────────────────────────  ──────   ──────   ──────   ───
+    ~/.claude/plans/**            ALLOW    ALLOW    ALLOW    ALLOW
     .claude/**  /  CLAUDE.md      ALLOW    ALLOW    ALLOW    ALLOW
     AGENTS.md                     ALLOW    ALLOW    ALLOW    ALLOW
     .clasi/  (non-sprint)         ALLOW    ALLOW    ALLOW    ALLOW
@@ -196,6 +197,15 @@ def handle_role_guard(payload: dict) -> None:
     Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
     (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
+
+    ~/.claude/plans/** (the harness plan-mode plan file, and the exact
+    artifact clasi's own plan_to_issue PostToolUse hook harvests) is
+    allow-listed via an absolute-path comparison against the RAW incoming
+    path, checked before any root-relative normalization — it lies outside
+    the project root and can never be expressed as a root-relative prefix.
+    This is the only outside-root path allow-listed; every other
+    outside-root path still fails closed for tier 0/1 (tier 2 is already
+    unrestricted regardless).
 
     "Source / tests / config" above means: when Project.protected_paths is
     NOT configured (the default — no `protected_paths:` key in
@@ -238,6 +248,38 @@ def handle_role_guard(payload: dict) -> None:
         or tool_input.get("new_path")
         or ""
     )
+
+    # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md) is
+    # written by team-lead (tier 0) and is the exact artifact clasi's own
+    # plan_to_issue PostToolUse hook harvests into clasi/issues/. It lies
+    # OUTSIDE the project root by construction, so it can never be expressed
+    # as a root-relative prefix and can never match safe_prefixes/
+    # _allow_prefixes below — those are built from Project properties that
+    # are always root-relative. This check must run against the RAW
+    # incoming absolute path, BEFORE _normalize_to_root_relative runs: that
+    # normalization either rewrites an absolute path to root-relative (if
+    # it happens to be under the project root — never true here) or leaves
+    # it as an unchanged absolute string when it's outside the root, which
+    # is what would reach this comparison if it ran after normalization.
+    # Comparing pre-normalization keeps this allow-list a narrow absolute-
+    # path prefix check, not a root-relative one, and keeps it independent
+    # of whatever the project root happens to be. Deliberately narrow: only
+    # this one absolute prefix is allow-listed here, so no other
+    # outside-root path is affected (see the outside-root fail-closed
+    # default below, and the regression test asserting an arbitrary
+    # outside-root path like ~/Desktop/x.md is still blocked).
+    if file_path:
+        try:
+            _plans_dir = Path.home() / ".claude" / "plans"
+            if Path(file_path).is_absolute() and (
+                Path(file_path) == _plans_dir
+                or _plans_dir in Path(file_path).parents
+            ):
+                _exit_hook("role-guard", payload, 0, "claude-plans-dir")
+        except (OSError, ValueError):
+            # Malformed path string — fall through to normal handling
+            # rather than raising out of a guard hook.
+            pass
 
     # Normalize to a root-relative path string before any prefix comparison.
     # Claude Code sends ABSOLUTE file_path values (e.g.

@@ -1706,6 +1706,79 @@ class TestRoleGuardAbsolutePathRevertCheck:
         assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/issues/foo.md"), "") == 0
 
 
+class TestRoleGuardClaudePlansDirAllowList:
+    """Ticket 024-003 / issue role-guard-blocks-plan-mode-plans-dir.md.
+
+    ~/.claude/plans/<name>.md is Claude Code's own plan-mode plan file —
+    the exact artifact clasi's plan_to_issue PostToolUse hook harvests
+    into clasi/issues/. It lies OUTSIDE the project root, so it can never
+    match the root-relative safe_prefixes/_allow_prefixes machinery; it is
+    allow-listed via a dedicated absolute-path comparison against the RAW
+    incoming path, checked before _normalize_to_root_relative runs.
+
+    Both cases here use _role_guard_payload(), the real nested Claude Code
+    PreToolUse payload shape ({"tool_name": ..., "tool_input":
+    {"file_path": ...}}), per this project's gate-testing discipline of
+    testing guards with real captured payload shapes rather than
+    synthetic/minimal ones.
+    """
+
+    def test_tier0_write_to_claude_plans_dir_allowed(self, tmp_path):
+        """Tier 0: Write to ~/.claude/plans/test.md passes the guard (exit 0).
+
+        This is the allow case from the issue's own Verification section:
+        without the fix, this absolute path lies outside the project root
+        and falls through every allow-prefix check to the default BLOCK
+        branch (exit 2). With the fix, the dedicated plans-dir check exits
+        0 before normalization or any other prefix comparison runs.
+        """
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "") == 0
+
+    def test_tier0_write_to_arbitrary_outside_root_path_still_blocked(self, tmp_path):
+        """Tier 0: Write to ~/Desktop/x.md (an arbitrary outside-root path
+        that is NOT ~/.claude/plans/) is still blocked (exit 2).
+
+        This is the critical regression guard from the issue's own
+        Verification section: it proves the plans-dir allow-list is a
+        narrow, single absolute-path prefix, not a general outside-root
+        escape. If the fix were implemented as "allow any absolute path"
+        or "allow any path outside the project root", this test would
+        flip to exit 0 and catch the over-broad implementation.
+        """
+        _write_fresh_config(tmp_path)
+        desktop_path = str(Path.home() / "Desktop" / "x.md")
+        assert _run_role_guard(tmp_path, desktop_path, "") == 2
+
+    def test_tier0_write_to_claude_plans_dir_allowed_nested_subdir(self, tmp_path):
+        """Tier 0: a nested path under ~/.claude/plans/ (not just a direct
+        child file) is also allowed, confirming the check is a directory
+        prefix match, not an exact-parent-only match."""
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "sub" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "") == 0
+
+    def test_tier1_write_to_claude_plans_dir_allowed(self, tmp_path):
+        """Tier 1 (sprint-planner): ~/.claude/plans/ write is also allowed.
+
+        The ticket's implementation plan allows applying this uniformly
+        across tiers rather than gating it to tier 0 only, since tier 0 is
+        the documented requirement and applying it to all tiers is no less
+        safe (tier 2 is already unrestricted regardless)."""
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "1") == 0
+
+    def test_regression_existing_tier0_in_root_paths_unaffected(self, tmp_path):
+        """Regression check: existing in-root tier-0 allow/block behavior
+        is unchanged by the new plans-dir check (additive, not a
+        replacement of the existing logic)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+
+
 # ---------------------------------------------------------------------------
 # _oop_active() — unified OOP bypass helper (ticket 019-002)
 # ---------------------------------------------------------------------------
