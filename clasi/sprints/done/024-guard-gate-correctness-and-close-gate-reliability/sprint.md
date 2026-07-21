@@ -1,7 +1,7 @@
 ---
 id: '024'
 title: Guard/gate correctness and close-gate reliability
-status: planning-docs
+status: closed
 branch: sprint/024-guard-gate-correctness-and-close-gate-reliability
 worktree: false
 use-cases: []
