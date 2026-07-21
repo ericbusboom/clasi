@@ -79,13 +79,54 @@ def _find_project_root(start: Path) -> Path:
     return start
 
 
+def _oop_file_active(root: Path) -> bool:
+    """Return True if the OOP override *file* is present at *root*.
+
+    Checks ``.clasi/oop`` (canonical) then the legacy ``.clasi-oop``
+    (repo root, hyphen) sibling.
+    """
+    return (root / ".clasi" / "oop").exists() or (root / ".clasi-oop").exists()
+
+
+def _oop_db_record(root: Path) -> Optional[dict]:
+    """Return the DB-backed OOP bypass record for *root*, or None.
+
+    Resolves ``db_path`` through ``Project(root).db_path`` — the same
+    config-aware resolution every other DB read in this module uses — so a
+    configured non-default db location is honored. Wrapped in
+    ``try/except Exception: pass`` and gated on ``db_path.exists()`` first:
+    a missing, corrupt, or locked database must never raise out of this
+    helper. Expiry-on-read (deleting a stale record and warning on stderr)
+    is handled by ``state_db.get_oop`` itself (ticket 004).
+    """
+    try:
+        db_path = Project(root).db_path
+        if not db_path.exists():
+            return None
+        from clasi.state_db import get_oop
+
+        return get_oop(str(db_path))
+    except Exception:
+        return None
+
+
 def _oop_active() -> bool:
     """Return True if out-of-process (OOP) bypass is active for this project.
 
-    Checks ``.clasi/oop`` first (canonical — matches the documented escape
-    hatch in ``.claude/rules/*.md`` and the ``oop`` skill), then falls back
-    to the legacy ``.clasi-oop`` (repo root, hyphen) so any session already
-    relying on the old flag file keeps working.
+    Two independent channels, checked in this order:
+
+    1. **File override** (unconditional, checked first): ``.clasi/oop``
+       (canonical) or the legacy ``.clasi-oop`` sibling, resolved against
+       the discovered project root. This is the stakeholder-decided fire
+       axe (2026-07-16) — its entire value is that it needs no working
+       subsystem to function, so it is never gated behind or merged with
+       the DB check.
+    2. **DB record** (``oop_state`` table, ticket 004): a live
+       ``set_oop()`` record read via ``state_db.get_oop()``, expiring
+       automatically on read via its own TTL. A broken/missing DB can
+       never make this raise — see ``_oop_db_record``.
+
+    Returns True if either channel fires.
 
     Resolves the project root by walking up from the current working
     directory (see ``_find_project_root``) rather than assuming cwd is the
@@ -94,15 +135,116 @@ def _oop_active() -> bool:
     check silently returns False in that case even though the flag file
     exists at the real project root. This was confirmed to make
     `.clasi/oop` invisible to this check when cwd was `tests/e2e/` while
-    the flag lived at the repo root.
+    the flag lived at the repo root. The DB channel is resolved against
+    this SAME discovered root (via ``Project(root).db_path``), not a bare
+    cwd-relative path, for the same cwd-independence.
+
+    Caveat: ``get_project()`` elsewhere in this module is itself cwd-based
+    (``Project(Path.cwd())``, no upward search) — this helper deliberately
+    does NOT use it, resolving instead through the root ``_find_project_root``
+    discovers, so both channels stay cwd-independent together. Fixing
+    ``get_project()``'s own no-upward-search assumption is a separate,
+    out-of-scope issue.
 
     This is the single result and root-resolution point for OOP bypass. No
-    handler in this module may check either flag-file path directly —
-    always call this helper, so the two flag files can never drift out of
-    sync and the cwd-vs-root resolution is never duplicated.
+    handler in this module may check either flag-file path or the DB
+    directly — always call this helper (or ``_oop_source()`` for reporting),
+    so the two channels can never drift out of sync and the cwd-vs-root
+    resolution is never duplicated.
     """
     root = _find_project_root(Path.cwd())
-    return (root / ".clasi" / "oop").exists() or (root / ".clasi-oop").exists()
+    return _oop_file_active(root) or _oop_db_record(root) is not None
+
+
+def _oop_source() -> Optional[str]:
+    """Return which OOP bypass channel(s) are active: "file", "db", or None.
+
+    Mirrors ``_oop_active()``'s root resolution and check order exactly.
+    When BOTH channels are active simultaneously, returns "both" — callers
+    that need a single primary source string should treat "both" as
+    file-primary (the file is the unconditional override), but the status
+    block (``_oop_status_lines``) reports each active channel on its own
+    line rather than collapsing to one, per the issue's "never reconcile
+    silently" reporting contract.
+    """
+    root = _find_project_root(Path.cwd())
+    file_active = _oop_file_active(root)
+    db_record = _oop_db_record(root)
+    if file_active and db_record is not None:
+        return "both"
+    if file_active:
+        return "file"
+    if db_record is not None:
+        return "db"
+    return None
+
+
+def _format_ago(iso_timestamp: str) -> str:
+    """Format an ISO-8601 UTC timestamp as a short human-readable "ago" string."""
+    try:
+        then = datetime.fromisoformat(iso_timestamp)
+        delta = datetime.now(timezone.utc) - then
+        total_seconds = int(delta.total_seconds())
+        if total_seconds < 60:
+            return f"{max(total_seconds, 0)}s"
+        minutes = total_seconds // 60
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h"
+        days = hours // 24
+        return f"{days}d"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+def _format_in(iso_timestamp: str) -> str:
+    """Format an ISO-8601 UTC timestamp as a short human-readable "in" string."""
+    try:
+        then = datetime.fromisoformat(iso_timestamp)
+        delta = then - datetime.now(timezone.utc)
+        total_seconds = int(delta.total_seconds())
+        if total_seconds <= 0:
+            return "now"
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        minutes = total_seconds // 60
+        if minutes < 60:
+            return f"{minutes}m"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h"
+        days = hours // 24
+        return f"{days}d"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+def _oop_status_lines() -> list[str]:
+    """Return the status-block lines describing the active OOP bypass.
+
+    Empty list if OOP is not active. Follows the issue's exact reporting
+    contract (section 4): the DB channel names reason/age/expiry, the file
+    channel has no audit record and says so, and when both channels are
+    active both lines are emitted — never reconciled into one.
+    """
+    root = _find_project_root(Path.cwd())
+    lines: list[str] = []
+    db_record = _oop_db_record(root)
+    if db_record is not None:
+        ago = _format_ago(db_record["set_at"])
+        expires_in = _format_in(db_record["expires_at"])
+        lines.append(
+            f'OOP active (DB): set {ago} ago — "{db_record["reason"]}" — '
+            f"expires {expires_in}."
+        )
+    if _oop_file_active(root):
+        lines.append(
+            "OOP active (override file .clasi/oop). No audit record — "
+            "if this is stale, remove the file."
+        )
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +331,7 @@ def handle_role_guard(payload: dict) -> None:
     ─────────────────────────────────────────────────────────────────────────
     Path                          tier 0   tier 1   tier 2   OOP
     ────────────────────────────  ──────   ──────   ──────   ───
+    ~/.claude/plans/**            ALLOW    ALLOW    ALLOW    ALLOW
     .claude/**  /  CLAUDE.md      ALLOW    ALLOW    ALLOW    ALLOW
     AGENTS.md                     ALLOW    ALLOW    ALLOW    ALLOW
     .clasi/  (non-sprint)         ALLOW    ALLOW    ALLOW    ALLOW
@@ -196,6 +339,15 @@ def handle_role_guard(payload: dict) -> None:
     Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
     (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
+
+    ~/.claude/plans/** (the harness plan-mode plan file, and the exact
+    artifact clasi's own plan_to_issue PostToolUse hook harvests) is
+    allow-listed via an absolute-path comparison against the RAW incoming
+    path, checked before any root-relative normalization — it lies outside
+    the project root and can never be expressed as a root-relative prefix.
+    This is the only outside-root path allow-listed; every other
+    outside-root path still fails closed for tier 0/1 (tier 2 is already
+    unrestricted regardless).
 
     "Source / tests / config" above means: when Project.protected_paths is
     NOT configured (the default — no `protected_paths:` key in
@@ -238,6 +390,38 @@ def handle_role_guard(payload: dict) -> None:
         or tool_input.get("new_path")
         or ""
     )
+
+    # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md) is
+    # written by team-lead (tier 0) and is the exact artifact clasi's own
+    # plan_to_issue PostToolUse hook harvests into clasi/issues/. It lies
+    # OUTSIDE the project root by construction, so it can never be expressed
+    # as a root-relative prefix and can never match safe_prefixes/
+    # _allow_prefixes below — those are built from Project properties that
+    # are always root-relative. This check must run against the RAW
+    # incoming absolute path, BEFORE _normalize_to_root_relative runs: that
+    # normalization either rewrites an absolute path to root-relative (if
+    # it happens to be under the project root — never true here) or leaves
+    # it as an unchanged absolute string when it's outside the root, which
+    # is what would reach this comparison if it ran after normalization.
+    # Comparing pre-normalization keeps this allow-list a narrow absolute-
+    # path prefix check, not a root-relative one, and keeps it independent
+    # of whatever the project root happens to be. Deliberately narrow: only
+    # this one absolute prefix is allow-listed here, so no other
+    # outside-root path is affected (see the outside-root fail-closed
+    # default below, and the regression test asserting an arbitrary
+    # outside-root path like ~/Desktop/x.md is still blocked).
+    if file_path:
+        try:
+            _plans_dir = Path.home() / ".claude" / "plans"
+            if Path(file_path).is_absolute() and (
+                Path(file_path) == _plans_dir
+                or _plans_dir in Path(file_path).parents
+            ):
+                _exit_hook("role-guard", payload, 0, "claude-plans-dir")
+        except (OSError, ValueError):
+            # Malformed path string — fall through to normal handling
+            # rather than raising out of a guard hook.
+            pass
 
     # Normalize to a root-relative path string before any prefix comparison.
     # Claude Code sends ABSOLUTE file_path values (e.g.
@@ -341,8 +525,9 @@ def handle_role_guard(payload: dict) -> None:
         print(
             "CLASI ROLE VIOLATION: refusing to enforce role-guard from a "
             "stale build of this repo's own tooling. Fix .mcp.json / "
-            ".claude/settings.json to invoke the editable install, or set "
-            ".clasi/oop to bypass.",
+            ".claude/settings.json to invoke the editable install, or run "
+            "`clasi oop on --reason '...'` to bypass (emergency fallback: "
+            "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
         _exit_hook("role-guard", payload, 2, "stale-guard")
@@ -364,8 +549,9 @@ def handle_role_guard(payload: dict) -> None:
             print(
                 f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
                 "is held but no ticket is in-progress.\n"
-                "Start or resume a ticket via the execute-ticket flow, "
-                "or set .clasi/oop to bypass.",
+                "Start or resume a ticket via the execute-ticket flow, or "
+                "run `clasi oop on --reason '...'` to bypass (emergency "
+                "fallback: .clasi/oop).",
                 file=sys.stderr,
             )
             _exit_hook("role-guard", payload, 2, "no-ticket")
@@ -513,8 +699,9 @@ def handle_mcp_guard(payload: dict) -> None:
         print(
             "CLASI ROLE VIOLATION: refusing to enforce mcp-guard from a "
             "stale build of this repo's own tooling. Fix .mcp.json / "
-            ".claude/settings.json to invoke the editable install, or set "
-            ".clasi/oop to bypass.",
+            ".claude/settings.json to invoke the editable install, or run "
+            "`clasi oop on --reason '...'` to bypass (emergency fallback: "
+            "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
         _exit_hook("mcp-guard", payload, 2, "stale-guard")
@@ -674,8 +861,9 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
     BLOCK on their next write; this note makes the same fact visible
     up-front in the status block, so the agent does not need to attempt a
     write just to discover the gate.  Names both sanctioned exits: resume
-    or start a ticket via execute-ticket, or set ``.clasi/oop`` (checked
-    only via the shared :func:`_oop_active` helper — never reimplemented).
+    or start a ticket via execute-ticket, or run ``clasi oop on --reason``
+    (checked only via the shared :func:`_oop_active` helper — never
+    reimplemented; the ``.clasi/oop`` file remains the emergency fallback).
 
     No-op if a ticket is active, no sprint is executing, or OOP bypass is
     already active (the gate does not apply in that case).
@@ -687,7 +875,8 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
         f"Sprint {sprint_id} execution lock is held but no ticket is "
         "in-progress: source edits are gated closed (role-guard "
         "ticket-state gate). Start or resume a ticket via the "
-        "execute-ticket flow, or set .clasi/oop to bypass."
+        "execute-ticket flow, or run `clasi oop on --reason '...'` to "
+        "bypass (emergency fallback: .clasi/oop)."
     )
     existing_focus = notes.get("current_focus", "")
     notes["current_focus"] = (
@@ -765,14 +954,25 @@ def handle_status_inject(payload: dict) -> None:
     serializes to YAML, and prints the fenced block to stdout so Claude Code
     prepends it to the context window.
 
-    Silent no-op (exit 0, no output) if:
-    - ``.clasi/`` does not exist (project not CLASI-initialized).
-    - ``.clasi/oop`` exists (out-of-process bypass).
+    Silent no-op (exit 0, no output) only if ``.clasi/`` does not exist
+    (project not CLASI-initialized).
+
+    When OOP bypass is active (either channel — file or DB, see
+    ``_oop_active``/``_oop_status_lines``), this NEVER goes silent: it
+    emits a minimal, non-empty status block naming the active channel(s),
+    and reason/age/expiry where the channel has that metadata (the DB
+    channel does; the bare file marker does not). An active bypass being
+    invisible on every prompt was the prior (deliberately changed)
+    behavior — a forgotten flag must stay visible, not silently void
+    enforcement forever.
     """
     project = get_project()
     if not project.clasi_dir.exists():
         _exit_hook("status-inject", payload, 0, "no-clasi")
     if _oop_active():
+        lines = _oop_status_lines()
+        block = "## CLASI status\n\n" + "\n".join(lines) + "\n"
+        print(block)
         _exit_hook("status-inject", payload, 0, "oop-bypass")
 
     agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")

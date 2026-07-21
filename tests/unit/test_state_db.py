@@ -19,6 +19,9 @@ from clasi.state_db import (
     write_recovery_state,
     get_recovery_state,
     clear_recovery_state,
+    set_oop,
+    clear_oop,
+    get_oop,
 )
 
 
@@ -448,3 +451,92 @@ class TestRecoveryState:
         }
         conn.close()
         assert "recovery_state" in tables
+
+
+class TestOopState:
+    """Tests for the oop_state singleton table, via module-level wrappers."""
+
+    def test_get_returns_none_when_unset(self, db_path):
+        init_db(db_path)
+        assert get_oop(db_path) is None
+
+    def test_set_creates_record(self, db_path):
+        result = set_oop(db_path, "manual bypass for hotfix", ttl_hours=8.0)
+        assert result["reason"] == "manual bypass for hotfix"
+        assert result["set_at"] is not None
+        assert result["expires_at"] is not None
+
+    def test_get_returns_record(self, db_path):
+        set_oop(db_path, "manual bypass for hotfix", ttl_hours=8.0)
+        record = get_oop(db_path)
+        assert record is not None
+        assert record["reason"] == "manual bypass for hotfix"
+
+    def test_ttl_clears_stale_record(self, db_path, capsys):
+        set_oop(db_path, "manual bypass", ttl_hours=8.0)
+        # Manually push expires_at into the past.
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE oop_state SET expires_at = ? WHERE id = 1", (past,)
+        )
+        conn.commit()
+        conn.close()
+
+        result = get_oop(db_path)
+        assert result is None
+
+        # Verify record was actually deleted.
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute("SELECT COUNT(*) FROM oop_state").fetchone()
+        conn.close()
+        assert row[0] == 0
+
+        # A warning is emitted on expiry-driven auto-clear.
+        captured = capsys.readouterr()
+        assert "stale" in captured.err.lower() or "expir" in captured.err.lower()
+
+    def test_short_ttl_expires_immediately(self, db_path):
+        """A very short ttl_hours results in an already-expired row on next read."""
+        set_oop(db_path, "short-lived bypass", ttl_hours=0.0000001)
+        import time
+
+        time.sleep(0.01)
+        assert get_oop(db_path) is None
+
+    def test_clear_removes_record(self, db_path):
+        set_oop(db_path, "manual bypass")
+        result = clear_oop(db_path)
+        assert result["cleared"] is True
+        assert get_oop(db_path) is None
+
+    def test_clear_when_no_record(self, db_path):
+        init_db(db_path)
+        result = clear_oop(db_path)
+        assert result["cleared"] is False
+
+    def test_singleton_constraint(self, db_path):
+        """Writing twice should overwrite, not create two records."""
+        set_oop(db_path, "first")
+        set_oop(db_path, "second")
+
+        record = get_oop(db_path)
+        assert record["reason"] == "second"
+
+        conn = sqlite3.connect(str(db_path))
+        count = conn.execute("SELECT COUNT(*) FROM oop_state").fetchone()[0]
+        conn.close()
+        assert count == 1
+
+    def test_table_in_schema(self, db_path):
+        """oop_state table should be created by init_db."""
+        init_db(db_path)
+        conn = sqlite3.connect(str(db_path))
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        conn.close()
+        assert "oop_state" in tables

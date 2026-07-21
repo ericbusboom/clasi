@@ -43,6 +43,9 @@ __all__ = [
     "remove_active_agent",
     "get_active_tier",
     "clear_stale_agents",
+    "set_oop",
+    "clear_oop",
+    "get_oop",
 ]
 
 
@@ -161,3 +164,20 @@ def get_active_tier(db_path: str | Path, agent_id: str) -> str:
 def clear_stale_agents(db_path: str | Path, ttl_hours: int = 24) -> dict[str, Any]:
     """Delete active_agents records older than ttl_hours."""
     return StateDB(db_path).clear_stale_agents(ttl_hours)
+
+
+def set_oop(
+    db_path: str | Path, reason: str, ttl_hours: float = 8.0
+) -> dict[str, Any]:
+    """Write or overwrite the singleton OOP bypass record."""
+    return StateDB(db_path).set_oop(reason, ttl_hours)
+
+
+def clear_oop(db_path: str | Path) -> dict[str, Any]:
+    """Delete the OOP bypass record."""
+    return StateDB(db_path).clear_oop()
+
+
+def get_oop(db_path: str | Path) -> Optional[dict[str, Any]]:
+    """Read the OOP bypass record, auto-clearing it past expiry."""
+    return StateDB(db_path).get_oop()

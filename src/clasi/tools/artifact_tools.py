@@ -19,7 +19,12 @@ from typing import Optional
 from clasi.artifact import Artifact
 from clasi.frontmatter import read_document, read_frontmatter
 from clasi.mcp_server import server, get_project
-from clasi.project import SprintNotFoundError, SprintFrontmatterError, SprintIdMismatchError
+from clasi.project import (
+    SprintNotFoundError,
+    SprintFrontmatterError,
+    SprintIdMismatchError,
+    _load_config,
+)
 from clasi.sprint import MergeConflictError, Sprint
 from clasi.state_db import (
     PHASES as _PHASES,
@@ -1047,6 +1052,7 @@ def close_sprint(
     push_tags: bool = True,
     delete_branch: bool = True,
     test_command: Optional[str] = None,
+    test_timeout: Optional[float] = None,
 ) -> str:
     """Close a sprint by updating its status and moving it to sprints/done/.
 
@@ -1071,6 +1077,16 @@ def close_sprint(
         delete_branch: Whether to delete the sprint branch after merge (default: True)
         test_command: Shell command to run tests. Defaults to 'uv run pytest'.
             Pass empty string to skip tests entirely (for non-Python projects).
+        test_timeout: Seconds to allow the test command to run before it is
+            considered hung and killed. Resolution order (highest priority
+            first): (1) this parameter, if not None; (2) a top-level
+            `test_timeout:` key in `.clasi/config.yaml`; (3) the default of
+            900 seconds (chosen to comfortably fit this project's own
+            ~460-525s suite runtime — the old 300s default was too short and
+            produced false timeout failures on a healthy suite). Pass `0` to
+            disable the timeout entirely (unlimited). When a timeout does
+            occur, the error message names the effective timeout value that
+            was used, so a false-timeout report is self-diagnosing.
 
     Returns JSON with structured result (success or error).
     """
@@ -1098,7 +1114,7 @@ def close_sprint(
     if branch_name is not None:
         return _close_sprint_full(
             sprint_id, branch_name, main_branch, push_tags, delete_branch,
-            test_command=test_command,
+            test_command=test_command, test_timeout=test_timeout,
         )
     return _close_sprint_legacy(sprint_id)
 
@@ -1356,6 +1372,7 @@ def _close_sprint_full(
     push_tags_flag: bool,
     delete_branch_flag: bool,
     test_command: Optional[str] = None,
+    test_timeout: Optional[float] = None,
 ) -> str:
     """Full lifecycle close: preconditions, tests, archive, git ops."""
     project = get_project()
@@ -1556,12 +1573,27 @@ def _close_sprint_full(
         else:
             test_cmd = ["uv", "run", "pytest"]
 
+        # Resolve the effective test timeout. Priority: explicit parameter,
+        # then .clasi/config.yaml's top-level `test_timeout:` key, then the
+        # 900s default (raised from the old 300s, which was too short for
+        # this project's own ~460-525s suite runtime). `0` means unlimited.
+        if test_timeout is not None:
+            effective_timeout = test_timeout
+        else:
+            config_timeout = _load_config(project.root).get("test_timeout")
+            if isinstance(config_timeout, (int, float)) and not isinstance(config_timeout, bool):
+                effective_timeout = config_timeout
+            else:
+                effective_timeout = 900
+
+        subprocess_timeout = None if effective_timeout == 0 else effective_timeout
+
         try:
             test_result = subprocess.run(
                 test_cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=subprocess_timeout,
             )
             # Pytest exit codes: 0=all passed, 1=some failed, 2=interrupted,
             # 3=internal error, 4=usage error, 5=no tests collected.
@@ -1594,7 +1626,7 @@ def _close_sprint_full(
             # Test command not available — skip tests
             repairs.append(f"skipped tests ({test_cmd[0]} not found)")
         except subprocess.TimeoutExpired:
-            error_msg = "Test suite timed out after 300 seconds"
+            error_msg = f"Test suite timed out after {effective_timeout} seconds"
             if db.path.exists():
                 db.write_recovery_state(sprint_id, "tests", [], error_msg)
             return json.dumps({

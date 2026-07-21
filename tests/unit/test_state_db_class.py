@@ -151,6 +151,72 @@ class TestStateDB:
         assert result["cleared"] is False
 
 
+class TestOopState:
+    """Test oop_state table methods (StateDB class level)."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        return sdb
+
+    def test_get_oop_returns_none_when_unset(self, db):
+        assert db.get_oop() is None
+
+    def test_set_and_get_oop_round_trip(self, db):
+        result = db.set_oop("testing oop", ttl_hours=8.0)
+        assert result["reason"] == "testing oop"
+        assert "set_at" in result
+        assert "expires_at" in result
+
+        state = db.get_oop()
+        assert state is not None
+        assert state["reason"] == "testing oop"
+        assert state["set_at"] == result["set_at"]
+        assert state["expires_at"] == result["expires_at"]
+
+    def test_clear_oop_removes_record(self, db):
+        db.set_oop("testing oop")
+        cleared = db.clear_oop()
+        assert cleared["cleared"] is True
+        assert db.get_oop() is None
+
+    def test_clear_oop_when_empty_is_noop(self, db):
+        result = db.clear_oop()
+        assert result["cleared"] is False
+
+    def test_set_oop_overwrites_previous_record(self, db):
+        db.set_oop("first reason")
+        db.set_oop("second reason")
+
+        state = db.get_oop()
+        assert state["reason"] == "second reason"
+
+    def test_get_oop_expires_and_clears_row(self, db, tmp_path):
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+
+        db.set_oop("about to expire", ttl_hours=8.0)
+
+        # Force expires_at into the past, matching get_recovery_state's
+        # existing TTL test pattern.
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        conn = sqlite3.connect(str(db.path))
+        conn.execute(
+            "UPDATE oop_state SET expires_at = ? WHERE id = 1", (past,)
+        )
+        conn.commit()
+        conn.close()
+
+        assert db.get_oop() is None
+
+        # Verify the row was actually deleted, not just masked.
+        conn = sqlite3.connect(str(db.path))
+        count = conn.execute("SELECT COUNT(*) FROM oop_state").fetchone()[0]
+        conn.close()
+        assert count == 0
+
+
 class TestActiveAgents:
     """Test active_agents table methods."""
 

@@ -420,9 +420,13 @@ class TestGateImperative:
         (tmp_path / ".clasi" / "oop").touch()
 
         output = _run_status_inject(tmp_path, agent="team-lead")
-        # OOP bypass short-circuits handle_status_inject entirely before
-        # any block is built.
-        assert output == ""
+        # OOP bypass short-circuits handle_status_inject before the full
+        # status block is built (the gate imperative never appears), but
+        # it must NOT go silent: a minimal OOP status block is still
+        # emitted (ticket 024-005 — an active bypass must stay visible).
+        assert "gated closed" not in output
+        assert output != ""
+        assert "OOP active" in output
 
 
 # ---------------------------------------------------------------------------
@@ -494,9 +498,10 @@ def _minimal_status_dict() -> dict:
 
 
 class TestStatusInjectOopBypass:
-    """handle_status_inject exits 0 with no output when .clasi/oop exists."""
+    """handle_status_inject exits 0 with a minimal, non-empty OOP status
+    block when .clasi/oop exists — never silent (ticket 024-005)."""
 
-    def test_oop_bypass_no_output(self, tmp_path):
+    def test_oop_bypass_minimal_block(self, tmp_path):
         clasi_dir = _make_clasi_dir(tmp_path)
         (clasi_dir / "oop").touch()
 
@@ -504,7 +509,9 @@ class TestStatusInjectOopBypass:
             output, code = _capture_stdout(handle_status_inject, {})
 
         assert code == 0
-        assert output == ""
+        assert output != ""
+        assert "## CLASI status" in output
+        assert "OOP active (override file .clasi/oop)" in output
 
     def test_oop_bypass_does_not_call_build_status(self, tmp_path):
         clasi_dir = _make_clasi_dir(tmp_path)

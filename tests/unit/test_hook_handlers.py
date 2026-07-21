@@ -27,6 +27,7 @@ from clasi.hook_handlers import (
     _render_transcript_lines,
     _ext_to_language,
     _oop_active,
+    _oop_source,
 )
 from clasi.state_db import (
     init_db,
@@ -36,6 +37,9 @@ from clasi.state_db import (
     register_active_agent,
     get_active_tier,
     clear_stale_agents,
+    set_oop,
+    get_oop,
+    clear_oop,
 )
 
 
@@ -1706,6 +1710,79 @@ class TestRoleGuardAbsolutePathRevertCheck:
         assert _run_role_guard(tmp_path, _abs(tmp_path, "clasi/issues/foo.md"), "") == 0
 
 
+class TestRoleGuardClaudePlansDirAllowList:
+    """Ticket 024-003 / issue role-guard-blocks-plan-mode-plans-dir.md.
+
+    ~/.claude/plans/<name>.md is Claude Code's own plan-mode plan file —
+    the exact artifact clasi's plan_to_issue PostToolUse hook harvests
+    into clasi/issues/. It lies OUTSIDE the project root, so it can never
+    match the root-relative safe_prefixes/_allow_prefixes machinery; it is
+    allow-listed via a dedicated absolute-path comparison against the RAW
+    incoming path, checked before _normalize_to_root_relative runs.
+
+    Both cases here use _role_guard_payload(), the real nested Claude Code
+    PreToolUse payload shape ({"tool_name": ..., "tool_input":
+    {"file_path": ...}}), per this project's gate-testing discipline of
+    testing guards with real captured payload shapes rather than
+    synthetic/minimal ones.
+    """
+
+    def test_tier0_write_to_claude_plans_dir_allowed(self, tmp_path):
+        """Tier 0: Write to ~/.claude/plans/test.md passes the guard (exit 0).
+
+        This is the allow case from the issue's own Verification section:
+        without the fix, this absolute path lies outside the project root
+        and falls through every allow-prefix check to the default BLOCK
+        branch (exit 2). With the fix, the dedicated plans-dir check exits
+        0 before normalization or any other prefix comparison runs.
+        """
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "") == 0
+
+    def test_tier0_write_to_arbitrary_outside_root_path_still_blocked(self, tmp_path):
+        """Tier 0: Write to ~/Desktop/x.md (an arbitrary outside-root path
+        that is NOT ~/.claude/plans/) is still blocked (exit 2).
+
+        This is the critical regression guard from the issue's own
+        Verification section: it proves the plans-dir allow-list is a
+        narrow, single absolute-path prefix, not a general outside-root
+        escape. If the fix were implemented as "allow any absolute path"
+        or "allow any path outside the project root", this test would
+        flip to exit 0 and catch the over-broad implementation.
+        """
+        _write_fresh_config(tmp_path)
+        desktop_path = str(Path.home() / "Desktop" / "x.md")
+        assert _run_role_guard(tmp_path, desktop_path, "") == 2
+
+    def test_tier0_write_to_claude_plans_dir_allowed_nested_subdir(self, tmp_path):
+        """Tier 0: a nested path under ~/.claude/plans/ (not just a direct
+        child file) is also allowed, confirming the check is a directory
+        prefix match, not an exact-parent-only match."""
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "sub" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "") == 0
+
+    def test_tier1_write_to_claude_plans_dir_allowed(self, tmp_path):
+        """Tier 1 (sprint-planner): ~/.claude/plans/ write is also allowed.
+
+        The ticket's implementation plan allows applying this uniformly
+        across tiers rather than gating it to tier 0 only, since tier 0 is
+        the documented requirement and applying it to all tiers is no less
+        safe (tier 2 is already unrestricted regardless)."""
+        _write_fresh_config(tmp_path)
+        plans_path = str(Path.home() / ".claude" / "plans" / "test.md")
+        assert _run_role_guard(tmp_path, plans_path, "1") == 0
+
+    def test_regression_existing_tier0_in_root_paths_unaffected(self, tmp_path):
+        """Regression check: existing in-root tier-0 allow/block behavior
+        is unchanged by the new plans-dir check (additive, not a
+        replacement of the existing logic)."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+
+
 # ---------------------------------------------------------------------------
 # _oop_active() — unified OOP bypass helper (ticket 019-002)
 # ---------------------------------------------------------------------------
@@ -1856,6 +1933,183 @@ class TestOopBypassHandlerLevel:
             with pytest.raises(SystemExit) as exc:
                 handle_role_guard(payload)
             assert exc.value.code == 2
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# DB-backed OOP bypass (ticket 024-005) — handler-level, both guards
+# ---------------------------------------------------------------------------
+
+
+def _fresh_layout_db_path(root: Path) -> Path:
+    """Path to the DB file under the default (fresh) layout _write_fresh_config
+    writes — .clasi/.clasi.db, matching ARTIFACT_PATH_DEFAULTS["db"]."""
+    return root / ".clasi" / ".clasi.db"
+
+
+class TestOopDbBackedHandlerLevel:
+    """Handler-level coverage for the DB-backed OOP channel (ticket 004's
+    oop_state table, wired into _oop_active() by ticket 024-005), on BOTH
+    role-guard and mcp-guard — not only a unit test on _oop_active() called
+    directly. Per the issue's explicit citation of the 019-002 lesson:
+    helper-level tests alone can miss a call site that was never wired up.
+    """
+
+    def test_role_guard_allows_when_db_oop_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_role_guard_denies_after_db_oop_cleared(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "hotfix", ttl_hours=8.0)
+        clear_oop(db_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_role_guard_denies_when_db_oop_never_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_allows_when_db_oop_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    def test_mcp_guard_denies_after_db_oop_cleared(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "hotfix", ttl_hours=8.0)
+        clear_oop(db_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+    def test_mcp_guard_denies_when_db_oop_never_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+
+class TestOopFileOverrideWithDbEmpty:
+    """File override with DB empty: bypass works via the file channel alone,
+    and _oop_source() reports "file" (not "db" or "both")."""
+
+    def test_role_guard_bypasses_on_file_alone(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_oop_source_reports_file_when_db_empty(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_source) == "file"
+
+    def test_oop_source_reports_db_when_file_absent(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_with_cwd(tmp_path, _oop_source) == "db"
+
+    def test_oop_source_reports_both_when_both_active(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_with_cwd(tmp_path, _oop_source) == "both"
+
+    def test_oop_source_none_when_neither_active(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_with_cwd(tmp_path, _oop_source) is None
+
+
+class TestOopDbTtlExpiry:
+    """set_oop with a very short TTL auto-expires on next read (ticket
+    004's expiry-on-read get_oop()); enforcement resumes once expired."""
+
+    def test_role_guard_re_enforces_after_ttl_expiry(self, tmp_path):
+        import time
+
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "short-lived", ttl_hours=0.0000001)
+        time.sleep(0.05)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_oop_active_false_after_ttl_expiry(self, tmp_path):
+        import time
+
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "short-lived", ttl_hours=0.0000001)
+        time.sleep(0.05)
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+
+class TestOopCorruptOrLockedDb:
+    """A corrupt/unreadable DB file must never raise out of _oop_active()
+    or the guards. The file override, if present, still works. If the
+    file is absent and the DB is broken, the guard fails CLOSED (denies),
+    never with an unhandled exception."""
+
+    def _write_corrupt_db(self, tmp_path: Path) -> None:
+        db_path = _fresh_layout_db_path(tmp_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db_path.write_bytes(b"not a sqlite database at all, just garbage bytes")
+
+    def test_oop_active_false_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+    def test_role_guard_fails_closed_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_fails_closed_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+    def test_role_guard_file_override_still_works_with_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_file_override_still_works_with_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    def test_oop_active_true_with_file_override_and_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+
+class TestOopDbBypassCwdIndependence:
+    """cwd-independence for the DB channel, mirroring the existing
+    file-channel regression check above: DB OOP record set (global to the
+    checkout, keyed on the project root's db_path), hook invoked with cwd
+    set to a subdirectory — bypass still resolves."""
+
+    def test_role_guard_bypasses_with_db_oop_when_cwd_is_subdir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 0
         finally:
             os.chdir(old_cwd)
             if old_tier is not None:
@@ -2222,6 +2476,206 @@ class TestRoleGuardTierResolutionByCallerIdentity:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
 
 
+class TestRealDispatchTierResolutionEndToEnd:
+    """024-002: a REAL dispatch pipeline (handle_subagent_start registering
+    the agent, then handle_role_guard reading that registration back) must
+    resolve sprint-planner to tier-1 and programmer to tier-2 — not a
+    fixture insert via register_active_agent() called directly, and not a
+    hand-set CLASI_AGENT_TIER env var.
+
+    Root cause / investigation finding (issue:
+    sprint-planner-tier-1-may-never-be-set-verify-clasi-agent-tier-wiring):
+    CLASI_AGENT_TIER is never set as an environment variable anywhere in
+    this repo (no hook, no .claude/settings.json entry, no wrapper script
+    sets it for any agent type — confirmed by grep and by every real
+    hooks.log line for both agent types carrying no tier=N field). The
+    ONLY mechanism that resolves tier for sprint-planner OR programmer is
+    the active_agents DB fallback: handle_subagent_start (hook_handlers.py)
+    maps agent_type -> tier via _AGENT_TYPE_TIERS ({"programmer": "2",
+    "sprint-planner": "1"}) and calls register_active_agent(); the guard
+    handlers then look up that same row via get_active_tier(caller_id) in
+    handle_role_guard/handle_mcp_guard. This is symmetric for both agent
+    types — there is no asymmetry in the resolution *mechanism* itself.
+    The DB fallback is therefore load-bearing, not dead code (the issue's
+    "0 rows" observation was a stale snapshot from an earlier triage, not
+    a structural property — this repo's live active_agents table is
+    non-empty during real sprint work, e.g. carrying a tier-2 programmer
+    row during this very ticket's own dispatch). clear_stale_agents's TTL
+    sweep (2 hours, no agent_type filter) does not explain any asymmetry
+    either: it runs at the START of handle_subagent_start, before the
+    current dispatch's own register_active_agent call, so it can never
+    purge a row the current dispatch just wrote, and it purges both agent
+    types identically by age alone.
+
+    These tests close the actual gap the issue named: every existing test
+    (TestRoleGuardTierResolutionByCallerIdentity /
+    TestMcpGuardTierResolutionByCallerIdentity above) inserts its own row
+    via register_active_agent(...) directly and never calls
+    handle_subagent_start at all — so nothing proved a real dispatch's own
+    registration call produces a row the guard can actually read back.
+    """
+
+    def test_dispatched_sprint_planner_resolves_tier1_and_writes_sprints_dir(
+        self, tmp_path,
+    ):
+        """A real dispatch pipeline for sprint-planner: handle_subagent_start
+        registers the agent (agent_type="sprint-planner") using the same
+        agent_id/session_id a real SubagentStart payload carries, then
+        handle_role_guard — called with a payload sharing that identity —
+        must resolve tier-1 via the DB fallback (no CLASI_AGENT_TIER env
+        var set at any point) and allow a write under clasi/sprints/**."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="099")
+
+        # The ticket-state gate (applies to every tier, including the tier
+        # this test is proving out) blocks all writes unless a ticket in
+        # the locked sprint is in-progress — satisfy it so the assertion
+        # below is actually about tier resolution, not this unrelated gate.
+        sprint_dir = tmp_path / "clasi" / "sprints" / "099-example"
+        _make_in_progress_ticket(sprint_dir, "001", "Example ticket")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            assert "CLASI_AGENT_TIER" not in os.environ
+
+            start_payload = {
+                "agent_type": "sprint-planner",
+                "agent_id": "planner-e2e-001",
+                "session_id": "sess-planner-e2e",
+                "hook_event_name": "SubagentStart",
+            }
+            with pytest.raises(SystemExit) as start_exc:
+                _run_with_cwd(tmp_path, handle_subagent_start, start_payload)
+            assert start_exc.value.code == 0
+
+            # The dispatch pipeline's own registration call must have
+            # produced a readable row — not asserted anywhere before this.
+            db_path = str(tmp_path / ".clasi" / ".clasi.db")
+            resolved_tier = get_active_tier(db_path, "planner-e2e-001")
+            assert resolved_tier == "1"
+
+            write_payload = _role_guard_payload(
+                "clasi/sprints/099-example/tickets/001-x.md",
+            )
+            write_payload["agent_id"] = "planner-e2e-001"
+            write_payload["agent_type"] = "sprint-planner"
+
+            assert "CLASI_AGENT_TIER" not in os.environ  # still never set
+
+            with pytest.raises(SystemExit) as write_exc:
+                _run_with_cwd(tmp_path, handle_role_guard, write_payload)
+            assert write_exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        # hooks.log must show the specific, attributable reason for this
+        # write — tier-1 — not a fallback-to-block (blk-write/blk-sprint)
+        # and not a fabricated/hand-set reason.
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        assert hooks_log.exists()
+        log_lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [
+            ln for ln in log_lines
+            if "role-guard" in ln and "agent_id=planner-e2e-001" in ln
+        ]
+        assert matching, f"no role-guard log line found for planner-e2e-001: {log_lines}"
+        assert any(" 0 tier-1" in ln for ln in matching), (
+            f"expected reason 'tier-1' with exit 0, got: {matching}"
+        )
+
+    def test_dispatched_programmer_still_resolves_tier2_regression(self, tmp_path):
+        """Regression: the same real-dispatch pipeline for agent_type=
+        programmer must still resolve tier-2 and allow an unrestricted
+        write (e.g. source code), unaffected by whatever fix this ticket
+        applies for sprint-planner."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        _setup_db_with_lock(tmp_path, sprint_id="099")
+
+        sprint_dir = tmp_path / "clasi" / "sprints" / "099-example"
+        _make_in_progress_ticket(sprint_dir, "001", "Example ticket")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            start_payload = {
+                "agent_type": "programmer",
+                "agent_id": "prog-e2e-001",
+                "session_id": "sess-prog-e2e",
+                "hook_event_name": "SubagentStart",
+            }
+            with pytest.raises(SystemExit) as start_exc:
+                _run_with_cwd(tmp_path, handle_subagent_start, start_payload)
+            assert start_exc.value.code == 0
+
+            db_path = str(tmp_path / ".clasi" / ".clasi.db")
+            assert get_active_tier(db_path, "prog-e2e-001") == "2"
+
+            write_payload = _role_guard_payload("src/clasi/some_module.py")
+            write_payload["agent_id"] = "prog-e2e-001"
+            write_payload["agent_type"] = "programmer"
+
+            with pytest.raises(SystemExit) as write_exc:
+                _run_with_cwd(tmp_path, handle_role_guard, write_payload)
+            assert write_exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        log_lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [
+            ln for ln in log_lines
+            if "role-guard" in ln and "agent_id=prog-e2e-001" in ln
+        ]
+        assert any(" 0 tier-2" in ln for ln in matching), (
+            f"expected reason 'tier-2' with exit 0, got: {matching}"
+        )
+
+    def test_team_lead_no_dispatch_remains_blocked_from_sprints_and_source(
+        self, tmp_path,
+    ):
+        """Regression: a team-lead caller — no SubagentStart registration
+        ever happened for this identity, no CLASI_AGENT_TIER set — must
+        remain blocked from both clasi/sprints/** and source-code writes.
+        The fix for sprint-planner's tier resolution must not make the
+        unresolved (no-dispatch-context) case permissive."""
+        _write_fresh_config(tmp_path)
+        _make_log_dir(tmp_path)
+        db_path = _init_db_only(tmp_path)
+
+        # Some other agent IS registered (as would be true mid-sprint),
+        # to prove team-lead's own unregistered identity isn't leaked
+        # someone else's tier.
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            sprints_payload = _role_guard_payload(
+                "clasi/sprints/099-example/tickets/001-x.md",
+            )
+            sprints_payload["agent_id"] = "team-lead-no-dispatch"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, sprints_payload)
+            assert exc.value.code == 2
+
+            source_payload = _role_guard_payload("src/clasi/some_module.py")
+            source_payload["agent_id"] = "team-lead-no-dispatch"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, source_payload)
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
 class TestMcpGuardTierResolutionByCallerIdentity:
     """handle_mcp_guard must key its DB tier lookup on caller identity too."""
 
@@ -2270,6 +2724,28 @@ class TestMcpGuardTierResolutionByCallerIdentity:
         finally:
             if old_tier is not None:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardBlocksCreateSprintAtTierZero:
+    """Ticket 024-001: the team-lead agent doc was rewritten to dispatch
+    sprint-planner for sprint creation instead of calling `create_sprint`
+    directly, aligning the doc to this guard behavior rather than the
+    guard to the doc. This test asserts the guard side of that alignment
+    holds: `mcp__clasi__create_sprint` (the fully-prefixed tool name Claude
+    Code's PreToolUse hook actually sends, and the exact string matched by
+    the `mcp__clasi__create_ticket|mcp__clasi__create_sprint` matcher in
+    `.claude/settings.json`) is still denied for a tier-0 caller.
+    """
+
+    def test_create_sprint_denied_for_tier_zero(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "") == 2
+
+    def test_create_sprint_allowed_for_tier_one(self, tmp_path):
+        """Regression control: sprint-planner (tier 1) must still be able
+        to call create_sprint — only tier 0 is blocked."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "1") == 0
 
 
 # ---------------------------------------------------------------------------

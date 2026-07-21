@@ -1469,29 +1469,55 @@ class TestRealDoneArchiveBackwardCompat:
         assert real_done_ids == _EXPECTED_HISTORICAL_SPRINT_IDS
 
     def test_real_archive_sprints_have_historical_three_file_layout(self):
-        """Every historical sprint on disk still has the pre-single-doc
-        three-file shape (sprint.md, usecases.md, architecture-update.md)."""
+        """Every pre-consolidation historical sprint on disk still has the
+        three-file shape (sprint.md, usecases.md, architecture-update.md).
+
+        Sprints 021+ deliberately consolidated usecases.md and
+        architecture-update.md into source design.md (that was the whole
+        point of sprints 021-022's doc-layout change), so they only have
+        sprint.md. This assertion is scoped to sprints that actually ship
+        usecases.md — i.e. the pre-consolidation archive — detected from
+        disk rather than a hardcoded id boundary.
+        """
         for entry in sorted(_REAL_DONE_DIR.iterdir()):
             if not entry.is_dir():
                 continue
             assert (entry / "sprint.md").exists(), entry
+            if not (entry / "usecases.md").exists():
+                # Post-consolidation sprint (021+): docs live in design.md.
+                continue
             assert (entry / "usecases.md").exists(), entry
             assert (entry / "architecture-update.md").exists(), entry
 
     def test_list_sprints_succeeds_against_copied_real_archive(self, tmp_path):
         """Project.list_sprints() (list_sprints tool's underlying call) does
-        not raise and reports every historical sprint as status 'done'."""
+        not raise and reports every archived sprint as archived, including
+        post-consolidation sprints (021+) that dropped the three-file
+        layout in favor of a single design.md.
+
+        Status is either 'done' (legacy value, sprints archived before
+        019-007) or 'closed' (current terminal value per sprint.py's
+        Sprint.archive() — 'closed' is the only terminal state sprint.yaml's
+        state machine defines; 'done' is tolerated on read for pre-019-007
+        archives but no longer written).
+        """
         proj = _copy_real_done_sprints_into(tmp_path)
         sprints = proj.list_sprints()
         found_ids = sorted(s.id for s in sprints)
-        assert found_ids == _EXPECTED_HISTORICAL_SPRINT_IDS
+        assert found_ids == _discover_historical_sprint_ids()
         for s in sprints:
-            assert s.status == "done"
+            assert s.status in ("done", "closed")
 
     def test_list_sprints_filter_by_done_status(self, tmp_path):
+        """list_sprints(status=...) filters on the exact frontmatter string
+        (no normalization — see Project.list_sprints), so legacy 'done'
+        and current 'closed' archives must be queried separately and
+        their ids combined to cover the whole archive."""
         proj = _copy_real_done_sprints_into(tmp_path)
-        sprints = proj.list_sprints(status="done")
-        assert sorted(s.id for s in sprints) == _EXPECTED_HISTORICAL_SPRINT_IDS
+        done_sprints = proj.list_sprints(status="done")
+        closed_sprints = proj.list_sprints(status="closed")
+        found_ids = sorted(s.id for s in done_sprints) + sorted(s.id for s in closed_sprints)
+        assert sorted(found_ids) == _discover_historical_sprint_ids()
 
     def test_sprint_phase_reports_done_for_each_historical_sprint(self, tmp_path):
         """Sprint.phase (get_sprint_status's phase field) resolves to 'done'
@@ -1517,11 +1543,17 @@ class TestRealDoneArchiveBackwardCompat:
     def test_usecases_and_architecture_readable_for_every_historical_sprint(self, tmp_path):
         """Sprint.usecases/Sprint.architecture remain readable Artifact
 
-        objects for every sprint in the real archive, not just a synthetic
-        fixture.
+        objects for every pre-consolidation sprint in the real archive, not
+        just a synthetic fixture. Sprints 021+ consolidated these docs into
+        source design.md and have no usecases.md/architecture-update.md on
+        disk, so they are exempted from this assertion (detected via the
+        real archive directory rather than a hardcoded id boundary).
         """
         proj = _copy_real_done_sprints_into(tmp_path)
         for s in proj.list_sprints():
+            if not (_REAL_DONE_DIR / s.path.name / "usecases.md").exists():
+                # Post-consolidation sprint (021+): docs live in design.md.
+                continue
             assert s.usecases.exists
             assert s.architecture.exists
             # Both are parseable markdown-with-frontmatter documents.

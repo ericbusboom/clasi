@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS active_agents (
     log_file TEXT,
     started_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS oop_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    set_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
 """
 
 # Gate requirements for each transition: {from_phase: required_gate_name or None}
@@ -88,6 +95,7 @@ _GATE_REQUIREMENTS: dict[str, Optional[str]] = {
 }
 
 _RECOVERY_TTL = timedelta(hours=24)
+_OOP_DEFAULT_TTL_HOURS = 8.0
 
 
 def _now() -> str:
@@ -679,5 +687,91 @@ class StateDB:
             )
             conn.commit()
             return {"cleared": cursor.rowcount}
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # OOP (out-of-process) bypass state
+    # ------------------------------------------------------------------
+
+    def set_oop(
+        self, reason: str, ttl_hours: float = _OOP_DEFAULT_TTL_HOURS
+    ) -> dict[str, Any]:
+        """Write or overwrite the singleton OOP bypass record.
+
+        Only one OOP record exists at a time (id=1). Calling this again
+        replaces any previous record, resetting the TTL clock.
+        """
+        self.init()
+        set_at = datetime.now(timezone.utc)
+        expires_at = set_at + timedelta(hours=ttl_hours)
+        set_at_str = set_at.isoformat()
+        expires_at_str = expires_at.isoformat()
+        conn = _connect(self._path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO oop_state "
+                "(id, set_at, reason, expires_at) VALUES (1, ?, ?, ?)",
+                (set_at_str, reason, expires_at_str),
+            )
+            conn.commit()
+            return {
+                "set_at": set_at_str,
+                "reason": reason,
+                "expires_at": expires_at_str,
+            }
+        finally:
+            conn.close()
+
+    def get_oop(self) -> Optional[dict[str, Any]]:
+        """Read the OOP bypass record, auto-clearing it past expiry.
+
+        Returns a dict with set_at, reason, and expires_at -- or None if
+        no record exists. A record whose expires_at is in the past is
+        automatically deleted, with a warning on stderr, and this
+        returns None as if no record existed.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            row = conn.execute(
+                "SELECT set_at, reason, expires_at FROM oop_state WHERE id = 1"
+            ).fetchone()
+            if row is None:
+                return None
+
+            expires_at = datetime.fromisoformat(row["expires_at"])
+            if datetime.now(timezone.utc) > expires_at:
+                conn.execute("DELETE FROM oop_state WHERE id = 1")
+                conn.commit()
+                print(
+                    f"[CLASI] Stale OOP bypass (reason '{row['reason']}', "
+                    f"set {row['set_at']}) auto-cleared after expiry "
+                    f"{row['expires_at']}",
+                    file=sys.stderr,
+                )
+                return None
+
+            return {
+                "set_at": row["set_at"],
+                "reason": row["reason"],
+                "expires_at": row["expires_at"],
+            }
+        finally:
+            conn.close()
+
+    def clear_oop(self) -> dict[str, Any]:
+        """Delete the OOP bypass record.
+
+        Returns {"cleared": True} if a record was removed,
+        {"cleared": False} if no record existed. Idempotent -- safe to
+        call when no row exists.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            cursor = conn.execute("DELETE FROM oop_state WHERE id = 1")
+            conn.commit()
+            return {"cleared": cursor.rowcount > 0}
         finally:
             conn.close()
