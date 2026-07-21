@@ -1,8 +1,9 @@
 ---
 id: '007'
 title: Make close_sprint's test timeout configurable
-status: open
-use-cases: [SUC-005]
+status: done
+use-cases:
+- SUC-005
 depends-on: []
 github-issue: ''
 issue: close-sprint-test-timeout-hardcoded-300s-too-short.md
@@ -32,25 +33,25 @@ requiring someone to go read the source to find the hardcoded number.
 
 ## Acceptance Criteria
 
-- [ ] `close_sprint`'s test-suite timeout is no longer hardcoded to 300;
+- [x] `close_sprint`'s test-suite timeout is no longer hardcoded to 300;
       it is configurable via a `test_timeout` parameter and/or a
       `.clasi/config.yaml` key.
-- [ ] The default timeout is raised to a value that fits a real suite run
+- [x] The default timeout is raised to a value that fits a real suite run
       (900s is the suggested default, given this repo's own suite runs
       about 460-525s) — chosen and documented as a ticket-level
       implementation decision.
-- [ ] Passing `0` (or the documented unlimited sentinel) disables the
+- [x] Passing `0` (or the documented unlimited sentinel) disables the
       timeout entirely.
-- [ ] When a timeout does occur, the error message names the timeout
+- [x] When a timeout does occur, the error message names the timeout
       value that was in effect (e.g. "test command exceeded the
       configured 900s timeout"), not a bare "timed out" with no context.
-- [ ] Regression: closing a sprint with a fast test command (completes
+- [x] Regression: closing a sprint with a fast test command (completes
       well under the new default) still works exactly as before.
-- [ ] New test: a deliberately-hung/sleep-based fake test command, with
+- [x] New test: a deliberately-hung/sleep-based fake test command, with
       the timeout explicitly set low for the test (e.g. a few seconds),
       still trips the timeout and blocks the close, with the error
       message naming that low configured value.
-- [ ] Full test suite passes (`uv run pytest --no-cov -q`).
+- [x] Full test suite passes (`uv run pytest --no-cov -q`).
 
 ## Implementation Plan
 
