@@ -484,8 +484,10 @@ class TestNonClasiAndOopSilence:
         assert result.exit_code != 0
         assert ".clasi" in result.output.lower() or "clasi" in result.output.lower()
 
-    def test_hook_oop_file_suppresses_output(self, tmp_path: Path) -> None:
-        """handle_status_inject is silent when .clasi/oop exists."""
+    def test_hook_oop_file_emits_minimal_block(self, tmp_path: Path) -> None:
+        """handle_status_inject emits a minimal, non-empty OOP status block
+        (never silent) when .clasi/oop exists — ticket 024-005 deliberately
+        changed this from the prior silent behavior."""
         import sys
         from io import StringIO
         from unittest.mock import patch
@@ -508,7 +510,9 @@ class TestNonClasiAndOopSilence:
         finally:
             os.chdir(orig)
 
-        assert buf.getvalue() == "", "Expected no output when .clasi/oop is present"
+        output = buf.getvalue()
+        assert output != "", "Expected a non-empty OOP status block, not silence"
+        assert "OOP active (override file .clasi/oop)" in output
 
     def test_hook_no_clasi_dir_suppresses_output(self, tmp_path: Path) -> None:
         """handle_status_inject is silent when .clasi/ does not exist."""

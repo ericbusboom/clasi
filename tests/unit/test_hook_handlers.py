@@ -27,6 +27,7 @@ from clasi.hook_handlers import (
     _render_transcript_lines,
     _ext_to_language,
     _oop_active,
+    _oop_source,
 )
 from clasi.state_db import (
     init_db,
@@ -36,6 +37,9 @@ from clasi.state_db import (
     register_active_agent,
     get_active_tier,
     clear_stale_agents,
+    set_oop,
+    get_oop,
+    clear_oop,
 )
 
 
@@ -1929,6 +1933,183 @@ class TestOopBypassHandlerLevel:
             with pytest.raises(SystemExit) as exc:
                 handle_role_guard(payload)
             assert exc.value.code == 2
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# DB-backed OOP bypass (ticket 024-005) — handler-level, both guards
+# ---------------------------------------------------------------------------
+
+
+def _fresh_layout_db_path(root: Path) -> Path:
+    """Path to the DB file under the default (fresh) layout _write_fresh_config
+    writes — .clasi/.clasi.db, matching ARTIFACT_PATH_DEFAULTS["db"]."""
+    return root / ".clasi" / ".clasi.db"
+
+
+class TestOopDbBackedHandlerLevel:
+    """Handler-level coverage for the DB-backed OOP channel (ticket 004's
+    oop_state table, wired into _oop_active() by ticket 024-005), on BOTH
+    role-guard and mcp-guard — not only a unit test on _oop_active() called
+    directly. Per the issue's explicit citation of the 019-002 lesson:
+    helper-level tests alone can miss a call site that was never wired up.
+    """
+
+    def test_role_guard_allows_when_db_oop_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_role_guard_denies_after_db_oop_cleared(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "hotfix", ttl_hours=8.0)
+        clear_oop(db_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_role_guard_denies_when_db_oop_never_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_allows_when_db_oop_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    def test_mcp_guard_denies_after_db_oop_cleared(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "hotfix", ttl_hours=8.0)
+        clear_oop(db_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+    def test_mcp_guard_denies_when_db_oop_never_set(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+
+class TestOopFileOverrideWithDbEmpty:
+    """File override with DB empty: bypass works via the file channel alone,
+    and _oop_source() reports "file" (not "db" or "both")."""
+
+    def test_role_guard_bypasses_on_file_alone(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_oop_source_reports_file_when_db_empty(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_source) == "file"
+
+    def test_oop_source_reports_db_when_file_absent(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_with_cwd(tmp_path, _oop_source) == "db"
+
+    def test_oop_source_reports_both_when_both_active(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        assert _run_with_cwd(tmp_path, _oop_source) == "both"
+
+    def test_oop_source_none_when_neither_active(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_with_cwd(tmp_path, _oop_source) is None
+
+
+class TestOopDbTtlExpiry:
+    """set_oop with a very short TTL auto-expires on next read (ticket
+    004's expiry-on-read get_oop()); enforcement resumes once expired."""
+
+    def test_role_guard_re_enforces_after_ttl_expiry(self, tmp_path):
+        import time
+
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "short-lived", ttl_hours=0.0000001)
+        time.sleep(0.05)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_oop_active_false_after_ttl_expiry(self, tmp_path):
+        import time
+
+        _write_fresh_config(tmp_path)
+        db_path = str(_fresh_layout_db_path(tmp_path))
+        set_oop(db_path, "short-lived", ttl_hours=0.0000001)
+        time.sleep(0.05)
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+
+class TestOopCorruptOrLockedDb:
+    """A corrupt/unreadable DB file must never raise out of _oop_active()
+    or the guards. The file override, if present, still works. If the
+    file is absent and the DB is broken, the guard fails CLOSED (denies),
+    never with an unhandled exception."""
+
+    def _write_corrupt_db(self, tmp_path: Path) -> None:
+        db_path = _fresh_layout_db_path(tmp_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db_path.write_bytes(b"not a sqlite database at all, just garbage bytes")
+
+    def test_oop_active_false_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_with_cwd(tmp_path, _oop_active) is False
+
+    def test_role_guard_fails_closed_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 2
+
+    def test_mcp_guard_fails_closed_with_corrupt_db_and_no_file(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+    def test_role_guard_file_override_still_works_with_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_role_guard(tmp_path, "source/main.cpp", "") == 0
+
+    def test_mcp_guard_file_override_still_works_with_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 0
+
+    def test_oop_active_true_with_file_override_and_corrupt_db(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        self._write_corrupt_db(tmp_path)
+        (tmp_path / ".clasi" / "oop").touch()
+        assert _run_with_cwd(tmp_path, _oop_active) is True
+
+
+class TestOopDbBypassCwdIndependence:
+    """cwd-independence for the DB channel, mirroring the existing
+    file-channel regression check above: DB OOP record set (global to the
+    checkout, keyed on the project root's db_path), hook invoked with cwd
+    set to a subdirectory — bypass still resolves."""
+
+    def test_role_guard_bypasses_with_db_oop_when_cwd_is_subdir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        set_oop(str(_fresh_layout_db_path(tmp_path)), "hotfix", ttl_hours=8.0)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload("source/main.cpp")
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 0
         finally:
             os.chdir(old_cwd)
             if old_tier is not None:
