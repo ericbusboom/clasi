@@ -10,6 +10,7 @@ Subcommands:
     clasi status                    — Print agent-scoped project status
     clasi tool plan-to-issue        — Convert plan file to issue
     clasi sprint close <sprint_id>  — Close a sprint
+    clasi oop on/off/status         — Enable/disable/inspect the OOP bypass
 
 Versioning is delegated to dotconfig. Use ``dotconfig version`` and
 ``dotconfig version bump`` for the user-facing commands. The
@@ -330,6 +331,118 @@ def sprint_close(
     from clasi.tools.artifact_tools import close_sprint
     click.echo(close_sprint(sprint_id, branch_name, main_branch,
                             push_tags, delete_branch, test_command))
+
+
+@cli.group()
+def oop() -> None:
+    """Out-of-process (OOP) bypass commands."""
+
+
+def _oop_project_root():
+    """Resolve the project root for OOP commands, walking up from cwd.
+
+    Mirrors ``hook_handlers._find_project_root`` so ``clasi oop`` commands
+    agree with the guards on where the project root is, even when invoked
+    from a subdirectory. Returns a ``pathlib.Path``.
+    """
+    from pathlib import Path
+
+    from clasi.hook_handlers import _find_project_root
+
+    return _find_project_root(Path.cwd())
+
+
+@oop.command("on")
+@click.option("--reason", default=None, help="Why OOP is being enabled (required; prompted if omitted).")
+@click.option("--ttl-hours", "ttl_hours", default=8.0, show_default=True, type=float,
+              help="Hours until the bypass automatically expires.")
+def oop_on(reason: str | None, ttl_hours: float) -> None:
+    """Enable the OOP bypass, recorded in the state DB with reason and expiry.
+
+    If --reason is omitted, prompts for it interactively rather than
+    silently defaulting to an empty reason — an unrecorded bypass reason
+    defeats the entire point of the DB-backed audit trail.
+    """
+    from clasi.project import Project
+    from clasi.state_db import set_oop
+
+    if not reason:
+        reason = click.prompt("Reason for enabling OOP bypass")
+
+    root = _oop_project_root()
+    project = Project(root)
+    record = set_oop(str(project.db_path), reason, ttl_hours)
+    click.echo(
+        f'CLASI: OOP bypass enabled — "{record["reason"]}" — '
+        f'expires {record["expires_at"]} ({ttl_hours}h from now).'
+    )
+
+
+@oop.command("off")
+def oop_off() -> None:
+    """Disable the OOP bypass: clears the DB record and removes flag files.
+
+    "Off" means off everywhere — both the DB-backed channel and the
+    emergency flag files (.clasi/oop and legacy .clasi-oop) are cleared,
+    so a stray flag file left over from the emergency path can never keep
+    the bypass silently active after `clasi oop off`.
+    """
+    from clasi.project import Project
+    from clasi.state_db import clear_oop
+
+    root = _oop_project_root()
+    project = Project(root)
+    cleared = clear_oop(str(project.db_path))
+
+    removed_files = []
+    for candidate in (root / ".clasi" / "oop", root / ".clasi-oop"):
+        if candidate.exists():
+            candidate.unlink()
+            removed_files.append(str(candidate.relative_to(root)))
+
+    parts = []
+    if cleared.get("cleared"):
+        parts.append("DB record cleared")
+    else:
+        parts.append("no DB record was active")
+    if removed_files:
+        parts.append(f"removed file(s): {', '.join(removed_files)}")
+    else:
+        parts.append("no flag files present")
+
+    click.echo(f"CLASI: OOP bypass disabled — {'; '.join(parts)}. Off means off everywhere.")
+
+
+@oop.command("status")
+def oop_status() -> None:
+    """Print the current OOP bypass status: source, reason, age, and expiry."""
+    from clasi.hook_handlers import _format_ago, _format_in, _oop_db_record, _oop_file_active, _oop_source
+
+    root = _oop_project_root()
+    source = _oop_source()
+
+    if source is None:
+        click.echo("CLASI: OOP bypass is not active.")
+        return
+
+    lines = [f"CLASI: OOP bypass active (source: {source})."]
+
+    db_record = _oop_db_record(root)
+    if db_record is not None:
+        ago = _format_ago(db_record["set_at"])
+        expires_in = _format_in(db_record["expires_at"])
+        lines.append(
+            f'  DB: reason "{db_record["reason"]}" — set {ago} ago — '
+            f"expires {expires_in} ({db_record['expires_at']})."
+        )
+
+    if _oop_file_active(root):
+        lines.append(
+            "  File: override file present. No audit record — "
+            "if this is stale, run `clasi oop off` or remove it."
+        )
+
+    click.echo("\n".join(lines))
 
 
 @cli.command()

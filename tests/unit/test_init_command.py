@@ -499,6 +499,19 @@ class TestRules:
         )
         assert not content.startswith("---\n"), "source-code.md must have no frontmatter block"
 
+    def test_rule_content_documents_cli_bypass_as_primary(self, target_dir):
+        """Ticket 024-006: regenerated rule bodies document `clasi oop on
+        --reason` as the primary bypass instruction, with the flag file
+        kept as the documented emergency fallback (not removed)."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        rules_dir = target_dir / ".claude" / "rules"
+        for filename in ("mcp-required.md", "clasi-artifacts.md", "source-code.md", "todo-dir.md"):
+            content = (rules_dir / filename).read_text(encoding="utf-8")
+            assert "clasi oop on --reason" in content, filename
+            assert ".clasi/oop" in content, filename
+
     def test_rules_idempotent(self, target_dir):
         """Running init twice produces the same rule files with no duplication."""
         target_dir.mkdir()

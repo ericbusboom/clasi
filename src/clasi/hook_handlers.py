@@ -525,8 +525,9 @@ def handle_role_guard(payload: dict) -> None:
         print(
             "CLASI ROLE VIOLATION: refusing to enforce role-guard from a "
             "stale build of this repo's own tooling. Fix .mcp.json / "
-            ".claude/settings.json to invoke the editable install, or set "
-            ".clasi/oop to bypass.",
+            ".claude/settings.json to invoke the editable install, or run "
+            "`clasi oop on --reason '...'` to bypass (emergency fallback: "
+            "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
         _exit_hook("role-guard", payload, 2, "stale-guard")
@@ -548,8 +549,9 @@ def handle_role_guard(payload: dict) -> None:
             print(
                 f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
                 "is held but no ticket is in-progress.\n"
-                "Start or resume a ticket via the execute-ticket flow, "
-                "or set .clasi/oop to bypass.",
+                "Start or resume a ticket via the execute-ticket flow, or "
+                "run `clasi oop on --reason '...'` to bypass (emergency "
+                "fallback: .clasi/oop).",
                 file=sys.stderr,
             )
             _exit_hook("role-guard", payload, 2, "no-ticket")
@@ -697,8 +699,9 @@ def handle_mcp_guard(payload: dict) -> None:
         print(
             "CLASI ROLE VIOLATION: refusing to enforce mcp-guard from a "
             "stale build of this repo's own tooling. Fix .mcp.json / "
-            ".claude/settings.json to invoke the editable install, or set "
-            ".clasi/oop to bypass.",
+            ".claude/settings.json to invoke the editable install, or run "
+            "`clasi oop on --reason '...'` to bypass (emergency fallback: "
+            "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
         _exit_hook("mcp-guard", payload, 2, "stale-guard")
@@ -858,8 +861,9 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
     BLOCK on their next write; this note makes the same fact visible
     up-front in the status block, so the agent does not need to attempt a
     write just to discover the gate.  Names both sanctioned exits: resume
-    or start a ticket via execute-ticket, or set ``.clasi/oop`` (checked
-    only via the shared :func:`_oop_active` helper — never reimplemented).
+    or start a ticket via execute-ticket, or run ``clasi oop on --reason``
+    (checked only via the shared :func:`_oop_active` helper — never
+    reimplemented; the ``.clasi/oop`` file remains the emergency fallback).
 
     No-op if a ticket is active, no sprint is executing, or OOP bypass is
     already active (the gate does not apply in that case).
@@ -871,7 +875,8 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
         f"Sprint {sprint_id} execution lock is held but no ticket is "
         "in-progress: source edits are gated closed (role-guard "
         "ticket-state gate). Start or resume a ticket via the "
-        "execute-ticket flow, or set .clasi/oop to bypass."
+        "execute-ticket flow, or run `clasi oop on --reason '...'` to "
+        "bypass (emergency fallback: .clasi/oop)."
     )
     existing_focus = notes.get("current_focus", "")
     notes["current_focus"] = (
