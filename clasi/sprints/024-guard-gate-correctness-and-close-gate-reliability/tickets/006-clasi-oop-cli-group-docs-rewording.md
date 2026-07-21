@@ -1,9 +1,11 @@
 ---
 id: '006'
 title: clasi oop CLI group + docs rewording
-status: open
-use-cases: [SUC-004]
-depends-on: ['004']
+status: done
+use-cases:
+- SUC-004
+depends-on:
+- '004'
 github-issue: ''
 issue: db-backed-oop-flag-file-as-unconditional-override.md
 completes_issue: true
@@ -50,30 +52,30 @@ path (not removed, not deprecated — just no longer primary):
 
 ## Acceptance Criteria
 
-- [ ] `clasi oop on --reason '<why>'` sets the DB-backed bypass (default
+- [x] `clasi oop on --reason '<why>'` sets the DB-backed bypass (default
       TTL 8 hours per ticket 004's `set_oop` default) and prints
       confirmation.
-- [ ] `clasi oop on` with no `--reason` prompts interactively for one
+- [x] `clasi oop on` with no `--reason` prompts interactively for one
       rather than silently defaulting to empty.
-- [ ] `clasi oop off` clears the DB row and removes `.clasi/oop` (and
+- [x] `clasi oop off` clears the DB row and removes `.clasi/oop` (and
       `.clasi-oop` if present), printing a notice naming what was cleared.
-- [ ] `clasi oop status` prints source (`file`/`db`/both/none), reason,
+- [x] `clasi oop status` prints source (`file`/`db`/both/none), reason,
       age, and expiry, matching `_oop_source()`/`get_oop()`'s data.
-- [ ] `src/clasi/platforms/_rules.py`'s `MCP_REQUIRED_BODY`,
+- [x] `src/clasi/platforms/_rules.py`'s `MCP_REQUIRED_BODY`,
       `CLASI_ARTIFACTS_BODY`, `SOURCE_CODE_BODY`, and `TODO_DIR_BODY` are
       reworded so their primary bypass instruction is `clasi oop on
       --reason '...'`, with the flag file documented as the emergency
       path (used when `clasi` itself is broken), not removed from the
       text.
-- [ ] Guard error strings in `hook_handlers.py` that reference the bypass
+- [x] Guard error strings in `hook_handlers.py` that reference the bypass
       are reworded to mention the CLI command as primary.
-- [ ] `src/clasi/plugin/skills/oop/SKILL.md` gains an "Enabling the
+- [x] `src/clasi/plugin/skills/oop/SKILL.md` gains an "Enabling the
       bypass" section documenting `clasi oop on/off/status`.
-- [ ] This repo's on-disk `.claude/rules/*.md` files are regenerated from
+- [x] This repo's on-disk `.claude/rules/*.md` files are regenerated from
       the updated generator sources, and the regenerated content is read
       back and confirmed to match the new wording (not just assumed from
       the generator diff).
-- [ ] `uv run pytest --no-cov -q` passes, including any new CLI-command
+- [x] `uv run pytest --no-cov -q` passes, including any new CLI-command
       tests for `oop on`/`off`/`status`.
 
 ## Implementation Plan
