@@ -72,7 +72,7 @@ class TestCloseSSprintAutoDetect:
             mock_run.return_value = self._make_run_result("sprint/015-my-sprint\n")
             result = close_sprint()
         mock_full.assert_called_once_with(
-            "015", "sprint/015-my-sprint", "master", True, True, test_command=None
+            "015", "sprint/015-my-sprint", "master", True, True, test_command=None, test_timeout=None
         )
 
     def test_auto_detect_empty_string_sprint_id_also_triggers_auto_detect(self):
@@ -82,7 +82,7 @@ class TestCloseSSprintAutoDetect:
             mock_run.return_value = self._make_run_result("sprint/012-foo\n")
             result = close_sprint(sprint_id="")
         mock_full.assert_called_once_with(
-            "012", "sprint/012-foo", "master", True, True, test_command=None
+            "012", "sprint/012-foo", "master", True, True, test_command=None, test_timeout=None
         )
 
     def test_not_on_sprint_branch_returns_structured_error(self):
@@ -122,5 +122,5 @@ class TestCloseSSprintAutoDetect:
             result = close_sprint(sprint_id="007", branch_name="sprint/007-foo")
         mock_run.assert_not_called()
         mock_full.assert_called_once_with(
-            "007", "sprint/007-foo", "master", True, True, test_command=None
+            "007", "sprint/007-foo", "master", True, True, test_command=None, test_timeout=None
         )

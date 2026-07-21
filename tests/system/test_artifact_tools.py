@@ -1105,6 +1105,154 @@ class TestCloseSprintFull:
         assert recovery is None
 
 
+class TestCloseSprintTestTimeout:
+    """Tests for the configurable test_timeout parameter (024-007).
+
+    The old hardcoded 300s timeout produced false failures on this
+    project's own ~460-525s suite. These tests exercise the resolution
+    order (explicit param > .clasi/config.yaml test_timeout: key > 900s
+    default) and the 0-means-unlimited sentinel, using a *real* (not
+    mocked) subprocess for the test-command step so genuine timeout
+    behavior is exercised. subprocess.run is NOT mocked here because the
+    interesting behavior (a real TimeoutExpired) can only be observed
+    with a real subprocess call; on timeout, close_sprint returns
+    immediately from the tests step, so no later git/version steps run
+    and nothing else needs mocking.
+    """
+
+    def _make_subprocess_result(self, returncode=0, stdout="", stderr=""):
+        result = MagicMock()
+        result.returncode = returncode
+        result.stdout = stdout
+        result.stderr = stderr
+        return result
+
+    def _setup_sprint(self, work_dir):
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        (work_dir / "pyproject.toml").write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+    def test_fast_command_closes_under_new_default(self, work_dir):
+        """Regression: a fast test command still closes successfully now
+        that the default timeout is 900s instead of 300s."""
+        self._setup_sprint(work_dir)
+
+        with patch("clasi.tools.artifact_tools.create_version_tag"), \
+                patch(
+                    "clasi.tools.artifact_tools.compute_next_version",
+                    return_value="0.20260329.1",
+                ), \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
+                patch("subprocess.run") as mock_run:
+            mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+            mock_run.side_effect = [
+                self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(0),  # git add -A (version bump)
+                self._make_subprocess_result(0),  # git commit (version bump)
+                self._make_subprocess_result(0, ""),  # git status --porcelain (clean)
+                self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
+                self._make_subprocess_result(0),  # git push --tags
+                self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+                self._make_subprocess_result(
+                    0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"
+                ),  # git worktree list --porcelain
+            ]
+
+            result = json.loads(
+                close_sprint("001", branch_name="sprint/001-sprint", test_command="true")
+            )
+
+        assert result["status"] == "success", f"Expected success, got: {result}"
+
+    def test_slow_command_trips_low_explicit_timeout_and_names_value(self, work_dir):
+        """A hung command with test_timeout explicitly set low (2s) still
+        trips the timeout, blocks the close, and the error message names
+        the configured value (not the old hardcoded 300)."""
+        self._setup_sprint(work_dir)
+
+        result = json.loads(
+            close_sprint(
+                "001",
+                branch_name="sprint/001-sprint",
+                test_command="sleep 30",
+                test_timeout=2,
+            )
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "tests"
+        assert "2" in result["error"]["message"]
+        assert "300" not in result["error"]["message"]
+        assert "tests" not in result["completed_steps"]
+
+    def test_config_key_used_when_no_explicit_param(self, work_dir):
+        """A .clasi/config.yaml `test_timeout:` key is honored when the
+        test_timeout parameter is not passed explicitly."""
+        self._setup_sprint(work_dir)
+
+        config_path = work_dir / ".clasi" / "config.yaml"
+        existing = config_path.read_text(encoding="utf-8")
+        config_path.write_text(existing + "\ntest_timeout: 2\n", encoding="utf-8")
+
+        result = json.loads(
+            close_sprint(
+                "001",
+                branch_name="sprint/001-sprint",
+                test_command="sleep 30",
+            )
+        )
+
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "tests"
+        assert "2" in result["error"]["message"]
+
+    def test_zero_timeout_means_unlimited_fast_command_completes(self, work_dir):
+        """test_timeout=0 disables the timeout (passes timeout=None to
+        subprocess.run); a fast command still completes normally."""
+        self._setup_sprint(work_dir)
+
+        with patch("clasi.tools.artifact_tools.create_version_tag"), \
+                patch(
+                    "clasi.tools.artifact_tools.compute_next_version",
+                    return_value="0.20260329.1",
+                ), \
+                patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
+                patch("subprocess.run") as mock_run:
+            mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+            mock_run.side_effect = [
+                self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(0),  # git add -A (version bump)
+                self._make_subprocess_result(0),  # git commit (version bump)
+                self._make_subprocess_result(0, ""),  # git status --porcelain (clean)
+                self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
+                self._make_subprocess_result(0),  # git push --tags
+                self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+                self._make_subprocess_result(
+                    0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"
+                ),  # git worktree list --porcelain
+            ]
+
+            result = json.loads(
+                close_sprint(
+                    "001",
+                    branch_name="sprint/001-sprint",
+                    test_command="true",
+                    test_timeout=0,
+                )
+            )
+
+            # Confirm timeout=None was passed through to the test-command call.
+            first_call = mock_run.call_args_list[0]
+            assert first_call.kwargs.get("timeout") is None
+
+        assert result["status"] == "success", f"Expected success, got: {result}"
+
+
 class TestReconcileWorktreesTool:
     """Tests for the reconcile_worktrees MCP tool (ticket 018-011)."""
 
