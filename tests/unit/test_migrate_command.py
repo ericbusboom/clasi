@@ -16,6 +16,7 @@ from clasi.migrate_command import (
     Move,
     _check_no_execution_lock,
     _is_git_repo,
+    _is_tracked,
     _update_gitignore,
     detect_moves,
     execute_moves,
@@ -144,6 +145,97 @@ class TestIsGitRepo:
         plain = tmp_path / "plain"
         plain.mkdir()
         assert _is_git_repo(plain) is False
+
+
+# ---------------------------------------------------------------------------
+# _is_tracked
+# ---------------------------------------------------------------------------
+
+
+class TestIsTracked:
+    def test_returns_true_for_tracked_file(self, tmp_path):
+        _init_git_repo(tmp_path)
+        f = tmp_path / "tracked.md"
+        f.write_text("# x", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "tracked.md"],
+            check=True,
+            capture_output=True,
+        )
+        assert _is_tracked(f, tmp_path) is True
+
+    def test_returns_false_for_untracked_file(self, tmp_path):
+        _init_git_repo(tmp_path)
+        f = tmp_path / "untracked.md"
+        f.write_text("# x", encoding="utf-8")
+        assert _is_tracked(f, tmp_path) is False
+
+
+# ---------------------------------------------------------------------------
+# _find_untracked_sources
+# ---------------------------------------------------------------------------
+
+
+class TestFindUntrackedSources:
+    def test_reports_untracked_file_in_move(self, tmp_path):
+        from clasi.migrate_command import _find_untracked_sources
+
+        _init_git_repo(tmp_path)
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        untracked = src_dir / "issue.md"
+        untracked.write_text("# x", encoding="utf-8")
+
+        move = Move(
+            category="issues",
+            src=src_dir,
+            dst=tmp_path / "clasi" / "issues",
+            mode="move",
+            is_file=False,
+        )
+        result = _find_untracked_sources([move], tmp_path)
+        assert untracked in result
+
+    def test_ignores_tracked_files(self, tmp_path):
+        from clasi.migrate_command import _find_untracked_sources
+
+        _init_git_repo(tmp_path)
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        f = src_dir / "issue.md"
+        f.write_text("# x", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "-A"],
+            check=True,
+            capture_output=True,
+        )
+
+        move = Move(
+            category="issues",
+            src=src_dir,
+            dst=tmp_path / "clasi" / "issues",
+            mode="move",
+            is_file=False,
+        )
+        assert _find_untracked_sources([move], tmp_path) == []
+
+    def test_ignores_gitkeep_housekeeping(self, tmp_path):
+        """.gitkeep is removed rather than moved, so it must not block init."""
+        from clasi.migrate_command import _find_untracked_sources
+
+        _init_git_repo(tmp_path)
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / ".gitkeep").write_text("", encoding="utf-8")
+
+        move = Move(
+            category="issues",
+            src=src_dir,
+            dst=tmp_path / "clasi" / "issues",
+            mode="move",
+            is_file=False,
+        )
+        assert _find_untracked_sources([move], tmp_path) == []
 
 
 # ---------------------------------------------------------------------------
@@ -459,6 +551,67 @@ class TestExecuteMovesPerformsMove:
         # Original should be preserved; new file should be moved.
         assert (dst_dir / "conflict.md").read_text(encoding="utf-8") == "original"
         assert (dst_dir / "new.md").read_text(encoding="utf-8") == "new file"
+
+    def test_untracked_files_in_real_git_repo_fail_cleanly(self, tmp_path, capsys):
+        """Regression: init crashed moving untracked artifacts in a git repo.
+
+        Reproduces the ``clasi init`` failure — a real git repo whose
+        ``.clasi/issues/*.md`` files were never committed. ``git mv`` on an
+        untracked file exits 128 (``fatal: not under version control``),
+        which previously aborted the whole migration with a raw traceback.
+        It must now fail with an actionable ``SystemExit`` and move
+        nothing.
+        """
+        _init_git_repo(tmp_path)
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        src_file = src_dir / "manufacturer-relation-followups.md"
+        src_file.write_text("# followups", encoding="utf-8")
+        (src_dir / ".gitkeep").write_text("", encoding="utf-8")
+
+        project = _make_project(tmp_path)
+        moves = detect_moves(project)
+        assert moves
+
+        # No mocking of _is_git_repo — exercise the real git path.
+        with pytest.raises(SystemExit):
+            execute_moves(project, moves)
+
+        err = capsys.readouterr().err
+        assert "not checked into git" in err
+        assert "manufacturer-relation-followups.md" in err
+        assert "commit" in err.lower()
+        # Nothing moved: source intact, destination not created.
+        assert src_file.exists()
+        assert not (project.issues_dir / "manufacturer-relation-followups.md").exists()
+
+    def test_committed_files_in_real_git_repo_move_via_git(self, tmp_path):
+        """Once artifacts are committed, migration proceeds through git mv."""
+        _init_git_repo(tmp_path)
+        src_dir = tmp_path / ".clasi" / "issues"
+        src_dir.mkdir(parents=True)
+        (src_dir / "issue.md").write_text("# followups", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "-A"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-m", "seed"],
+            check=True,
+            capture_output=True,
+        )
+
+        project = _make_project(tmp_path)
+        moves = detect_moves(project)
+        assert moves
+
+        execute_moves(project, moves)
+
+        assert (project.issues_dir / "issue.md").read_text(
+            encoding="utf-8"
+        ) == "# followups"
+        assert not (src_dir / "issue.md").exists()
 
     def test_resets_project_db_when_db_moved(self, tmp_path):
         """project._db is reset to None after the DB file is moved."""

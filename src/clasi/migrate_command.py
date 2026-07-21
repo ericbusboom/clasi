@@ -92,8 +92,53 @@ def _is_git_repo(path: Path) -> bool:
     return result.returncode == 0
 
 
+def _is_tracked(path: Path, repo_root: Path) -> bool:
+    """Return True if *path* is tracked by the git repo at *repo_root*.
+
+    ``git mv`` refuses to move a file it does not know about
+    (``fatal: not under version control``, exit 128). Callers use this to
+    detect untracked sources *before* attempting any move, so migration
+    can fail with a clear message instead of a raw ``CalledProcessError``.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-files", "--error-unmatch", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _find_untracked_sources(moves: list[Move], repo_root: Path) -> list[Path]:
+    """Return source files in *moves* that git does not track.
+
+    ``git mv`` cannot move these; they must be committed first. Directory
+    moves are expanded to their contained files so a single untracked file
+    inside an otherwise-tracked tree is still reported. Non-artifact
+    housekeeping files (``.gitkeep`` etc.) are ignored — they are removed
+    rather than moved.
+    """
+    untracked: list[Path] = []
+    for move in moves:
+        src = move.src
+        if src.is_file():
+            candidates = [src]
+        else:
+            candidates = [p for p in src.rglob("*") if p.is_file()]
+        for candidate in candidates:
+            if candidate.name in _NON_ARTIFACT_NAMES:
+                continue
+            if not _is_tracked(candidate, repo_root):
+                untracked.append(candidate)
+    return untracked
+
+
 def _git_mv(src: Path, dst: Path, repo_root: Path) -> None:
-    """Run ``git mv src dst`` from *repo_root*."""
+    """Run ``git mv src dst`` from *repo_root*.
+
+    The caller is responsible for ensuring *src* is tracked (see
+    :func:`_find_untracked_sources`); ``git mv`` fails on an untracked
+    source with ``fatal: not under version control`` (exit 128).
+    """
     subprocess.run(
         ["git", "-C", str(repo_root), "mv", str(src), str(dst)],
         check=True,
@@ -311,6 +356,33 @@ def execute_moves(
         _check_no_execution_lock(root, unique_db_paths)
 
     is_git = _is_git_repo(root)
+
+    # ── Guard: untracked source files ──────────────────────────────────────
+    # ``git mv`` refuses to move files git does not track. Detect them up
+    # front so we fail with an actionable message instead of aborting
+    # mid-migration with a raw CalledProcessError traceback.
+    if is_git and not dry_run:
+        untracked = _find_untracked_sources(moves, root)
+        if untracked:
+            click.echo(
+                "Error: cannot relocate CLASI files — the following are not "
+                "checked into git:",
+                err=True,
+            )
+            for path in untracked:
+                try:
+                    shown = path.relative_to(root)
+                except ValueError:
+                    shown = path
+                click.echo(f"  {shown}", err=True)
+            click.echo(
+                "\nCommit (or stage) these files, then re-run — git mv needs "
+                "them tracked so their history is preserved:\n"
+                f"  git -C {root} add -A && git -C {root} commit -m "
+                '"chore: track CLASI artifacts before init"',
+                err=True,
+            )
+            raise SystemExit(1)
 
     gitignore_replacements: list[tuple[str, str]] = []
     db_moved = False
