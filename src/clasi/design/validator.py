@@ -48,14 +48,16 @@ slug derivation, and therefore no filename-collision possibility between
 subsystems (each has its own directory). The remaining structural
 checks are:
 
-- Every declared subsystem's ``DESIGN.md`` exists and is non-empty
-  ("unmapped source root").
+- Every declared source root has its own required root-level
+  ``DESIGN.md`` overview that exists and is non-empty, and every declared
+  subsystem's ``DESIGN.md`` exists and is non-empty ("missing design
+  doc").
 - No stray ``DESIGN.md`` exists under a source root at a path other than
-  a recognized subsystem's own doc path — e.g. one nested a level too
-  deep, or inside a hidden/``__pycache__`` directory ``store.py``
-  deliberately does not enumerate as a subsystem ("orphaned doc",
-  narrowed in scope from the pre-co-location flat-``docs/design/``
-  version of this check).
+  a recognized expected doc path — the root's own overview doc or a
+  subsystem's own doc — e.g. one nested a level too deep, or inside a
+  hidden/``__pycache__`` directory ``store.py`` deliberately does not
+  enumerate as a subsystem ("orphaned doc", narrowed in scope from the
+  pre-co-location flat-``docs/design/`` version of this check).
 
 The five project-level docs that still live in ``docs/design/``
 alongside the system doc (``overview.md``, ``specification.md``,
@@ -148,14 +150,24 @@ def _check_subsystem_docs(
     """
     doc_set = read_doc_set(project)
 
-    # --- Unmapped source roots: subsystem dir with no design doc, or an
-    # empty one ---
+    # A declared source root carries a *required* root-level DESIGN.md
+    # overview; every other entry is a per-subsystem doc one level down.
+    # The two are distinguished only for message wording — both are
+    # expected docs subject to the same existence/non-emptiness checks.
+    declared_roots = set(project.sources)
+
+    # --- Unmapped docs: an expected DESIGN.md (root overview or subsystem)
+    # that is missing or empty ---
     expected_paths = set()
-    for subsystem_path, doc in sorted(doc_set.subsystem_docs.items()):
+    for doc_source_path, doc in sorted(doc_set.subsystem_docs.items()):
         expected_paths.add(doc.path)
+        kind = (
+            "source root" if doc_source_path in declared_roots
+            else "subsystem directory"
+        )
         if not doc.exists:
             messages.append(
-                f"Missing design doc: subsystem directory {subsystem_path} "
+                f"Missing design doc: {kind} {doc_source_path} "
                 f"has no DESIGN.md at {doc.path}."
             )
             continue
@@ -165,8 +177,9 @@ def _check_subsystem_docs(
                 "whitespace-only."
             )
 
-    # --- Orphaned docs: a stray DESIGN.md under a source root that isn't
-    # a recognized subsystem's own doc path ---
+    # --- Orphaned docs: a stray DESIGN.md under a source root that isn't a
+    # recognized expected doc path (a root overview or a subsystem's own
+    # doc) — e.g. one nested a level too deep ---
     for root in project.sources:
         if not root.is_dir():
             continue
@@ -175,7 +188,7 @@ def _check_subsystem_docs(
                 continue
             messages.append(
                 f"Orphaned design doc: {candidate} does not correspond to "
-                "any declared subsystem source directory."
+                "any declared source root or subsystem source directory."
             )
 
     # --- Project-level docs alongside the system doc: informational only ---

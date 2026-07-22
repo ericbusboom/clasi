@@ -74,7 +74,14 @@ class DesignDocSet:
 
     system_doc: Artifact
     subsystem_docs: dict[Path, Artifact]
-    """Maps each subsystem source path to its ``DESIGN.md`` ``Artifact``."""
+    """Maps each design-doc source path to its ``DESIGN.md`` ``Artifact``.
+
+    Keys are both the declared source roots themselves (each carries a
+    required root-level ``DESIGN.md`` overview) and every top-level
+    subsystem directory one level below them. The name is retained for
+    back-compat; entries keyed by a source root are the root-overview
+    docs, not subsystems.
+    """
 
 
 def _subsystem_dirs(source_root: Path) -> list[Path]:
@@ -102,9 +109,10 @@ def _subsystem_dirs(source_root: Path) -> list[Path]:
 def read_doc_set(project: Project) -> DesignDocSet:
     """Enumerate the expected canonical design doc set for *project*.
 
-    Walks each of ``project.sources`` for its top-level subsystem
-    directories and returns ``Artifact`` handles for the system document
-    and every subsystem's co-located ``DESIGN.md``. Handles are returned
+    For each of ``project.sources`` this returns ``Artifact`` handles for:
+    the system document; the root's own co-located ``DESIGN.md`` overview
+    (one per existing declared root); and every top-level subsystem's
+    co-located ``DESIGN.md`` one level below the root. Handles are returned
     whether or not the underlying files exist yet (check
     ``Artifact.exists``) — this function only knows the *expected* shape
     of the doc set, not whether it has been written.
@@ -114,8 +122,9 @@ def read_doc_set(project: Project) -> DesignDocSet:
             are used to derive the expected doc set.
 
     Returns:
-        A ``DesignDocSet`` with the system doc, and one entry per
-        subsystem directory found under every declared source root.
+        A ``DesignDocSet`` with the system doc, one root-overview entry per
+        existing declared source root, and one entry per subsystem
+        directory found under every declared source root.
     """
     design_dir = project.design_dir
     sources = project.sources
@@ -125,6 +134,14 @@ def read_doc_set(project: Project) -> DesignDocSet:
     subsystem_docs: dict[Path, Artifact] = {}
 
     for root in sources:
+        # Each declared source root has its own root-level DESIGN.md — an
+        # overview of that whole tree, required alongside the per-subsystem
+        # docs one level down. The root is enumerated whenever it exists on
+        # disk (mirroring _subsystem_dirs' existence guard); a nonexistent
+        # root contributes nothing, so an unwritten source tree does not
+        # spuriously demand a doc.
+        if root.is_dir():
+            subsystem_docs[root] = Artifact(design_doc_path_for(root))
         for subsystem_path in _subsystem_dirs(root):
             subsystem_docs[subsystem_path] = Artifact(
                 design_doc_path_for(subsystem_path)

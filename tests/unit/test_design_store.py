@@ -177,13 +177,16 @@ class TestReadDocSetSingleRoot:
         project = _make_project(tmp_path, ["src"])
         _make_subsystem(tmp_path, "src", "clasi", "tools")
         _make_subsystem(tmp_path, "src", "clasi", "schemas")
+        root_src = (tmp_path / "src").resolve()
         root_clasi = (tmp_path / "src" / "clasi").resolve()
 
         doc_set = read_doc_set(project)
 
-        # Only the immediate subdirectory of the source root ("clasi") is
-        # a subsystem; nested dirs (tools, schemas) belong to it.
-        assert set(doc_set.subsystem_docs.keys()) == {root_clasi}
+        # The declared source root ("src") carries its own required
+        # root-level DESIGN.md; the immediate subdirectory ("clasi") is a
+        # subsystem; nested dirs (tools, schemas) belong to clasi and get
+        # no entry of their own.
+        assert set(doc_set.subsystem_docs.keys()) == {root_src, root_clasi}
 
     def test_subsystem_doc_path_is_colocated_design_md(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -204,13 +207,17 @@ class TestReadDocSetSingleRoot:
         for artifact in doc_set.subsystem_docs.values():
             assert not artifact.exists
 
-    def test_empty_source_root_yields_no_subsystems(self, tmp_path):
+    def test_empty_source_root_yields_only_root_overview(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
         (tmp_path / "src").mkdir()
+        root_src = (tmp_path / "src").resolve()
 
         doc_set = read_doc_set(project)
 
-        assert doc_set.subsystem_docs == {}
+        # An existing root with no subdirectories still owes its own
+        # root-level DESIGN.md overview — but nothing else.
+        assert set(doc_set.subsystem_docs.keys()) == {root_src}
+        assert doc_set.subsystem_docs[root_src].path == root_src / "DESIGN.md"
 
     def test_nonexistent_source_root_yields_no_subsystems(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
@@ -230,7 +237,9 @@ class TestReadDocSetMultiRoot:
 
         doc_set = read_doc_set(project)
 
-        assert len(doc_set.subsystem_docs) == 3
+        # 2 root-overview docs (src, tests) + 3 subsystem docs
+        # (clasi, unit, system) = 5.
+        assert len(doc_set.subsystem_docs) == 5
 
     def test_multi_root_subsystems_still_colocate_by_path(self, tmp_path):
         project = _make_project(tmp_path, ["src", "tests"])

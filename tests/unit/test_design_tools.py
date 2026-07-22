@@ -38,9 +38,11 @@ class TestValidateDesignPass:
     def test_valid_doc_set_returns_ok_true_empty_messages(self, work_dir):
         _configure_sources(work_dir, ["src"])
         project_reload = set_project(work_dir)  # refresh cached sources config
+        root = _make_subsystem(work_dir, "src")
         subsystem = _make_subsystem(work_dir, "src", "clasi")
 
         write_system_doc(project_reload, "# System design\n")
+        write_design_doc(project_reload, root, "# src root overview\n")
         write_design_doc(project_reload, subsystem, "# clasi subsystem\n")
 
         result = json.loads(validate_design())
@@ -73,8 +75,10 @@ class TestValidateDesignFail:
     def test_none_overlay_dir_validates_canonical_only(self, work_dir):
         _configure_sources(work_dir, ["src"])
         project_reload = set_project(work_dir)
+        root = _make_subsystem(work_dir, "src")
         subsystem = _make_subsystem(work_dir, "src", "clasi")
         write_system_doc(project_reload, "# System design\n")
+        write_design_doc(project_reload, root, "# src root overview\n")
         write_design_doc(project_reload, subsystem, "# clasi subsystem\n")
 
         result = json.loads(validate_design(overlay_dir=None))
@@ -85,9 +89,11 @@ class TestValidateDesignInfo:
     def test_project_level_doc_surfaces_as_info_not_error(self, work_dir):
         _configure_sources(work_dir, ["src"])
         project_reload = set_project(work_dir)
+        root = _make_subsystem(work_dir, "src")
         subsystem = _make_subsystem(work_dir, "src", "clasi")
 
         write_system_doc(project_reload, "# System design\n")
+        write_design_doc(project_reload, root, "# src root overview\n")
         write_design_doc(project_reload, subsystem, "# clasi subsystem\n")
 
         (project_reload.design_dir / "overview.md").write_text(

@@ -30,8 +30,10 @@ def _make_subsystem(tmp_path: Path, *parts: str) -> Path:
 
 def _write_valid_doc_set(tmp_path: Path) -> Project:
     project = _make_project(tmp_path, ["src"])
+    root = _make_subsystem(tmp_path, "src")
     subsystem = _make_subsystem(tmp_path, "src", "clasi")
     write_system_doc(project, "# System design\n")
+    write_design_doc(project, root, "# src root overview\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n")
     return project
 

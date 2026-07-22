@@ -29,11 +29,18 @@ def _make_subsystem(tmp_path: Path, *parts: str) -> Path:
 
 
 def _write_valid_doc_set(tmp_path: Path) -> Project:
-    """Build a project with one source root, one subsystem, fully linked."""
+    """Build a project with one source root, one subsystem, fully linked.
+
+    A valid doc set now includes the required root-level ``DESIGN.md``
+    overview for each declared source root, in addition to the system doc
+    and each subsystem's own doc.
+    """
     project = _make_project(tmp_path, ["src"])
+    root = _make_subsystem(tmp_path, "src")
     subsystem = _make_subsystem(tmp_path, "src", "clasi")
 
     write_system_doc(project, "# System design\n")
+    write_design_doc(project, root, "# src root overview\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n")
 
     return project
@@ -207,6 +214,53 @@ class TestOrphanedStrayDesignDoc:
 
 
 # ---------------------------------------------------------------------------
+# Required root-level DESIGN.md overview (one per declared source root)
+# ---------------------------------------------------------------------------
+
+
+class TestRequiredRootOverview:
+    def test_missing_root_design_md_is_flagged(self, tmp_path):
+        """A declared source root with no root-level DESIGN.md fails
+        validation, even when the system doc and every subsystem doc are
+        present."""
+        project = _make_project(tmp_path, ["src"])
+        subsystem = _make_subsystem(tmp_path, "src", "clasi")
+        write_system_doc(project, "# System design\n")
+        write_design_doc(project, subsystem, "# clasi subsystem\n")
+        # Deliberately do NOT write src/DESIGN.md.
+
+        result = validate(project)
+        assert not result.ok
+        root_src = (tmp_path / "src").resolve()
+        assert any(
+            "Missing design doc" in m
+            and "source root" in m
+            and str(root_src) in m
+            for m in result.messages
+        )
+
+    def test_present_root_design_md_is_not_orphaned(self, tmp_path):
+        """A DESIGN.md sitting directly at a declared root is a recognized
+        expected doc, not a stray orphan."""
+        project = _write_valid_doc_set(tmp_path)  # already writes src/DESIGN.md
+        result = validate(project)
+        assert result.ok
+        assert not any("Orphaned design doc" in m for m in result.messages)
+
+    def test_empty_root_design_md_is_flagged(self, tmp_path):
+        project = _write_valid_doc_set(tmp_path)
+        root_doc = (tmp_path / "src" / "DESIGN.md")
+        root_doc.write_text("   \n", encoding="utf-8")
+
+        result = validate(project)
+        assert not result.ok
+        assert any(
+            "Empty design doc" in m and str(root_doc.resolve()) in m
+            for m in result.messages
+        )
+
+
+# ---------------------------------------------------------------------------
 # Sprint overlay — stale or missing .diff.md
 # ---------------------------------------------------------------------------
 
@@ -303,9 +357,11 @@ class TestSprintOverlay:
 class TestNoCollisionLogic:
     def test_distinct_subsystems_never_collide(self, tmp_path):
         project = _make_project(tmp_path, ["src"])
+        root = _make_subsystem(tmp_path, "src")
         sub_a = _make_subsystem(tmp_path, "src", "alpha")
         sub_b = _make_subsystem(tmp_path, "src", "beta")
         write_system_doc(project, "# System design\n")
+        write_design_doc(project, root, "# src root overview\n")
         write_design_doc(project, sub_a, "# alpha\n")
         write_design_doc(project, sub_b, "# beta\n")
 
@@ -318,8 +374,10 @@ class TestNoCollisionLogic:
         <path>/DESIGN.md — a different filename/path from the system
         doc's docs/design/design.md, so no collision is possible."""
         project = _make_project(tmp_path, ["src"])
+        root = _make_subsystem(tmp_path, "src")
         subsystem = _make_subsystem(tmp_path, "src", "design")
         write_system_doc(project, "# System design\n")
+        write_design_doc(project, root, "# src root overview\n")
         write_design_doc(project, subsystem, "# design subsystem\n")
 
         result = validate(project)

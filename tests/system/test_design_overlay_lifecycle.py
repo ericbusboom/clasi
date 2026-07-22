@@ -89,11 +89,17 @@ def repo(tmp_path, monkeypatch):
 
 
 def _seed_canonical_docs(root: Path) -> None:
-    """Write a minimal canonical docs/design/ doc set and commit it."""
+    """Write a minimal canonical docs/design/ doc set and commit it.
+
+    Includes the required root-level ``src/DESIGN.md`` overview so the
+    doc set validates cleanly at sprint close.
+    """
     project = set_project(root)
+    source_root = (root / "src").resolve()
     subsystem = (root / "src" / "clasi").resolve()
     subsystem.mkdir(parents=True, exist_ok=True)
     write_system_doc(project, "# System design\n\nOriginal system doc.\n")
+    write_design_doc(project, source_root, "# src root overview\n\nOriginal.\n")
     write_design_doc(project, subsystem, "# clasi subsystem\n\nOriginal.\n")
     _commit_all(root, "docs: seed canonical design doc set")
 
