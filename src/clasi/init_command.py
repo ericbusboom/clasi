@@ -231,6 +231,11 @@ def run_init(
             pass  # overwrite a corrupt config
     config_data["process"] = process
     config_data.setdefault("paths", dict(ARTIFACT_PATH_DEFAULTS))
+    # Write the design-doc opt-in explicitly so the key is visible in a fresh
+    # config rather than absent. "disabled" is the safe default (identical
+    # behavior to unset for the sprint lifecycle); setdefault preserves an
+    # existing "enabled"/"disabled" choice on re-init.
+    config_data.setdefault("design_docs", "disabled")
     config_path.write_text(yaml.safe_dump(config_data, default_flow_style=False), encoding="utf-8")
     click.echo(f"  Written: .clasi/config.yaml (process: {process})")
 

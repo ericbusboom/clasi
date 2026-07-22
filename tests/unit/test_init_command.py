@@ -959,6 +959,41 @@ class TestPathTableAndPathsBlock:
         data_after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         assert data_after["paths"]["issues"] == "my/custom/issues"
 
+    def test_design_docs_written_disabled_by_default(self, target_dir):
+        """clasi init writes an explicit design_docs: disabled key.
+
+        The opt-in tri-state is written explicitly (rather than left
+        absent) so the key is visible in a fresh config. "disabled" is
+        the safe default.
+        """
+        import yaml
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        config_path = target_dir / ".clasi" / "config.yaml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert data["design_docs"] == "disabled"
+
+    def test_design_docs_choice_preserved_on_rerun(self, target_dir):
+        """Re-running clasi init does NOT overwrite an opted-in design_docs."""
+        import yaml
+
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        # Simulate the stakeholder opting in.
+        config_path = target_dir / ".clasi" / "config.yaml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["design_docs"] = "enabled"
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        # Re-run init — the opt-in must be preserved.
+        run_init(str(target_dir))
+
+        data_after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert data_after["design_docs"] == "enabled"
+
     def test_init_command_no_longer_hardcodes_old_dirs(self, target_dir):
         """The hardcoded .clasi/architecture and .clasi/sprints dirs are NOT created."""
         target_dir.mkdir()
