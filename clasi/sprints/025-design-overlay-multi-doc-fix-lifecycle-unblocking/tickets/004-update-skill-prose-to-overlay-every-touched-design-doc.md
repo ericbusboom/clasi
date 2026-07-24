@@ -1,9 +1,12 @@
 ---
 id: '004'
 title: Update skill prose to overlay every touched design doc
-status: open
-use-cases: [SUC-001]
-depends-on: ['001', '002']
+status: in-progress
+use-cases:
+- SUC-001
+depends-on:
+- '001'
+- '002'
 github-issue: ''
 issue: design-overlay-cannot-seed-multiple-colocated-design-md-per-sprint.md
 completes_issue: false
@@ -43,18 +46,18 @@ actually exists once those land, not aspirational behavior alone.
 
 ## Acceptance Criteria
 
-- [ ] `plan-sprint`, `architecture-authoring`, and `bootstrap-design`
+- [x] `plan-sprint`, `architecture-authoring`, and `bootstrap-design`
       skill prose in `src/clasi/plugin/skills/` reviewed against the
       now-fixed tool behavior (tickets 001-002); any claim that no
       longer matches (e.g., a docstring quote or described accepted
       form) is corrected.
-- [ ] Prose explicitly instructs seeding every canonical doc the sprint
+- [x] Prose explicitly instructs seeding every canonical doc the sprint
       touches in one `seed_sprint_design_overlay(sprint_id, doc_names)`
       call, not one doc at a time or one-doc-only.
-- [ ] No prose in any of the three skill files tells the reader a
+- [x] No prose in any of the three skill files tells the reader a
       sprint "can only overlay one" doc or describes a "flat-overlay-slot"
       single-doc workaround as the expected path.
-- [ ] Confirm (do not just assume) whether the installed
+- [x] Confirm (do not just assume) whether the installed
       `.claude/skills/` copies of these three skills need the same
       correction, or whether they are generated/synced from
       `src/clasi/plugin/skills/` at install time — fix both locations
