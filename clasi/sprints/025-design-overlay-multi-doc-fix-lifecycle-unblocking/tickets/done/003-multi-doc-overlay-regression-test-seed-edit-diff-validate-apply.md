@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Multi-doc overlay regression test (seed/edit/diff/validate/apply)
-status: in-progress
+status: done
 use-cases:
 - SUC-001
 - SUC-002
@@ -42,20 +42,20 @@ integration-level regression test, not either in isolation.
 
 ## Acceptance Criteria
 
-- [ ] A new test seeds two co-located `DESIGN.md` fixtures (different
+- [x] A new test seeds two co-located `DESIGN.md` fixtures (different
       subsystem paths) via `seed_sprint_design_overlay` in one call and
       asserts two distinct overlay files exist with two distinct
       `_sources.json` entries.
-- [ ] The test edits both seeded copies with distinguishable content,
+- [x] The test edits both seeded copies with distinguishable content,
       runs `generate_diffs`, and asserts a `.diff.md` sibling exists for
       each edited file with content specific to that file's edit (not
       the other file's).
-- [ ] The test runs `clasi design validate` (or the `validate_design`
+- [x] The test runs `clasi design validate` (or the `validate_design`
       MCP tool) against the overlay directory and asserts it passes.
-- [ ] The test runs `apply` and asserts each canonical fixture file was
+- [x] The test runs `apply` and asserts each canonical fixture file was
       updated with its own edit — the `firm/app` fixture never receives
       the `host/robot_radio` edit or vice versa.
-- [ ] The test asserts `generate_diffs` and `apply` required no source
+- [x] The test asserts `generate_diffs` and `apply` required no source
       changes to pass (i.e., this ticket's diff touches only the test
       file and fixtures, not `overlay.py`'s `generate_diffs`/`apply`
       bodies) — if either turns out to need a change, that is an
