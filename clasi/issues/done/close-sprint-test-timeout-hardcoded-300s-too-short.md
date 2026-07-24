@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # close_sprint's 300s test timeout is hardcoded and too short for this repo's own suite

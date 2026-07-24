@@ -1,5 +1,6 @@
 ---
 status: pending
+sprint: '025'
 ---
 
 # norecursedirs is stale: bare `uv run pytest` fails collection on tests/e2e/e2e-project

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # 4 pre-existing failures in tests/unit/test_sprint.py TestRealDoneArchiveBackwardCompat
