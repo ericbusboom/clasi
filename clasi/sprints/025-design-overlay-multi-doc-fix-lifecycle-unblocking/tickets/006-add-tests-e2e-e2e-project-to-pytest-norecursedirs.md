@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: Add tests/e2e/e2e-project to pytest norecursedirs
-status: open
+status: in-progress
 use-cases: []
 depends-on: []
 github-issue: ''
@@ -26,10 +26,10 @@ default `test_command` gate.
 
 ## Acceptance Criteria
 
-- [ ] `tests/e2e/e2e-project` added to `norecursedirs` in
+- [x] `tests/e2e/e2e-project` added to `norecursedirs` in
       `pyproject.toml`.
-- [ ] `uv run pytest --co -q` from the repo root collects with 0 errors.
-- [ ] Audit whether `tests/e2e/project` and `tests/e2e/repro_project`
+- [x] `uv run pytest --co -q` from the repo root collects with 0 errors.
+- [x] Audit whether `tests/e2e/project` and `tests/e2e/repro_project`
       (the two existing entries) still exist on disk; if either is
       stale, note it in this ticket (removing a stale-but-harmless
       entry is optional cleanup, not required for the acceptance
@@ -48,3 +48,7 @@ default `test_command` gate.
   this is the exact command whose failure this ticket fixes; passing
   bare is the ticket's own acceptance signal, not just the scoped
   fallback).
+
+## Resolution note
+
+Audit result: both prior entries (`tests/e2e/project`, `tests/e2e/repro_project`) were stale — neither exists on disk. Replaced them with the single live entry `tests/e2e/e2e-project`. Bare `uv run pytest --co` now collects 2819 tests with 0 collection errors (was 6 errors).
