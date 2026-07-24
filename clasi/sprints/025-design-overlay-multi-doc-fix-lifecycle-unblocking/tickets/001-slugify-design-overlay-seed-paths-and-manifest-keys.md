@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Slugify design-overlay seed paths and manifest keys
-status: in-progress
+status: done
 use-cases:
 - SUC-001
 depends-on: []
