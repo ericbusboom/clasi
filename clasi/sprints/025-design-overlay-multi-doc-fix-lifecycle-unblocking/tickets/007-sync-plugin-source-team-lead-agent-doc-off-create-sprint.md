@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Sync plugin-source team-lead agent doc off create_sprint
-status: open
+status: in-progress
 use-cases: []
 depends-on: []
 github-issue: ''
@@ -39,20 +39,20 @@ sprint's scope if the stakeholder wants it.
 
 ## Acceptance Criteria
 
-- [ ] `src/clasi/plugin/agents/team-lead/agent.md`'s "Execute Issues
+- [x] `src/clasi/plugin/agents/team-lead/agent.md`'s "Execute Issues
       Through a Sprint" step 2 no longer instructs a direct
       `create_sprint` call; it instructs dispatching the sprint-planner
       agent to create the sprint (passing the title), matching the
       installed doc's corrected step 2-4 wording.
-- [ ] The "Sprint Planning Only" scenario's step 1 is corrected the same
+- [x] The "Sprint Planning Only" scenario's step 1 is corrected the same
       way.
-- [ ] Step 3's `link_sprint_issues` instruction is updated to recover
+- [x] Step 3's `link_sprint_issues` instruction is updated to recover
       the sprint id from the sprint-planner's report (since the
       team-lead can no longer observe it from a `create_sprint` call it
       didn't make) rather than assuming it was just created directly.
-- [ ] No remaining prose in the plugin-source `agent.md` instructs the
+- [x] No remaining prose in the plugin-source `agent.md` instructs the
       team-lead to call `mcp__clasi__create_sprint` directly.
-- [ ] Walk the "Execute Issues Through a Sprint" scenario as written and
+- [x] Walk the "Execute Issues Through a Sprint" scenario as written and
       confirm no step produces a guard denial (matches the issue's
       Verification section).
 
