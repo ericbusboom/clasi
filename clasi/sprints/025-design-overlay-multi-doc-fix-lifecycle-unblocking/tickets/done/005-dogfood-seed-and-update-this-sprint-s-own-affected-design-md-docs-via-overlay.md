@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: 'Dogfood: seed and update this sprint''s own affected DESIGN.md docs via overlay'
-status: in-progress
+status: done
 use-cases:
 - SUC-001
 - SUC-002
