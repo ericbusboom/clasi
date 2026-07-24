@@ -1,9 +1,13 @@
 ---
 id: '003'
 title: Multi-doc overlay regression test (seed/edit/diff/validate/apply)
-status: open
-use-cases: [SUC-001, SUC-002]
-depends-on: ['001', '002']
+status: in-progress
+use-cases:
+- SUC-001
+- SUC-002
+depends-on:
+- '001'
+- '002'
 github-issue: ''
 issue: design-overlay-cannot-seed-multiple-colocated-design-md-per-sprint.md
 completes_issue: false
