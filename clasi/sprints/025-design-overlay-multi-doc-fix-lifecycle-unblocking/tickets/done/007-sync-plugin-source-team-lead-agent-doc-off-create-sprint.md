@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Sync plugin-source team-lead agent doc off create_sprint
-status: in-progress
+status: done
 use-cases: []
 depends-on: []
 github-issue: ''
