@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: Add tests/e2e/e2e-project to pytest norecursedirs
-status: in-progress
+status: done
 use-cases: []
 depends-on: []
 github-issue: ''
