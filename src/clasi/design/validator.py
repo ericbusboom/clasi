@@ -13,10 +13,14 @@ Two check groups:
    directory with no ``DESIGN.md``); no stray ``DESIGN.md`` under a
    directory that isn't a recognized subsystem.
 2. **Sprint overlay** (run only when an overlay directory is given): every
-   overlay ``.md`` filename (other than ``*.diff.md`` files themselves)
-   matches an existing canonical doc's filename; overlay frontmatter
-   references resolve; every overlay file has a corresponding
-   ``<name>.diff.md`` that is not stale.
+   overlay ``.md`` file (other than ``*.diff.md`` files themselves) has a
+   recorded canonical target in the overlay's ``_sources.json`` manifest
+   (written by ``clasi.design.overlay.seed_and_commit``) that resolves to
+   a real, known doc in the project's doc set — resolution is by manifest
+   entry, never by matching the overlay file's own basename, since
+   co-located subsystem docs can share the basename ``DESIGN.md``;
+   overlay frontmatter references resolve; every overlay file has a
+   corresponding ``<name>.diff.md`` that is not stale.
 
 Message format contract
 ------------------------
@@ -73,6 +77,7 @@ ticket).
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -83,6 +88,16 @@ from clasi.design.store import read_doc_set
 
 if TYPE_CHECKING:
     from clasi.project import Project
+
+_SOURCES_MANIFEST_NAME = "_sources.json"
+"""Filename of the seed-time overlay-file -> canonical-path manifest.
+
+Matches ``clasi.design.overlay._SOURCES_MANIFEST_NAME`` exactly — both
+modules read/write the same file, written once by
+``clasi.design.overlay.seed_and_commit`` and consulted here (read-only)
+and by ``clasi.design.overlay.apply`` (also read-only) to resolve an
+overlay file's canonical target without matching on basename.
+"""
 
 
 class DesignError(Exception):
@@ -218,12 +233,42 @@ def _check_canonical_doc_set(
 # ---------------------------------------------------------------------------
 
 
-def _canonical_doc_names(project: Project) -> set[str]:
+def _canonical_doc_paths(project: Project) -> set[Path]:
+    """Return the set of real, known canonical design doc paths for *project*.
+
+    The authoritative doc set: the system doc plus every declared source
+    root's own overview doc and every subsystem's ``DESIGN.md`` (from
+    :func:`read_doc_set`). Used to confirm an overlay file's manifest-recorded
+    target is actually a member of the project's known doc set, not merely
+    that some file with a matching basename exists somewhere.
+    """
     doc_set = read_doc_set(project)
-    names = {system_doc_name()}
+    paths = {doc_set.system_doc.path.resolve()}
     for doc in doc_set.subsystem_docs.values():
-        names.add(doc.path.name)
-    return names
+        paths.add(doc.path.resolve())
+    return paths
+
+
+def _read_overlay_sources_manifest(overlay_dir: Path) -> dict[str, str]:
+    """Return the overlay-filename -> canonical-path manifest, or ``{}``.
+
+    Mirrors ``clasi.design.overlay._read_sources_manifest`` (the manifest
+    ticket 001 made authoritative) without importing it, since that
+    function operates on a ``sprint_design_dir`` argument name/docstring
+    scoped to the seed/apply lifecycle rather than validation — the
+    reading logic itself (missing/malformed manifest is "no recorded
+    sources," not an error here) is identical.
+    """
+    manifest_path = overlay_dir / _SOURCES_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return {}
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items()}
 
 
 def _check_overlay(project: Project, overlay_dir: Path, messages: list[str]) -> None:
@@ -231,7 +276,8 @@ def _check_overlay(project: Project, overlay_dir: Path, messages: list[str]) -> 
         messages.append(f"Sprint overlay directory {overlay_dir} does not exist.")
         return
 
-    canonical_names = _canonical_doc_names(project)
+    canonical_paths = _canonical_doc_paths(project)
+    manifest = _read_overlay_sources_manifest(overlay_dir)
 
     overlay_files = sorted(
         p
@@ -240,12 +286,27 @@ def _check_overlay(project: Project, overlay_dir: Path, messages: list[str]) -> 
     )
 
     for overlay_file in overlay_files:
-        # --- Filename matches an existing canonical doc ---
-        if overlay_file.name not in canonical_names:
+        # --- Canonical target resolves via the seed-time manifest, not the
+        # overlay file's own basename (ticket 001 keys the manifest by the
+        # overlay filename/slug; ticket 002 makes this the sole resolution
+        # path so co-located docs sharing a basename, e.g. DESIGN.md, don't
+        # collide) ---
+        recorded = manifest.get(overlay_file.name)
+        if recorded is None:
             messages.append(
-                f"Sprint overlay file {overlay_file} does not match any "
-                "existing canonical design doc filename."
+                f"Sprint overlay file {overlay_file} has no entry in the "
+                f"overlay's {_SOURCES_MANIFEST_NAME} manifest, so its "
+                "canonical design doc target cannot be determined."
             )
+        else:
+            canonical_path = Path(recorded).resolve()
+            if canonical_path not in canonical_paths:
+                messages.append(
+                    f"Sprint overlay file {overlay_file} has a "
+                    f"{_SOURCES_MANIFEST_NAME} manifest entry pointing to "
+                    f"{canonical_path}, which is not a known canonical "
+                    "design doc for this project."
+                )
 
         # --- Frontmatter references resolve ---
         overlay_artifact = Artifact(overlay_file)

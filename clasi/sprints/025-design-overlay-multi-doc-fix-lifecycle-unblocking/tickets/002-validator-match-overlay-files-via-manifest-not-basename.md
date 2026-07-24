@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: 'Validator: match overlay files via manifest, not basename'
-status: open
-use-cases: [SUC-002]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-002
+depends-on:
+- '001'
 github-issue: ''
 issue: design-overlay-cannot-seed-multiple-colocated-design-md-per-sprint.md
 completes_issue: false
@@ -36,21 +38,21 @@ must already be in place before the validator can be pointed at it.
 
 ## Acceptance Criteria
 
-- [ ] `_check_overlay` resolves each overlay file's canonical target via
+- [x] `_check_overlay` resolves each overlay file's canonical target via
       `_sources.json`, not via basename-set membership.
-- [ ] A validation run over an overlay directory containing two or more
+- [x] A validation run over an overlay directory containing two or more
       slugged files that both canonically resolve to `DESIGN.md`-named
       docs in different subsystems passes when both targets are real
       and distinct, and reports a clear error naming the specific
       overlay file if either does not.
-- [ ] An overlay file with no manifest entry (e.g., manually dropped
+- [x] An overlay file with no manifest entry (e.g., manually dropped
       into the overlay dir without seeding) is still caught as an
       error, not silently accepted — the fix must not weaken the check
       to "any `.md` file present is fine."
-- [ ] An overlay file whose manifest entry points to a path outside the
+- [x] An overlay file whose manifest entry points to a path outside the
       project's known doc set (system doc + subsystem `DESIGN.md`s) is
       still caught as an error.
-- [ ] Existing single-doc validation behavior is unchanged in outcome
+- [x] Existing single-doc validation behavior is unchanged in outcome
       for any sprint whose overlay predates this fix and still uses a
       bare canonical basename as both filename and (under ticket 001's
       new manifest) slug.
