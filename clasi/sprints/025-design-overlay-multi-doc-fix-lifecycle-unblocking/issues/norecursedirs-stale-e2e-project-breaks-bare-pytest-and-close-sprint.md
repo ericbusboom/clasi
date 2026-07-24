@@ -1,6 +1,8 @@
 ---
-status: pending
+status: in-progress
 sprint: '025'
+tickets:
+- 025-006
 ---
 
 # norecursedirs is stale: bare `uv run pytest` fails collection on tests/e2e/e2e-project

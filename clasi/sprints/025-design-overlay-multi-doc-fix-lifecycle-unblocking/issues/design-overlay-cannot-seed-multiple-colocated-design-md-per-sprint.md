@@ -1,6 +1,12 @@
 ---
-status: pending
+status: in-progress
 sprint: '025'
+tickets:
+- 025-001
+- 025-002
+- 025-003
+- 025-004
+- 025-005
 ---
 
 # Sprint design overlay cannot seed multiple co-located DESIGN.md files per sprint
