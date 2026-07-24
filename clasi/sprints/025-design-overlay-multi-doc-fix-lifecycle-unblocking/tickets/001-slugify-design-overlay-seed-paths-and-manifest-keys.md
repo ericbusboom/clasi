@@ -1,8 +1,9 @@
 ---
 id: '001'
 title: Slugify design-overlay seed paths and manifest keys
-status: open
-use-cases: [SUC-001]
+status: in-progress
+use-cases:
+- SUC-001
 depends-on: []
 github-issue: ''
 issue: design-overlay-cannot-seed-multiple-colocated-design-md-per-sprint.md
@@ -46,24 +47,24 @@ accumulating a duplicate under a different name.
 
 ## Acceptance Criteria
 
-- [ ] `seed_sprint_design_overlay`'s `doc_names` accepts co-located
+- [x] `seed_sprint_design_overlay`'s `doc_names` accepts co-located
       canonical source paths (e.g. `src/firm/app/DESIGN.md`) with no
       `../../` escape required, in addition to system-doc-relative names
       it already accepts.
-- [ ] The function's docstring no longer claims `doc_names` are
+- [x] The function's docstring no longer claims `doc_names` are
       "relative to `docs/design/`" and instead documents the accepted
       forms and the slug transform.
-- [ ] `seed_and_commit` writes each seeded file under its derived slug
+- [x] `seed_and_commit` writes each seeded file under its derived slug
       (not `canonical_path.name`) and records the slug as the
       `_sources.json` manifest key.
-- [ ] Seeding two co-located `DESIGN.md` docs (different subsystems) in
+- [x] Seeding two co-located `DESIGN.md` docs (different subsystems) in
       one `seed_sprint_design_overlay` call produces two distinct files
       on disk and two distinct manifest entries — neither the file nor
       the manifest entry from the first doc is overwritten by the
       second.
-- [ ] Re-seeding the same doc (same canonical path) a second time
+- [x] Re-seeding the same doc (same canonical path) a second time
       reproduces the same slug (idempotent naming, not a new duplicate).
-- [ ] Existing single-doc overlay behavior is unchanged in outcome for
+- [x] Existing single-doc overlay behavior is unchanged in outcome for
       any doc whose derived slug does not collide with anything (the
       common case) — no regression for sprints already relying on
       single-doc seeding.

@@ -1,19 +1,21 @@
 """Overlay lifecycle: git-anchored copy/commit/diff/apply for sprint design overlays.
 
 A sprint's ``clasi/sprints/NNN-slug/design/`` directory holds a *complete
-updated copy* of each canonical ``docs/design/*.md`` doc the sprint
-touches, under the same filename. This module implements the four-step
+updated copy* of each canonical design doc the sprint touches, under a
+derived overlay slug filename (not necessarily the canonical basename —
+see :func:`seed_and_commit`). This module implements the four-step
 lifecycle around that directory. Each step assumes/produces a specific
 git state:
 
 1. :func:`seed_and_commit` — copies each named canonical doc into the
    sprint's ``design/`` directory *verbatim* (byte-identical at copy
-   time) and commits them in a single commit, before any edits happen.
-   Runs on ``main``, at sprint creation (late branching — see sprint.md
-   Open Question 3's resolution). Precondition: none. Postcondition: the
-   sprint's ``design/`` directory contains one pristine copy per named
-   doc, committed; the pristine, last-committed state of each file is
-   exactly what this commit recorded.
+   time), under its derived overlay slug, and commits them in a single
+   commit, before any edits happen. Runs on ``main``, at sprint creation
+   (late branching — see sprint.md Open Question 3's resolution).
+   Precondition: none. Postcondition: the sprint's ``design/`` directory
+   contains one pristine copy per named doc, committed; the pristine,
+   last-committed state of each file is exactly what this commit
+   recorded.
 
 2. :func:`generate_diffs` — for each ``.md`` file in the sprint's
    ``design/`` directory (excluding ``*.diff.md`` files) whose current
@@ -185,17 +187,19 @@ def seed_and_commit(
     sprint_design_dir: Path,
     *,
     repo_root: Path,
+    slugs: list[str] | None = None,
     commit_message: str = "chore: seed sprint design overlay",
 ) -> list[Path]:
     """Copy each canonical doc into *sprint_design_dir* and commit them.
 
     Copies each path in *canonical_paths* verbatim (byte-identical at
-    copy time) into ``sprint_design_dir/<name>``, records each seeded
+    copy time) into ``sprint_design_dir/<slug>``, records each seeded
     file's canonical source path in the overlay directory's
-    ``_sources.json`` manifest (read later by :func:`apply` to resolve
-    targets), then stages and commits exactly those copied files plus the
-    manifest in a single commit before returning. This establishes the
-    "pristine" baseline that :func:`generate_diffs` compares against.
+    ``_sources.json`` manifest keyed by that same slug (read later by
+    :func:`apply` to resolve targets), then stages and commits exactly
+    those copied files plus the manifest in a single commit before
+    returning. This establishes the "pristine" baseline that
+    :func:`generate_diffs` compares against.
 
     Args:
         canonical_paths: Absolute paths to canonical design documents
@@ -204,6 +208,15 @@ def seed_and_commit(
         sprint_design_dir: The sprint's ``design/`` directory (created if
             it does not exist).
         repo_root: The git repository root to run git commands in.
+        slugs: Overlay filename to use for each corresponding entry in
+            *canonical_paths* (same order, same length). Callers (e.g.
+            ``seed_sprint_design_overlay``) derive a unique, stable,
+            reversible slug per doc so co-located docs that share a
+            basename (``DESIGN.md``) do not collide in the flat overlay
+            directory. Defaults to each canonical path's own basename
+            (``canonical_path.name``) when omitted — the pre-slug
+            behavior, still correct whenever no two seeded docs in the
+            same call share a basename.
         commit_message: Commit message for the seed commit.
 
     Returns:
@@ -215,13 +228,16 @@ def seed_and_commit(
     """
     sprint_design_dir.mkdir(parents=True, exist_ok=True)
 
+    if slugs is None:
+        slugs = [canonical_path.name for canonical_path in canonical_paths]
+
     seeded: list[Path] = []
     manifest_update: dict[str, str] = {}
-    for canonical_path in canonical_paths:
-        dest = sprint_design_dir / canonical_path.name
+    for canonical_path, slug in zip(canonical_paths, slugs):
+        dest = sprint_design_dir / slug
         shutil.copyfile(canonical_path, dest)
         seeded.append(dest)
-        manifest_update[dest.name] = str(canonical_path.resolve())
+        manifest_update[slug] = str(canonical_path.resolve())
 
     if not seeded:
         return seeded

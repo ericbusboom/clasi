@@ -20,6 +20,7 @@ from clasi.artifact import Artifact
 from clasi.frontmatter import read_document, read_frontmatter
 from clasi.mcp_server import server, get_project
 from clasi.project import (
+    Project,
     SprintNotFoundError,
     SprintFrontmatterError,
     SprintIdMismatchError,
@@ -282,6 +283,64 @@ def detail_sprint(sprint_id: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+def _resolve_overlay_doc_path(project: Project, doc_name: str) -> Path:
+    """Resolve a *doc_names* entry to an absolute canonical design-doc path.
+
+    Two accepted forms:
+
+    - A bare filename with no path separators (e.g. ``"design.md"``,
+      ``"clasi-tools.md"``) is resolved relative to ``project.design_dir``
+      (``docs/design/`` by default) — the system doc / legacy pre-co-location
+      form.
+    - A path containing a separator (e.g. ``"src/firm/app/DESIGN.md"``) is
+      resolved relative to ``project.root`` directly — a co-located
+      subsystem's canonical source path, reachable with no ``../../``
+      escape.
+    """
+    if "/" in doc_name or "\\" in doc_name:
+        return (project.root / doc_name).resolve()
+    return (project.design_dir / doc_name).resolve()
+
+
+def _derive_overlay_slug(project: Project, canonical_path: Path) -> str:
+    """Derive a unique, stable, reversible overlay filename for *canonical_path*.
+
+    The sprint ``design/`` overlay directory is flat, but the co-located
+    design-doc model (sprint 022) names every subsystem's canonical doc
+    ``DESIGN.md`` — so two co-located docs seeded in the same call would
+    collide on a bare basename. This function derives a per-doc slug that
+    keeps the directory flat while staying unique across subsystems.
+
+    **Transform**: if *canonical_path* is located under one of
+    ``project.sources`` (the configured source-tree roots), the slug is
+    the path's components relative to that source root, with all but the
+    final component joined by ``-`` and the final ``DESIGN.md``/``design.md``
+    filename kept verbatim, e.g. ``src/firm/app/DESIGN.md`` under source
+    root ``src`` becomes ``firm-app-DESIGN.md``. If *canonical_path* is not
+    under any configured source root (e.g. the system-level doc at
+    ``docs/design/design.md``), the slug is just the basename, unchanged
+    (e.g. ``design.md``) — already unique since only one system doc exists.
+
+    This transform is stable and reversible in the sense that matters here:
+    it does not need to round-trip back to the canonical path on its own
+    (the ``_sources.json`` manifest carries the true canonical path for
+    that), but re-seeding the same canonical doc always reproduces the same
+    slug, so a re-seed overwrites its own prior copy rather than
+    accumulating a duplicate under a different name.
+    """
+    resolved = canonical_path.resolve()
+    for source_root in project.sources:
+        try:
+            rel = resolved.relative_to(source_root)
+        except ValueError:
+            continue
+        parts = rel.parts
+        if len(parts) <= 1:
+            return rel.name
+        return "-".join(parts[:-1]) + "-" + parts[-1]
+    return resolved.name
+
+
 @server.tool()
 def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None) -> str:
     """Seed and commit pristine copies of canonical design docs into a sprint's overlay.
@@ -289,9 +348,9 @@ def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None)
     Gated on the doc-set opt-in flag (``Project.design_docs_opt_in``); a
     no-op when opt-in is unset or off, or when *doc_names* is empty/omitted
     (no design/ directory is created and no commit is made). Otherwise
-    copies each named canonical ``docs/design/<name>.md`` doc verbatim into
-    the sprint's ``design/`` directory and commits them in a single commit,
-    before any sprint-planner edits land (SUC-005).
+    copies each named canonical doc verbatim into the sprint's ``design/``
+    directory, under a derived overlay slug (see below), and commits them
+    in a single commit, before any sprint-planner edits land (SUC-005).
 
     Called by the sprint-planner once it has identified which canonical
     docs the sprint's changes affect (Phase 2 planning) — not necessarily
@@ -302,9 +361,26 @@ def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None)
 
     Args:
         sprint_id: The sprint ID (e.g., '021').
-        doc_names: Canonical design doc filenames to seed (e.g.
-            ``["design.md", "clasi-tools.md"]``), relative to
-            ``docs/design/``. Omit (or pass "NONE"/empty) to no-op.
+        doc_names: Canonical design doc paths to seed. Two forms are
+            accepted per entry: a bare filename with no path separator
+            (e.g. ``"design.md"``, ``"clasi-tools.md"``), resolved relative
+            to ``docs/design/`` (the system doc / legacy form); or a
+            co-located canonical source path (e.g.
+            ``"src/firm/app/DESIGN.md"``), resolved relative to the repo
+            root — no ``../../`` escape required. Omit (or pass
+            "NONE"/empty) to no-op.
+
+    Each doc is written into the overlay under a derived slug rather than
+    its bare basename, so co-located docs that share the ``DESIGN.md``
+    basename do not collide: the slug is the doc's path components
+    relative to its nearest enclosing ``project.sources`` root, joined
+    with ``-``, keeping the final filename (e.g. ``src/firm/app/DESIGN.md``
+    under source root ``src`` becomes ``firm-app-DESIGN.md``); a doc with
+    no enclosing source root (the system doc) keeps its bare basename
+    (e.g. ``design.md``) unchanged. See
+    :func:`_derive_overlay_slug` for the full transform. The
+    ``_sources.json`` manifest is keyed by this same slug, not the
+    canonical basename.
 
     Returns JSON with {sprint_id, opted_in, seeded: [str, ...]}.
     """
@@ -320,11 +396,13 @@ def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None)
     from clasi.design.overlay import seed_and_commit
 
     sprint = project.get_sprint(sprint_id)
-    canonical_paths = [project.design_dir / name for name in doc_names]
+    canonical_paths = [_resolve_overlay_doc_path(project, name) for name in doc_names]
+    slugs = [_derive_overlay_slug(project, p) for p in canonical_paths]
     seeded = seed_and_commit(
         canonical_paths,
         sprint.design_dir,
         repo_root=project.root,
+        slugs=slugs,
         commit_message=f"chore: seed sprint {sprint_id} design overlay",
     )
     return json.dumps({
