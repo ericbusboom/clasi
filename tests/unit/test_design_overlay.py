@@ -99,6 +99,65 @@ class TestSeedAndCommit:
         assert seeded == []
         assert _commit_count(repo) == before_commits
 
+    def test_two_same_basename_docs_seeded_with_slugs_do_not_collide(self, tmp_path):
+        """Ticket 001: two co-located DESIGN.md docs (different subsystems)
+        seeded in one seed_and_commit call, via distinct explicit slugs,
+        must produce two distinct files on disk and two distinct manifest
+        entries -- neither overwrites the other."""
+        repo = _init_repo(tmp_path)
+
+        def _make_subsystem_doc(subsystem: str, content: str) -> Path:
+            subsystem_dir = repo / "src" / subsystem
+            subsystem_dir.mkdir(parents=True, exist_ok=True)
+            path = subsystem_dir / "DESIGN.md"
+            path.write_text(content, encoding="utf-8")
+            _run(["add", str(path)], repo)
+            _run(["commit", "-m", f"add {subsystem} DESIGN.md"], repo)
+            return path
+
+        canonical_a = _make_subsystem_doc("firm", "# Firm\n\nOriginal firm.\n")
+        canonical_b = _make_subsystem_doc("host", "# Host\n\nOriginal host.\n")
+        sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
+
+        seeded = seed_and_commit(
+            [canonical_a, canonical_b],
+            sprint_design_dir,
+            repo_root=repo,
+            slugs=["firm-DESIGN.md", "host-DESIGN.md"],
+        )
+
+        assert len(seeded) == 2
+        file_a = sprint_design_dir / "firm-DESIGN.md"
+        file_b = sprint_design_dir / "host-DESIGN.md"
+        assert set(seeded) == {file_a, file_b}
+
+        # Both distinct files exist on disk with their own content --
+        # neither was overwritten by the other.
+        assert file_a.read_text(encoding="utf-8") == "# Firm\n\nOriginal firm.\n"
+        assert file_b.read_text(encoding="utf-8") == "# Host\n\nOriginal host.\n"
+
+        # Both distinct manifest entries exist, keyed by slug.
+        from clasi.design.overlay import _read_sources_manifest
+
+        manifest = _read_sources_manifest(sprint_design_dir)
+        assert manifest["firm-DESIGN.md"] == str(canonical_a.resolve())
+        assert manifest["host-DESIGN.md"] == str(canonical_b.resolve())
+
+    def test_slugs_default_to_canonical_basename_when_omitted(self, tmp_path):
+        """Backward-compatible default: omitting slugs= keys by basename,
+        matching pre-ticket-001 behavior for the common no-collision case."""
+        repo = _init_repo(tmp_path)
+        canonical = _make_canonical_doc(repo, "clasi-tools.md", "# Tools\n\nOriginal.\n")
+        sprint_design_dir = repo / "clasi" / "sprints" / "001-x" / "design"
+
+        seeded = seed_and_commit([canonical], sprint_design_dir, repo_root=repo)
+
+        assert seeded == [sprint_design_dir / "clasi-tools.md"]
+        from clasi.design.overlay import _read_sources_manifest
+
+        manifest = _read_sources_manifest(sprint_design_dir)
+        assert manifest["clasi-tools.md"] == str(canonical.resolve())
+
 
 class TestGenerateDiffs:
     def _seeded_repo(self, tmp_path):

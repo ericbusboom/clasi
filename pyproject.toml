@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clasi"
-version = "0.20260722.1"
+version = "0.20260724.1"
 description = "MCP server for AI-driven software engineering process — agents, skills, instructions, and artifact management"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,7 +43,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["tests/e2e/project", "tests/e2e/repro_project"]
+norecursedirs = ["tests/e2e/e2e-project"]
 addopts = "--cov=src/clasi --cov=src/clasr --cov-report=term-missing --cov-report=lcov:lcov.info -m 'not slow'"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 

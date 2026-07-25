@@ -1675,15 +1675,38 @@ class TestRoleGuardAbsolutePathNormalization:
 
     # --- Absolute path OUTSIDE the project root must not crash or match ---
 
-    def test_absolute_path_outside_root_does_not_crash_and_is_blocked(self, tmp_path):
-        """An absolute file_path that is not under the project root (e.g. a
-        symlink escape or a misconfigured path) must not raise, and must
-        not accidentally satisfy an allow-prefix via string coincidence.
-        Tier 0, so falls through to the default BLOCK branch.
+    def test_absolute_path_outside_root_does_not_crash_and_is_allowed(self, tmp_path):
+        """An absolute file_path that is not under the project root must not
+        raise, and is ALLOWED: role-guard governs writes to *this* repo's
+        source/tests only, so any outside-root path exits allow ("outside-root").
+
+        The path here (`outside-project/clasi/issues/foo.md`) is chosen so
+        its tail would coincide with the `clasi/issues/` allow-prefix if the
+        guard ever mistakenly compared the raw absolute string against a
+        root-relative prefix — it exercises that the allow decision comes
+        from the outside-root rule, not from an accidental prefix match.
         """
         _write_fresh_config(tmp_path)
         outside = (tmp_path.parent / "outside-project" / "clasi" / "issues" / "foo.md")
-        assert _run_role_guard(tmp_path, outside.as_posix(), "") == 2
+        assert _run_role_guard(tmp_path, outside.as_posix(), "") == 0
+
+    def test_agent_memory_path_outside_root_is_allowed(self, tmp_path):
+        """Regression for the reported bug: the agent's own persistent
+        memory file lives under ~/.claude/projects/<slug>/memory/ — outside
+        any project root — and role-guard was over-blocking it (it is not
+        source, not a CLASI artifact, and not in this repo). Tier 0 must be
+        allowed to write it.
+        """
+        _write_fresh_config(tmp_path)
+        mem = str(
+            Path.home()
+            / ".claude"
+            / "projects"
+            / "-some-other-repo"
+            / "memory"
+            / "a-note.md"
+        )
+        assert _run_role_guard(tmp_path, mem, "") == 0
 
 
 class TestRoleGuardAbsolutePathRevertCheck:
@@ -1740,20 +1763,21 @@ class TestRoleGuardClaudePlansDirAllowList:
         plans_path = str(Path.home() / ".claude" / "plans" / "test.md")
         assert _run_role_guard(tmp_path, plans_path, "") == 0
 
-    def test_tier0_write_to_arbitrary_outside_root_path_still_blocked(self, tmp_path):
-        """Tier 0: Write to ~/Desktop/x.md (an arbitrary outside-root path
-        that is NOT ~/.claude/plans/) is still blocked (exit 2).
+    def test_tier0_write_to_arbitrary_outside_root_path_allowed(self, tmp_path):
+        """Tier 0: Write to ~/Desktop/x.md (an arbitrary outside-root path)
+        is ALLOWED (exit 0).
 
-        This is the critical regression guard from the issue's own
-        Verification section: it proves the plans-dir allow-list is a
-        narrow, single absolute-path prefix, not a general outside-root
-        escape. If the fix were implemented as "allow any absolute path"
-        or "allow any path outside the project root", this test would
-        flip to exit 0 and catch the over-broad implementation.
+        role-guard governs direct writes to *this* repo's source and tests
+        only; any path outside the project root is not CLASI's to police and
+        exits allow via the general "outside-root" rule. (This test formerly
+        asserted the opposite — a deliberate design reversal: the guard was
+        over-blocking the agent's own out-of-repo files, e.g. ~/.claude
+        memory, and the narrow plans-dir allow-list has been subsumed by the
+        general outside-root allow.)
         """
         _write_fresh_config(tmp_path)
         desktop_path = str(Path.home() / "Desktop" / "x.md")
-        assert _run_role_guard(tmp_path, desktop_path, "") == 2
+        assert _run_role_guard(tmp_path, desktop_path, "") == 0
 
     def test_tier0_write_to_claude_plans_dir_allowed_nested_subdir(self, tmp_path):
         """Tier 0: a nested path under ~/.claude/plans/ (not just a direct

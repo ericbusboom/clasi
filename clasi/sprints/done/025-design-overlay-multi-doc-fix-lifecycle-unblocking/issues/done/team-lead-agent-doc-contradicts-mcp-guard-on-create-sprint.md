@@ -1,6 +1,8 @@
 ---
-status: pending
+status: done
 sprint: '025'
+tickets:
+- 025-007
 ---
 
 # team-lead agent doc contradicts mcp-guard: create_sprint instruction is guard-blocked

@@ -31,6 +31,7 @@ from clasi.tools.artifact_tools import (
     review_sprint_pre_execution,
     seed_sprint_design_overlay,
 )
+from clasi.tools.design_tools import validate_design
 
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -396,3 +397,200 @@ class TestOptOutRegression:
         assert seed_result["seeded"] == []
         sprint_dir = repo / "clasi" / "sprints" / "001-plain-sprint"
         assert not (sprint_dir / "design").exists()
+
+
+def _configure_multi_root_sources_and_opt_in(root: Path) -> None:
+    """Two declared source roots (``src/firm``, ``src/host``), opted in.
+
+    Each root gets its own required root-level ``DESIGN.md`` overview,
+    plus one subsystem one level below it (``app`` under ``src/firm``,
+    ``robot_radio`` under ``src/host``) -- the issue's own example
+    pairing (sprint 025 issue: "firm/app and host/robot_radio"). Two
+    separate source roots (rather than one root with two subsystems)
+    keeps each subsystem exactly one level below its declared root,
+    matching ``clasi.design.store._subsystem_dirs``'s "top-level
+    subdirectory only" enumeration rule.
+    """
+    config_dir = root / ".clasi"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.yaml").write_text(
+        "sources:\n  - src/firm\n  - src/host\ndesign_docs: enabled\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_multi_doc_canonical_docs(root: Path) -> None:
+    """Write a full canonical doc set spanning two subsystems and commit it.
+
+    System doc + each source root's own overview + each root's one
+    subsystem doc (``src/firm/app/DESIGN.md``,
+    ``src/host/robot_radio/DESIGN.md``) -- everything
+    ``clasi.design.validator`` requires for a clean ``validate_design()``
+    pass.
+    """
+    project = set_project(root)
+    firm_root = (root / "src" / "firm").resolve()
+    host_root = (root / "src" / "host").resolve()
+    firm_app = (root / "src" / "firm" / "app").resolve()
+    host_robot_radio = (root / "src" / "host" / "robot_radio").resolve()
+    firm_app.mkdir(parents=True, exist_ok=True)
+    host_robot_radio.mkdir(parents=True, exist_ok=True)
+
+    write_system_doc(project, "# System design\n\nOriginal system doc.\n")
+    write_design_doc(project, firm_root, "# firm root overview\n\nOriginal.\n")
+    write_design_doc(project, host_root, "# host root overview\n\nOriginal.\n")
+    write_design_doc(project, firm_app, "# firm/app subsystem\n\nOriginal firm/app.\n")
+    write_design_doc(
+        project,
+        host_robot_radio,
+        "# host/robot_radio subsystem\n\nOriginal host/robot_radio.\n",
+    )
+    _commit_all(root, "docs: seed multi-subsystem canonical design doc set")
+
+
+class TestMultiDocOverlayLifecycle:
+    """Sprint 025 ticket 003: full lifecycle over a MULTI-DOC overlay.
+
+    Exercises tickets 001 (slug-based seeding, manifest keyed by slug)
+    and 002 (validator resolves overlay targets via manifest) together,
+    end to end: seed two co-located ``DESIGN.md`` fixtures from
+    different subsystems in one call, edit both distinguishably,
+    generate per-file diffs, validate, and apply -- asserting each
+    canonical file receives only its own edit.
+
+    Per the ticket's acceptance criteria, this test asserts (by
+    behavior, not inspection) that ``generate_diffs`` and ``apply``
+    (``clasi.design.overlay``) required no source changes to pass under
+    the slug-keyed manifest -- this test file is the only diff for this
+    ticket.
+    """
+
+    def test_seed_two_colocated_design_docs_in_one_call_yields_two_distinct_overlays(
+        self, repo
+    ):
+        _configure_multi_root_sources_and_opt_in(repo)
+        _seed_multi_doc_canonical_docs(repo)
+
+        create_sprint("Multi Doc Overlay Sprint")
+        detail_sprint("001")
+
+        seed_result = json.loads(
+            seed_sprint_design_overlay(
+                "001",
+                doc_names=["src/firm/app/DESIGN.md", "src/host/robot_radio/DESIGN.md"],
+            )
+        )
+        assert seed_result["opted_in"] is True
+        assert len(seed_result["seeded"]) == 2
+
+        sprint_design_dir = (
+            repo / "clasi" / "sprints" / "001-multi-doc-overlay-sprint" / "design"
+        )
+        # Slugs are derived relative to each doc's own declared source
+        # root (src/firm, src/host) -- see _derive_overlay_slug.
+        overlay_firm = sprint_design_dir / "app-DESIGN.md"
+        overlay_host = sprint_design_dir / "robot_radio-DESIGN.md"
+
+        # Two distinct overlay files exist -- neither overwrote the other.
+        assert overlay_firm.exists()
+        assert overlay_host.exists()
+        assert overlay_firm.read_text(encoding="utf-8") == (
+            "# firm/app subsystem\n\nOriginal firm/app.\n"
+        )
+        assert overlay_host.read_text(encoding="utf-8") == (
+            "# host/robot_radio subsystem\n\nOriginal host/robot_radio.\n"
+        )
+
+        # Two distinct _sources.json manifest entries.
+        manifest = json.loads(
+            (sprint_design_dir / "_sources.json").read_text(encoding="utf-8")
+        )
+        assert manifest["app-DESIGN.md"] == str(
+            (repo / "src" / "firm" / "app" / "DESIGN.md").resolve()
+        )
+        assert manifest["robot_radio-DESIGN.md"] == str(
+            (repo / "src" / "host" / "robot_radio" / "DESIGN.md").resolve()
+        )
+
+    def test_full_lifecycle_edit_diff_validate_apply_keeps_each_doc_independent(
+        self, repo
+    ):
+        _configure_multi_root_sources_and_opt_in(repo)
+        _seed_multi_doc_canonical_docs(repo)
+
+        create_sprint("Multi Doc Overlay Sprint")
+        detail_sprint("001")
+        seed_sprint_design_overlay(
+            "001",
+            doc_names=["src/firm/app/DESIGN.md", "src/host/robot_radio/DESIGN.md"],
+        )
+
+        sprint_design_dir = (
+            repo / "clasi" / "sprints" / "001-multi-doc-overlay-sprint" / "design"
+        )
+        overlay_firm = sprint_design_dir / "app-DESIGN.md"
+        overlay_host = sprint_design_dir / "robot_radio-DESIGN.md"
+
+        # Edit both seeded copies with distinguishable, non-overlapping content.
+        firm_edit = "# firm/app subsystem\n\nOriginal firm/app.\n\nFIRM APP EDIT ONLY.\n"
+        host_edit = (
+            "# host/robot_radio subsystem\n\nOriginal host/robot_radio.\n\n"
+            "HOST ROBOT_RADIO EDIT ONLY.\n"
+        )
+        overlay_firm.write_text(firm_edit, encoding="utf-8")
+        overlay_host.write_text(host_edit, encoding="utf-8")
+
+        # generate_diffs: this is the CRITICAL acceptance point -- no
+        # change to clasi.design.overlay's generate_diffs() body was made
+        # for this ticket; it already resolves each overlay file
+        # independently and writes a per-file .diff.md sibling.
+        from clasi.design.overlay import generate_diffs
+
+        written = generate_diffs(sprint_design_dir, repo_root=repo)
+        assert len(written) == 2
+
+        diff_firm = sprint_design_dir / "app-DESIGN.diff.md"
+        diff_host = sprint_design_dir / "robot_radio-DESIGN.diff.md"
+        assert set(written) == {diff_firm, diff_host}
+
+        diff_firm_text = diff_firm.read_text(encoding="utf-8")
+        diff_host_text = diff_host.read_text(encoding="utf-8")
+
+        # Each .diff.md carries content specific to its own file's edit,
+        # never the other file's edit.
+        assert "FIRM APP EDIT ONLY." in diff_firm_text
+        assert "HOST ROBOT_RADIO EDIT ONLY." not in diff_firm_text
+        assert "HOST ROBOT_RADIO EDIT ONLY." in diff_host_text
+        assert "FIRM APP EDIT ONLY." not in diff_host_text
+
+        # commit_edits so the overlay dir is clean before validate/apply,
+        # matching the real pre-execution lifecycle step.
+        from clasi.design.overlay import commit_edits
+
+        commit_edits(sprint_design_dir, repo_root=repo)
+
+        # validate_design (clasi design validate --overlay equivalent)
+        # passes: every overlay file resolves to its own distinct
+        # canonical target via the manifest, and every diff is fresh.
+        validation = json.loads(validate_design(overlay_dir=str(sprint_design_dir)))
+        assert validation == {"ok": True, "messages": [], "info": []}, validation
+
+        # apply: also CRITICAL -- clasi.design.overlay.apply() required
+        # no code change either; it already resolves targets solely via
+        # the _sources.json manifest, never by overlay filename.
+        from clasi.design.overlay import apply
+
+        canonical_firm = (repo / "src" / "firm" / "app" / "DESIGN.md").resolve()
+        canonical_host = (repo / "src" / "host" / "robot_radio" / "DESIGN.md").resolve()
+
+        applied = apply(sprint_design_dir)
+        assert set(applied) == {canonical_firm, canonical_host}
+
+        # Each canonical file received ITS OWN edit -- firm/app never
+        # receives host/robot_radio's content, and vice versa.
+        assert canonical_firm.read_text(encoding="utf-8") == firm_edit
+        assert canonical_host.read_text(encoding="utf-8") == host_edit
+        assert "HOST ROBOT_RADIO EDIT ONLY." not in canonical_firm.read_text(
+            encoding="utf-8"
+        )
+        assert "FIRM APP EDIT ONLY." not in canonical_host.read_text(encoding="utf-8")

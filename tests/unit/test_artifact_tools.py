@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clasi.tools.artifact_tools import (
+    _derive_overlay_slug,
+    _resolve_overlay_doc_path,
     close_sprint,
     create_sprint,
     update_ticket_status,
@@ -13,6 +15,7 @@ from clasi.tools.artifact_tools import (
 )
 from clasi.artifact import Artifact
 from clasi.mcp_server import set_project
+from clasi.project import Project
 from clasi.state_db import acquire_lock, advance_phase, record_gate
 
 
@@ -222,3 +225,93 @@ class TestCloseSprintExitCode5:
             "Exit code 5 (no tests collected) must not be reported as a test failure. "
             f"Got: {result}"
         )
+
+
+def _make_project_with_sources(tmp_path, sources):
+    """Write .clasi/config.yaml with the given sources: list and return a Project."""
+    config_dir = tmp_path / ".clasi"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    sources_yaml = "\n".join(f"  - {s}" for s in sources)
+    (config_dir / "config.yaml").write_text(
+        f"sources:\n{sources_yaml}\n", encoding="utf-8"
+    )
+    return Project(tmp_path)
+
+
+class TestDeriveOverlaySlug:
+    """Ticket 001: unique, stable, reversible overlay slug per canonical doc."""
+
+    def test_colocated_subsystem_doc_under_source_root(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        canonical = tmp_path / "src" / "firm" / "app" / "DESIGN.md"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("# App\n", encoding="utf-8")
+
+        slug = _derive_overlay_slug(project, canonical)
+
+        assert slug == "firm-app-DESIGN.md"
+
+    def test_system_level_doc_has_no_source_root_prefix(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        canonical = tmp_path / "docs" / "design" / "design.md"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("# System\n", encoding="utf-8")
+
+        slug = _derive_overlay_slug(project, canonical)
+
+        assert slug == "design.md"
+
+    def test_reseed_reproduces_the_same_slug(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        canonical = tmp_path / "src" / "firm" / "app" / "DESIGN.md"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("# App\n", encoding="utf-8")
+
+        first = _derive_overlay_slug(project, canonical)
+        second = _derive_overlay_slug(project, canonical)
+
+        assert first == second == "firm-app-DESIGN.md"
+
+    def test_doc_directly_at_source_root_keeps_bare_basename(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        canonical = tmp_path / "src" / "DESIGN.md"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("# Src overview\n", encoding="utf-8")
+
+        slug = _derive_overlay_slug(project, canonical)
+
+        assert slug == "DESIGN.md"
+
+    def test_two_colocated_docs_produce_distinct_slugs(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        alpha = tmp_path / "src" / "firm" / "app" / "DESIGN.md"
+        beta = tmp_path / "host" / "robot_radio" / "DESIGN.md"
+        alpha.parent.mkdir(parents=True, exist_ok=True)
+        alpha.write_text("# Alpha\n", encoding="utf-8")
+
+        project_multi = _make_project_with_sources(tmp_path, ["src", "host"])
+        beta.parent.mkdir(parents=True, exist_ok=True)
+        beta.write_text("# Beta\n", encoding="utf-8")
+
+        slug_alpha = _derive_overlay_slug(project_multi, alpha)
+        slug_beta = _derive_overlay_slug(project_multi, beta)
+
+        assert slug_alpha == "firm-app-DESIGN.md"
+        assert slug_beta == "robot_radio-DESIGN.md"
+        assert slug_alpha != slug_beta
+
+
+class TestResolveOverlayDocPath:
+    """doc_names accepts both docs/design/-relative names and co-located paths."""
+
+    def test_bare_filename_resolves_relative_to_design_dir(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, [])
+        resolved = _resolve_overlay_doc_path(project, "design.md")
+
+        assert resolved == (tmp_path / "docs" / "design" / "design.md").resolve()
+
+    def test_colocated_path_resolves_relative_to_project_root_no_escape(self, tmp_path):
+        project = _make_project_with_sources(tmp_path, ["src"])
+        resolved = _resolve_overlay_doc_path(project, "src/firm/app/DESIGN.md")
+
+        assert resolved == (tmp_path / "src" / "firm" / "app" / "DESIGN.md").resolve()

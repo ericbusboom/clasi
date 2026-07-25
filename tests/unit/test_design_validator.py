@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,22 @@ def _make_subsystem(tmp_path: Path, *parts: str) -> Path:
     subsystem = tmp_path.joinpath(*parts)
     subsystem.mkdir(parents=True, exist_ok=True)
     return subsystem.resolve()
+
+
+def _write_sources_manifest(overlay_dir: Path, mapping: dict[str, str]) -> None:
+    """Write (or merge into) the overlay's ``_sources.json`` manifest.
+
+    Mirrors ``clasi.design.overlay.seed_and_commit``'s manifest shape
+    (overlay filename -> canonical source path) without depending on the
+    overlay module's git-commit side effects — these tests only need the
+    manifest file itself on disk for the validator to read.
+    """
+    manifest_path = overlay_dir / "_sources.json"
+    existing: dict[str, str] = {}
+    if manifest_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+    existing.update(mapping)
+    manifest_path.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _write_valid_doc_set(tmp_path: Path) -> Project:
@@ -273,6 +290,9 @@ class TestSprintOverlay:
         (overlay_dir / "design.md").write_text(
             "---\nsource_paths: []\n---\nUpdated system design.\n", encoding="utf-8"
         )
+        _write_sources_manifest(
+            overlay_dir, {"design.md": str(project.design_dir / "design.md")}
+        )
 
         result = validate(project, overlay_dir)
         assert not result.ok
@@ -284,6 +304,9 @@ class TestSprintOverlay:
         overlay_dir.mkdir(parents=True)
         content = "---\nsource_paths: []\n---\nUpdated system design.\n"
         (overlay_dir / "design.md").write_text(content, encoding="utf-8")
+        _write_sources_manifest(
+            overlay_dir, {"design.md": str(project.design_dir / "design.md")}
+        )
 
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         (overlay_dir / "design.diff.md").write_text(
@@ -299,6 +322,9 @@ class TestSprintOverlay:
         overlay_dir.mkdir(parents=True)
         content = "---\nsource_paths: []\n---\nUpdated system design.\n"
         (overlay_dir / "design.md").write_text(content, encoding="utf-8")
+        _write_sources_manifest(
+            overlay_dir, {"design.md": str(project.design_dir / "design.md")}
+        )
 
         stale_digest = hashlib.sha256(b"stale content").hexdigest()
         (overlay_dir / "design.diff.md").write_text(
@@ -309,7 +335,11 @@ class TestSprintOverlay:
         assert not result.ok
         assert any("is stale" in m for m in result.messages)
 
-    def test_overlay_filename_not_matching_canonical_doc_is_flagged(self, tmp_path):
+    def test_overlay_with_no_manifest_entry_is_flagged(self, tmp_path):
+        """An overlay .md file with no entry in _sources.json (e.g. manually
+        dropped into the overlay dir without seeding) is still caught as an
+        error naming the specific file — the check must not weaken to "any
+        .md file present is fine."""
         project = _write_valid_doc_set(tmp_path)
         overlay_dir = tmp_path / "clasi" / "sprints" / "001-x" / "design"
         overlay_dir.mkdir(parents=True)
@@ -319,14 +349,44 @@ class TestSprintOverlay:
         (overlay_dir / "unknown-subsystem.diff.md").write_text(
             f"---\nsource_hash: {digest}\n---\nDiff.\n", encoding="utf-8"
         )
+        # Deliberately no _sources.json manifest entry for this file.
 
         result = validate(project, overlay_dir)
         assert not result.ok
-        assert any("does not match any existing canonical" in m for m in result.messages)
+        assert any(
+            "unknown-subsystem.md" in m and "no entry" in m for m in result.messages
+        )
+
+    def test_overlay_manifest_entry_outside_doc_set_is_flagged(self, tmp_path):
+        """An overlay file whose manifest entry points to a path outside
+        the project's known doc set (system doc + subsystem DESIGN.mds) is
+        caught as an error naming the specific overlay file, even though
+        the manifest entry itself resolves to a real file on disk."""
+        project = _write_valid_doc_set(tmp_path)
+        overlay_dir = tmp_path / "clasi" / "sprints" / "001-x" / "design"
+        overlay_dir.mkdir(parents=True)
+        content = "# Not a real subsystem doc\n"
+        (overlay_dir / "rogue.md").write_text(content, encoding="utf-8")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        (overlay_dir / "rogue.diff.md").write_text(
+            f"---\nsource_hash: {digest}\n---\nDiff.\n", encoding="utf-8"
+        )
+
+        outside_doc = tmp_path / "not_a_subsystem" / "DESIGN.md"
+        outside_doc.parent.mkdir(parents=True)
+        outside_doc.write_text("# Outside the doc set\n", encoding="utf-8")
+        _write_sources_manifest(overlay_dir, {"rogue.md": str(outside_doc)})
+
+        result = validate(project, overlay_dir)
+        assert not result.ok
+        assert any(
+            "rogue.md" in m and "not a known canonical" in m for m in result.messages
+        )
 
     def test_overlay_matching_a_subsystem_doc_filename_passes(self, tmp_path):
         """DESIGN.md is a valid overlay filename target once a subsystem
-        doc exists with that name (co-located model, ticket 004)."""
+        doc exists with that name (co-located model, ticket 004) and the
+        overlay's manifest records that subsystem doc as its source."""
         project = _write_valid_doc_set(tmp_path)
         overlay_dir = tmp_path / "clasi" / "sprints" / "001-x" / "design"
         overlay_dir.mkdir(parents=True)
@@ -336,9 +396,59 @@ class TestSprintOverlay:
         (overlay_dir / "DESIGN.diff.md").write_text(
             f"---\nsource_hash: {digest}\n---\nDiff.\n", encoding="utf-8"
         )
+        _write_sources_manifest(
+            overlay_dir,
+            {"DESIGN.md": str(tmp_path / "src" / "clasi" / "DESIGN.md")},
+        )
 
         result = validate(project, overlay_dir)
         assert result.ok
+
+    def test_two_same_basename_overlay_files_resolve_to_distinct_docs_passes(
+        self, tmp_path
+    ):
+        """Two slugged overlay files that share the basename DESIGN.md
+        (the co-located model, ticket 022) but manifest-resolve to two
+        distinct, real subsystem docs both pass — the check must
+        distinguish them via the manifest, not via basename matching,
+        which would be unable to tell them apart."""
+        project = _make_project(tmp_path, ["src"])
+        root = _make_subsystem(tmp_path, "src")
+        sub_alpha = _make_subsystem(tmp_path, "src", "alpha")
+        sub_beta = _make_subsystem(tmp_path, "src", "beta")
+        write_system_doc(project, "# System design\n")
+        write_design_doc(project, root, "# src root overview\n")
+        write_design_doc(project, sub_alpha, "# alpha subsystem\n")
+        write_design_doc(project, sub_beta, "# beta subsystem\n")
+
+        overlay_dir = tmp_path / "clasi" / "sprints" / "001-x" / "design"
+        overlay_dir.mkdir(parents=True)
+
+        alpha_content = "# Updated alpha subsystem\n"
+        beta_content = "# Updated beta subsystem\n"
+        (overlay_dir / "alpha-DESIGN.md").write_text(alpha_content, encoding="utf-8")
+        (overlay_dir / "beta-DESIGN.md").write_text(beta_content, encoding="utf-8")
+
+        alpha_digest = hashlib.sha256(alpha_content.encode("utf-8")).hexdigest()
+        beta_digest = hashlib.sha256(beta_content.encode("utf-8")).hexdigest()
+        (overlay_dir / "alpha-DESIGN.diff.md").write_text(
+            f"---\nsource_hash: {alpha_digest}\n---\nDiff.\n", encoding="utf-8"
+        )
+        (overlay_dir / "beta-DESIGN.diff.md").write_text(
+            f"---\nsource_hash: {beta_digest}\n---\nDiff.\n", encoding="utf-8"
+        )
+
+        _write_sources_manifest(
+            overlay_dir,
+            {
+                "alpha-DESIGN.md": str(sub_alpha / "DESIGN.md"),
+                "beta-DESIGN.md": str(sub_beta / "DESIGN.md"),
+            },
+        )
+
+        result = validate(project, overlay_dir)
+        assert result.ok
+        assert result.messages == []
 
     def test_missing_overlay_directory_is_flagged(self, tmp_path):
         project = _write_valid_doc_set(tmp_path)
