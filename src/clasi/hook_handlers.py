@@ -340,14 +340,13 @@ def handle_role_guard(payload: dict) -> None:
     (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
 
-    ~/.claude/plans/** (the harness plan-mode plan file, and the exact
-    artifact clasi's own plan_to_issue PostToolUse hook harvests) is
-    allow-listed via an absolute-path comparison against the RAW incoming
-    path, checked before any root-relative normalization — it lies outside
-    the project root and can never be expressed as a root-relative prefix.
-    This is the only outside-root path allow-listed; every other
-    outside-root path still fails closed for tier 0/1 (tier 2 is already
-    unrestricted regardless).
+    Outside-root writes are ALLOWED for every tier. role-guard governs
+    direct writes to *this* repo's source and tests only; a path outside
+    the project root (the agent's ~/.claude memory and plan files, home-dir
+    scratch, an unrelated checkout) is not CLASI's to police and exits
+    allow with reason "outside-root". The ~/.claude/plans/** absolute-path
+    allow-list below is now subsumed by this rule and kept only so its
+    "claude-plans-dir" reason keeps appearing in logs.
 
     "Source / tests / config" above means: when Project.protected_paths is
     NOT configured (the default — no `protected_paths:` key in
@@ -391,25 +390,12 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
-    # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md) is
-    # written by team-lead (tier 0) and is the exact artifact clasi's own
-    # plan_to_issue PostToolUse hook harvests into clasi/issues/. It lies
-    # OUTSIDE the project root by construction, so it can never be expressed
-    # as a root-relative prefix and can never match safe_prefixes/
-    # _allow_prefixes below — those are built from Project properties that
-    # are always root-relative. This check must run against the RAW
-    # incoming absolute path, BEFORE _normalize_to_root_relative runs: that
-    # normalization either rewrites an absolute path to root-relative (if
-    # it happens to be under the project root — never true here) or leaves
-    # it as an unchanged absolute string when it's outside the root, which
-    # is what would reach this comparison if it ran after normalization.
-    # Comparing pre-normalization keeps this allow-list a narrow absolute-
-    # path prefix check, not a root-relative one, and keeps it independent
-    # of whatever the project root happens to be. Deliberately narrow: only
-    # this one absolute prefix is allow-listed here, so no other
-    # outside-root path is affected (see the outside-root fail-closed
-    # default below, and the regression test asserting an arbitrary
-    # outside-root path like ~/Desktop/x.md is still blocked).
+    # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md).
+    # This lies outside the project root, so the general outside-root
+    # allow below (reason "outside-root") already covers it. This narrower
+    # pre-normalization check is retained only so its distinct
+    # "claude-plans-dir" reason keeps appearing in logs for anyone grepping
+    # for plan-file writes specifically — it is otherwise redundant.
     if file_path:
         try:
             _plans_dir = Path.home() / ".claude" / "plans"
@@ -468,6 +454,22 @@ def handle_role_guard(payload: dict) -> None:
             agent_tier or "0", present_keys,
         )
         _exit_hook("role-guard", payload, 2, "no-path")
+
+    # Outside-root writes are ALLOWED for every tier. CLASI's role-guard
+    # governs one thing: direct writes to *this* repo's source and tests.
+    # Anything outside the project root — the agent's own ~/.claude memory
+    # and plan files, home-dir scratch, an unrelated checkout — is simply
+    # not CLASI's business to police, and blocking it only cripples the
+    # agent's legitimate work (e.g. persisting a memory file). Detection is
+    # exact: _normalize_to_root_relative rewrites in-root absolute paths to
+    # a relative form and returns everything else unchanged, so a path that
+    # is STILL absolute here could not be made root-relative and therefore
+    # lies outside the root. (An empty file_path never reaches this point —
+    # the no-path gate above already handled it.) This supersedes the
+    # narrow ~/.claude/plans/** allow-list above, which is retained only so
+    # its specific "claude-plans-dir" reason keeps appearing in logs.
+    if file_path and Path(file_path).is_absolute():
+        _exit_hook("role-guard", payload, 0, "outside-root")
 
     # OOP bypass: .clasi/oop (or legacy .clasi-oop) enables direct writes
     # for any tier. Used for out-of-process changes reviewed manually by

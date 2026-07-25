@@ -1,7 +1,7 @@
 ---
 id: '025'
 title: Design-overlay multi-doc fix + lifecycle unblocking
-status: planning-docs
+status: closed
 branch: sprint/025-design-overlay-multi-doc-fix-lifecycle-unblocking
 worktree: false
 use-cases: []
