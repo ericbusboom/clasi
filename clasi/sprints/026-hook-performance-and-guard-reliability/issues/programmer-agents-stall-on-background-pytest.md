@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '026'
+tickets:
+- 026-006
 ---
 
 # Programmer sub-agents stall on background pytest and orphan their terminal work
