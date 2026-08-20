@@ -81,6 +81,14 @@ CREATE TABLE IF NOT EXISTS sprint_gates (
     UNIQUE(sprint_id, gate_name)
 );
 
+CREATE TABLE IF NOT EXISTS phase_transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sprint_id TEXT NOT NULL REFERENCES sprints(id),
+    from_phase TEXT,
+    to_phase TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS execution_locks (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     sprint_id TEXT NOT NULL REFERENCES sprints(id),
@@ -216,7 +224,9 @@ class StateDB:
             conn.close()
 
     def get_sprint_state(self, sprint_id: str) -> dict[str, Any]:
-        """Return a dict with the sprint's phase, gates, and lock status.
+        """Return a dict with the sprint's phase, gates, lock, and phase
+        transition history (oldest-first list of
+        {from_phase, to_phase, at} dicts, under "phase_transitions").
 
         Raises ValueError if the sprint is not registered.
         """
@@ -254,6 +264,18 @@ class StateDB:
                     "acquired_at": lock_row["acquired_at"],
                 }
 
+            phase_transitions = []
+            for t in conn.execute(
+                "SELECT from_phase, to_phase, at "
+                "FROM phase_transitions WHERE sprint_id = ? ORDER BY at, id",
+                (sprint_id,),
+            ):
+                phase_transitions.append({
+                    "from_phase": t["from_phase"],
+                    "to_phase": t["to_phase"],
+                    "at": t["at"],
+                })
+
             return {
                 "id": row["id"],
                 "slug": row["slug"],
@@ -263,6 +285,7 @@ class StateDB:
                 "updated_at": row["updated_at"],
                 "gates": gates,
                 "lock": lock,
+                "phase_transitions": phase_transitions,
             }
         finally:
             conn.close()
@@ -321,6 +344,11 @@ class StateDB:
             conn.execute(
                 "UPDATE sprints SET phase = ?, updated_at = ? WHERE id = ?",
                 (next_phase, now, sprint_id),
+            )
+            conn.execute(
+                "INSERT INTO phase_transitions "
+                "(sprint_id, from_phase, to_phase, at) VALUES (?, ?, ?, ?)",
+                (sprint_id, current, next_phase, now),
             )
             conn.commit()
 

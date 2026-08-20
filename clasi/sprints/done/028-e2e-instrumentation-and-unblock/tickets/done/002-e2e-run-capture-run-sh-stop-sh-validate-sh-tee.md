@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: 'E2E run capture: run.sh, stop.sh, validate.sh tee'
-status: open
+status: done
 use-cases:
 - SUC-002
 depends-on:
@@ -93,35 +93,39 @@ tester passing it around by hand on every invocation. Mechanism:
 
 ## Acceptance Criteria
 
-- [ ] New `tests/e2e/run.sh` wrapper exists; the tester uses it instead
+- [x] New `tests/e2e/run.sh` wrapper exists; the tester uses it instead
       of raw `docker exec claude -p`.
-- [ ] Each `run.sh` call writes
+- [x] Each `run.sh` call writes
       `e2e-project/.e2e-runs/<run-id>/<NN>-<slug>/{prompt.txt,
       output.jsonl, exit-code, duration}`.
-- [ ] `run.sh` invokes the subject with `--output-format stream-json
+- [x] `run.sh` invokes the subject with `--output-format stream-json
       --verbose` (not `--output-format text`) so tool calls and turn
       counts land in `output.jsonl`.
-- [ ] `start.sh` mints the run id (reconciled with ticket 001's minimal
+- [x] `start.sh` mints the run id (reconciled with ticket 001's minimal
       directory per the coordination note above) and records `claude
       --version`, `clasi --version`, and the image digest into the run
       directory.
-- [ ] `start.sh` writes the minted run id to `e2e-project/.e2e-runs/current`
+- [x] `start.sh` writes the minted run id to `e2e-project/.e2e-runs/current`
       per the Run-ID handoff contract above, and re-derives/preserves the
       existing run id on `--resume` instead of minting a new one.
-- [ ] `run.sh`, `validate.sh`, and `stop.sh` all resolve the run id via
+- [x] `run.sh`, `validate.sh`, and `stop.sh` all resolve the run id via
       the same contract (explicit `--run-id`/positional argument first,
       `.e2e-runs/current` otherwise) and fail loudly if neither
-      resolves.
-- [ ] `stop.sh`, before removing the container, saves `docker logs
+      resolves. Deliberate, documented deviation: `run.sh`'s two
+      positionals are already `<slug>` and `<prompt>`, so unlike
+      `stop.sh`/`validate.sh` it does not also accept a bare positional
+      as a run-id override — only `--run-id <id>` or `.e2e-runs/current`.
+      Explained in `run.sh`'s header comment and in `AGENTS.md`.
+- [x] `stop.sh`, before removing the container, saves `docker logs
       clasi-e2e` and copies the subject's `~/.claude/projects` session
       directory into the run dir.
-- [ ] `tests/e2e/AGENTS.md` is edited to mandate `run.sh` for all subject
+- [x] `tests/e2e/AGENTS.md` is edited to mandate `run.sh` for all subject
       sessions, replacing the raw `docker exec claude -p` instruction.
-- [ ] `validate.sh` output is tee'd into the run directory.
-- [ ] `validate.sh` checks read host bind-mount paths where possible, so
+- [x] `validate.sh` output is tee'd into the run directory.
+- [x] `validate.sh` checks read host bind-mount paths where possible, so
       validation works after `stop.sh` has already removed the
       container.
-- [ ] When the run directory is minted, `.e2e-runs/` is added to the
+- [x] When the run directory is minted, `.e2e-runs/` is added to the
       **subject** project's own `.gitignore`
       (`tests/e2e/e2e-project/.gitignore`, inside the bind-mounted
       project the subject team-lead operates on) — not just this repo's

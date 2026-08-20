@@ -151,6 +151,100 @@ class TestStateDB:
         assert result["cleared"] is False
 
 
+class TestPhaseTransitions:
+    """Test the phase_transitions history table and its exposure."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        return sdb
+
+    def test_init_creates_phase_transitions_table(self, tmp_path):
+        import sqlite3
+
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        conn = sqlite3.connect(str(sdb.path))
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        conn.close()
+        assert "phase_transitions" in tables
+
+    def test_get_sprint_state_has_empty_phase_transitions_initially(self, db):
+        db.register_sprint("010", "test-sprint")
+        state = db.get_sprint_state("010")
+        assert state["phase_transitions"] == []
+
+    def test_advance_phase_writes_one_transition_row(self, db):
+        import sqlite3
+
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+
+        conn = sqlite3.connect(str(db.path))
+        rows = conn.execute(
+            "SELECT sprint_id, from_phase, to_phase, at "
+            "FROM phase_transitions WHERE sprint_id = ?",
+            ("010",),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        sprint_id, from_phase, to_phase, at = rows[0]
+        assert sprint_id == "010"
+        assert from_phase == "roadmap"
+        assert to_phase == "planning-docs"
+        assert at  # non-empty timestamp
+
+    def test_advance_phase_transition_is_atomic_with_sprints_update(self, db):
+        """The phase_transitions row and the sprints.phase update are
+        written in the same transaction (same conn.commit()) -- assert
+        both are visible together after advance_phase returns, which is
+        the externally observable evidence of atomicity."""
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")
+
+        state = db.get_sprint_state("010")
+        assert state["phase"] == "planning-docs"
+        assert len(state["phase_transitions"]) == 1
+        assert state["phase_transitions"][0]["from_phase"] == "roadmap"
+        assert state["phase_transitions"][0]["to_phase"] == "planning-docs"
+
+    def test_get_sprint_state_returns_transitions_in_order(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+        db.advance_phase("010")  # planning-docs -> architecture-review
+
+        state = db.get_sprint_state("010")
+        transitions = state["phase_transitions"]
+        assert len(transitions) == 2
+        assert transitions[0]["from_phase"] == "roadmap"
+        assert transitions[0]["to_phase"] == "planning-docs"
+        assert transitions[1]["from_phase"] == "planning-docs"
+        assert transitions[1]["to_phase"] == "architecture-review"
+        # Chronological order: first transition's timestamp <= second's.
+        assert transitions[0]["at"] <= transitions[1]["at"]
+
+    def test_advance_phase_failure_writes_no_transition_row(self, db):
+        """If advance_phase raises (gate not satisfied), no
+        phase_transitions row is written -- the UPDATE and the INSERT
+        both happen only on the successful path, inside one transaction."""
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+        db.advance_phase("010")  # planning-docs -> architecture-review
+        with pytest.raises(ValueError, match="gate.*architecture_review.*not passed"):
+            db.advance_phase("010")  # blocked: gate not passed
+
+        state = db.get_sprint_state("010")
+        assert state["phase"] == "architecture-review"
+        assert len(state["phase_transitions"]) == 2
+
+
 class TestOopState:
     """Test oop_state table methods (StateDB class level)."""
 

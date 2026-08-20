@@ -7,19 +7,64 @@ CONTAINER_NAME="clasi-e2e"
 IMAGE_NAME="clasi-e2e"
 CANONICAL_DIR="$SCRIPT_DIR/e2e-project"
 WIPE=0
+RUN_ID_OVERRIDE=""
 
-for arg in "$@"; do
-    case "$arg" in
+usage() {
+    echo "  Usage: ./stop.sh [--wipe] [--run-id <id>]" >&2
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
         --wipe)
             WIPE=1
+            shift
+            ;;
+        --run-id)
+            if [ $# -lt 2 ]; then
+                echo "ERROR: --run-id requires a value." >&2
+                usage
+                exit 1
+            fi
+            RUN_ID_OVERRIDE="$2"
+            shift 2
+            ;;
+        --*)
+            echo "ERROR: Unknown argument '$1'." >&2
+            usage
+            exit 1
             ;;
         *)
-            echo "ERROR: Unknown argument '$arg'." >&2
-            echo "  Usage: ./stop.sh [--wipe]" >&2
-            exit 1
+            if [ -n "$RUN_ID_OVERRIDE" ]; then
+                echo "ERROR: Unknown argument '$1'." >&2
+                usage
+                exit 1
+            fi
+            RUN_ID_OVERRIDE="$1"
+            shift
             ;;
     esac
 done
+
+# --- Run-id resolution: explicit --run-id/positional wins; otherwise
+# .e2e-runs/current. Same contract as run.sh/validate.sh. Fail loudly
+# rather than silently operating on the wrong or a nonexistent run
+# directory. ---
+resolve_run_id() {
+    local override="$1" project_dir="$2" current_file id
+    if [ -n "$override" ]; then
+        printf '%s\n' "$override"
+        return 0
+    fi
+    current_file="$project_dir/.e2e-runs/current"
+    if [ -f "$current_file" ]; then
+        id="$(cat "$current_file")"
+        if [ -n "$id" ]; then
+            printf '%s\n' "$id"
+            return 0
+        fi
+    fi
+    return 1
+}
 
 # --- Guarded wipe: refuse anything that isn't clearly the e2e project dir ---
 guarded_wipe() {
@@ -45,6 +90,51 @@ guarded_wipe() {
     find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 }
 
+HOST_PROJECT_DIR=""
+if [ -e "$CANONICAL_DIR" ]; then
+    HOST_PROJECT_DIR="$(cd -P "$CANONICAL_DIR" && pwd)"
+fi
+
+# --- Capture container logs and the subject's session directory into the
+# run directory BEFORE any docker stop/rm below — the container and its
+# filesystem are gone once those run, and this is the harness's only
+# chance to preserve them (SUC-002). Only attempted if the container
+# currently exists (running or stopped-but-present); if there's no
+# container, there's nothing to capture and this step is a no-op — same
+# graceful handling stop.sh already gives an absent container elsewhere
+# in this script. ---
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if [ -z "$HOST_PROJECT_DIR" ]; then
+        echo "ERROR: container '$CONTAINER_NAME' exists but $CANONICAL_DIR does not." >&2
+        echo "  Cannot resolve a run directory to capture into. Aborting before" >&2
+        echo "  touching the container so nothing is lost silently." >&2
+        exit 1
+    fi
+
+    if ! RUN_ID="$(resolve_run_id "$RUN_ID_OVERRIDE" "$HOST_PROJECT_DIR")"; then
+        echo "ERROR: could not resolve a run id — no --run-id/positional given and" >&2
+        echo "  $HOST_PROJECT_DIR/.e2e-runs/current does not exist or is empty." >&2
+        echo "  Pass --run-id <id> explicitly, or fix .e2e-runs/current, then retry." >&2
+        exit 1
+    fi
+    RUN_DIR="$HOST_PROJECT_DIR/.e2e-runs/$RUN_ID"
+    mkdir -p "$RUN_DIR"
+
+    echo "=== Capturing container logs and session directory into $RUN_DIR ==="
+    if docker logs "$CONTAINER_NAME" > "$RUN_DIR/container.log" 2>&1; then
+        echo "  Container log captured: $RUN_DIR/container.log"
+    else
+        echo "WARNING: 'docker logs $CONTAINER_NAME' failed; container.log may be incomplete." >&2
+    fi
+
+    rm -rf "$RUN_DIR/claude-projects"
+    if docker cp "$CONTAINER_NAME:/home/agent/.claude/projects" "$RUN_DIR/claude-projects" >/dev/null 2>&1; then
+        echo "  Session directory captured: $RUN_DIR/claude-projects"
+    else
+        echo "WARNING: 'docker cp' of ~/.claude/projects failed (no sessions captured yet? not fatal)." >&2
+    fi
+fi
+
 if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "Stopping container '$CONTAINER_NAME'..."
     docker stop "$CONTAINER_NAME" >/dev/null
@@ -67,8 +157,7 @@ if [ -d "$CREDS_STAGE_DIR" ]; then
 fi
 
 if [ "$WIPE" -eq 1 ]; then
-    if [ -e "$CANONICAL_DIR" ]; then
-        HOST_PROJECT_DIR="$(cd -P "$CANONICAL_DIR" && pwd)"
+    if [ -n "$HOST_PROJECT_DIR" ]; then
         echo "=== --wipe: wiping contents of $HOST_PROJECT_DIR ==="
         guarded_wipe "$HOST_PROJECT_DIR"
     else

@@ -1,8 +1,20 @@
 """Tests for clasi.mcp_server module."""
 
+import asyncio
+import json
+import logging
+import re
+
+import pytest
 from mcp.server.fastmcp import FastMCP
 
-from clasi.mcp_server import server, content_path, _strip_none_sentinel
+from clasi.mcp_server import (
+    server,
+    content_path,
+    _strip_none_sentinel,
+    _build_logged_call_tool,
+    _write_call_trace,
+)
 
 # Trigger lazy tool registration (normally done by run_server)
 import clasi.tools.process_tools  # noqa: F401
@@ -166,3 +178,132 @@ class TestNoneSentinelStripping:
         original = {"notes": "NONE"}
         _strip_none_sentinel(original)
         assert original == {"notes": "NONE"}
+
+
+class TestWriteCallTrace:
+    """Unit tests for `_write_call_trace` — the self-contained JSONL trace
+    writer (ticket 028-003). Deliberately tested independent of the
+    call_tool monkey-patch it is invoked from, since it is written to be
+    liftable into a future `@clasi_tool` decorator (sprint 030) as-is.
+    """
+
+    def _read_records(self, log_dir):
+        text = (log_dir / "mcp-calls.jsonl").read_text(encoding="utf-8")
+        return [json.loads(line) for line in text.splitlines()]
+
+    def test_success_record_shape(self, tmp_path):
+        log_dir = tmp_path / ".clasi" / "log"
+        _write_call_trace(
+            log_dir, agent="team-lead", tool="get_version", args={"a": "1"},
+            ok=True, ms=42, result_len=17,
+        )
+        records = self._read_records(log_dir)
+        assert len(records) == 1
+        record = records[0]
+        assert set(record.keys()) == {"ts", "agent", "tool", "args", "ok", "ms", "result_len"}
+        assert record["agent"] == "team-lead"
+        assert record["tool"] == "get_version"
+        assert record["args"] == {"a": "1"}
+        assert record["ok"] is True
+        assert record["ms"] == 42
+        assert record["result_len"] == 17
+        # ISO 8601 UTC, matching _log_hook_event's %Y-%m-%dT%H:%M:%SZ format
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", record["ts"])
+
+    def test_failure_record_shape(self, tmp_path):
+        log_dir = tmp_path / ".clasi" / "log"
+        _write_call_trace(
+            log_dir, agent="team-lead", tool="broken_tool", args={},
+            ok=False, ms=5, result_len=None,
+        )
+        records = self._read_records(log_dir)
+        assert len(records) == 1
+        record = records[0]
+        assert record["ok"] is False
+        assert record["tool"] == "broken_tool"
+        assert record["result_len"] is None
+        assert record["ms"] == 5
+
+    def test_appends_one_line_per_call(self, tmp_path):
+        log_dir = tmp_path / ".clasi" / "log"
+        _write_call_trace(log_dir, agent="a", tool="t1", args={}, ok=True, ms=1, result_len=1)
+        _write_call_trace(log_dir, agent="a", tool="t2", args={}, ok=False, ms=2, result_len=None)
+        records = self._read_records(log_dir)
+        assert len(records) == 2
+        assert records[0]["tool"] == "t1"
+        assert records[1]["tool"] == "t2"
+
+    def test_ensures_log_dir_gitignore(self, tmp_path):
+        """AC: .clasi/log/mcp-calls.jsonl must be covered by the existing
+        log-dir gitignore mechanism. mcp_server.py's own log setup
+        (Clasi._setup_logging) does not call _ensure_log_gitignore, so
+        _write_call_trace must call it itself — verified here rather than
+        assumed."""
+        log_dir = tmp_path / ".clasi" / "log"
+        assert not log_dir.exists()
+        _write_call_trace(log_dir, agent="a", tool="t", args={}, ok=True, ms=1, result_len=1)
+        gitignore = log_dir / ".gitignore"
+        assert gitignore.exists()
+        assert gitignore.read_text(encoding="utf-8") == "*\n!.gitignore\n"
+
+
+class TestBuildLoggedCallTool:
+    """Unit tests for `_build_logged_call_tool` — the call_tool wrapper
+    factory (ticket 028-003). Built as a factory (rather than a closure
+    inline in Clasi.run()) specifically so it can be exercised here against
+    a fake `original_call_tool` and a tmp_path log dir, without booting the
+    real stdio server.
+    """
+
+    def test_success_appends_trace_and_logs_duration(self, tmp_path, caplog):
+        log_dir = tmp_path / ".clasi" / "log"
+
+        async def fake_original(name, arguments, **kwargs):
+            return "ok-result"
+
+        wrapped = _build_logged_call_tool(fake_original, "test-agent", log_dir)
+
+        with caplog.at_level(logging.INFO, logger="clasi.mcp"):
+            result = asyncio.run(wrapped("some_tool", {"x": "1"}))
+
+        assert result == "ok-result"
+
+        records = [json.loads(line) for line in (log_dir / "mcp-calls.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        assert len(records) == 1
+        record = records[0]
+        assert record["ok"] is True
+        assert record["tool"] == "some_tool"
+        assert record["agent"] == "test-agent"
+        assert isinstance(record["ms"], int)
+        assert record["ms"] >= 0
+        assert record["result_len"] == len("ok-result")
+
+        # Human log line carries the duration too.
+        assert re.search(r"OK some_tool \(\d+ms\) ->", caplog.text)
+
+    def test_failure_propagates_and_records_trace(self, tmp_path, caplog):
+        log_dir = tmp_path / ".clasi" / "log"
+
+        async def fake_original(name, arguments, **kwargs):
+            raise ValueError("boom")
+
+        wrapped = _build_logged_call_tool(fake_original, "test-agent", log_dir)
+
+        with caplog.at_level(logging.INFO, logger="clasi.mcp"):
+            with pytest.raises(ValueError, match="boom"):
+                asyncio.run(wrapped("broken_tool", {}))
+
+        records = [json.loads(line) for line in (log_dir / "mcp-calls.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        assert len(records) == 1
+        record = records[0]
+        assert record["ok"] is False
+        assert record["tool"] == "broken_tool"
+        assert record["result_len"] is None
+        assert isinstance(record["ms"], int)
+        assert record["ms"] >= 0
+
+        # Exception still propagates unchanged (asserted above via pytest.raises);
+        # human log line carries the duration on the FAIL path too.
+        assert re.search(r"FAIL broken_tool \(\d+ms\) ->", caplog.text)

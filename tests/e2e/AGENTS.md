@@ -134,26 +134,38 @@ project dir contents manually and retry.
 
 ## Launching subject sessions
 
-Every subject session is a `docker exec` into the running container,
-using Claude Code's print mode:
+Every subject session must go through `./run.sh` — **never** invoke
+`docker exec clasi-e2e claude -p` directly. `run.sh` wraps that same
+call, but durably captures the exchange (prompt, full `stream-json`
+output, exit code, duration) into the current run's directory instead
+of letting it live only in your terminal: a raw `docker exec` call
+leaves no replayable record once the container is gone (SUC-002).
 
 ```bash
-docker exec clasi-e2e claude -p \
-  --dangerously-skip-permissions --output-format text --max-turns <N> \
-  "<prompt>"
+./run.sh <slug> "<prompt>" --max-turns <N>
 ```
 
+- `<slug>` — a short label for this milestone (letters, digits, `-`,
+  `_` only), e.g. `sprint1-plan`, `oop2-version`. Becomes part of the
+  captured directory name: `.e2e-runs/<run-id>/<NN>-<slug>/`.
+- `<prompt>` — one quoted argument.
+- `--max-turns <N>` — required, no default. Choose it for the kind of
+  work you're asking for:
+  - **Sprint** (plan → ticket → execute → close): about 40-50.
+  - **OOP change**: about 5-10.
+  - **Catch-up / close-out** after a sprint got interrupted by
+    max-turns: about 20.
+- `run.sh` resolves which run to capture into from
+  `e2e-project/.e2e-runs/current`, written by `./start.sh` — you don't
+  need to pass a run id by hand for the common case. Pass
+  `--run-id <id>` only if you deliberately need to target a run other
+  than the current one.
 - No `--model` flag — `ANTHROPIC_MODEL` is already set in the
   container's environment (see `E2E_MODEL` above), and print mode
   picks it up automatically.
 - Print mode runs in `/project` (the image's `WORKDIR`) and needs no
   OAuth — the API key, base URL, and model all come from the
   container's environment.
-- Choose `--max-turns` for the kind of work you're asking for:
-  - **Sprint** (plan → ticket → execute → close): about 40-50.
-  - **OOP change**: about 5-10.
-  - **Catch-up / close-out** after a sprint got interrupted by
-    max-turns: about 20.
 
 ## The Playbook
 
@@ -332,10 +344,11 @@ bug:
 | `rubric.md` | Process-integrity grading rubric — walk it at the end alongside `validate.sh` |
 | `Dockerfile` | Container image with Python, Node, Claude Code, clasi |
 | `entrypoint.sh` | Runs inside container: clasi init → git → spec → tmux keep-alive |
-| `start.sh` | Build image (local wheel by default) + probe bind mount + wipe (unless `--resume`) + start container |
-| `stop.sh` | Stop and remove container; `--wipe` also clears the project dir |
+| `start.sh` | Build image (local wheel by default) + probe bind mount + wipe (unless `--resume`) + start container; mints the run id (`.e2e-runs/current`), runs the preflight probe, records versions/image digest |
+| `run.sh` | Wraps `docker exec claude -p` for every subject session — captures prompt/output/exit-code/duration into `.e2e-runs/<run-id>/<NN>-<slug>/`; use this, not raw `docker exec` |
+| `stop.sh` | Stop and remove container; captures `docker logs` and the subject's session directory into the run dir first; `--wipe` also clears the project dir |
 | `connect.sh` | Attach to the container's tmux session for interactive/manual poking |
-| `validate.sh` | Mechanical product-rubric checker — run after all sprints and OOP changes |
+| `validate.sh` | Mechanical product-rubric checker — run after all sprints and OOP changes; tees its output into the run dir and reads host-mounted paths where possible so it still works after `stop.sh` |
 | `guessing-game-spec.md` | The 4-sprint spec baked into the container image |
 | `e2e-project/` | Project directory — real dir, or a symlink to `~/.clasi/e2e-project/` on the fallback path (see Harness usage above); gitignored, transient |
 | `.gitignore` | Excludes `e2e-project/` and built wheels (`clasi-*.whl`) from the repo |

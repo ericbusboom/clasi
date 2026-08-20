@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Sprint phase-transition history
-status: open
+status: done
 use-cases:
 - SUC-004
 depends-on: []
@@ -80,16 +80,16 @@ wording separately — do not block on that, implement against
 
 ## Acceptance Criteria
 
-- [ ] `_SCHEMA` gains a `phase_transitions` table (`sprint_id, from_phase,
+- [x] `_SCHEMA` gains a `phase_transitions` table (`sprint_id, from_phase,
       to_phase, at`), additive (`CREATE TABLE IF NOT EXISTS`).
-- [ ] `advance_phase` writes one `phase_transitions` row in the same
+- [x] `advance_phase` writes one `phase_transitions` row in the same
       transaction as its `sprints.phase`/`updated_at` update.
-- [ ] Any other method that writes `sprints.phase` directly (confirm
+- [x] Any other method that writes `sprints.phase` directly (confirm
       whether one exists) is updated the same way.
-- [ ] `get_sprint_phase` (via `StateDB.get_sprint_state`) returns the
+- [x] `get_sprint_phase` (via `StateDB.get_sprint_state`) returns the
       transition list with timestamps as part of its existing response
       dict.
-- [ ] `get_sprint_phase`'s docstring (`artifact_tools.py:2082-2094`,
+- [x] `get_sprint_phase`'s docstring (`artifact_tools.py:2082-2094`,
       currently `"""Get a sprint's current lifecycle phase and gate
       status. ... Returns JSON with {id, phase, gates, lock}."""`) is
       updated to document the new `phase_transitions` field in its
@@ -99,7 +99,7 @@ wording separately — do not block on that, implement against
       leaving it stale after this ticket adds a field would mean the
       MCP tool description lies about its own return shape from the
       moment this ticket lands.
-- [ ] Schema migration is additive; an existing project database gains
+- [x] Schema migration is additive; an existing project database gains
       the table automatically on next `init()` — no manual migration
       step, no data loss for existing rows in other tables.
 

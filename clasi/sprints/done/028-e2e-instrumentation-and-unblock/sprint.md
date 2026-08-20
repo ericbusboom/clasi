@@ -1,7 +1,7 @@
 ---
 id: 028
 title: E2E instrumentation and unblock
-status: planning-docs
+status: closed
 branch: sprint/028-e2e-instrumentation-and-unblock
 worktree: false
 use-cases: []
