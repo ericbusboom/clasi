@@ -27,6 +27,7 @@ def build_status(
     ticket_id: str | None = None,
     reader: "StateReader | None" = None,
     exclude_done: bool = False,
+    skip_inconsistencies: bool = False,
 ) -> dict:
     """Build the full status dict for *project*.
 
@@ -46,6 +47,12 @@ def build_status(
             status-block hook path — on-demand callers (MCP tools, the
             ``status`` CLI command) must leave this ``False`` so they keep
             returning full history.
+        skip_inconsistencies: When True, skips
+            :func:`~clasi.status.inconsistency.detect_inconsistencies`
+            (``inconsistencies`` is returned as ``[]``). Intended ONLY for
+            the ``status-inject`` hook path — the ``status`` CLI command
+            and ``get_status`` MCP tool (project-status skill) must leave
+            this ``False`` so drift detection stays available, unchanged.
 
     Returns:
         A dict with top-level keys: ``agent``, ``computed_at``, ``project``,
@@ -55,7 +62,7 @@ def build_status(
 
     return StatusReporter(project, reader=reader).build(
         agent=agent, sprint_id=sprint_id, ticket_id=ticket_id,
-        exclude_done=exclude_done,
+        exclude_done=exclude_done, skip_inconsistencies=skip_inconsistencies,
     )
 
 

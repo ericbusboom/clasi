@@ -8,9 +8,15 @@ real data from three sources:
 - **Git**: ``subprocess.run(["git", ...], cwd=project.root)``
 - **StateDB**: ``project.db`` — the SQLite sprint lifecycle database
 
-Each method is a direct read — no caching, no mutations.  All methods handle
-errors gracefully and return safe defaults on failure (``False`` / ``""`` /
+Each method is a direct read, no mutations.  All methods handle errors
+gracefully and return safe defaults on failure (``False`` / ``""`` /
 ``None`` / ``0``).
+
+As of sprint 026, the git-subprocess-backed methods (``git_branch``,
+``default_branch``, ``branch_merged``) memoize their underlying
+``subprocess.run`` result per :class:`ClasiStateReader` instance via
+:meth:`ClasiStateReader._run_git` — never across instances or processes.
+Every other method remains an uncached direct read on every call.
 
 Data sources per method
 -----------------------
@@ -68,6 +74,34 @@ class ClasiStateReader:
 
     def __init__(self, project: "Project") -> None:
         self._project = project
+        # Per-instance git-subprocess memoization (sprint 026 / ticket 003).
+        # Keyed on the git argument tuple (excluding the leading "git"
+        # itself). Populated lazily on first call; a hook process
+        # constructs exactly one ClasiStateReader and discards it at exit,
+        # so this cache never outlives — or is shared across — a single
+        # process. It exists purely to collapse the many repeated
+        # predicate-driven calls to the SAME git query (e.g.
+        # ``is_on_sprint_branch`` invoking ``git_branch()`` once per state/
+        # transition it's checked against) into a single subprocess call.
+        self._git_cache: dict[tuple[str, ...], "subprocess.CompletedProcess[str]"] = {}
+
+    def _run_git(self, *args: str) -> "subprocess.CompletedProcess[str]":
+        """Run ``git <args>`` in the project root, memoized per instance.
+
+        Repeated calls with the identical *args* tuple within this
+        reader's lifetime return the cached :class:`subprocess.CompletedProcess`
+        instead of shelling out again. Never persisted across instances —
+        see the cache-safety constraint in this sprint's ``status-DESIGN.md``
+        overlay (process-lifetime only, no cross-invocation cache).
+        """
+        if args not in self._git_cache:
+            self._git_cache[args] = subprocess.run(
+                ["git", *args],
+                cwd=self._project.root,
+                capture_output=True,
+                text=True,
+            )
+        return self._git_cache[args]
 
     # ------------------------------------------------------------------
     # Filesystem methods
@@ -124,14 +158,12 @@ class ClasiStateReader:
 
         Source: ``git branch --show-current`` in ``project.root``.
         Returns ``""`` on any subprocess or decode error.
+
+        Memoized per instance via :meth:`_run_git` — repeated calls within
+        one reader's lifetime shell out once.
         """
         try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                cwd=self._project.root,
-                capture_output=True,
-                text=True,
-            )
+            result = self._run_git("branch", "--show-current")
             if result.returncode != 0:
                 return ""
             return result.stdout.strip()
@@ -148,14 +180,12 @@ class ClasiStateReader:
         1. ``git symbolic-ref refs/remotes/origin/HEAD`` → strip
            ``refs/remotes/origin/`` prefix.
         2. Fall back to ``"master"``.
+
+        Memoized per instance via :meth:`_run_git` — repeated calls within
+        one reader's lifetime shell out once.
         """
         try:
-            result = subprocess.run(
-                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-                cwd=self._project.root,
-                capture_output=True,
-                text=True,
-            )
+            result = self._run_git("symbolic-ref", "refs/remotes/origin/HEAD")
             if result.returncode == 0:
                 ref = result.stdout.strip()
                 # refs/remotes/origin/main → main
@@ -173,18 +203,20 @@ class ClasiStateReader:
         Source: ``git branch --merged <default_branch>`` in ``project.root``.
         Reads the sprint branch name from the sprint.md frontmatter.
         Returns False on any error or if the branch name is empty.
+
+        The ``git branch --merged <default>`` call itself does not depend
+        on *sprint_id* — it lists every branch merged into the default
+        branch, then checks membership — so it is memoized via
+        :meth:`_run_git` keyed only on the resolved *default* branch name.
+        Calling this for multiple sprints in the same reader instance
+        shells out once, not once per sprint.
         """
         try:
             sprint_branch = self.sprint_branch(sprint_id)
             if not sprint_branch:
                 return False
             default = self.default_branch()
-            result = subprocess.run(
-                ["git", "branch", "--merged", default],
-                cwd=self._project.root,
-                capture_output=True,
-                text=True,
-            )
+            result = self._run_git("branch", "--merged", default)
             if result.returncode != 0:
                 return False
             merged_branches = [b.strip().lstrip("* ") for b in result.stdout.splitlines()]

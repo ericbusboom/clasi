@@ -1,18 +1,25 @@
-"""Tests for TaskCreated and TaskCompleted hook handlers."""
+"""Tests for clasi.hook_handlers.
+
+(sprint 026 / ticket 004): handle_task_created, handle_task_completed,
+and handle_commit_check — and their TaskCreated/TaskCompleted/
+commit-check registrations — were removed as dead code (0 of 2,447
+logged hook events, ever). Their test coverage was removed alongside
+them; a couple of tests that merely reused handle_task_created as a
+convenient way to exercise shared log-directory machinery were rewritten
+against handle_subagent_start instead.
+"""
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from clasi.hook_handlers import (
-    handle_task_created,
-    handle_task_completed,
     handle_subagent_start,
     handle_subagent_stop,
-    handle_commit_check,
     handle_plan_to_issue,
     handle_plan_to_todo,  # backward-compatible alias
     handle_codex_plan_to_issue,
@@ -21,6 +28,7 @@ from clasi.hook_handlers import (
     handle_role_guard,
     handle_mcp_guard,
     _ensure_log_gitignore,
+    _log_hook_event,
     _get_log_dir,
     _get_sprint_context,
     _get_active_tickets,
@@ -28,7 +36,11 @@ from clasi.hook_handlers import (
     _ext_to_language,
     _oop_active,
     _oop_source,
+    _recovery_entry_matches,
+    _load_role_guard_config,
+    get_project,
 )
+from clasi.project import Project
 from clasi.state_db import (
     init_db,
     register_sprint,
@@ -40,6 +52,8 @@ from clasi.state_db import (
     set_oop,
     get_oop,
     clear_oop,
+    write_recovery_state,
+    get_recovery_state,
 )
 
 
@@ -83,239 +97,6 @@ def _run_with_cwd(tmp_path: Path, fn, *args, **kwargs):
         return fn(*args, **kwargs)
     finally:
         os.chdir(old)
-
-
-def _task_created_payload(
-    task_id="t-001",
-    task_subject="Implement feature X",
-    teammate_name="programmer",
-    session_id="sess-abc",
-    transcript_path="",
-    cwd="/tmp",
-    permission_mode="default",
-) -> dict:
-    return {
-        "task_id": task_id,
-        "task_subject": task_subject,
-        "teammate_name": teammate_name,
-        "session_id": session_id,
-        "transcript_path": transcript_path,
-        "cwd": cwd,
-        "permission_mode": permission_mode,
-        "hook_event_name": "TaskCreated",
-    }
-
-
-def _task_completed_payload(
-    task_id="t-001",
-    task_subject="Implement feature X",
-    teammate_name="programmer",
-    session_id="sess-abc",
-    transcript_path="",
-    cwd="/tmp",
-    permission_mode="default",
-) -> dict:
-    return {
-        "task_id": task_id,
-        "task_subject": task_subject,
-        "teammate_name": teammate_name,
-        "session_id": session_id,
-        "transcript_path": transcript_path,
-        "cwd": cwd,
-        "permission_mode": permission_mode,
-        "hook_event_name": "TaskCompleted",
-    }
-
-
-# ---------------------------------------------------------------------------
-# TaskCreated tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleTaskCreated:
-    def test_creates_log_file_with_frontmatter(self, tmp_path):
-        """task_created creates a log file with correct frontmatter fields."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload()
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-
-        content = log_files[0].read_text()
-        assert "task_id: t-001" in content
-        assert "task_subject: Implement feature X" in content
-        assert "teammate_name: programmer" in content
-        assert "started_at:" in content
-
-    def test_creates_active_marker(self, tmp_path):
-        """task_created registers task-{id} in the DB as an active agent."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        payload = _task_created_payload(task_id="t-42")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        record = get_active_agent(db_path, "task-t-42")
-        assert record is not None
-        assert "log_file" in record
-        assert "started_at" in record
-
-    def test_marker_log_file_points_to_created_log(self, tmp_path):
-        """The DB record's log_file path matches the created log file."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        payload = _task_created_payload(task_id="t-10")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        record = get_active_agent(db_path, "task-t-10")
-        assert record is not None
-        # The record stores the log file path (relative or absolute).
-        # Verify it refers to the same filename as the created log file.
-        assert Path(record["log_file"]).name == log_files[0].name
-
-    def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_created exits 0 gracefully if .clasi/log does not exist."""
-        payload = _task_created_payload()
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-    def test_log_filename_derived_from_subject(self, tmp_path):
-        """Log filename slug is derived from task_subject."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload(task_subject="My Great Task")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        # slug should be lowercase, spaces replaced with dashes
-        assert "my-great-task" in log_files[0].name
-
-
-# ---------------------------------------------------------------------------
-# TaskCompleted tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleTaskCompleted:
-    def _setup_active_task(self, tmp_path, task_id="t-001", task_subject="Task"):
-        """Run task_created to set up the log and marker files."""
-        payload = _task_created_payload(task_id=task_id, task_subject=task_subject)
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-    def test_appends_duration_to_frontmatter(self, tmp_path):
-        """task_completed adds stopped_at and duration_seconds to frontmatter."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-001")
-
-        payload = _task_completed_payload(task_id="t-001")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "stopped_at:" in content
-        assert "duration_seconds:" in content
-
-    def test_removes_active_marker_after_completion(self, tmp_path):
-        """task_completed removes the DB record for the task."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        self._setup_active_task(tmp_path, task_id="t-002")
-
-        # The DB record should exist after task_created
-        assert get_active_agent(db_path, "task-t-002") is not None
-
-        payload = _task_completed_payload(task_id="t-002")
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        # The DB record should be gone after task_completed
-        assert get_active_agent(db_path, "task-t-002") is None
-
-    def test_appends_transcript_content(self, tmp_path):
-        """task_completed appends the transcript as a JSON code block."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-003")
-
-        # Write a fake transcript JSONL
-        transcript_file = tmp_path / "transcript.jsonl"
-        messages = [
-            {"role": "user", "content": "Do this task."},
-            {"role": "assistant", "content": "Done."},
-        ]
-        transcript_file.write_text("\n".join(json.dumps(m) for m in messages))
-
-        payload = _task_completed_payload(
-            task_id="t-003",
-            transcript_path=str(transcript_file),
-        )
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        content = log_files[0].read_text()
-        assert "## Transcript" in content
-        assert "```json" in content
-        assert "Do this task." in content
-
-    def test_extracts_prompt_from_transcript(self, tmp_path):
-        """task_completed extracts the first user message as prompt."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-004")
-
-        transcript_file = tmp_path / "transcript.jsonl"
-        messages = [
-            {"role": "user", "content": "The initial prompt text."},
-            {"role": "assistant", "content": "Response."},
-        ]
-        transcript_file.write_text("\n".join(json.dumps(m) for m in messages))
-
-        payload = _task_completed_payload(
-            task_id="t-004",
-            transcript_path=str(transcript_file),
-        )
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        content = log_files[0].read_text()
-        assert "## Prompt" in content
-        assert "The initial prompt text." in content
-
-    def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_completed exits 0 gracefully if .clasi/log does not exist."""
-        payload = _task_completed_payload()
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
-
-    def test_exits_zero_when_no_marker(self, tmp_path):
-        """task_completed exits 0 gracefully if no marker file exists."""
-        _make_log_dir(tmp_path)
-        payload = _task_completed_payload(task_id="nonexistent")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
 
 
 # ---------------------------------------------------------------------------
@@ -367,79 +148,6 @@ class TestGetLogDir:
         _setup_db_with_lock(tmp_path, sprint_id="003")
         _run_with_cwd(tmp_path, _get_log_dir)
         assert (tmp_path / ".clasi" / "log" / "sprint-003").is_dir()
-
-
-class TestSprintScopedLogging:
-    def test_task_created_uses_sprint_subdir_when_lock_held(self, tmp_path):
-        """task_created writes log to sprint subdir when execution lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="001")
-        payload = _task_created_payload(task_id="t-sprint-001")
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "task_id: t-sprint-001" in content
-
-    def test_task_created_active_marker_in_db(self, tmp_path):
-        """task_created registers the task in the DB (not a file marker)."""
-        _make_log_dir(tmp_path)
-        db_path = _setup_db_with_lock(tmp_path, sprint_id="001")
-        payload = _task_created_payload(task_id="t-marker")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        record = get_active_agent(db_path, "task-t-marker")
-        assert record is not None
-        assert record["agent_type"] == "task"
-
-    def test_task_completed_finds_log_in_sprint_subdir(self, tmp_path):
-        """task_completed appends to log in sprint subdir when lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="001")
-
-        # task_created sets up the log
-        create_payload = _task_created_payload(task_id="t-full")
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, create_payload)
-
-        # task_completed should find it in the same sprint subdir
-        complete_payload = _task_completed_payload(task_id="t-full")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, complete_payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "stopped_at:" in content
-        assert "duration_seconds:" in content
-
-    def test_task_created_falls_back_to_base_dir_without_lock(self, tmp_path):
-        """task_created uses base log dir when no sprint holds the lock."""
-        _make_log_dir(tmp_path)
-        # DB exists but no lock
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        init_db(db_path)
-        register_sprint(db_path, "001", "sprint-001")
-
-        payload = _task_created_payload(task_id="t-fallback")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        base_log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        # Sprint subdir should not have been created
-        assert not (base_log_dir / "sprint-001").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -509,39 +217,15 @@ class TestGetActiveTickets:
 
 
 class TestSprintIdInFrontmatter:
-    def test_task_created_includes_sprint_id_when_lock_held(self, tmp_path):
-        """task_created writes sprint_id to frontmatter when an execution lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="002")
-        payload = _task_created_payload(task_id="t-sid")
+    def test_subagent_start_includes_tickets_in_frontmatter(self, tmp_path):
+        """handle_subagent_start writes in-progress ticket IDs to frontmatter.
 
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert 'sprint_id: "002"' in content
-
-    def test_task_created_includes_empty_sprint_id_when_no_lock(self, tmp_path):
-        """task_created writes empty sprint_id when no execution lock is held."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload(task_id="t-nosid")
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        base_log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert 'sprint_id: ""' in content
-
-    def test_task_created_includes_tickets_in_frontmatter(self, tmp_path):
-        """task_created writes in-progress ticket IDs to frontmatter."""
+        (sprint 026 / ticket 004): formerly covered via the now-removed
+        handle_task_created, which shared this frontmatter-writing logic
+        (both go through _get_active_tickets). Rewritten against
+        handle_subagent_start, the surviving handler, to keep the
+        tickets-in-frontmatter behavior covered.
+        """
         _write_legacy_pin(tmp_path)
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="002")
@@ -550,9 +234,14 @@ class TestSprintIdInFrontmatter:
         sprint_dir = tmp_path / ".clasi" / "sprints" / "002-test-sprint"
         _make_in_progress_ticket(sprint_dir, "007", "Feature A")
 
-        payload = _task_created_payload(task_id="t-tickets")
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "abc123",
+            "session_id": "sess-xyz",
+            "hook_event_name": "SubagentStart",
+        }
         with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
         assert exc.value.code == 0
 
         sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
@@ -602,6 +291,120 @@ class TestSprintIdInFrontmatter:
         assert len(log_files) == 1
         content = log_files[0].read_text()
         assert 'sprint_id: ""' in content
+
+
+# ---------------------------------------------------------------------------
+# _log_hook_event: file_path resolution + dated timestamps (ticket 026-004)
+# ---------------------------------------------------------------------------
+
+
+class TestLogHookEventFilePathAndTimestamp:
+    """_log_hook_event previously read file_path/path/new_path from the
+    payload's TOP level, but Claude Code's real PreToolUse/PostToolUse
+    payloads nest them under ``tool_input`` — the same shape
+    handle_role_guard itself resolves from (see _role_guard_payload).
+    That mismatch meant essentially no blocked-write log line ever
+    recorded which file was blocked (1 of 2,447 real log lines, from a
+    synthetic test). Also covers the timestamp format gaining a date
+    component, since multi-day log analysis was impossible with
+    %H:%M:%SZ alone.
+    """
+
+    def _last_line(self, tmp_path: Path, event_type: str = "role-guard") -> str:
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if event_type in ln]
+        assert matching, f"no {event_type} log line found: {lines}"
+        return matching[-1]
+
+    def test_file_path_read_from_nested_tool_input(self, tmp_path):
+        """Real Claude Code payload shape: file_path nested under
+        tool_input. This is the exact shape that previously produced no
+        file_path in the log line at all."""
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/clasi/foo.py"},
+            "session_id": "sess-log-test",
+        }
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 2, "blk-write")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=src/clasi/foo.py" in line
+
+    def test_path_and_new_path_also_read_from_tool_input(self, tmp_path):
+        """path and new_path — file_path's siblings in the same nested
+        shape — are resolved the same way."""
+        _make_log_dir(tmp_path)
+        payload = {"tool_input": {"path": "a.md", "new_path": "b.md"}}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "allow")
+
+        line = self._last_line(tmp_path)
+        assert "path=a.md" in line
+        assert "new_path=b.md" in line
+
+    def test_top_level_fallback_when_no_tool_input_key(self, tmp_path):
+        """A flat payload with no 'tool_input' key at all (e.g. a
+        synthetic/non-PreToolUse payload) still resolves file_path from
+        the top level — mirrors handle_role_guard's own
+        payload.get('tool_input', payload) fallback idiom."""
+        _make_log_dir(tmp_path)
+        payload = {"file_path": "clasi/issues/x.md"}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "artifact-dir")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=clasi/issues/x.md" in line
+
+    def test_empty_tool_input_key_does_not_fall_back_to_top_level(self, tmp_path):
+        """When 'tool_input' IS present (even empty), it is authoritative
+        — a top-level file_path is not consulted. Matches
+        handle_role_guard's identical resolution semantics exactly, so
+        the two never disagree about what a given payload means."""
+        _make_log_dir(tmp_path)
+        payload = {"tool_input": {}, "file_path": "clasi/issues/x.md"}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "artifact-dir")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=" not in line
+
+    def test_timestamp_has_date_component(self, tmp_path):
+        """Timestamp format gained a date component (was %H:%M:%SZ only,
+        making multi-day log analysis impossible)."""
+        _make_log_dir(tmp_path)
+        _run_with_cwd(tmp_path, _log_hook_event, "status-inject", {}, 0, "injected")
+
+        line = self._last_line(tmp_path, event_type="status-inject")
+        timestamp_token = line.split(" ", 1)[0]
+        # Must parse as a dated, second-precision UTC timestamp.
+        parsed = datetime.strptime(timestamp_token, "%Y-%m-%dT%H:%M:%SZ")
+        assert parsed.year >= 2026
+
+    def test_line_still_fixed_width_parseable(self, tmp_path, monkeypatch):
+        """event_type and reason columns remain fixed-width, left-
+        justified fields — only the timestamp token grew (to add the
+        date). Compares byte offsets, not a naive whitespace split:
+        padding spaces and separator spaces are both literal " "
+        characters and indistinguishable by splitting, which is exactly
+        why the format is documented as fixed-width in the first place.
+        """
+        monkeypatch.delenv("CLASI_AGENT_TIER", raising=False)
+        monkeypatch.delenv("CLASI_AGENT_NAME", raising=False)
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 2, "no-path",
+        )
+
+        line = self._last_line(tmp_path)
+        timestamp_field = line[:20]
+        # Also covered by test_timestamp_has_date_component; re-checked
+        # here since this test's byte offsets below depend on its width.
+        datetime.strptime(timestamp_field, "%Y-%m-%dT%H:%M:%SZ")
+
+        # self._last_line() reads via splitlines(), which strips the
+        # trailing newline _log_hook_event writes — not present here.
+        rest = line[20:]
+        expected_rest = f" {'role-guard':<16} 2 {'no-path':<12.12} "
+        assert rest == expected_rest
 
 
 # ---------------------------------------------------------------------------
@@ -777,24 +580,6 @@ class TestHandleHook:
                 handle_hook("subagent-stop")
             mock_handler.assert_called_once_with({})
 
-    def test_routes_task_created(self):
-        """handle_hook('task-created') calls handle_task_created."""
-        with patch("clasi.hook_handlers.handle_task_created") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("task-created")
-            mock_handler.assert_called_once_with({})
-
-    def test_routes_task_completed(self):
-        """handle_hook('task-completed') calls handle_task_completed."""
-        with patch("clasi.hook_handlers.handle_task_completed") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("task-completed")
-            mock_handler.assert_called_once_with({})
-
     def test_routes_mcp_guard(self):
         """handle_hook('mcp-guard') calls handle_mcp_guard."""
         with patch("clasi.hook_handlers.handle_mcp_guard") as mock_handler, \
@@ -822,15 +607,6 @@ class TestHandleHook:
                 handle_hook("plan-to-todo")
             mock_handler.assert_called_once_with({})
 
-    def test_routes_commit_check(self):
-        """handle_hook('commit-check') calls handle_commit_check."""
-        with patch("clasi.hook_handlers.handle_commit_check") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("commit-check")
-            mock_handler.assert_called_once_with({})
-
     def test_unknown_event_exits_1(self, capsys):
         """handle_hook exits with code 1 for unknown event names."""
         with patch("clasi.hook_handlers.read_payload", return_value={}):
@@ -840,63 +616,19 @@ class TestHandleHook:
         captured = capsys.readouterr()
         assert "no-such-event" in captured.err
 
-
-# ---------------------------------------------------------------------------
-# handle_commit_check tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleCommitCheck:
-    def test_prints_reminder_on_master_with_git_commit(self, capsys, monkeypatch):
-        """Prints reminder when TOOL_INPUT has 'git commit' and branch is master."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'fix: something'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "master\n"})()
+    @pytest.mark.parametrize("event", ["task-created", "task-completed", "commit-check"])
+    def test_removed_events_are_unknown(self, event, capsys):
+        """(sprint 026 / ticket 004): task-created, task-completed, and
+        commit-check were removed as dead-code registrations (0 of 2,447
+        logged hook events, ever) — handle_hook no longer routes them and
+        must fall through to the same unknown-event exit-1 path as any
+        other unrecognized event name, not silently no-op."""
+        with patch("clasi.hook_handlers.read_payload", return_value={}):
             with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
+                handle_hook(event)
+        assert exc.value.code == 1
         captured = capsys.readouterr()
-        assert "CLASI: You committed on master" in captured.out
-
-    def test_prints_reminder_on_main_with_git_commit(self, capsys, monkeypatch):
-        """Prints reminder when TOOL_INPUT has 'git commit' and branch is main."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'feat: new thing'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "main\n"})()
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert "CLASI: You committed on master" in captured.out
-
-    def test_silent_when_not_on_master(self, capsys, monkeypatch):
-        """No output when TOOL_INPUT has 'git commit' but branch is not master/main."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'fix: bug'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "feature/my-feature\n"})()
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_silent_when_tool_input_lacks_git_commit(self, capsys, monkeypatch):
-        """No subprocess call and no output when TOOL_INPUT has no 'git commit'."""
-        monkeypatch.setenv("TOOL_INPUT", "git status")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        mock_run.assert_not_called()
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_exits_zero_when_tool_input_missing(self, capsys, monkeypatch):
-        """handle_commit_check exits 0 when TOOL_INPUT env var is not set."""
-        monkeypatch.delenv("TOOL_INPUT", raising=False)
-        with pytest.raises(SystemExit) as exc:
-            handle_commit_check({})
-        assert exc.value.code == 0
+        assert event in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -2378,12 +2110,23 @@ class TestEnsureLogGitignore:
         assert content == "*\n!.gitignore\n"
 
     def test_hook_invocation_creates_gitignore(self, tmp_path):
-        """A hook invocation that creates the log dir also writes .gitignore."""
+        """A hook invocation that creates the log dir also writes .gitignore.
+
+        (sprint 026 / ticket 004): rewritten against handle_subagent_start
+        (previously handle_task_created, now removed as dead code) — any
+        handler that creates the log dir exercises the same
+        _ensure_log_gitignore call, so this is not a coverage loss.
+        """
         # Set up a .clasi dir without pre-creating the log dir so hook creates it
         _write_legacy_pin(tmp_path)
-        payload = _task_created_payload(task_id="t-gitignore-test")
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "gitignore-test",
+            "session_id": "sess-gitignore-test",
+            "hook_event_name": "SubagentStart",
+        }
         with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
         log_dir = tmp_path / ".clasi" / "log"
         gitignore = log_dir / ".gitignore"
         assert gitignore.exists(), ".gitignore was not created in log dir by hook"
@@ -2982,13 +2725,21 @@ def _setup_sprint_with_lock(
 
 
 class TestRoleGuardTicketStateGate:
-    """Ticket-state gate (ticket 019-004): block Edit/Write/MultiEdit when
-    a sprint execution lock is held, zero tickets in that sprint are
-    status: in-progress, and OOP is not active — REGARDLESS of tier,
-    including tier 2 (the gate that was previously entirely absent for
-    programmers). Uses real sprint/ticket directory structures on disk,
-    not mocks of _get_sprint_context() / _get_active_tickets() — this
-    sprint's standard is no hand-built fixtures that bypass real logic.
+    """Ticket-state gate (ticket 019-004; RESCOPED by ticket 026-001): block
+    Edit/Write/MultiEdit when a sprint execution lock is held, zero
+    tickets in that sprint are status: in-progress, and OOP is not
+    active. As of ticket 026-001 this gate applies to TIER 2 ONLY (not
+    tier 0/1 — see TestRoleGuardTicketStateGateRescoping below for that
+    change), and is additionally exempt for issues_dir/reflections_dir
+    writes at every tier it applies to, so incident capture (the
+    issue/self-reflect skills) is never blocked by it — see the source
+    issue's "exception routing deadlocks by construction" finding: a
+    thrown ticket exception (status: exception, never in-progress) used
+    to dead-end every agent's writes, including the sprint-planner/
+    team-lead writes needed to recover. Uses real sprint/ticket directory
+    structures on disk, not mocks of _get_sprint_context() /
+    _get_active_tickets() — this sprint's standard is no hand-built
+    fixtures that bypass real logic.
     """
 
     def test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked(
@@ -3038,28 +2789,44 @@ class TestRoleGuardTicketStateGate:
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
 
-    def test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked(
+    def test_lock_held_zero_in_progress_tickets_tier0_source_write_still_blocked(
         self, tmp_path, capsys
     ):
-        """Sprint executing + zero in-progress tickets + tier 0/1 +
-        source-path write -> exit 2 (gate applies to all tiers, not just
-        tier 2)."""
+        """Sprint executing + zero in-progress tickets + tier 0 +
+        source-path write -> STILL exit 2 (the underlying "team-lead
+        cannot write source" rule is unchanged), but as of ticket
+        026-001 the gate itself no longer applies to tier 0/1, so this
+        now falls through to the ordinary blk-write path — the message
+        is the standard ROLE VIOLATION write-attempt message, NOT the
+        ticket-gate-specific "execution lock is held" message (that
+        message is now reserved for tier 2, gated by this same
+        condition — see test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked
+        above). Renamed from the previous
+        test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked
+        to make explicit that the deny OUTCOME (exit 2) is preserved
+        while the ROUTE producing it intentionally changed."""
         sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 2
         stderr = capsys.readouterr().err
-        assert "019" in stderr
-        assert "in-progress" in stderr
+        assert "attempted direct file write to" in stderr
+        assert "execution lock" not in stderr
 
-    def test_lock_held_zero_in_progress_tickets_tier1_source_write_blocked(
-        self, tmp_path
+    def test_lock_held_zero_in_progress_tickets_tier1_source_write_still_blocked(
+        self, tmp_path, capsys
     ):
-        """Same gate applies to tier 1 as well, not only tier 0/2."""
+        """Same as the tier-0 case above: tier 1 writing source code is
+        still blocked (exit 2), but no longer via the ticket-gate
+        message — tier 1's own "sprint-planner cannot write source"
+        rule already covers it regardless of ticket state."""
         sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        stderr = capsys.readouterr().err
+        assert "attempted direct file write to" in stderr
+        assert "execution lock" not in stderr
 
     def test_lock_held_zero_in_progress_tickets_safe_prefix_still_allowed(
         self, tmp_path
@@ -3072,6 +2839,71 @@ class TestRoleGuardTicketStateGate:
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "CLAUDE.md", "2") == 0
+
+
+class TestRoleGuardTicketStateGateRescoping:
+    """Ticket 026-001: the ticket-state gate no longer applies to tier 0/1
+    at all, and is exempt for issues_dir/reflections_dir writes even for
+    the tier-2 callers it does still gate. These are the NEW behaviors
+    this ticket adds on top of the pre-existing 019-004 gate (covered by
+    TestRoleGuardTicketStateGate above) — every case here sets up the
+    exact "gate would otherwise fire" precondition (lock held, zero
+    in-progress tickets) via real sprint/ticket fixtures, matching this
+    sprint's no-hand-built-fixtures discipline.
+    """
+
+    def test_tier0_write_to_allow_listed_path_now_allowed(self, tmp_path):
+        """Tier 0 + lock held + zero in-progress tickets + write to an
+        allow-listed artifact dir (clasi/issues/) -> exit 0.
+
+        Before ticket 026-001, the ticket-state gate ran BEFORE any
+        allow-list check and applied to every tier, so this exact write
+        was blocked (reason no-ticket) despite being on the allow list.
+        Rescoping the gate to tier-2-only is what makes this allowed."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/issues/incident.md", "") == 0
+
+    def test_tier1_write_to_allow_listed_path_now_allowed(self, tmp_path):
+        """Same as above for tier 1: a sprint-planner writing to
+        clasi/reflections/ during a gate-triggering state is now
+        allowed (it always should have been — this is exactly the
+        exception-routing deadlock the source issue named)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/reflections/note.md", "1") == 0
+
+    def test_tier2_issues_dir_write_exempt_from_gate(self, tmp_path):
+        """Tier 2 + lock held + zero in-progress tickets + write under
+        issues_dir -> exit 0 (exempt), even though the SAME state blocks
+        an ordinary tier-2 source write (see
+        test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked).
+        This is the "team-lead's issue-capture skill is not the same
+        write the gate exists to police" carve-out from the source
+        issue."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/issues/incident.md", "2") == 0
+
+    def test_tier2_reflections_dir_write_exempt_from_gate(self, tmp_path):
+        """Same exemption for reflections_dir (self-reflect skill)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/reflections/note.md", "2") == 0
+
+    def test_tier2_source_write_still_gated_regression(self, tmp_path):
+        """Regression: tier 2 writing to a NON-exempt path (source code)
+        under the SAME lock-held/zero-in-progress state is still blocked
+        with reason no-ticket — the exemption is scoped to issues_dir/
+        reflections_dir specifically, not a blanket tier-2 bypass."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
 
     def test_gate_uses_get_sprint_context_and_get_active_tickets_live(
         self, tmp_path
@@ -3248,3 +3080,667 @@ class TestMcpGuardStalenessFailClosed:
         tier-allowed exit."""
         _write_fresh_config(tmp_path)
         assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 1: tier 1 now consults the artifact-dir allow list
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardTier1ArtifactDirAllowList:
+    """Tier 1 (sprint-planner) now consults the same artifact-dir allow
+    list (issues_dir, reflections_dir, design_dir, clasi_dir, log_dir)
+    tier 0 does — previously only the sprints_dir prefix was allow-listed
+    for tier 1, so a sprint-planner writing e.g. clasi/issues/x.md fell
+    through to the final BLOCK, contradicting the function's own
+    documented matrix. Reason is asserted via hooks.log (not just exit
+    code) so a fix that merely widened some OTHER allow path could not
+    accidentally pass this test.
+    """
+
+    def _last_role_guard_line(self, tmp_path: Path) -> str:
+        """Return the most recent role-guard hooks.log line.
+
+        Each test here makes exactly one _run_role_guard() call, so the
+        last (only) role-guard line is unambiguous. (sprint 026 / ticket
+        004: _log_hook_event now reads file_path from the same nested
+        tool_input shape role-guard itself resolves from, so the logged
+        line does include it — this helper no longer needs to route
+        around its absence, it just doesn't need it for these
+        reason-code assertions.)
+        """
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        return matching[-1]
+
+    def test_tier1_issues_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_reflections_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_design_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_clasi_state_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/config.yaml", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_source_still_blocked_regression(self, tmp_path, capsys):
+        """Regression: the allow-list extension does not widen tier 1's
+        write scope beyond artifact dirs + sprints_dir — source code is
+        still blocked, and (per this ticket's docstring-matrix update)
+        that block is now reason blk-write, matching the documented
+        matrix exactly."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        assert " 2 blk-write" in self._last_role_guard_line(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-005: tier-1 artifact-dir allow list against a CUSTOM
+# (non-default) configured design_dir — not just the fresh-layout
+# default docs/design/ that TestRoleGuardTier1ArtifactDirAllowList above
+# exercises. This closes the "configured-path agreement" gap: ticket
+# 026-001 proved the allow-list mechanics work; this proves they follow
+# whatever paths.design a project actually configures, matching the
+# project-initiation skill's new "resolve, don't hardcode" instruction.
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardTier1CustomDesignDir:
+    """A project whose .clasi/config.yaml sets paths.design to a
+    NON-default value (i.e. not docs/design/) — the fresh-layout
+    default already covered by TestRoleGuardTier1ArtifactDirAllowList.
+    Using a genuinely custom path here (rather than reusing the default)
+    is what actually distinguishes "role-guard reads paths.design" from
+    "role-guard happens to allow the hardcoded default" — the field bug
+    this ticket fixes was specifically about a project with a custom
+    paths.design value (pxt-nezha-diffdrive: paths.design: docs/design,
+    but even the plain default was already broken by the SKILL.md
+    hardcode; this test asserts the guard side is correct for an
+    arbitrary configured value, not just the default one).
+    """
+
+    _CUSTOM_DESIGN = "documentation/design-docs"
+
+    def _write_config_with_custom_design(self, root: Path, design_path: str) -> None:
+        import yaml
+
+        clasi_dir = root / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        data = {"process": "se", "paths": {"design": design_path}}
+        (clasi_dir / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def _last_role_guard_line(self, tmp_path: Path) -> str:
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        return matching[-1]
+
+    def test_tier1_custom_design_dir_allowed_reason_artifact_dir(self, tmp_path):
+        """Real captured tier-1 payload, write into the CUSTOM configured
+        design_dir (not the docs/design default) → allowed, reason
+        artifact-dir."""
+        self._write_config_with_custom_design(tmp_path, self._CUSTOM_DESIGN)
+        assert _run_role_guard(
+            tmp_path, f"{self._CUSTOM_DESIGN}/overview.md", "1"
+        ) == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_source_path_still_blocked_with_custom_design_dir_configured(
+        self, tmp_path
+    ):
+        """Same custom design_dir config, but a source-path write is
+        still blocked for tier 1 — the custom allow-list entry must not
+        widen scope beyond the configured design dir itself."""
+        self._write_config_with_custom_design(tmp_path, self._CUSTOM_DESIGN)
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        assert " 2 blk-write" in self._last_role_guard_line(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-005: end-to-end scenario — project-initiation's resolved
+# design_dir, role-guard's allow list, and overview_exists() all agree
+# on the same location
+# ---------------------------------------------------------------------------
+
+
+class TestProjectInitiationConfiguredDesignDirEndToEnd:
+    """Closes the loop the field bug report described: a project
+    configured with a (non-default) paths.design and no
+    protected_paths: — a dispatched sprint-planner (tier 1) following
+    the now-fixed project-initiation skill resolves Project.design_dir
+    (instead of hardcoding .clasi/design/), writes the three initiation
+    documents there, each write gated through the real handle_role_guard
+    PreToolUse hook with a real captured nested payload shape — and once
+    written, ClasiStateReader.overview_exists() (the filesystem check
+    backing the state machine's is_overview_present predicate, which
+    gates the `initialize` transition) recognizes them at that same
+    location. Before this ticket, the skill hardcoded .clasi/design/,
+    which overview_exists() never looks at (it reads
+    project.design_dir), so this exact chain was permanently broken
+    regardless of ticket 026-001's allow-list fix.
+    """
+
+    def test_tier1_writes_three_documents_and_overview_exists_agrees(self, tmp_path):
+        import yaml
+
+        from clasi.project import Project
+        from clasi.status.reader import ClasiStateReader
+
+        custom_design = "documentation/design-docs"
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        (clasi_dir / "config.yaml").write_text(
+            yaml.safe_dump({"process": "se", "paths": {"design": custom_design}}),
+            encoding="utf-8",
+        )
+
+        # This is exactly what the project-initiation skill's step 1 now
+        # instructs the team-lead to resolve before dispatching — via
+        # the SAME Project.design_dir the state machine reads from, not
+        # a hardcoded .clasi/design/ literal.
+        project = Project(tmp_path)
+        design_dir = project.design_dir
+        assert design_dir == tmp_path / custom_design
+
+        # The sprint-planner (tier 1) writes each of the three documents.
+        # Each write is gated through the real role-guard hook first,
+        # with a real captured nested payload shape, exactly as Claude
+        # Code sends a Write tool call.
+        for doc_name in ("overview.md", "specification.md", "usecases.md"):
+            rel_path = f"{custom_design}/{doc_name}"
+            assert _run_role_guard(tmp_path, rel_path, "1") == 0
+            design_dir.mkdir(parents=True, exist_ok=True)
+            (design_dir / doc_name).write_text(f"# {doc_name}\n", encoding="utf-8")
+
+        # overview_exists() — backing is_overview_present — must see the
+        # file at the SAME path role-guard just allowed the write to.
+        # This is the "configured-path agreement" this ticket closes:
+        # skill instruction, design_dir resolution, and the state
+        # machine's own read all point at one place.
+        reader = ClasiStateReader(project)
+        assert reader.overview_exists() is True
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 3: recovery-state directory-prefix matching
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardRecoveryStateMatching:
+    """Recovery-state matching honors directory-prefix entries in
+    allowed_paths, not just exact-path equality — existing exact-path
+    entries must still match exactly (no regression). Uses real
+    write_recovery_state() DB calls and real handle_role_guard
+    invocations (never a mocked get_recovery_state()), mirroring the
+    real caller shapes in artifact_tools.py's close_sprint recovery
+    writes: an absolute file path (str(ticket_file)) and an absolute
+    directory path (str(project.design_dir)).
+    """
+
+    def test_exact_relative_path_entry_matches(self, tmp_path):
+        """A root-relative exact-path entry still matches exactly (no
+        regression from the directory-prefix addition)."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition",
+            ["clasi/sprints/019-x/sprint.md"], "broken frontmatter",
+        )
+
+        assert _run_role_guard(tmp_path, "clasi/sprints/019-x/sprint.md", "") == 0
+
+    def test_exact_absolute_path_entry_matches(self, tmp_path):
+        """The real caller shape: an ABSOLUTE file-path entry (mirroring
+        str(ticket_file) in artifact_tools.py's ticket-not-done branch)
+        matches the same file's root-relative form after normalization."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        abs_ticket = tmp_path / "clasi" / "sprints" / "019-x" / "tickets" / "001-x.md"
+        write_recovery_state(
+            db_path, "019", "precondition", [str(abs_ticket)], "ticket not done",
+        )
+
+        assert _run_role_guard(
+            tmp_path, "clasi/sprints/019-x/tickets/001-x.md", "",
+        ) == 0
+
+    def test_non_matching_entry_still_blocked(self, tmp_path):
+        """Deny path: a recovery record exists but names a DIFFERENT
+        file — the write under test must still be blocked."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition",
+            ["clasi/sprints/019-x/sprint.md"], "broken frontmatter",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/unrelated.py", "") == 2
+
+    def test_directory_entry_absolute_matches_file_under_it(self, tmp_path):
+        """The real caller shape from close_sprint's design_overlay_apply
+        branch: an ABSOLUTE DIRECTORY entry (str(project.design_dir))
+        matches a file written under that directory — previously
+        silently inert (exact-match-only). The directory must actually
+        exist on disk for the is-dir detection to fire (real
+        design_dir always does in practice)."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        design_dir = tmp_path / "docs" / "design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        write_recovery_state(
+            db_path, "019", "design_overlay_apply",
+            [str(design_dir)], "overlay validation failed",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design/architecture.md", "") == 0
+
+    def test_directory_entry_with_trailing_slash_matches(self, tmp_path):
+        """Root-relative directory entry WITH a trailing slash also
+        matches any file under it — no filesystem is-dir check required
+        (the trailing slash alone signals "directory")."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "merge", ["docs/design/"], "merge conflict",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design/sub/architecture.md", "") == 0
+
+    def test_directory_entry_does_not_match_sibling_file(self, tmp_path):
+        """Deny path: a directory entry must not match a file OUTSIDE
+        that directory, even one with a similar-looking name."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        design_dir = tmp_path / "docs" / "design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        write_recovery_state(
+            db_path, "019", "design_overlay_apply",
+            [str(design_dir)], "overlay validation failed",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design-other/x.md", "") == 2
+
+    def test_file_entry_does_not_match_suffix_variant(self, tmp_path):
+        """Deny path: an exact FILE entry must not incorrectly match a
+        DIFFERENT file that merely shares its string as a prefix (e.g.
+        an entry for foo.py must not match foo.py.bak) — the
+        directory-prefix addition must not loosen exact-file matching
+        into a bare string-prefix match. Uses a plain source path (not
+        under any artifact-dir allow-list prefix) so an ALLOW here could
+        only come from the recovery match itself, never from an
+        unrelated allow-listed directory."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition", ["src/clasi/foo.py"], "x",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py.bak", "") == 2
+
+    def test_merge_conflicted_files_list_entries_match(self, tmp_path):
+        """Mirrors the merge-conflict recovery shape (conflicted:
+        list[str] of relative file paths from git, per
+        artifact_tools.py's merge step) — multiple exact-path entries,
+        each independently matchable, and a file NOT in the list still
+        blocked."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "merge",
+            ["src/clasi/a.py", "src/clasi/b.py"], "merge conflict",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/a.py", "") == 0
+        assert _run_role_guard(tmp_path, "src/clasi/b.py", "") == 0
+        assert _run_role_guard(tmp_path, "src/clasi/c.py", "") == 2
+
+
+class TestRecoveryEntryMatchesUnit:
+    """Direct unit coverage of _recovery_entry_matches(), independent of
+    the full handle_role_guard integration tests above."""
+
+    def test_exact_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("clasi/issues/x.md", "clasi/issues/x.md", proj)
+
+    def test_no_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert not _recovery_entry_matches("clasi/issues/x.md", "clasi/issues/y.md", proj)
+
+    def test_trailing_slash_directory_prefix_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("docs/design/", "docs/design/x.md", proj)
+
+    def test_is_dir_directory_prefix_match(self, tmp_path):
+        (tmp_path / "docs" / "design").mkdir(parents=True)
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("docs/design", "docs/design/x.md", proj)
+
+    def test_non_dir_shaped_entry_does_not_prefix_match(self, tmp_path):
+        """A file-shaped entry (no trailing slash, not an actual
+        directory on disk) must not directory-prefix-match — otherwise
+        every exact-path entry would accidentally also match any file
+        "under" it as a bare string prefix."""
+        proj = Project(tmp_path)
+        assert not _recovery_entry_matches(
+            "docs/design/x.md", "docs/design/x.md/extra", proj,
+        )
+
+    def test_absolute_entry_normalized_before_match(self, tmp_path):
+        proj = Project(tmp_path)
+        abs_entry = str(tmp_path / "clasi" / "issues" / "x.md")
+        assert _recovery_entry_matches(abs_entry, "clasi/issues/x.md", proj)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 4: block-message agent identity from the DB
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardBlockMessageAgentIdentity:
+    """The block message names the DB-registered agent (via
+    get_active_agent, keyed on caller_id) when the tier itself was
+    resolved from the DB — not the CLASI_AGENT_NAME env default, which
+    is typically unset for a dispatched subagent and would otherwise
+    misreport it as "team-lead".
+    """
+
+    def test_tier_from_db_names_db_registered_agent(self, tmp_path, capsys):
+        """Tier resolved via the DB fallback (no CLASI_AGENT_TIER env
+        var) -> the block message names the agent_type from THAT SAME
+        active_agents row, not "team-lead"."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "planner-caller", "sprint-planner", "1")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            payload = _role_guard_payload("src/clasi/foo.py")
+            payload["agent_id"] = "planner-caller"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "sprint-planner (tier 1)" in stderr
+            assert "team-lead (tier 1)" not in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+    def test_tier_from_env_var_still_uses_env_name_regression(self, tmp_path, capsys):
+        """Regression: when the tier comes from CLASI_AGENT_TIER (not the
+        DB), the block message still uses CLASI_AGENT_NAME (or its
+        "team-lead" default) exactly as before — the DB-name resolution
+        is scoped to the DB-sourced-tier case only."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        # A DB row exists for a DIFFERENT agent_id — proves it is not
+        # consulted at all when the tier came from the env var.
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.get("CLASI_AGENT_TIER")
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            os.environ["CLASI_AGENT_TIER"] = "1"
+            payload = _role_guard_payload("src/clasi/foo.py")
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "team-lead (tier 1)" in stderr
+        finally:
+            if old_tier is None:
+                os.environ.pop("CLASI_AGENT_TIER", None)
+            else:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+    def test_tier_from_db_but_no_matching_agent_row_falls_back_to_default(
+        self, tmp_path, capsys,
+    ):
+        """Edge case: agent_tier resolves truthy from the DB (e.g. "0"),
+        but by the time the block message is built the row is gone (or
+        never had an agent_type) — falls back to the CLASI_AGENT_NAME
+        default rather than raising."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "caller-x", "unknown", "0")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            payload = _role_guard_payload("src/clasi/foo.py")
+            payload["agent_id"] = "caller-x"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            # agent_type "unknown" IS present on the row, so it is used —
+            # confirms the DB-name path is live even for tier "0".
+            assert "unknown (tier 0)" in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 5: per-invocation caching — call-count assertions
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardPerInvocationCaching:
+    """get_project() and config.yaml parsing each happen at most ONCE
+    within handle_role_guard's own guard-evaluation logic per invocation
+    (down from ~5 / ~3), and the shared sqlite connection is opened at
+    most once overall — verified via mock call-count assertions against
+    a scenario built to reach every DB/config touch point in the
+    function: tier resolution via the DB fallback, the OOP check, the
+    recovery-state check, the artifact-dir/protected-paths config read,
+    and (since the write is ultimately blocked) the block message's
+    DB-backed agent-name lookup. The ticket-state gate is not reached
+    (tier 0 in this scenario, and the gate is tier-2-only as of this
+    same ticket) — its own DB touch is covered separately by
+    TestRoleGuardTicketStateGate.
+
+    get_project() and _load_config() are mocked at module scope, so
+    their call counts also include ONE call each from _log_hook_event()
+    — a separate, pre-existing helper (shared by every hook handler, not
+    just role-guard) that resolves its own Project instance to write the
+    hooks.log line when _exit_hook() runs at the very end of the
+    invocation. That resolution is outside this ticket's scope (it is
+    not one of handle_role_guard's own checks, and touching it would
+    affect every other hook handler too) and was already exactly one
+    call before this ticket; the assertions below are therefore == 2
+    (1 from handle_role_guard's own single consolidated call + 1 from
+    logging), not literally 1 — the sqlite-connection assertions, which
+    are NOT affected by _log_hook_event (it never touches the DB), are
+    the ones that land on the ticket's literal "1" target.
+    """
+
+    def _setup_full_traversal_scenario(self, tmp_path: Path) -> None:
+        """Registers a tier-0 DB-resolved agent and a config.yaml with no
+        matching recovery/OOP state, so a source-code write walks every
+        check site down to the final BLOCK."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "caller-full-traversal", "unknown", "0")
+
+    def test_get_project_called_once(self, tmp_path):
+        import clasi.hook_handlers as hh
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_get_project = hh.get_project
+        try:
+            with patch(
+                "clasi.hook_handlers.get_project", side_effect=real_get_project,
+            ) as mock_get_project:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                # 1 from handle_role_guard's own consolidated _proj, plus
+                # 1 from _log_hook_event's separate, unrelated resolution
+                # at exit-logging time (see class docstring) — down from
+                # ~5 calls within the guard logic itself before this
+                # ticket (+ the same always-present logging call).
+                assert mock_get_project.call_count == 2, (
+                    f"expected get_project() called once by handle_role_guard's "
+                    f"own logic (+1 from _log_hook_event's separate logging "
+                    f"call = 2 total), got {mock_get_project.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_config_yaml_parsed_once(self, tmp_path):
+        import clasi.project as project_mod
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_load_config = project_mod._load_config
+        try:
+            with patch(
+                "clasi.project._load_config", side_effect=real_load_config,
+            ) as mock_load_config:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                # 1 from _load_role_guard_config's single parse (which
+                # also primes _proj's paths-config cache, so no OTHER
+                # property access re-parses), plus 1 from
+                # _log_hook_event's separate Project instance resolving
+                # its own log_dir at exit-logging time (see class
+                # docstring) — down from ~3 independent parses within
+                # the guard logic itself before this ticket.
+                assert mock_load_config.call_count == 2, (
+                    f"expected config.yaml parsed once by handle_role_guard's "
+                    f"own logic (+1 from _log_hook_event's separate logging "
+                    f"call = 2 total), got {mock_load_config.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_sqlite_connection_opened_once(self, tmp_path):
+        from clasi.state_db_class import StateDB
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_connect = StateDB.connect
+        try:
+            with patch.object(
+                StateDB, "connect", autospec=True, side_effect=real_connect,
+            ) as mock_connect:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                assert mock_connect.call_count == 1, (
+                    f"expected one shared sqlite connection opened, got "
+                    f"{mock_connect.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_allow_path_scenario_also_uses_single_connection(self, tmp_path):
+        """Same call-count guarantee on an ALLOW outcome (artifact-dir),
+        not just the BLOCK path above — confirms the cache is shared
+        regardless of which exit reason fires."""
+        from clasi.state_db_class import StateDB
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("clasi/issues/x.md")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_connect = StateDB.connect
+        try:
+            with patch.object(
+                StateDB, "connect", autospec=True, side_effect=real_connect,
+            ) as mock_connect:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 0
+                assert mock_connect.call_count == 1
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001 scenario test: throw_ticket_exception -> sprint-planner
+# can edit the sprint's architecture without OOP
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardThrowExceptionRecoveryScenario:
+    """The ticket's own required scenario test (unit-level, per the
+    ticket's instructions): a thrown ticket exception during an active
+    sprint (execution lock held, the exception ticket's status flips to
+    `exception` — never `in-progress`, so zero tickets are in-progress)
+    must not deadlock a dispatched sprint-planner's (tier 1) ability to
+    edit the sprint's own architecture/design artifacts, without an OOP
+    bypass. Before ticket 026-001 this was blocked (no-ticket) because
+    the ticket-state gate applied to every tier and ran before every
+    allow list — even though tier 1 is exactly the role dispatched to
+    fix the architecture after an exception is thrown.
+    """
+
+    def test_sprint_planner_can_edit_sprint_architecture_after_exception_no_oop(
+        self, tmp_path,
+    ):
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="026")
+        # Simulate the post-exception state named by the ticket: the
+        # ticket that threw the exception is NOT in-progress (its status
+        # flipped to `exception`) -- zero in-progress tickets, lock
+        # still held, no OOP bypass anywhere.
+        tickets_dir = sprint_dir / "tickets"
+        tickets_dir.mkdir(parents=True, exist_ok=True)
+        (tickets_dir / "001-x.md").write_text(
+            "---\nid: '001'\ntitle: X\nstatus: exception\n---\n"
+        )
+
+        assert not (tmp_path / ".clasi" / "oop").exists()
+        assert _run_role_guard(
+            tmp_path,
+            "clasi/sprints/026-test-sprint/design/DESIGN.md",
+            "1",
+        ) == 0

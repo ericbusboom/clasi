@@ -90,6 +90,7 @@ class StatusReporter:
         sprint_id: str | None = None,
         ticket_id: str | None = None,
         exclude_done: bool = False,
+        skip_inconsistencies: bool = False,
     ) -> dict:
         """Build and return the full status dict.
 
@@ -98,7 +99,8 @@ class StatusReporter:
         dict matching the canonical output shape.
 
         The ``inconsistencies:`` key is populated by
-        :func:`~clasi.status.inconsistency.detect_inconsistencies`.
+        :func:`~clasi.status.inconsistency.detect_inconsistencies`, unless
+        *skip_inconsistencies* is True (see below).
 
         Args:
             agent: The requesting agent name (e.g. ``"team-lead"``,
@@ -108,7 +110,8 @@ class StatusReporter:
                 used for narrowing here).
             ticket_id: Optional ticket ID hint (stored for callers; not
                 used for narrowing here).
-            exclude_done: When True, sprints and tickets with
+            exclude_done: When True, terminal (archived) sprints — see
+                :func:`_is_terminal_sprint` — and tickets with
                 ``status: done`` are excluded from the assembled dict.
                 Intended ONLY for the per-prompt status-block hook path
                 (``hook_handlers._build_status_block``), which must stay
@@ -117,6 +120,14 @@ class StatusReporter:
                 keep the default ``False`` so they continue to return full
                 history including archived (``done/``) sprints and
                 tickets.
+            skip_inconsistencies: When True, ``detect_inconsistencies`` is
+                not run and ``inconsistencies`` is returned as ``[]``.
+                Intended ONLY for the ``status-inject`` (``UserPromptSubmit``)
+                hook path — sprint 026 measured this pass at about 400ms
+                running inline on every prompt for no per-prompt benefit.
+                The ``clasi status`` CLI and the ``project-status`` skill
+                (via MCP ``get_status``) must keep the default ``False``
+                so drift detection stays available on demand, unchanged.
 
         Returns:
             A dict with top-level keys: ``agent``, ``computed_at``,
@@ -152,8 +163,9 @@ class StatusReporter:
         }
 
         # --- inconsistency detection ---
-        from clasi.status.inconsistency import detect_inconsistencies
-        status["inconsistencies"] = detect_inconsistencies(project, status)
+        if not skip_inconsistencies:
+            from clasi.status.inconsistency import detect_inconsistencies
+            status["inconsistencies"] = detect_inconsistencies(project, status)
 
         return status
 
@@ -339,13 +351,14 @@ class StatusReporter:
     ) -> list[dict]:
         """Iterate all sprints and build the sprints list.
 
-        When *exclude_done* is True, sprints with ``status: done`` in their
-        frontmatter are omitted entirely (and their tickets with them, via
-        ``_build_tickets_block``'s own ``exclude_done``). This is used ONLY
-        by the status-block hook path — ``project.list_sprints()`` itself
-        is unchanged and still returns full history including ``done/``,
-        so on-demand callers (MCP ``list_sprints``, ``get_sprint_status``)
-        are unaffected.
+        When *exclude_done* is True, terminal (archived) sprints — see
+        :func:`_is_terminal_sprint` — are omitted entirely (and their
+        tickets with them, via ``_build_tickets_block``'s own
+        ``exclude_done``), so their tickets are never evaluated either.
+        This is used ONLY by the status-block hook path —
+        ``project.list_sprints()`` itself is unchanged and still returns
+        full history including ``done/``, so on-demand callers (MCP
+        ``list_sprints``, ``get_sprint_status``) are unaffected.
         """
         try:
             sprints = project.list_sprints()
@@ -353,15 +366,7 @@ class StatusReporter:
             return []
 
         if exclude_done:
-            filtered = []
-            for s in sprints:
-                try:
-                    if s.status == "done":
-                        continue
-                except Exception:
-                    pass
-                filtered.append(s)
-            sprints = filtered
+            sprints = [s for s in sprints if not _is_terminal_sprint(s)]
 
         return [
             self._build_sprint_block(s, reader, exclude_done=exclude_done)
@@ -462,6 +467,50 @@ class StatusReporter:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+# Declared sprint.md ``status:`` values considered terminal/archived.
+# Widened (026/007) from ``{"done"}`` alone: the sprint state machine's own
+# terminal state is named "closed" (not "done", which is the *ticket*
+# machine's terminal state name — see ``sprint.yaml`` vs ``ticket.yaml`` in
+# ``clasi.state_machine``), so sprints archived under ``sprints/done/``
+# correctly declare ``status: closed`` in frontmatter, not ``status: done``.
+_TERMINAL_SPRINT_STATUSES = frozenset({"done", "closed"})
+
+
+def _is_terminal_sprint(sprint) -> bool:
+    """Return True if *sprint* is archived/terminal for sweep purposes.
+
+    Two independent signals are checked so neither alone has to be
+    exhaustive or perfectly reliable:
+
+    1. Declared ``status:`` frontmatter matches a known terminal status
+       (see :data:`_TERMINAL_SPRINT_STATUSES`).
+    2. The sprint directory is physically located under the project's
+       ``sprints/done/`` archive directory (``sprint.path.parent.name ==
+       "done"``), regardless of what ``status:`` says — directory location
+       is itself an authoritative archived signal (``Project.list_sprints``
+       is the only writer of that layout), so a sprint whose frontmatter is
+       missing, stale, or uses a future terminal label we haven't added to
+       (1) yet is still correctly excluded.
+
+    Any error reading either signal (e.g. a malformed frontmatter fetch)
+    is swallowed and treated as "not excludable by this signal" — matching
+    this module's existing fail-open behaviour for a single sprint's
+    exclusion check (an error here should not make the sweep skip a sprint
+    that might actually be active).
+    """
+    try:
+        if sprint.status in _TERMINAL_SPRINT_STATUSES:
+            return True
+    except Exception:
+        pass
+    try:
+        if sprint.path.parent.name == "done":
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _last_matching_state_from_error(error_message: str) -> str:

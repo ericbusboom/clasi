@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import importlib
 import json
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -84,10 +86,16 @@ class FakeSprint:
         sprint_id: str = "001",
         tickets: list | None = None,
         status: str = "executing",
+        path: "Path | None" = None,
     ):
         self._id = sprint_id
         self._tickets = tickets or []
         self.status = status
+        # Real Sprint.path always resolves; None here matches every
+        # pre-existing test that never sets it (the path-based terminal
+        # signal in _is_terminal_sprint then fails open via its except
+        # clause, same as it would for any other AttributeError).
+        self.path = path
 
     @property
     def id(self) -> str:
@@ -168,6 +176,68 @@ class TestTopLevelKeys:
 
     def test_inconsistencies_is_empty_list(self, reporter_empty):
         result = reporter_empty.build()
+        assert result["inconsistencies"] == []
+
+
+# ---------------------------------------------------------------------------
+# skip_inconsistencies (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestSkipInconsistencies:
+    """``skip_inconsistencies`` exists ONLY so the status-inject hook path
+    can skip the ~400ms detect_inconsistencies pass. The default (False)
+    must leave every existing caller (``clasi status`` CLI, ``get_status``
+    MCP tool / project-status skill) unchanged."""
+
+    def test_default_calls_detect_inconsistencies(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies", return_value=[]
+        ) as mock_detect:
+            StatusReporter(empty_project, reader=null_reader).build()
+        mock_detect.assert_called_once()
+
+    def test_skip_inconsistencies_true_does_not_call_detect(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies"
+        ) as mock_detect:
+            StatusReporter(empty_project, reader=null_reader).build(
+                skip_inconsistencies=True
+            )
+        mock_detect.assert_not_called()
+
+    def test_skip_inconsistencies_true_still_returns_empty_list(self, empty_project, null_reader):
+        result = StatusReporter(empty_project, reader=null_reader).build(
+            skip_inconsistencies=True
+        )
+        assert result["inconsistencies"] == []
+
+    def test_skip_inconsistencies_does_not_change_other_keys(self, empty_project, null_reader):
+        default_result = StatusReporter(empty_project, reader=null_reader).build()
+        skipped_result = StatusReporter(empty_project, reader=null_reader).build(
+            skip_inconsistencies=True
+        )
+        default_result.pop("computed_at")
+        skipped_result.pop("computed_at")
+        default_result.pop("inconsistencies")
+        skipped_result.pop("inconsistencies")
+        assert default_result == skipped_result
+
+    def test_build_status_default_calls_detect_inconsistencies(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies", return_value=[]
+        ) as mock_detect:
+            build_status(empty_project, reader=null_reader)
+        mock_detect.assert_called_once()
+
+    def test_build_status_passes_skip_inconsistencies_through(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies"
+        ) as mock_detect:
+            result = build_status(
+                empty_project, reader=null_reader, skip_inconsistencies=True
+            )
+        mock_detect.assert_not_called()
         assert result["inconsistencies"] == []
 
 
@@ -417,6 +487,89 @@ class TestExcludeDone:
         sprint_001 = next(s for s in result["sprints"] if s["id"] == "001")
         detail_ids = {d["id"] for d in sprint_001["tickets"]["details"]}
         assert detail_ids == {"001-01", "001-02"}
+
+
+# ---------------------------------------------------------------------------
+# exclude_done widened to terminal ("closed") status and done/-path archived
+# sprints (026/007) — ticket 003 measured that the six archived sprints in
+# this repo declare status: closed (the sprint machine's own terminal state
+# name), which is NOT "done" (the ticket machine's terminal state name), so
+# they leaked past the original exclude_done check.
+# ---------------------------------------------------------------------------
+
+
+class TestExcludeDoneWidenedToClosedArchived:
+    def test_exclude_done_removes_closed_status_sprint(self, null_reader):
+        """A sprint declaring status: closed (no done/ path signal) must be
+        excluded by exclude_done the same way status: done already is —
+        this is the exact real-repo mismatch ticket 003 measured."""
+        active = FakeSprint("026", tickets=[], status="executing")
+        closed = FakeSprint("020", tickets=[], status="closed")
+        project = FakeProject(sprints=[closed, active])
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=True)
+
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"026"}
+
+    def test_exclude_done_false_keeps_closed_sprint(self, null_reader):
+        """On-demand callers (exclude_done=False, e.g. clasi status CLI)
+        must be completely unaffected by the widened terminal check —
+        closed/archived sprints still appear, unchanged."""
+        active = FakeSprint("026", tickets=[], status="executing")
+        closed = FakeSprint("020", tickets=[], status="closed")
+        project = FakeProject(sprints=[closed, active])
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=False)
+
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"020", "026"}
+
+    def test_exclude_done_removes_sprint_under_done_dir_regardless_of_status(
+        self, null_reader
+    ):
+        """A sprint physically located under sprints/done/ must be excluded
+        by directory location alone, even if its declared status: is
+        neither 'done' nor 'closed' (stale/missing/future terminal label) —
+        the ticket's acceptance criteria requires not relying on
+        frontmatter alone when the directory already signals archived."""
+        active = FakeSprint(
+            "026",
+            tickets=[],
+            status="executing",
+            path=Path("/fake/project/clasi/sprints/026-active"),
+        )
+        archived_by_path_only = FakeSprint(
+            "011",
+            tickets=[],
+            status="some-future-terminal-label",
+            path=Path("/fake/project/clasi/sprints/done/011-archived"),
+        )
+        project = FakeProject(sprints=[archived_by_path_only, active])
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=True)
+
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"026"}
+
+    def test_exclude_done_still_removes_done_status_sprint_unchanged(
+        self, null_reader
+    ):
+        """Regression: the original status: done exclusion (pre-026/007)
+        must not have been narrowed by widening to also match closed/path —
+        both signals are additive, not a replacement."""
+        active = FakeSprint("026", tickets=[], status="executing")
+        done = FakeSprint("001", tickets=[], status="done")
+        project = FakeProject(sprints=[done, active])
+        reporter = StatusReporter(project, reader=null_reader)
+
+        result = reporter.build(exclude_done=True)
+
+        ids = {s["id"] for s in result["sprints"]}
+        assert ids == {"026"}
 
 
 # ---------------------------------------------------------------------------

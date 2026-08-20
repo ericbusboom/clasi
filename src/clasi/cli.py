@@ -461,14 +461,11 @@ def mcp():
             "role-guard",
             "subagent-start",
             "subagent-stop",
-            "task-created",
-            "task-completed",
             "mcp-guard",
             "plan-to-issue",
             "plan-to-todo",
             "codex-plan-to-issue",
             "codex-plan-to-todo",
-            "commit-check",
             "status-inject",
         ]
     ),
@@ -483,15 +480,18 @@ def hook(event):
       role-guard           PreToolUse: enforce write-scope rules by agent tier.
       subagent-start       SubagentStart: log subagent lifecycle start.
       subagent-stop        SubagentStop: append transcript to subagent log.
-      task-created         TaskCreated: log parallel-task lifecycle start.
-      task-completed       TaskCompleted: append transcript to task log.
       mcp-guard            PreToolUse: block team-lead from direct MCP writes.
       plan-to-issue        PostToolUse(ExitPlanMode): save Claude plan as issue.
       plan-to-todo         PostToolUse(ExitPlanMode): alias for plan-to-issue (deprecated).
       codex-plan-to-issue  Stop(Codex): extract <proposed_plan> and save as issue.
       codex-plan-to-todo   Stop(Codex): alias for codex-plan-to-issue (deprecated).
-      commit-check         PostToolUse(Bash): remind to bump version on master.
       status-inject        UserPromptSubmit: prepend CLASI status block to context.
+
+    (sprint 026 / ticket 004): task-created, task-completed, and
+    commit-check were removed — TaskCreated/TaskCompleted never fired in
+    2,447 logged hook events, and commit-check read an env var Claude
+    Code never sets (the payload arrives on stdin). Their handler
+    functions were deleted from clasi.hook_handlers alongside this.
     """
     from clasi.hook_handlers import handle_hook
 

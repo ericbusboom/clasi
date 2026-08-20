@@ -11,13 +11,13 @@ These are thin dispatchers — actual logic lives in dedicated modules.
 import json
 import logging
 import os
-import subprocess
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from clasi.project import Project
+from clasi.project import Project, _load_config
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def get_project() -> Project:
     return Project(Path.cwd())
 
 
-def _normalize_to_root_relative(file_path: str) -> str:
+def _normalize_to_root_relative(file_path: str, project: Optional[Project] = None) -> str:
     """Normalize *file_path* to a root-relative path string (POSIX separators).
 
     Claude Code's PreToolUse payloads carry ABSOLUTE file_path values, but
@@ -42,12 +42,19 @@ def _normalize_to_root_relative(file_path: str) -> str:
         plain string comparison); it cannot match any relative prefix, and
         must not raise or be coerced into accidentally matching one.
       - Already-relative path -> returned unchanged.
+
+    *project*, when given, is used instead of calling ``get_project()`` —
+    lets a caller that already resolved its own ``Project`` for the
+    current invocation (e.g. ``handle_role_guard``'s per-invocation
+    cache) reuse it instead of constructing a new one. Omitted (the
+    default), behavior is unchanged.
     """
     p = Path(file_path)
     if not p.is_absolute():
         return file_path
     try:
-        return p.relative_to(get_project().root).as_posix()
+        _proj = project if project is not None else get_project()
+        return p.relative_to(_proj.root).as_posix()
     except ValueError:
         return file_path
 
@@ -88,7 +95,9 @@ def _oop_file_active(root: Path) -> bool:
     return (root / ".clasi" / "oop").exists() or (root / ".clasi-oop").exists()
 
 
-def _oop_db_record(root: Path) -> Optional[dict]:
+def _oop_db_record(
+    root: Path, conn: Optional[sqlite3.Connection] = None,
+) -> Optional[dict]:
     """Return the DB-backed OOP bypass record for *root*, or None.
 
     Resolves ``db_path`` through ``Project(root).db_path`` — the same
@@ -97,20 +106,24 @@ def _oop_db_record(root: Path) -> Optional[dict]:
     ``try/except Exception: pass`` and gated on ``db_path.exists()`` first:
     a missing, corrupt, or locked database must never raise out of this
     helper. Expiry-on-read (deleting a stale record and warning on stderr)
-    is handled by ``state_db.get_oop`` itself (ticket 004).
+    is handled by ``StateDB.get_oop`` itself (ticket 004).
+
+    If *conn* is given, it is reused instead of opening a new connection
+    (see ``_oop_active``'s docstring for the invariant that makes this
+    safe) — used by ``handle_role_guard``'s per-invocation cache.
     """
     try:
         db_path = Project(root).db_path
         if not db_path.exists():
             return None
-        from clasi.state_db import get_oop
+        from clasi.state_db_class import StateDB
 
-        return get_oop(str(db_path))
+        return StateDB(db_path).get_oop(conn=conn)
     except Exception:
         return None
 
 
-def _oop_active() -> bool:
+def _oop_active(conn: Optional[sqlite3.Connection] = None) -> bool:
     """Return True if out-of-process (OOP) bypass is active for this project.
 
     Two independent channels, checked in this order:
@@ -151,9 +164,24 @@ def _oop_active() -> bool:
     directly — always call this helper (or ``_oop_source()`` for reporting),
     so the two channels can never drift out of sync and the cwd-vs-root
     resolution is never duplicated.
+
+    *conn*, when given, is reused for the DB-record channel's lookup
+    instead of opening a new connection — used by ``handle_role_guard``'s
+    per-invocation cache. This is safe only when *conn* was opened
+    against the SAME root this function resolves internally, above.
+    ``handle_role_guard``'s own use satisfies that: it only ever passes a
+    connection it opened against ``get_project()``'s root (plain cwd, no
+    upward search), and that connection only exists when cwd's own
+    ``.clasi/.clasi.db`` already exists — which is only possible when cwd
+    itself contains ``.clasi/``, in which case ``_find_project_root(cwd)``
+    trivially returns cwd unchanged (it checks cwd itself before walking
+    up any parent), so the two roots are guaranteed identical in that
+    case. Omitted (the default), behavior is unchanged: this function
+    resolves its own root and the DB-record lookup opens (and closes) its
+    own connection.
     """
     root = _find_project_root(Path.cwd())
-    return _oop_file_active(root) or _oop_db_record(root) is not None
+    return _oop_file_active(root) or _oop_db_record(root, conn=conn) is not None
 
 
 def _oop_source() -> Optional[str]:
@@ -278,6 +306,22 @@ def _log_hook_event(
 
     Creates .clasi/log/ if .clasi/ exists. Wraps everything in
     try/except so logging never causes a hook to fail.
+
+    Timestamp format (ticket 026-004): ``%Y-%m-%dT%H:%M:%SZ`` — a date
+    component was added because the previous ``%H:%M:%SZ``-only format
+    made multi-day log analysis impossible (every day's events looked
+    identical). Still a single whitespace-free token, so the line
+    remains splittable on whitespace exactly as before.
+
+    file_path/path/new_path resolution (ticket 026-004): Claude Code
+    nests these under ``payload["tool_input"]`` for PreToolUse/
+    PostToolUse events (the same shape ``handle_role_guard`` resolves
+    from) — NOT at the payload top level. Reading them from the top
+    level (the previous behavior) meant essentially no blocked-write log
+    line ever recorded which file was blocked. Mirrors
+    ``handle_role_guard``'s own ``payload.get("tool_input", payload)``
+    idiom so a payload with no ``tool_input`` key at all (e.g. a flat
+    synthetic payload) still resolves the fields from the top level.
     """
     try:
         _proj = get_project()
@@ -287,13 +331,26 @@ def _log_hook_event(
         log_dir.mkdir(parents=True, exist_ok=True)
         _ensure_log_gitignore(log_dir)
 
-        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         reason_fixed = f"{reason:<12.12}"
 
-        # Build a short summary of key payload fields
+        # Build a short summary of key payload fields. tool_name and the
+        # tail fields (task_id, ...) are always top-level in real Claude
+        # Code payloads; file_path/path/new_path are nested under
+        # tool_input — see the docstring above.
+        tool_input = payload.get("tool_input", payload) if payload else {}
         key_fields: list[str] = []
-        for key in ("tool_name", "file_path", "path", "new_path", "task_id",
-                    "task_subject", "agent_type", "agent_id", "session_id"):
+
+        tool_name = payload.get("tool_name")
+        if tool_name:
+            key_fields.append(f"tool_name={tool_name}")
+
+        for key in ("file_path", "path", "new_path"):
+            value = tool_input.get(key) if isinstance(tool_input, dict) else None
+            if value:
+                key_fields.append(f"{key}={value}")
+
+        for key in ("task_id", "task_subject", "agent_type", "agent_id", "session_id"):
             value = payload.get(key)
             if value:
                 key_fields.append(f"{key}={value}")
@@ -324,21 +381,113 @@ def _exit_hook(
 # ---------------------------------------------------------------------------
 
 
+def _recovery_entry_matches(entry: str, file_path: str, project: Project) -> bool:
+    """Return True if *file_path* (already root-relative) is covered by
+    *entry*, a single item from a recovery record's ``allowed_paths``.
+
+    Entries may be written as absolute paths (e.g. ``str(project.design_dir)``
+    — see ``artifact_tools.py``'s ``close_sprint`` recovery writes),
+    root-relative paths, or root-relative paths with a trailing slash.
+    *entry* is normalized to root-relative via the same helper used for
+    the incoming ``file_path`` (``_normalize_to_root_relative``) before
+    comparison, so an absolute entry under *project*'s own root matches
+    correctly.
+
+    Two ways to match (ticket 026-001):
+      - Exact: ``file_path == the normalized entry``.
+      - Directory-prefix: the normalized entry is "directory-shaped" (ends
+        with ``"/"``, or resolves to an actual directory on disk) and
+        ``file_path`` starts with ``entry + "/"``. This is what makes a
+        directory entry (e.g. ``str(project.design_dir)``) cover every
+        file under it — per the ticket's "a trailing-slash or is-dir
+        entry matches any file under it". Previously only exact-path
+        equality was checked, so directory entries were silently inert.
+    """
+    normalized = _normalize_to_root_relative(entry, project=project)
+    if file_path == normalized:
+        return True
+    stripped = normalized.rstrip("/")
+    if not stripped:
+        return False
+    try:
+        is_dir_shaped = normalized.endswith("/") or (project.root / stripped).is_dir()
+    except OSError:
+        is_dir_shaped = normalized.endswith("/")
+    return is_dir_shaped and file_path.startswith(stripped + "/")
+
+
+def _load_role_guard_config(project: Project) -> tuple[list[str], list[str]]:
+    """Read ``.clasi/config.yaml`` exactly once and return
+    ``(protected_paths, excluded_paths)``, normalized identically to
+    ``Project.protected_paths`` / ``Project.excluded_paths``.
+
+    Also primes *project*'s own lazy paths-config cache slot (the one
+    ``Project._path_config()`` checks) from this SAME parse, so a later
+    ``project.issues_dir`` / ``.sprints_dir`` / ``.design_dir`` / etc.
+    access — which normally triggers its own independent config.yaml
+    parse the first time any of those properties is read — reuses this
+    read instead. Combined, this is what gets one ``handle_role_guard``
+    invocation down to a single config.yaml parse (previously 3: one
+    each for the ``paths:`` map, ``protected_paths:``, and
+    ``excluded_paths:`` keys, each read independently by their own
+    Project property/loader).
+
+    Safe because *project* is a ``Project`` instance this one hook
+    invocation constructs and owns exclusively — nothing else observes
+    or reuses its cache slots, and this helper never writes
+    config.yaml back out (unlike ``Project.set_design_docs_opt_in``'s
+    read-modify-write, which must always see a fresh read and is
+    untouched by this helper or by priming ``_paths``).
+    """
+    data = _load_config(project.root)
+
+    if project._paths is None:
+        paths = data.get("paths")
+        project._paths = paths if isinstance(paths, dict) else {}
+
+    def _normalize(raw: object) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        result: list[str] = []
+        for rel in raw:
+            rel = str(rel).strip("/")
+            if rel:
+                result.append(rel + "/")
+        return result
+
+    return (
+        _normalize(data.get("protected_paths")),
+        _normalize(data.get("excluded_paths")),
+    )
+
+
 def handle_role_guard(payload: dict) -> None:
     """Enforce directory write scopes based on agent tier.
 
     Allowed/blocked write matrix
     ─────────────────────────────────────────────────────────────────────────
-    Path                          tier 0   tier 1   tier 2   OOP
-    ────────────────────────────  ──────   ──────   ──────   ───
-    ~/.claude/plans/**            ALLOW    ALLOW    ALLOW    ALLOW
-    .claude/**  /  CLAUDE.md      ALLOW    ALLOW    ALLOW    ALLOW
-    AGENTS.md                     ALLOW    ALLOW    ALLOW    ALLOW
-    .clasi/  (non-sprint)         ALLOW    ALLOW    ALLOW    ALLOW
-    .clasi/sprints/**             BLOCK    ALLOW    ALLOW    ALLOW
-    Source / tests / config       BLOCK    BLOCK    ALLOW    ALLOW
-    (anything else)               BLOCK    BLOCK    ALLOW    ALLOW
+    Path                             tier 0   tier 1   tier 2   OOP
+    ───────────────────────────────  ──────   ──────   ──────   ───
+    ~/.claude/plans/**               ALLOW    ALLOW    ALLOW    ALLOW
+    .claude/**  /  CLAUDE.md         ALLOW    ALLOW    ALLOW    ALLOW
+    AGENTS.md                        ALLOW    ALLOW    ALLOW    ALLOW
+    issues_dir / reflections_dir     ALLOW    ALLOW    ALLOW*   ALLOW
+    design_dir / clasi_dir / log_dir ALLOW    ALLOW    ALLOW    ALLOW
+    .clasi/sprints/**                BLOCK    ALLOW    ALLOW    ALLOW
+    Source / tests / config          BLOCK    BLOCK    ALLOW*   ALLOW
+    (anything else, in-root)         BLOCK    BLOCK    ALLOW*   ALLOW
+    (anything outside project root)  ALLOW    ALLOW    ALLOW    ALLOW
     ─────────────────────────────────────────────────────────────────────────
+    * Tier 2 is additionally subject to the ticket-state gate below;
+      issues_dir/reflections_dir are exempt from that gate, every other
+      tier-2 write is unrestricted only once the gate has cleared.
+
+    As of sprint 026 (ticket 001), tier 1 consults the same artifact-dir
+    allow list (issues_dir, reflections_dir, design_dir, clasi_dir,
+    log_dir) tier 0 does — previously only the sprints_dir prefix was
+    allow-listed for tier 1, contradicting this table's own intent (a
+    sprint-planner writing e.g. an incident reflection fell through to
+    the final BLOCK).
 
     Outside-root writes are ALLOWED for every tier. role-guard governs
     direct writes to *this* repo's source and tests only; a path outside
@@ -350,7 +499,7 @@ def handle_role_guard(payload: dict) -> None:
 
     "Source / tests / config" above means: when Project.protected_paths is
     NOT configured (the default — no `protected_paths:` key in
-    config.yaml), anything not on the tier-0 allow list is blocked, same
+    config.yaml), anything not on the tier-0/1 allow list is blocked, same
     as always. When protected_paths IS configured (typically written by
     `clasi init` after detecting/being told the project's source and test
     directories), the meaning flips for tier 0/1: ONLY paths under those
@@ -364,14 +513,50 @@ def handle_role_guard(payload: dict) -> None:
     Tier 2 = programmer
     OOP    = .clasi/oop (or legacy .clasi-oop) present in cwd (out-of-process bypass)
 
-    Ticket-state gate (applies to ALL tiers, including tier 2): if a
+    Ticket-state gate (ticket 026-001: rescoped to tier 2 only): if a
     sprint execution lock is held (via _get_sprint_context()) and zero
     tickets in that sprint are `status: in-progress` (via
-    _get_active_tickets()), the write is blocked — unless _oop_active()
-    is True. This gate is skipped entirely when no execution lock is
-    held. It runs BEFORE the tier-2 unrestricted-write early return, so
-    a programmer with no in-progress ticket during an active sprint is
-    blocked exactly like any other tier.
+    _get_active_tickets()), a TIER-2 write is blocked — unless
+    _oop_active() is True, or the write falls under issues_dir /
+    reflections_dir (exempt for every tier reached by this gate, so
+    incident capture via the issue/self-reflect skills is never blocked
+    by it). Previously this gate applied to every tier and ran before
+    every allow list: since throw_ticket_exception sets a ticket's status
+    to `exception`, never `in-progress`, that made every agent's writes —
+    including the sprint-planner/team-lead writes needed to actually
+    recover from the exception — dead-end the moment one was thrown.
+    Tier 0/1 writes are no longer gated by ticket-state at all; their own
+    allow/block rules above already determine their outcome. This gate
+    is skipped entirely when no execution lock is held.
+
+    Recovery-state bypass: allows specific paths recorded in the state DB
+    during sprint recovery (e.g. resolving merge conflicts, or a
+    close_sprint precondition failure that names the file to fix). Each
+    entry in `allowed_paths` may be an exact file path OR a directory
+    (absolute or root-relative, with or without a trailing slash) — a
+    directory entry matches any file under it, not just an exact string
+    (ticket 026-001; previously directory entries were silently inert,
+    since only exact-path equality was checked). See
+    _recovery_entry_matches().
+
+    Block-message agent identity (ticket 026-001): when the caller's tier
+    was resolved from the state DB (get_active_tier(), keyed on
+    caller_id) rather than the CLASI_AGENT_TIER env var, the final block
+    message also resolves the agent's display name from the SAME DB
+    record (get_active_agent(), same caller_id key) instead of the
+    CLASI_AGENT_NAME env default — which is typically unset for a
+    DB-dispatched subagent and would otherwise misreport it as
+    "team-lead".
+
+    Per-invocation caching (ticket 026-001): this function resolves one
+    Project instance, its parsed config.yaml, and (lazily, on first
+    need) one sqlite connection, and reuses them for every check above
+    instead of re-resolving/reconnecting at each check site (previously:
+    ~5 get_project() calls, ~3 config.yaml parses, ~4 sqlite connections
+    per invocation). A hook invocation is a single, one-shot CLI process
+    — see DESIGN.md's "hook invocation is a single process lifetime"
+    invariant — so this cache never outlives the call and there is
+    nothing to invalidate across invocations.
 
     No path resolvable from the payload (neither the nested
     tool_input.file_path/path/new_path shape nor a flat fallback) fails
@@ -390,6 +575,49 @@ def handle_role_guard(payload: dict) -> None:
         or ""
     )
 
+    # Per-invocation cache: one Project instance, its parsed config, and
+    # (lazily, on first need) one sqlite3 connection, reused by every
+    # check below instead of each check site calling get_project() /
+    # re-parsing config.yaml / opening its own connection.
+    #
+    # _load_role_guard_config() MUST run here, immediately after
+    # get_project(), before ANY _proj.<property> access (including
+    # _proj.db_path, touched a few lines down by _conn()) — it primes
+    # _proj's own lazy paths-config cache from the one config.yaml parse
+    # it does, so every later _proj.issues_dir / .db_path / .sprints_dir
+    # / etc. access (each of which would otherwise independently
+    # re-parse config.yaml the first time it's read) reuses that same
+    # parse instead. Priming after some other property had already
+    # triggered its own independent parse would defeat the whole point.
+    #
+    # _conn() only opens a connection the first time it is actually
+    # needed (and never for a db_path that doesn't exist yet —
+    # sqlite3.connect() itself would create an empty file as a side
+    # effect, which none of the existing per-site `db_path.exists()`
+    # guards ever did), so fast-exit paths that need no DB access at all
+    # (claude-plans-dir, no-path, outside-root) pay nothing extra.
+    _proj = get_project()
+    _protected_paths, _excluded_paths = _load_role_guard_config(_proj)
+    _db_conn: Optional[sqlite3.Connection] = None
+
+    def _conn() -> Optional[sqlite3.Connection]:
+        nonlocal _db_conn
+        if _db_conn is None and _proj.db_path.exists():
+            try:
+                _db_conn = _proj.db.connect()
+            except Exception:
+                pass
+        return _db_conn
+
+    def _exit(code: int, reason: str) -> None:
+        """Close the shared connection (if any), then exit the hook."""
+        if _db_conn is not None:
+            try:
+                _db_conn.close()
+            except Exception:
+                pass
+        _exit_hook("role-guard", payload, code, reason)
+
     # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md).
     # This lies outside the project root, so the general outside-root
     # allow below (reason "outside-root") already covers it. This narrower
@@ -403,7 +631,7 @@ def handle_role_guard(payload: dict) -> None:
                 Path(file_path) == _plans_dir
                 or _plans_dir in Path(file_path).parents
             ):
-                _exit_hook("role-guard", payload, 0, "claude-plans-dir")
+                _exit(0, "claude-plans-dir")
         except (OSError, ValueError):
             # Malformed path string — fall through to normal handling
             # rather than raising out of a guard hook.
@@ -419,7 +647,7 @@ def handle_role_guard(payload: dict) -> None:
     # before the no-path check, recovery-state lookup, and safe_prefixes
     # check so all downstream comparisons see the same relative form.
     if file_path:
-        file_path = _normalize_to_root_relative(file_path)
+        file_path = _normalize_to_root_relative(file_path, project=_proj)
 
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
@@ -427,13 +655,17 @@ def handle_role_guard(payload: dict) -> None:
 
     # If no env var, check the DB for the caller's own active-agent tier.
     # Keyed on caller_id — never a filter-less lookup, which with
-    # concurrent agents would return an arbitrary agent's tier.
+    # concurrent agents would return an arbitrary agent's tier. Tracks
+    # whether the tier came from the DB, so the block message at the end
+    # can resolve the SAME record's agent name instead of the
+    # CLASI_AGENT_NAME env default.
+    _tier_source_db = False
     if not agent_tier:
         try:
-            db_path_tier = get_project().db_path
-            if db_path_tier.exists():
-                from clasi.state_db import get_active_tier
-                agent_tier = get_active_tier(str(db_path_tier), caller_id)
+            if _proj.db_path.exists():
+                agent_tier = _proj.db.get_active_tier(caller_id, conn=_conn())
+                if agent_tier:
+                    _tier_source_db = True
         except Exception:
             pass
 
@@ -444,8 +676,8 @@ def handle_role_guard(payload: dict) -> None:
     # went undetected. Tier 2 already has unrestricted write scope by
     # design once the ticket-state gate below has been checked, so
     # no-path is moot there — exempted here rather than exiting early,
-    # so the ticket-state gate (which applies to tier 2 too) still runs
-    # for tier 2 regardless of whether a path was resolved.
+    # so the ticket-state gate (which applies to tier 2) still runs for
+    # tier 2 regardless of whether a path was resolved.
     if not file_path and agent_tier != "2":
         present_keys = sorted(payload.keys()) if payload else []
         logger.warning(
@@ -453,7 +685,7 @@ def handle_role_guard(payload: dict) -> None:
             "(tier=%s, payload keys=%s) — failing closed",
             agent_tier or "0", present_keys,
         )
-        _exit_hook("role-guard", payload, 2, "no-path")
+        _exit(2, "no-path")
 
     # Outside-root writes are ALLOWED for every tier. CLASI's role-guard
     # governs one thing: direct writes to *this* repo's source and tests.
@@ -469,24 +701,27 @@ def handle_role_guard(payload: dict) -> None:
     # narrow ~/.claude/plans/** allow-list above, which is retained only so
     # its specific "claude-plans-dir" reason keeps appearing in logs.
     if file_path and Path(file_path).is_absolute():
-        _exit_hook("role-guard", payload, 0, "outside-root")
+        _exit(0, "outside-root")
 
     # OOP bypass: .clasi/oop (or legacy .clasi-oop) enables direct writes
     # for any tier. Used for out-of-process changes reviewed manually by
-    # the team-lead.
-    if _oop_active():
-        _exit_hook("role-guard", payload, 0, "oop-bypass")
+    # the team-lead. Reuses the shared connection (see _oop_active's
+    # docstring for why this is safe).
+    if _oop_active(conn=_conn()):
+        _exit(0, "oop-bypass")
 
     # Recovery state bypass: allows specific paths during sprint recovery
     # (e.g. resolving merge conflicts) when recorded in the state DB.
-    db_path = get_project().db_path
-    if db_path.exists():
+    # Matches directory-prefix entries as well as exact paths — see
+    # _recovery_entry_matches().
+    if _proj.db_path.exists():
         try:
-            from clasi.state_db import get_recovery_state
-
-            recovery = get_recovery_state(str(db_path))
-            if recovery and file_path in recovery["allowed_paths"]:
-                _exit_hook("role-guard", payload, 0, "recovery")
+            recovery = _proj.db.get_recovery_state(conn=_conn())
+            if recovery and any(
+                _recovery_entry_matches(entry, file_path, _proj)
+                for entry in recovery.get("allowed_paths", [])
+            ):
+                _exit(0, "recovery")
         except Exception:
             pass
 
@@ -497,7 +732,7 @@ def handle_role_guard(payload: dict) -> None:
     safe_prefixes = [".claude/", "CLAUDE.md", "AGENTS.md"]
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
-            _exit_hook("role-guard", payload, 0, "safe-prefix")
+            _exit(0, "safe-prefix")
 
     # Staleness fail-closed gate: when this repo IS the CLASI source repo
     # (clasi.staleness._is_clasi_source_repo) and the running hook build
@@ -517,7 +752,7 @@ def handle_role_guard(payload: dict) -> None:
     from clasi import __version__ as _running_version
     from clasi.staleness import check_staleness
 
-    _staleness = check_staleness(get_project().root, _running_version)
+    _staleness = check_staleness(_proj.root, _running_version)
     if _staleness.repo_version is not None and any(
         "does not match this repo's editable source" in r
         or "is not running this working tree's code" in r
@@ -532,46 +767,15 @@ def handle_role_guard(payload: dict) -> None:
             "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
-        _exit_hook("role-guard", payload, 2, "stale-guard")
+        _exit(2, "stale-guard")
 
-    # Ticket-state gate: if a sprint execution lock is held but zero
-    # tickets in that sprint are `status: in-progress`, block the write
-    # regardless of tier — including tier 2. This is the gate that was
-    # missing entirely: tier 2 previously exited allow (see below) before
-    # any ticket-state logic could run, which is exactly how a sprint
-    # could land untracked commits with no ticket ever marked
-    # in-progress. Skipped entirely when no execution lock is held (no
-    # sprint executing); already-bypassed OOP requests exited above via
-    # the oop-bypass check, so no separate _oop_active() re-check is
-    # needed here — reaching this point means OOP is not active.
-    _sprint_log_dir, _sprint_id = _get_sprint_context()
-    if _sprint_id:
-        active_tickets = _get_active_tickets(_sprint_id)
-        if not active_tickets:
-            print(
-                f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
-                "is held but no ticket is in-progress.\n"
-                "Start or resume a ticket via the execute-ticket flow, or "
-                "run `clasi oop on --reason '...'` to bypass (emergency "
-                "fallback: .clasi/oop).",
-                file=sys.stderr,
-            )
-            _exit_hook("role-guard", payload, 2, "no-ticket")
-
-    # Tier 2 (programmer) can write anywhere — that's their job.
-    # Checked after the ticket-state gate above (and after the no-path /
-    # OOP / recovery / safe-prefix checks) so programmer subagents are
-    # still subject to the ticket-state gate; this early return only
-    # fires once that gate has confirmed either no lock is held or a
-    # ticket is in-progress.
-    if agent_tier == "2":
-        _exit_hook("role-guard", payload, 0, "tier-2")
+    # _protected_paths / _excluded_paths were already resolved at the top
+    # of this function (see _load_role_guard_config() there) — reused
+    # here and by the protected_paths gate further down.
 
     # Build allow/block prefix sets from live Project properties.
     # Each prefix is root-relative so it matches the file_path strings
     # Claude Code sends (which are also root-relative).
-    _proj = get_project()
-
     def _prefix(p: Path) -> str:
         """Return root-relative directory prefix with trailing slash.
 
@@ -584,9 +788,11 @@ def handle_role_guard(payload: dict) -> None:
         except ValueError:
             return str(p) + "/"
 
+    _issues_prefix = _prefix(_proj.issues_dir)
+    _reflections_prefix = _prefix(_proj.reflections_dir)
     _allow_prefixes = [
-        _prefix(_proj.issues_dir),
-        _prefix(_proj.reflections_dir),
+        _issues_prefix,
+        _reflections_prefix,
         _prefix(_proj.design_dir),
         _prefix(_proj.clasi_dir),   # state files: config.yaml, log/, .clasi.db
         _prefix(_proj.log_dir),
@@ -594,6 +800,36 @@ def handle_role_guard(payload: dict) -> None:
     _block_prefixes = [
         _prefix(_proj.sprints_dir),
     ]
+
+    # Ticket-state gate: tier-2 only (rescoped by ticket 026-001), and
+    # exempt for issues_dir/reflections_dir writes even for tier 2 — see
+    # the docstring above for the full rationale (exception-routing
+    # deadlock).
+    if agent_tier == "2" and not (
+        file_path.startswith(_issues_prefix) or file_path.startswith(_reflections_prefix)
+    ):
+        _sprint_log_dir, _sprint_id = _get_sprint_context(project=_proj, conn=_conn())
+        if _sprint_id:
+            active_tickets = _get_active_tickets(_sprint_id, project=_proj)
+            if not active_tickets:
+                print(
+                    f"CLASI ROLE VIOLATION: sprint {_sprint_id} execution lock "
+                    "is held but no ticket is in-progress.\n"
+                    "Start or resume a ticket via the execute-ticket flow, or "
+                    "run `clasi oop on --reason '...'` to bypass (emergency "
+                    "fallback: .clasi/oop).",
+                    file=sys.stderr,
+                )
+                _exit(2, "no-ticket")
+
+    # Tier 2 (programmer) can write anywhere — that's their job.
+    # Checked after the ticket-state gate above (and after the no-path /
+    # OOP / recovery / safe-prefix checks) so programmer subagents are
+    # still subject to the ticket-state gate; this early return only
+    # fires once that gate has confirmed either no lock is held, a
+    # ticket is in-progress, or the write is issues/reflections-exempt.
+    if agent_tier == "2":
+        _exit(0, "tier-2")
 
     if agent_tier in ("", "0"):
         # Check block list first: sprints_dir is owned by sprint-planner/MCP.
@@ -607,17 +843,21 @@ def handle_role_guard(payload: dict) -> None:
                     "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
                     file=sys.stderr,
                 )
-                _exit_hook("role-guard", payload, 2, "blk-sprint")
-        # Check allow list: issues, reflections, architecture, design, clasi state.
+                _exit(2, "blk-sprint")
+
+    if agent_tier in ("", "0", "1"):
+        # Check allow list: issues, reflections, design, clasi state, log.
+        # Tier 1 was added here by ticket 026-001 — see the docstring
+        # matrix note above.
         for alw in _allow_prefixes:
             if file_path.startswith(alw):
-                _exit_hook("role-guard", payload, 0, "artifact-dir")
+                _exit(0, "artifact-dir")
 
     # Sprint-planner (tier 1) can write to sprint directories they own.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
     _sprints_prefix = _block_prefixes[0]
     if agent_tier == "1" and file_path.startswith(_sprints_prefix):
-        _exit_hook("role-guard", payload, 0, "tier-1")
+        _exit(0, "tier-1")
 
     # protected_paths gate: when the stakeholder has explicitly configured
     # protected_paths: in config.yaml (typically at `clasi init`, pointing
@@ -633,22 +873,31 @@ def handle_role_guard(payload: dict) -> None:
     # shipped. Only an explicitly non-empty list switches to this
     # allow-by-default mode; otherwise control falls through to the
     # pre-existing block-by-default behavior below.
-    _protected = _proj.protected_paths
-    if _protected:
+    if _protected_paths:
         # excluded_paths carves out subdirectories of a protected prefix
         # that aren't actually source/tests (e.g. tests/e2e/ Docker
         # harness scripts under a protected tests/ root) — checked first
         # so an exclusion always wins over a broader protected prefix.
-        if any(file_path.startswith(p) for p in _proj.excluded_paths):
-            _exit_hook("role-guard", payload, 0, "excluded-path")
-        if not any(file_path.startswith(p) for p in _protected):
-            _exit_hook("role-guard", payload, 0, "outside-protected-paths")
+        if any(file_path.startswith(p) for p in _excluded_paths):
+            _exit(0, "excluded-path")
+        if not any(file_path.startswith(p) for p in _protected_paths):
+            _exit(0, "outside-protected-paths")
 
     # --- BLOCK ---
     # If we reach here, the write is not permitted for this tier.
     # tier 0 / unset: source code, tests, config, non-clasi docs → BLOCK
     # tier 1:         source code, tests, config, non-sprint docs  → BLOCK
     agent_name = os.environ.get("CLASI_AGENT_NAME", "team-lead")
+    if _tier_source_db and _proj.db_path.exists():
+        # Tier was resolved from the DB, not the env var — name the
+        # SAME DB-registered agent rather than the (typically unset for
+        # a dispatched subagent) CLASI_AGENT_NAME default.
+        try:
+            _record = _proj.db.get_active_agent(caller_id, conn=_conn())
+            if _record and _record.get("agent_type"):
+                agent_name = _record["agent_type"]
+        except Exception:
+            pass
     print(
         f"CLASI ROLE VIOLATION: {agent_name} (tier {agent_tier or '0'}) "
         f"attempted direct file write to: {file_path}",
@@ -666,7 +915,7 @@ def handle_role_guard(payload: dict) -> None:
             file=sys.stderr,
         )
         print("- programmer agent for source code and tests", file=sys.stderr)
-    _exit_hook("role-guard", payload, 2, "blk-write")
+    _exit(2, "blk-write")
 
 
 # ---------------------------------------------------------------------------
@@ -742,7 +991,10 @@ def handle_mcp_guard(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _get_sprint_context() -> tuple[Optional[Path], str]:
+def _get_sprint_context(
+    project: Optional[Project] = None,
+    conn: Optional[sqlite3.Connection] = None,
+) -> tuple[Optional[Path], str]:
     """Return (log_dir, sprint_id) for the current sprint context.
 
     log_dir is None if the clasi_dir does not exist (handlers should exit 0).
@@ -750,8 +1002,16 @@ def _get_sprint_context() -> tuple[Optional[Path], str]:
     (.clasi/log/sprint-{sprint_id}/), creating it if needed.
     Otherwise log_dir is .clasi/log.
     sprint_id is the active sprint ID string, or empty string if none.
+
+    *project* and *conn*, when given, are used instead of calling
+    ``get_project()`` / opening a new connection — lets a caller that
+    already resolved its own ``Project`` (and, if needed, an open
+    connection) for the current invocation (e.g. ``handle_role_guard``'s
+    per-invocation cache) reuse both. Both default to None, preserving
+    this function's original independent resolution for every other
+    caller (status-inject, subagent-start, subagent-stop, ...).
     """
-    _proj = get_project()
+    _proj = project if project is not None else get_project()
     if not _proj.clasi_dir.exists():
         return None, ""
     log_base = _proj.log_dir
@@ -761,9 +1021,7 @@ def _get_sprint_context() -> tuple[Optional[Path], str]:
     db_path = _proj.db_path
     if db_path.exists():
         try:
-            from clasi.state_db import get_lock_holder
-
-            lock = get_lock_holder(str(db_path))
+            lock = _proj.db.get_lock_holder(conn=conn)
             if lock and lock.get("sprint_id"):
                 sprint_id = lock["sprint_id"]
                 sprint_dir = log_base / f"sprint-{sprint_id}"
@@ -787,18 +1045,23 @@ def _get_log_dir() -> Optional[Path]:
     return log_dir
 
 
-def _get_active_tickets(sprint_id: str) -> list[str]:
+def _get_active_tickets(sprint_id: str, project: Optional[Project] = None) -> list[str]:
     """Return a list of in-progress ticket IDs for the given sprint.
 
     Scans the sprints_dir for the sprint directory matching sprint_id, then
     reads tickets/ for files with status: in-progress in their frontmatter.
     Returns ticket IDs in the format "{sprint_id}-{ticket_id}" (e.g. "002-007").
     Returns an empty list on any error or if no in-progress tickets found.
+
+    *project*, when given, is used instead of calling ``get_project()`` —
+    lets a caller that already resolved its own ``Project`` for the
+    current invocation reuse it. Omitted (the default), behavior is
+    unchanged.
     """
     if not sprint_id:
         return []
     try:
-        sprints_base = get_project().sprints_dir
+        sprints_base = (project if project is not None else get_project()).sprints_dir
         if not sprints_base.exists():
             return []
 
@@ -886,7 +1149,33 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
     )
 
 
-def _build_status_block(agent: str) -> str:
+def _trim_empty_preflight_sprints(narrowed: dict) -> None:
+    """Drop ``available_transitions`` from sprint entries with zero
+    tickets, in place (sprint 026 / ticket 003).
+
+    A sprint with ``tickets.total == 0`` cannot be in the ``ticketed``,
+    ``executing``, ``review``, or ``closed`` states (all four require at
+    least one ticket file — see ``is_at_least_one_ticket`` in
+    ``sprint.yaml``), so it is necessarily still in an early, empty
+    pre-flight state (``open``/``planned``/``pre-flight``) with nothing
+    for anyone to act on right now. Its ``available_transitions`` list
+    (each entry carrying a nested ``blocked_by`` list) measured as about
+    61% of a typical injected status block's byte size and is pure noise
+    for that state — nobody is currently blocked on firing a transition
+    for a sprint that has no tickets yet.
+
+    Sprints with at least one ticket (``tickets.total > 0``, including
+    the currently-executing sprint) are never touched — their
+    ``available_transitions``/``blocked_by`` detail is exactly the
+    "next step" information the status block exists to surface.
+    """
+    for sprint_entry in narrowed.get("sprints", []):
+        tickets = sprint_entry.get("tickets") or {}
+        if tickets.get("total", 0) == 0:
+            sprint_entry.pop("available_transitions", None)
+
+
+def _build_status_block(agent: str, skip_inconsistencies: bool = False) -> str:
     """Build a ``## CLASI status`` fenced YAML block for *agent*.
 
     Resolves the active ``sprint_id`` via :func:`_get_sprint_context` and,
@@ -898,7 +1187,19 @@ def _build_status_block(agent: str) -> str:
 
     The status-block assembly excludes ``done/`` sprints and tickets
     (``exclude_done=True``) — this hook path is the only caller that opts
-    into that; on-demand callers (MCP tools) still see full history.
+    into that; on-demand callers (MCP tools) still see full history. It
+    also drops ``available_transitions``/``blocked_by`` detail for any
+    sprint with zero tickets (see :func:`_trim_empty_preflight_sprints`)
+    — the same "hook path only" scoping as ``exclude_done``.
+
+    *skip_inconsistencies*, when True, skips
+    :func:`~clasi.status.inconsistency.detect_inconsistencies` (measured
+    at about 400ms). Only :func:`handle_status_inject` (the
+    ``UserPromptSubmit`` hook, fired on every prompt) passes True;
+    :func:`handle_subagent_start` leaves it False, and the ``clasi
+    status`` CLI / ``get_status`` MCP tool never go through this function
+    at all — they call :func:`~clasi.status.build_status` directly with
+    the default ``skip_inconsistencies=False``.
 
     Returns an empty string if building fails (e.g. no status data
     available). Never raises — callers rely on this being safe. Failures
@@ -936,11 +1237,13 @@ def _build_status_block(agent: str) -> str:
         full = build_status(
             project, agent=agent, sprint_id=sprint_id or None,
             ticket_id=ticket_id, exclude_done=True,
+            skip_inconsistencies=skip_inconsistencies,
         )
         narrowed = narrow_status(
             full, agent=agent, sprint_id=sprint_id or None, ticket_id=ticket_id,
         )
         _add_gate_imperative(narrowed, sprint_id, active_tickets)
+        _trim_empty_preflight_sprints(narrowed)
         yaml_text = to_yaml(narrowed)
         return f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
@@ -958,6 +1261,11 @@ def handle_status_inject(payload: dict) -> None:
 
     Silent no-op (exit 0, no output) only if ``.clasi/`` does not exist
     (project not CLASI-initialized).
+
+    This is the hot per-prompt path (fires on every ``UserPromptSubmit``),
+    so it calls :func:`_build_status_block` with ``skip_inconsistencies=True``
+    — the ``detect_inconsistencies`` pass (about 400ms) is skipped here
+    only; ``clasi status`` and the ``project-status`` skill still run it.
 
     When OOP bypass is active (either channel — file or DB, see
     ``_oop_active``/``_oop_status_lines``), this NEVER goes silent: it
@@ -978,7 +1286,7 @@ def handle_status_inject(payload: dict) -> None:
         _exit_hook("status-inject", payload, 0, "oop-bypass")
 
     agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")
-    block = _build_status_block(agent)
+    block = _build_status_block(agent, skip_inconsistencies=True)
     if block:
         print(block)
     _exit_hook("status-inject", payload, 0, "injected")
@@ -1165,145 +1473,6 @@ def handle_subagent_stop(payload: dict) -> None:
             f.write("\n".join(lines))
 
     _exit_hook("sub-stop", payload, 0, "logged")
-
-
-# ---------------------------------------------------------------------------
-# Task lifecycle — TaskCreated / TaskCompleted
-# ---------------------------------------------------------------------------
-
-
-def handle_task_created(payload: dict) -> None:
-    """Log when a programmer task starts.
-
-    Creates a log file in .clasi/log/ with frontmatter and writes an
-    .active/task-{task_id}.json marker so task_completed can find it.
-    """
-    log_dir, sprint_id = _get_sprint_context()
-    if log_dir is None:
-        _exit_hook("task-created", payload, 0, "no-log-dir")
-
-    task_id = payload.get("task_id", "")
-    task_subject = payload.get("task_subject", "")
-    teammate_name = payload.get("teammate_name", "")
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    active_tickets = _get_active_tickets(sprint_id)
-    tickets_str = ", ".join(active_tickets)
-
-    # Create the log file
-    _next = _next_log_number(log_dir)
-    safe_subject = task_subject[:40].replace("/", "-").replace(" ", "-").lower() if task_subject else "task"
-    log_file = log_dir / f"{_next:03d}-{safe_subject}.md"
-
-    lines = [
-        "---",
-        f"task_id: {task_id}",
-        f"task_subject: {task_subject}",
-        f"teammate_name: {teammate_name}",
-        f'sprint_id: "{sprint_id}"',
-        f'tickets: "{tickets_str}"',
-        f"started_at: {timestamp}",
-        "---",
-        "",
-        f"# Task: {task_subject}",
-        "",
-    ]
-    log_file.write_text("\n".join(lines))
-
-    # Register in DB so task_completed can find the log file
-    task_marker_id = f"task-{task_id}"
-    try:
-        db_path = get_project().db_path
-        if db_path.exists() or (db_path.parent.exists()):
-            from clasi.state_db import register_active_agent
-            register_active_agent(
-                str(db_path), task_marker_id, "task", "2", str(log_file)
-            )
-    except Exception:
-        pass
-
-    _exit_hook("task-created", payload, 0, "logged")
-
-
-def handle_task_completed(payload: dict) -> None:
-    """Append transcript to the log file created by task_created.
-
-    Finds the .active marker, appends duration to frontmatter, extracts
-    the prompt from the transcript, and appends the transcript content.
-    """
-    log_dir = _get_log_dir()
-    if log_dir is None:
-        _exit_hook("task-done", payload, 0, "no-log-dir")
-
-    task_id = payload.get("task_id", "")
-    transcript_path = payload.get("transcript_path", "")
-    stop_time = datetime.now(timezone.utc)
-
-    # Find the log file from the DB record written by task_created
-    task_marker_id = f"task-{task_id}"
-    log_file = None
-    started_at = None
-    try:
-        db_path = get_project().db_path
-        if db_path.exists():
-            from clasi.state_db import get_active_agent, remove_active_agent
-            record = get_active_agent(str(db_path), task_marker_id)
-            if record:
-                if record.get("log_file"):
-                    log_file = Path(record["log_file"])
-                started_at = record.get("started_at")
-            remove_active_agent(str(db_path), task_marker_id)
-    except Exception:
-        pass
-
-    if not log_file or not log_file.exists():
-        _exit_hook("task-done", payload, 0, "no-log-file")
-
-    # Add duration to frontmatter by rewriting the file
-    if started_at:
-        try:
-            duration_s = (stop_time - datetime.fromisoformat(started_at)).total_seconds()
-            content = log_file.read_text(encoding="utf-8")
-            content = content.replace(
-                "---\n\n",
-                f"stopped_at: {stop_time.isoformat()}\n"
-                f"duration_seconds: {duration_s:.1f}\n"
-                "---\n\n",
-                1,
-            )
-            log_file.write_text(content, encoding="utf-8")
-        except (ValueError, OSError):
-            pass
-
-    lines = []
-
-    # Extract prompt from transcript
-    prompt = ""
-    if transcript_path:
-        prompt = _extract_prompt_from_transcript(transcript_path)
-
-    if prompt:
-        lines.extend(["## Prompt", "", prompt, ""])
-
-    # Append transcript as markdown + raw JSON
-    if transcript_path:
-        transcript_file = Path(transcript_path)
-        if transcript_file.exists():
-            try:
-                transcript_content = transcript_file.read_text(encoding="utf-8")
-                messages = []
-                for line in transcript_content.splitlines():
-                    if line.strip():
-                        messages.append(json.loads(line))
-                lines.extend(_render_transcript_lines(messages))
-            except OSError:
-                pass
-
-    if lines:
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-
-    _exit_hook("task-done", payload, 0, "logged")
 
 
 # ---------------------------------------------------------------------------
@@ -1601,36 +1770,6 @@ handle_plan_to_todo = handle_plan_to_issue
 
 
 # ---------------------------------------------------------------------------
-# Commit check — PostToolUse hook for Bash (git commit on master/main)
-# ---------------------------------------------------------------------------
-
-
-def handle_commit_check(payload: dict) -> None:
-    """Print a reminder when a git commit is made on master or main.
-
-    Reads TOOL_INPUT from the environment. If it contains 'git commit'
-    and the current branch is master or main, prints a reminder message.
-    Never blocks — always exits 0.
-    """
-    tool_input = os.environ.get("TOOL_INPUT", "")
-    if "git commit" in tool_input:
-        try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True,
-                text=True,
-            )
-            branch = result.stdout.strip()
-            if branch in ("master", "main"):
-                print(
-                    "CLASI: You committed on master. Call tag_version() to bump the version."
-                )
-        except (OSError, subprocess.SubprocessError):
-            pass
-    sys.exit(0)
-
-
-# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1647,14 +1786,11 @@ def handle_hook(event: str) -> None:
         "role-guard": handle_role_guard,
         "subagent-start": handle_subagent_start,
         "subagent-stop": handle_subagent_stop,
-        "task-created": handle_task_created,
-        "task-completed": handle_task_completed,
         "mcp-guard": handle_mcp_guard,
         "plan-to-issue": handle_plan_to_issue,
         "plan-to-todo": handle_plan_to_issue,  # backward-compatible alias
         "codex-plan-to-issue": handle_codex_plan_to_issue,
         "codex-plan-to-todo": handle_codex_plan_to_issue,  # backward-compatible alias
-        "commit-check": handle_commit_check,
         "status-inject": handle_status_inject,
     }
 

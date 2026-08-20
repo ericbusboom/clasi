@@ -61,7 +61,10 @@ returns:
       description: Paths to all files created or modified
     tests_passed:
       type: boolean
-      description: Whether the full test suite passes
+      description: >
+        Whether the ticket's scoped tests pass (the modules touched by
+        this ticket, run in the foreground -- not the full suite, which
+        is a once-per-sprint gate owned by execute-sprint/close-sprint)
     test_output:
       type: string
       description: Abbreviated pytest output (last 20 lines)

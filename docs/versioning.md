@@ -241,8 +241,8 @@ version_format: X+.YYYYMMDD.R+
 # Optional. When the version is bumped automatically.
 # - manual:        never auto-bump; only `clasi version bump` does anything
 # - every_sprint:  bump only at sprint close (CLASI-specific)
-# - every_change:  bump after every change (default; integrates with the
-#                  commit-check hook)
+# - every_change:  bump after every change (default; evaluated at
+#                  close_sprint / OOP commits)
 version_trigger: every_change
 
 # Optional. Force a specific source file, overriding auto-detect priority.

@@ -8,6 +8,7 @@ other module in the subsystem performs I/O.
 
 from __future__ import annotations
 
+import functools
 import importlib.resources as _res
 from typing import Any
 
@@ -19,12 +20,25 @@ from clasi.state_machine.models import Machine, MachineSyntaxError, State, Trans
 _REQUIRED_KEYS: tuple[str, ...] = ("machine", "context", "initial", "states")
 
 
+@functools.lru_cache(maxsize=None)
 def load_machine(name: str) -> Machine:
     """Load a named state machine from the package YAML data files.
 
     Resolves ``clasi/schemas/state-machines/<name>.yaml`` via
     :func:`importlib.resources.files`, parses it with
     :func:`yaml.safe_load`, and constructs the :class:`Machine` object.
+
+    As of sprint 026, this is wrapped with ``functools.lru_cache`` — the
+    three packaged machine names (``"project"``, ``"sprint"``,
+    ``"ticket"``) are the entire keyspace, and the packaged YAML never
+    changes within a running process, so each name is parsed once per
+    process rather than once per call (a single status-inject invocation
+    previously re-parsed the same three files about 20 times). The cache
+    is process-lifetime, keyed only on *name*; call
+    ``load_machine.cache_clear()`` to force a fresh parse (test code that
+    swaps out the underlying YAML source must do this explicitly — the
+    cache is a production-path optimization, not something tests should
+    rely on being disabled).
 
     Args:
         name: Machine name without extension — one of ``"project"``,
