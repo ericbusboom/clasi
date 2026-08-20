@@ -19,10 +19,14 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.util
+import os
+import time
 from pathlib import Path
 
+import clasi
 from clasi.staleness import (
     _is_clasi_source_repo,
+    _newest_source_file_since,
     _read_repo_clasi_version,
     check_staleness,
 )
@@ -218,3 +222,183 @@ class TestDogfoodingDriftSignal:
         missing = tmp_path / "does-not-exist"
         report = check_staleness(missing, "0.0.0-unknown")
         assert report.stale in (True, False)  # just must not raise
+
+
+# ---------------------------------------------------------------------------
+# Signal 3: same-version drift (source .py mtime vs process import time)
+# ---------------------------------------------------------------------------
+#
+# check_staleness reads the running package's own directory via
+# clasi.__file__ / clasi._IMPORT_TIME (not project_root), so these tests
+# monkeypatch those two module attributes to point at a controlled fixture
+# package directory under tmp_path rather than touching the real
+# src/clasi/ tree the test process itself is running from.
+
+
+def _fake_package(tmp_path: Path) -> Path:
+    """Build a minimal fake package dir (not the real clasi source)."""
+    pkg = tmp_path / "fake_clasi_pkg"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text("# placeholder\n", encoding="utf-8")
+    return pkg
+
+
+class TestSameVersionDriftSignal:
+    def test_file_touched_after_import_is_stale(self, tmp_path, monkeypatch):
+        """Core acceptance criterion: touching a source file after import
+        time makes check_staleness (and therefore get_version()) report
+        stale, with a reason naming the newer file."""
+        pkg = _fake_package(tmp_path)
+        source_file = pkg / "mod.py"
+
+        import_time = time.time()
+        newer = import_time + 10  # unambiguously after import
+        os.utime(source_file, (newer, newer))
+
+        monkeypatch.setattr(clasi, "__file__", str(pkg / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", import_time)
+
+        report = check_staleness(tmp_path, _real_metadata_version())
+        assert report.stale is True
+        assert any(str(source_file) in r for r in report.reasons)
+        assert any(
+            "modified after this process imported clasi" in r for r in report.reasons
+        )
+        assert str(source_file) in report.warning()
+
+    def test_file_touched_before_import_is_not_stale(self, tmp_path, monkeypatch):
+        """Fresh-start guard (revert-check for the test above): a file whose
+        mtime predates import time must never trip the signal — otherwise
+        every normal process start would false-positive on its own,
+        already-on-disk source."""
+        pkg = _fake_package(tmp_path)
+        source_file = pkg / "mod.py"
+
+        older = time.time() - 3600
+        os.utime(source_file, (older, older))
+        import_time = time.time()
+
+        monkeypatch.setattr(clasi, "__file__", str(pkg / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", import_time)
+
+        report = check_staleness(tmp_path, _real_metadata_version())
+        assert not any(
+            "modified after this process imported clasi" in r for r in report.reasons
+        )
+        assert report.stale is False
+
+    def test_helper_returns_none_when_nothing_newer(self, tmp_path, monkeypatch):
+        """Direct unit test of the helper: no file newer than `since` means
+        no result, regardless of how many files exist."""
+        pkg = _fake_package(tmp_path)
+        since = time.time() + 3600  # in the future: nothing can be newer
+        assert _newest_source_file_since(pkg, since) is None
+
+
+class TestSameVersionDriftNeverRaises:
+    """Lockout requirement (ticket 029-007's dogfooding note): check_staleness
+    is called directly, with no local exception handling, from both
+    handle_role_guard and handle_mcp_guard. Any exception this signal's
+    filesystem scan can raise would propagate straight into guard dispatch
+    and lock every guarded edit out. Verified against a read-only path and
+    a path containing a broken symlink, per the ticket's acceptance
+    criteria."""
+
+    def test_broken_symlink_does_not_raise(self, tmp_path, monkeypatch):
+        pkg = _fake_package(tmp_path)
+        broken = pkg / "broken.py"
+        broken.symlink_to(pkg / "does-not-exist-target.py")
+
+        monkeypatch.setattr(clasi, "__file__", str(pkg / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", time.time())
+
+        # Must not raise; result may or may not be None depending on
+        # whether other real files are newer, but the call itself is what
+        # is under test here.
+        report = check_staleness(tmp_path, _real_metadata_version())
+        assert report.stale in (True, False)
+
+        # Also exercise the helper directly against the broken symlink.
+        result = _newest_source_file_since(pkg, time.time())
+        assert result is None or isinstance(result, tuple)
+
+    def test_unreadable_directory_does_not_raise(self, tmp_path, monkeypatch):
+        pkg = _fake_package(tmp_path)
+        locked = pkg / "locked"
+        locked.mkdir()
+        (locked / "secret.py").write_text("# x\n", encoding="utf-8")
+        os.chmod(locked, 0o000)
+
+        monkeypatch.setattr(clasi, "__file__", str(pkg / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", time.time())
+
+        try:
+            report = check_staleness(tmp_path, _real_metadata_version())
+            assert report.stale in (True, False)
+
+            result = _newest_source_file_since(pkg, time.time())
+            assert result is None or isinstance(result, tuple)
+        finally:
+            os.chmod(locked, 0o755)  # restore so tmp_path fixture cleanup can remove it
+
+    def test_nonexistent_package_dir_does_not_raise(self, tmp_path, monkeypatch):
+        missing = tmp_path / "does-not-exist"
+        monkeypatch.setattr(clasi, "__file__", str(missing / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", time.time())
+
+        report = check_staleness(tmp_path, _real_metadata_version())
+        assert report.stale in (True, False)
+
+
+class TestSignalsComposeIndependently:
+    """Regression coverage: adding signal 3 must not change signal 1/2's
+    own behavior, and concurrently-firing signals must not merge into a
+    confusing combined message — each keeps its own distinct reason text
+    in the reasons list."""
+
+    def test_signal1_reason_text_unchanged_with_signal3_present(
+        self, tmp_path, monkeypatch
+    ):
+        """Trigger signal 1 (version mismatch) while also making signal 3
+        fire (touched file), and confirm both reasons appear distinctly —
+        neither suppresses nor rewrites the other."""
+        pkg = _fake_package(tmp_path)
+        source_file = pkg / "mod.py"
+        import_time = time.time()
+        os.utime(source_file, (import_time + 10, import_time + 10))
+        monkeypatch.setattr(clasi, "__file__", str(pkg / "__init__.py"))
+        monkeypatch.setattr(clasi, "_IMPORT_TIME", import_time)
+
+        real_version = _real_metadata_version()
+        stale_cached_version = "0.19990101.1"
+        assert stale_cached_version != real_version
+
+        report = check_staleness(tmp_path, stale_cached_version)
+        assert report.stale is True
+        assert any(
+            "differs from the live installed package version" in r
+            for r in report.reasons
+        )
+        assert any(
+            "modified after this process imported clasi" in r for r in report.reasons
+        )
+        # Exactly two distinct reasons — no merging, no duplication.
+        assert len(report.reasons) == 2
+
+    def test_existing_signals_unaffected_by_real_untouched_install(self, tmp_path):
+        """Against the REAL running clasi package (not monkeypatched, not
+        touched by this test), signal 2's dogfooding-drift scenario fires
+        exactly as before signal 3 existed — no unrelated reason text is
+        injected for an install whose source predates process import."""
+        real_version = _real_metadata_version()
+        newer_fake_version = "0.99990101.1"
+        assert newer_fake_version != real_version
+        _write_clasi_repo_skeleton(tmp_path, newer_fake_version)
+
+        report = check_staleness(tmp_path, real_version)
+        assert report.stale is True
+        for r in report.reasons:
+            assert (
+                "is not running this working tree's code" in r
+                or "does not match this repo's editable source" in r
+            )

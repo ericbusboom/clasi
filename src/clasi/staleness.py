@@ -6,8 +6,9 @@
 "so staleness is detectable" — its own docstring says so. Nothing acted
 on that until this module.
 
-Two independent, general-purpose signals are checked, neither of which
-assumes the served project *is* the CLASI repo itself:
+Three independent signals are checked. Signals 1 and 3 are general
+purpose — they never assume the served project *is* the CLASI repo
+itself; only signal 2 does:
 
 1. **In-process drift**: ``__version__`` (bound at import time) differs
    from a live ``importlib.metadata.version("clasi")`` lookup. This means
@@ -22,11 +23,25 @@ assumes the served project *is* the CLASI repo itself:
    only ever fires when a checkout of CLASI is serving itself — it does
    not fire for consumer projects, where ``source_path`` legitimately
    points into site-packages/a venv rather than the project tree.
+3. **Same-version drift**: the newest ``.py`` file mtime under the
+   *running* ``clasi`` package's own directory
+   (``Path(clasi.__file__).parent``) is compared against
+   ``clasi._IMPORT_TIME`` (recorded once, when this process first
+   imported ``clasi``). Signals 1 and 2 both depend on a version string
+   or an install-path mismatch — neither trips for the single most
+   common real drift: an editable install whose source was edited
+   *after* a long-lived process (``clasi mcp``) imported it, with no
+   version bump. ``__version__``/``metadata_version`` stay identical in
+   that case, so signals 1 and 2 report a clean bill of health while the
+   process keeps serving pre-edit code. Signal 3 needs no hashing and no
+   version comparison — any post-import source edit trips it,
+   regardless of what the version strings say. Like signal 1, it applies
+   to every process that imports ``clasi``, not just CLASI-on-CLASI.
 
 Consumer projects that merely depend on CLASI never satisfy signal 2's
-precondition, so they only ever see signal 1 — and only when their own
-environment drifted mid-process, which is a real staleness condition
-worth reporting regardless of which project it is.
+precondition, so they only ever see signals 1 and 3 — both of which are
+real staleness conditions worth reporting regardless of which project is
+being served.
 """
 
 from __future__ import annotations
@@ -36,6 +51,8 @@ import importlib.util
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+import clasi
 
 
 @dataclass(frozen=True)
@@ -95,6 +112,46 @@ def _is_clasi_source_repo(project_root: Path) -> bool:
     return bool(re.search(r'^\[project\]', text, re.MULTILINE)) and bool(
         re.search(r'^name\s*=\s*"clasi"', text, re.MULTILINE)
     )
+
+
+def _newest_source_file_since(
+    package_dir: Path, since: float
+) -> tuple[str, float] | None:
+    """Return ``(path, mtime)`` of the newest ``.py`` file under *package_dir*
+    modified after *since*, or None if none is newer (or the scan fails).
+
+    Scoped to *package_dir* only (the running ``clasi`` package's own
+    directory, not the whole host repo), so the walk is small and bounded
+    regardless of what project this check is serving. ``__pycache__``
+    entries are skipped explicitly (belt-and-suspenders — compiled
+    ``.pyc`` files never match the ``*.py`` glob anyway, but this keeps
+    generated-file directories out of consideration if that ever
+    changes).
+
+    Never raises: this is called from ``check_staleness``, which is in
+    turn called with no surrounding exception handling from the
+    role-guard and mcp-guard hook paths (see ticket 029-007). Any error
+    while walking or stat-ing a path — an unreadable directory, a broken
+    symlink, a permission error, or anything else — degrades this signal
+    to "not available" (returns None) rather than propagating, matching
+    the fail-open design of signals 1 and 2 elsewhere in this module.
+    """
+    try:
+        newest_path: str | None = None
+        newest_mtime = since
+        for py_file in package_dir.rglob("*.py"):
+            if "__pycache__" in py_file.parts:
+                continue
+            try:
+                mtime = py_file.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > newest_mtime:
+                newest_mtime = mtime
+                newest_path = str(py_file)
+    except Exception:
+        return None
+    return (newest_path, newest_mtime) if newest_path is not None else None
 
 
 def check_staleness(project_root: Path, running_version: str) -> StalenessReport:
@@ -160,6 +217,24 @@ def check_staleness(project_root: Path, running_version: str) -> StalenessReport
                 f"match this repo's editable source ({repo_source_path}) — "
                 "the server/hook is running an installed build, not this "
                 "working tree."
+            )
+
+    # Signal 3: same-version drift — see this module's docstring. Applies
+    # unconditionally (not gated on project_root at all: it only looks at
+    # the running clasi package's own directory), so unlike signal 2 this
+    # fires for consumer projects too, same as signal 1.
+    package_file = getattr(clasi, "__file__", None)
+    import_time = getattr(clasi, "_IMPORT_TIME", None)
+    if package_file and import_time is not None:
+        newest = _newest_source_file_since(Path(package_file).parent, import_time)
+        if newest is not None:
+            newest_path, newest_mtime = newest
+            reasons.append(
+                f"source file {newest_path} was modified after this "
+                f"process imported clasi (mtime {newest_mtime:.0f} > "
+                f"import time {import_time:.0f}) — the running process "
+                "has stale in-memory code even though its version string "
+                "has not changed; restart it."
             )
 
     return StalenessReport(
