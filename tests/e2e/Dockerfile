@@ -18,8 +18,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code (global install)
-RUN npm install -g @anthropic-ai/claude-code \
+# Claude Code (global install, pinned — see commit message for how this
+# version was chosen; bump deliberately, not via an unpinned `npm install`).
+RUN npm install -g @anthropic-ai/claude-code@2.1.237 \
     && claude --version
 
 # clasi — spec-driven dev system under test.

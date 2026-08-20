@@ -3,10 +3,15 @@
 # Builds the Docker image and launches a container with Claude Code in tmux,
 # bind-mounted to a fresh, host-visible project directory. Auth backend is
 # selectable via E2E_AUTH:
-#   - openrouter (default): API key over OpenRouter (ANTHROPIC_BASE_URL redirect).
-#   - subscription: bind-mounts a throwaway copy of the host's Claude Code
-#     OAuth credentials so claude -p authenticates as the logged-in
-#     subscription instead of an API key. See --auth flag below.
+#   - subscription (default): bind-mounts a throwaway copy of the host's
+#     Claude Code OAuth credentials so claude -p authenticates as the
+#     logged-in subscription instead of an API key.
+#   - openrouter: API key over OpenRouter (ANTHROPIC_BASE_URL redirect).
+#     Currently a dead path — the CLI rejects every model through the
+#     redirect, see
+#     clasi/issues/later/claude-cli-rejects-models-through-openrouter-redirect-in-e2e.md.
+#     Kept available behind the explicit --auth flag for whoever revisits
+#     that issue, but no longer the silent default. See --auth flag below.
 #
 # Order of responsibilities: flags -> prereq checks -> wheel build ->
 # docker build -> probe/choose project dir -> container down -> wipe
@@ -29,7 +34,7 @@ FALLBACK_DIR="$HOME/.clasi/e2e-project"
 
 E2E_SMALL_MODEL="${E2E_SMALL_MODEL:-}"
 CLASI_SOURCE="${CLASI_SOURCE:-}"
-E2E_AUTH="${E2E_AUTH:-openrouter}"
+E2E_AUTH="${E2E_AUTH:-subscription}"
 # Model ID format differs by backend: OpenRouter wants a provider-prefixed
 # string ("anthropic/claude-opus-4.8"); direct subscription auth wants the
 # bare Anthropic model ID ("claude-opus-4-8") — a prefixed string against
@@ -64,6 +69,10 @@ case "$E2E_AUTH" in
 esac
 
 if [ "$E2E_AUTH" = "openrouter" ]; then
+    echo "WARNING: --auth=openrouter is a known-dead path — the CLI rejects" >&2
+    echo "  every model through the OpenRouter base-URL redirect. See" >&2
+    echo "  clasi/issues/later/claude-cli-rejects-models-through-openrouter-redirect-in-e2e.md" >&2
+    echo "  Proceeding anyway since it was explicitly requested." >&2
     E2E_MODEL="${E2E_MODEL:-anthropic/claude-opus-4.8}"
 else
     E2E_MODEL="${E2E_MODEL:-claude-opus-4-8}"
@@ -282,21 +291,83 @@ ENV_FILE=""
 
 # --- Wait for Claude to be ready ---
 echo "Waiting for Claude Code to start..."
+TMUX_READY=0
 for i in $(seq 1 30); do
     if docker exec "$CONTAINER_NAME" tmux has-session -t claude 2>/dev/null; then
-        echo ""
-        echo "============================================"
-        echo "  Ready! Drive sprints via print mode:"
-        echo "    docker exec clasi-e2e claude -p '...'"
-        echo "  Project dir: $HOST_PROJECT_DIR"
-        echo "  Model: $E2E_MODEL"
-        echo "  Auth: $E2E_AUTH"
-        echo "============================================"
-        exit 0
+        TMUX_READY=1
+        break
     fi
     sleep 1
 done
 
-echo "ERROR: Claude Code did not start within 30 seconds."
-echo "Check logs: docker logs $CONTAINER_NAME"
-exit 1
+if [ "$TMUX_READY" -ne 1 ]; then
+    echo "ERROR: Claude Code did not start within 30 seconds." >&2
+    echo "Check logs: docker logs $CONTAINER_NAME" >&2
+    exit 1
+fi
+
+# --- Preflight: prove the auth path and clasi install actually work,
+# before handing the tester a session that looks ready but silently can't
+# do anything (the openrouter model-gate rejection is exactly this failure
+# mode). Aborts loudly on any failure — see module 1 in sprint.md. Output
+# from both probes lands in a minimal per-run directory under
+# .e2e-runs/; ticket 002 owns the full run-id/version/digest scheme and
+# may extend or supersede this directory. ---
+echo "=== Running preflight probe... ==="
+RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+RUN_DIR="$HOST_PROJECT_DIR/.e2e-runs/$RUN_ID"
+mkdir -p "$RUN_DIR"
+PREFLIGHT_LOG="$RUN_DIR/preflight.txt"
+
+CLAUDE_PREFLIGHT_OUTPUT=""
+if ! CLAUDE_PREFLIGHT_OUTPUT="$(docker exec "$CONTAINER_NAME" claude -p --max-turns 1 "Reply READY" 2>&1)"; then
+    {
+        echo "=== claude -p --max-turns 1 \"Reply READY\" (FAILED, non-zero exit) ==="
+        echo "$CLAUDE_PREFLIGHT_OUTPUT"
+    } >> "$PREFLIGHT_LOG"
+    echo "ERROR: preflight probe 'claude -p --max-turns 1 \"Reply READY\"' failed (non-zero exit)." >&2
+    echo "  Auth: $E2E_AUTH, model: $E2E_MODEL. Output logged to $PREFLIGHT_LOG:" >&2
+    echo "$CLAUDE_PREFLIGHT_OUTPUT" >&2
+    exit 1
+fi
+{
+    echo "=== claude -p --max-turns 1 \"Reply READY\" ==="
+    echo "$CLAUDE_PREFLIGHT_OUTPUT"
+} >> "$PREFLIGHT_LOG"
+
+if ! printf '%s' "$CLAUDE_PREFLIGHT_OUTPUT" | grep -qi "ready"; then
+    echo "ERROR: preflight probe 'claude -p' exited 0 but its output doesn't" >&2
+    echo "  look like a completed 'READY' reply. Auth: $E2E_AUTH, model: $E2E_MODEL." >&2
+    echo "  Output logged to $PREFLIGHT_LOG:" >&2
+    echo "$CLAUDE_PREFLIGHT_OUTPUT" >&2
+    exit 1
+fi
+
+CLASI_PREFLIGHT_OUTPUT=""
+if ! CLASI_PREFLIGHT_OUTPUT="$(docker exec "$CONTAINER_NAME" clasi --version 2>&1)"; then
+    {
+        echo "=== clasi --version (FAILED, non-zero exit) ==="
+        echo "$CLASI_PREFLIGHT_OUTPUT"
+    } >> "$PREFLIGHT_LOG"
+    echo "ERROR: preflight probe 'clasi --version' failed (non-zero exit)." >&2
+    echo "  Output logged to $PREFLIGHT_LOG:" >&2
+    echo "$CLASI_PREFLIGHT_OUTPUT" >&2
+    exit 1
+fi
+{
+    echo "=== clasi --version ==="
+    echo "$CLASI_PREFLIGHT_OUTPUT"
+} >> "$PREFLIGHT_LOG"
+
+echo "  Preflight OK. Output: $PREFLIGHT_LOG"
+
+echo ""
+echo "============================================"
+echo "  Ready! Drive sprints via print mode:"
+echo "    docker exec clasi-e2e claude -p '...'"
+echo "  Project dir: $HOST_PROJECT_DIR"
+echo "  Model: $E2E_MODEL"
+echo "  Auth: $E2E_AUTH"
+echo "  Run dir: $RUN_DIR"
+echo "============================================"
+exit 0

@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: 'E2E unblock: pin CLI, subscription-auth default, preflight probe'
-status: open
+status: done
 use-cases:
 - SUC-001
 depends-on: []
@@ -76,18 +76,18 @@ this; a directory and a `preflight.txt` file are enough for this ticket.
 
 ## Acceptance Criteria
 
-- [ ] Dockerfile pins a known-good `@anthropic-ai/claude-code` version
+- [x] Dockerfile pins a known-good `@anthropic-ai/claude-code` version
       (not `npm install -g @anthropic-ai/claude-code` unpinned).
-- [ ] `start.sh` defaults to `--auth=subscription`.
-- [ ] Openrouter remains available behind the existing explicit
+- [x] `start.sh` defaults to `--auth=subscription`.
+- [x] Openrouter remains available behind the existing explicit
       `--auth=openrouter` flag, now with a warning to stderr referencing
       the parked issue file.
-- [ ] `start.sh` runs the preflight (`claude -p --max-turns 1 "Reply
+- [x] `start.sh` runs the preflight (`claude -p --max-turns 1 "Reply
       READY"` + `clasi --version`) after the container reaches its
       tmux-ready state.
-- [ ] Preflight output (both commands') is written to a run directory
+- [x] Preflight output (both commands') is written to a run directory
       under `.e2e-runs/`.
-- [ ] Preflight failure (either command) aborts `start.sh` loudly: clear
+- [x] Preflight failure (either command) aborts `start.sh` loudly: clear
       stderr message, non-zero exit — not a silent continue into a dead
       milestone 20 minutes later.
 
