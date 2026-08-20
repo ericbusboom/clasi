@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: 'E2E run capture: run.sh, stop.sh, validate.sh tee'
-status: in-progress
+status: done
 use-cases:
 - SUC-002
 depends-on:
