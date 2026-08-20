@@ -808,14 +808,16 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
-        # Mock subprocess calls: pytest, git add -A (version bump), git commit (version bump),
-        # git status --porcelain (.clasi.db guard, clean→no-op), git rev-parse --verify branch
-        # (merge check), git merge-base --is-ancestor, git rebase, git checkout master,
-        # git merge --no-ff, git push --tags, git rev-parse --verify branch (delete check),
-        # git branch -d
+        # Mock subprocess calls: pytest, git config rebase.autoStash (version bump
+        # prep), git add <archive paths + version file> (version bump), git commit
+        # (version bump), git status --porcelain (.clasi.db guard, clean→no-op),
+        # git rev-parse --verify branch (merge check), git merge-base --is-ancestor,
+        # git rebase, git checkout master, git merge --no-ff, git push --tags,
+        # git rev-parse --verify branch (delete check), git branch -d
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(0),  # git rev-parse --verify branch (merge check)
@@ -883,6 +885,130 @@ class TestCloseSprintFull:
             keep_branch=True,
         )
 
+    @patch("clasi.worktree.reconcile_worktrees")
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_version_bump_stages_explicit_paths_not_add_dash_a(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
+        """027/002 regression: the version-bump commit must stage explicit
+        paths -- the detected version file, plus the archived sprint
+        directory's old/new location that Step 3 already produced -- via
+        plain `git add <path>...`, never a blanket `git add -A` that
+        would also sweep in whatever else happens to be sitting in the
+        working tree (sprint 026's config/devices.json incident). It must
+        also set `rebase.autoStash` so Step 6's real rebase (untouched by
+        this ticket) tolerates any pre-existing dirty file this commit
+        deliberately left out."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        pyproject = work_dir / "pyproject.toml"
+        pyproject.write_text(
+            '[project]\nname = "test"\nversion = "0.0.0"\n'
+        )
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
+            self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
+            self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
+            self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
+        ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success"
+
+        old_sprint_dir = str(work_dir / ".clasi" / "sprints" / "001-sprint")
+        new_sprint_dir = str(work_dir / ".clasi" / "sprints" / "done" / "001-sprint")
+
+        calls = mock_run.call_args_list
+        add_calls = [c for c in calls if c.args[0][:2] == ["git", "add"]]
+        # Exactly one `git add` in this run -- the .clasi.db guard is a
+        # no-op here since `git status --porcelain` reports clean.
+        assert len(add_calls) == 1, f"expected exactly one git add call, found {add_calls}"
+        staged = add_calls[0].args[0][2:]
+        assert staged == [old_sprint_dir, new_sprint_dir, str(pyproject)], (
+            f"version bump must stage exactly the archive move and the "
+            f"detected version file, got {staged}"
+        )
+        # No call anywhere in the lifecycle uses a blanket -A add.
+        assert not any("-A" in c.args[0] for c in calls), (
+            "version bump must never use `git add -A`"
+        )
+        config_calls = [
+            c for c in calls
+            if c.args[0] == ["git", "config", "rebase.autoStash", "true"]
+        ]
+        assert len(config_calls) == 1, (
+            f"expected rebase.autoStash to be configured once, found {config_calls}"
+        )
+
+    @patch("clasi.worktree.reconcile_worktrees")
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
+    @patch("clasi.tools.artifact_tools.detect_version_file", return_value=None)
+    @patch("subprocess.run")
+    def test_version_bump_stages_archive_move_but_no_file_when_none_detected(
+        self, mock_run, mock_detect, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
+        """027/002 acceptance criterion (adjusted -- see ticket notes):
+        when detect_version_file finds nothing, Step 5 must not call
+        update_version_file or stage a version-file path. It still stages
+        and commits the archived sprint directory's old/new location,
+        though: Step 3's move is not itself part of this ticket's scope
+        to change, and Step 6's real `git rebase` needs a working tree
+        that's clean of at least tracked-and-committed-elsewhere changes
+        (untracked/uncommitted files are separately handled by
+        `rebase.autoStash`, covered by the sibling test above) -- so the
+        commit this step makes is not purely conditional on a version
+        file existing to bump."""
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        # Deliberately no pyproject.toml/package.json in work_dir.
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        mock_run.side_effect = [
+            self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths only> (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
+            self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
+            self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
+            self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(1),  # git rev-parse --verify (delete: branch gone)
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
+        ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["status"] == "success", result
+
+        old_sprint_dir = str(work_dir / ".clasi" / "sprints" / "001-sprint")
+        new_sprint_dir = str(work_dir / ".clasi" / "sprints" / "done" / "001-sprint")
+
+        calls = mock_run.call_args_list
+        add_calls = [c for c in calls if c.args[0][:2] == ["git", "add"]]
+        assert len(add_calls) == 1, f"expected exactly one git add call, found {add_calls}"
+        staged = add_calls[0].args[0][2:]
+        assert staged == [old_sprint_dir, new_sprint_dir], (
+            f"with no version file detected, only the archive move should "
+            f"be staged, got {staged}"
+        )
+        assert not any(p.endswith("pyproject.toml") or p.endswith("package.json") for p in staged), (
+            f"no version-file path should be staged when none was detected, got {staged}"
+        )
+
     @patch("subprocess.run")
     def test_test_failure_returns_error(self, mock_run, work_dir):
         """When tests fail, return structured error with recovery."""
@@ -919,7 +1045,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(0),  # git rev-parse --verify
@@ -962,7 +1089,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(1),  # git rev-parse --verify (branch gone, merge check)
@@ -1164,7 +1292,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
@@ -1197,7 +1326,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
@@ -1243,7 +1373,8 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
-            self._make_subprocess_result(0),  # git add -A (version bump)
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
             self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
             self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
@@ -1308,7 +1439,8 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
-                self._make_subprocess_result(0),  # git add -A (version bump)
+                self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+                self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
                 self._make_subprocess_result(0, ""),  # git status --porcelain (clean)
                 self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
@@ -1382,7 +1514,8 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
-                self._make_subprocess_result(0),  # git add -A (version bump)
+                self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+                self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
                 self._make_subprocess_result(0, ""),  # git status --porcelain (clean)
                 self._make_subprocess_result(1),  # git rev-parse --verify (merge: branch gone)
@@ -1621,12 +1754,14 @@ class TestCloseSprintLockAndDbGuard:
         move_ticket_to_done(ticket["path"])
 
         # Call sequence (with version bump):
-        # pytest, git add -A (version bump), git commit (version bump),
-        # git status --porcelain (empty = clean, guard is no-op),
+        # pytest, git config rebase.autoStash (version bump prep),
+        # git add <archive paths + version file> (version bump), git commit
+        # (version bump), git status --porcelain (empty = clean, guard is no-op),
         # git rev-parse --verify (branch gone), git push --tags, git rev-parse --verify (delete)
         mock_run.side_effect = [
             self._make_subprocess_result(0),        # pytest
-            self._make_subprocess_result(0),        # git add -A (version bump)
+            self._make_subprocess_result(0),        # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),        # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),        # git commit (version bump)
             self._make_subprocess_result(0, ""),    # git status --porcelain (clean)
             self._make_subprocess_result(1),        # git rev-parse --verify (branch gone)

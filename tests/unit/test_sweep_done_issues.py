@@ -349,7 +349,8 @@ def _mock_ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMo
 
 _FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS = [
     _mock_ok(0, "all tests passed"),  # pytest
-    _mock_ok(0),                       # git add -A (version bump)
+    _mock_ok(0),                       # git config rebase.autoStash (version bump prep)
+    _mock_ok(0),                       # git add <archive paths + version file> (version bump)
     _mock_ok(0),                       # git commit (version bump)
     _mock_ok(0, ""),                   # git status --porcelain (clean)
     _mock_ok(0),                       # git rev-parse --verify branch (merge check)

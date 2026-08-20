@@ -573,7 +573,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
-            _ok(0),  # git add -A (version bump)
+            _ok(0),  # git config rebase.autoStash (version bump prep)
+            _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit (version bump)
             _ok(0, ""),  # git status --porcelain .clasi.db (clean)
             _ok(0),  # git rev-parse --verify branch (merge check)
@@ -733,7 +734,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
-            _ok(0),  # git add -A
+            _ok(0),  # git config rebase.autoStash (version bump prep)
+            _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
             _ok(0, ""),  # git status --porcelain
             _ok(0),  # git rev-parse (merge check)
@@ -788,7 +790,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
-            _ok(0),  # git add -A
+            _ok(0),  # git config rebase.autoStash (version bump prep)
+            _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
             _ok(0, ""),  # git status --porcelain
             _ok(0),  # git rev-parse (merge check)
@@ -841,7 +844,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
-            _ok(0),  # git add -A
+            _ok(0),  # git config rebase.autoStash (version bump prep)
+            _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
             _ok(0, ""),  # git status --porcelain
             _ok(0),  # git rev-parse (merge check)

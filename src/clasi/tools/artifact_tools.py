@@ -1817,6 +1817,10 @@ def _close_sprint_full(
     # project). Must run — and succeed — before the version-bump/tag step,
     # per sprint.md's Migration Concerns: a failed apply blocks tag/merge
     # exactly like a failed test run does today.
+    # `applied` is initialized here (not just inside the `if`) so Step 5
+    # can always reference it when building its explicit commit-staging
+    # list (027/002), regardless of whether the overlay actually ran.
+    applied: list = []
     if project.design_docs_opt_in and sprint.design_dir.exists():
         from clasi.design import DesignError, apply as apply_design_overlay, validate as validate_design_docs
         from clasi.design.overlay import OverlayError
@@ -1859,9 +1863,36 @@ def _close_sprint_full(
             detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
-            # Commit the version bump so the working tree is clean for merge
+            # Commit the version bump together with the paths this run's
+            # own earlier steps already produced -- the archived sprint
+            # directory's old/new location (Step 3, always defined by this
+            # point) and any design-overlay output files (Step 4b) -- so
+            # the working tree is clean for Step 6's merge, which requires
+            # it and is out of scope for this ticket to change. Stage each
+            # path explicitly (plain `git add <path>...` stages deletions,
+            # renames, and new files under a given pathspec correctly, no
+            # `-A` needed); never a blanket `git add -A`, which would also
+            # sweep in unrelated untracked/modified files sitting in the
+            # working tree that belong to no ticket (sprint 026's
+            # config/devices.json incident, 027/002).
+            bump_paths = [old_path_str, str(new_path)]
+            bump_paths.extend(str(p) for p in applied)
+            if detected:
+                bump_paths.append(str(detected[0]))
+            # Excluding pre-existing files from this commit means they may
+            # still be dirty/untracked in the tree when Step 6 rebases the
+            # branch -- `git rebase` (unlike checkout/merge) refuses to
+            # start at all with ANY uncommitted tracked-file change present,
+            # even one nowhere near the paths it touches. `rebase.autoStash`
+            # makes git stash that leftover state before rebasing and pop
+            # it back after, so Step 6's own code (out of scope for this
+            # ticket) never has to change to tolerate it.
             subprocess.run(
-                ["git", "add", "-A"],
+                ["git", "config", "rebase.autoStash", "true"],
+                cwd=str(project.root), capture_output=True, text=True,
+            )
+            subprocess.run(
+                ["git", "add", *bump_paths],
                 cwd=str(project.root), capture_output=True, text=True,
             )
             subprocess.run(
