@@ -729,20 +729,21 @@ class TestSprintCreateBranch:
     def test_create_branch_success(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.return_value = _make_run_result(0)
             branch = s.create_branch()
         assert branch == "sprint/001-test-sprint"
+        # cwd is always the sprint's own project root -- never the
+        # process's own cwd (029/005: root-anchored git calls).
         mock_run.assert_called_once_with(
-            ["git", "checkout", "-b", "sprint/001-test-sprint"],
-            capture_output=True,
-            text=True,
+            ["checkout", "-b", "sprint/001-test-sprint"],
+            cwd=proj.root,
         )
 
     def test_create_branch_already_exists_falls_back_to_checkout(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(1, stderr="already exists"),  # checkout -b fails
                 _make_run_result(0),  # checkout succeeds
@@ -750,11 +751,13 @@ class TestSprintCreateBranch:
             branch = s.create_branch()
         assert branch == "sprint/001-test-sprint"
         assert mock_run.call_count == 2
+        for call_args in mock_run.call_args_list:
+            assert call_args.kwargs["cwd"] == proj.root
 
     def test_create_branch_raises_on_failure(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(1, stderr="error A"),
                 _make_run_result(1, stderr="error B"),
@@ -788,7 +791,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_success(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # git rev-parse --verify (branch exists)
                 _make_run_result(1),  # git merge-base --is-ancestor (not yet merged)
@@ -804,7 +807,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_branch_already_gone(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.return_value = _make_run_result(1)  # rev-parse: branch gone
             result = s.merge_branch("master")
         assert result["merged"] is True
@@ -814,7 +817,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_already_ancestor(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(0),  # merge-base: already ancestor
@@ -827,7 +830,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_rebase_failure_raises(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(1),  # merge-base: not ancestor
@@ -844,7 +847,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_conflict_raises_merge_conflict_error(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(1),  # merge-base: not ancestor
@@ -870,7 +873,7 @@ class TestSprintMergeBranch:
     def test_merge_branch_checkout_failure_raises(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(1),  # merge-base: not ancestor
@@ -898,13 +901,21 @@ class TestSprintMergeBranch:
         except RuntimeError as e:
             assert "no 'branch' field" in str(e)
 
-    def test_merge_branch_rebase_produces_linear_history(self, tmp_path):
+    def test_merge_branch_rebase_produces_linear_history(self, tmp_path, monkeypatch, tmp_path_factory):
         """Integration test: rebase before --no-ff merge yields linear history.
 
         Uses a real git repo in tmp_path to verify that after merge_branch()
         the sprint commit appears on the first-parent chain of master.
+
+        Also the ticket 029/005 cwd-independence proof: the process's
+        working directory is deliberately pointed at a *different*,
+        unrelated directory (not tmp_path, not even a git repo) for the
+        entire call to merge_branch(). Before 029/005, merge_branch() ran
+        every git subprocess with no explicit cwd, so it operated on
+        whatever directory the process happened to be in; with git calls
+        anchored to ``self._project.root`` (== tmp_path here), the test
+        must still pass unchanged.
         """
-        import os
         import subprocess as sp
 
         git = lambda *args: sp.run(  # noqa: E731
@@ -945,15 +956,14 @@ class TestSprintMergeBranch:
         )
         s = Sprint(sprint_dir, proj)
 
-        # merge_branch() calls subprocess.run without cwd, so it operates on
-        # the process's working directory.  Change into the test repo so that
-        # all git commands target it.
-        orig_dir = os.getcwd()
-        try:
-            os.chdir(tmp_path)
-            result = s.merge_branch("master")
-        finally:
-            os.chdir(orig_dir)
+        # Point the process cwd at a directory that is neither tmp_path
+        # nor a git repo at all -- merge_branch() must still operate on
+        # the sprint's own project root (tmp_path), not this cwd, because
+        # every git call it makes is anchored via cwd=self._project.root.
+        elsewhere = tmp_path_factory.mktemp("elsewhere")
+        monkeypatch.chdir(elsewhere)
+
+        result = s.merge_branch("master")
 
         assert result["merged"] is True
         assert result["already_merged"] is False
@@ -991,7 +1001,7 @@ class TestSprintDeleteBranch:
     def test_delete_branch_success(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(0),  # git branch -d succeeds
@@ -1002,7 +1012,7 @@ class TestSprintDeleteBranch:
     def test_delete_branch_not_present(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.return_value = _make_run_result(1)  # rev-parse: doesn't exist
             deleted = s.delete_branch()
         assert deleted is False
@@ -1010,7 +1020,7 @@ class TestSprintDeleteBranch:
     def test_delete_branch_raises_on_git_failure(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
-        with patch("clasi.sprint.subprocess.run") as mock_run:
+        with patch("clasi.sprint.run_git") as mock_run:
             mock_run.side_effect = [
                 _make_run_result(0),  # rev-parse: branch exists
                 _make_run_result(1, stderr="not fully merged"),  # git branch -d fails

@@ -154,7 +154,7 @@ def _migrate_claude(target: Path) -> dict:
     # --- Skills ---
     plugin_skills = _PLUGIN_DIR / "skills"
     if plugin_skills.exists():
-        from clasi.tools.process_tools import resolve_skill_body
+        from clasi.skill_resolve import resolve_skill_body
         for skill_dir in sorted(plugin_skills.iterdir()):
             if not skill_dir.is_dir():
                 continue
@@ -250,7 +250,7 @@ def _install_plugin_content(
     # Copy skills
     plugin_skills = _PLUGIN_DIR / "skills"
     if plugin_skills.exists():
-        from clasi.tools.process_tools import resolve_skill_body
+        from clasi.skill_resolve import resolve_skill_body
         click.echo("Skills:")
         for skill_dir in sorted(plugin_skills.iterdir()):
             if not skill_dir.is_dir():

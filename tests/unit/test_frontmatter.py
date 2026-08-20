@@ -1,6 +1,11 @@
 """Tests for clasi.frontmatter module."""
 
+import os
+import stat
+import tempfile
+
 import pytest
+import yaml
 from pathlib import Path
 
 from clasi.frontmatter import (
@@ -157,3 +162,154 @@ class TestWriteFrontmatter:
         fm, body = read_document(p)
         assert fm == {"status": "new"}
         assert body == "Plain content.\n"
+
+
+class TestLineAnchoredDelimiter:
+    """A '---' inside a frontmatter value must not be mistaken for the
+    closing fence (frontmatter.py finding 12 / F11 in the reliability
+    review). The old ``content.find("---", 3)`` matched the substring
+    anywhere in the file; the fix must only match a line that is
+    *exactly* ``---``.
+    """
+
+    def test_indented_dashes_inside_value_not_mistaken_for_fence(self, tmp_md):
+        """yaml.safe_dump folds a multi-line string value using a quoted
+        scalar whose continuation lines are indented — including, here, a
+        line that is just the indented text '---'. A non-line-anchored
+        search matches that occurrence (it's a substring) and slices the
+        body starting mid-frontmatter. This is the exact raw shape
+        yaml.safe_dump produces for a value containing an embedded
+        horizontal rule.
+        """
+        content = (
+            "---\n"
+            "notes: 'Above the line.\n"
+            "\n"
+            "  ---\n"
+            "\n"
+            "  Below the line.\n"
+            "\n"
+            "  '\n"
+            "title: Real Title\n"
+            "---\n"
+            "Real body.\n"
+        )
+        p = tmp_md(content)
+        fm, body = read_document(p)
+        assert fm["title"] == "Real Title"
+        assert fm["notes"] == "Above the line.\n---\nBelow the line.\n"
+        assert body == "Real body.\n"
+
+    def test_round_trip_survives_dash_dash_dash_in_value(self, tmp_md):
+        """A document with a '---' inside a frontmatter value must survive
+        a full read-modify-write cycle intact: the value, and the body
+        that follows it, must both be unchanged afterward.
+        """
+        original_body = "# Real Body\n\nThis must not be swallowed.\n"
+        original_notes = "Above the line.\n---\nBelow the line.\n"
+        p = tmp_md(original_body)
+
+        write_frontmatter(p, {"title": "Real Title", "notes": original_notes})
+
+        fm, body = read_document(p)
+        assert body == original_body
+        assert fm["title"] == "Real Title"
+        assert fm["notes"] == original_notes
+
+        # Read-modify-write again — the historical bug compounds on every
+        # round trip, so a second pass is the real regression guard.
+        fm["status"] = "done"
+        write_frontmatter(p, fm)
+
+        fm2, body2 = read_document(p)
+        assert fm2["notes"] == original_notes
+        assert fm2["status"] == "done"
+        assert body2 == original_body
+
+
+class TestAtomicWrite:
+    """`_write_document` must write via temp-file + os.replace in the same
+    directory, never truncate the target in place, and preserve the
+    target's permission bits (F11 in the reliability review).
+    """
+
+    def test_crash_before_replace_leaves_original_untouched(self, tmp_md, monkeypatch):
+        p = tmp_md("---\nstatus: todo\n---\nOriginal body.\n")
+        original_content = p.read_text(encoding="utf-8")
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("simulated crash mid-write")
+
+        monkeypatch.setattr("clasi.frontmatter.os.replace", boom)
+
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            write_frontmatter(p, {"status": "done"})
+
+        # The original file must be byte-for-byte untouched...
+        assert p.read_text(encoding="utf-8") == original_content
+        # ...and the temp file must not be left behind either.
+        leftovers = [f for f in p.parent.iterdir() if f != p]
+        assert leftovers == []
+
+    def test_temp_file_written_in_same_directory(self, tmp_md, monkeypatch):
+        """os.replace is only atomic within a filesystem, so the temp file
+        must be created in the same directory as the target."""
+        p = tmp_md("---\nstatus: todo\n---\nBody.\n")
+        seen_dirs = []
+        real_mkstemp = tempfile.mkstemp
+
+        def spy_mkstemp(*args, **kwargs):
+            seen_dirs.append(kwargs.get("dir"))
+            return real_mkstemp(*args, **kwargs)
+
+        monkeypatch.setattr("clasi.frontmatter.tempfile.mkstemp", spy_mkstemp)
+
+        write_frontmatter(p, {"status": "done"})
+
+        assert seen_dirs
+        assert Path(seen_dirs[0]) == p.parent
+
+    def test_preserves_existing_file_permissions(self, tmp_md):
+        p = tmp_md("---\nstatus: todo\n---\nBody.\n")
+        os.chmod(p, 0o640)
+
+        write_frontmatter(p, {"status": "done"})
+
+        assert stat.S_IMODE(p.stat().st_mode) == 0o640
+
+    def test_no_leftover_temp_file_on_success(self, tmp_md):
+        p = tmp_md("---\nstatus: todo\n---\nBody.\n")
+        write_frontmatter(p, {"status": "done"})
+        leftovers = [f for f in p.parent.iterdir() if f != p]
+        assert leftovers == []
+
+
+class TestSafeDump:
+    """`_write_document` must use yaml.safe_dump, not yaml.dump — dumping a
+    type safe_dump doesn't know how to represent must raise loudly instead
+    of silently round-tripping it through an unsafe !!python/object tag.
+    """
+
+    def test_unsafe_python_object_raises(self, tmp_md):
+        class NotYamlSafe:
+            """A type with no YAML representer registered under SafeDumper."""
+
+        p = tmp_md("---\nstatus: todo\n---\nBody.\n")
+        original_content = p.read_text(encoding="utf-8")
+
+        with pytest.raises(yaml.representer.RepresenterError):
+            write_frontmatter(p, {"bad": NotYamlSafe()})
+
+        # The rejection must happen before any file I/O — the original
+        # file is untouched.
+        assert p.read_text(encoding="utf-8") == original_content
+
+    def test_safe_types_still_dump_fine(self, tmp_md):
+        """Sanity check: ordinary JSON-safe values are unaffected by the
+        switch from yaml.dump to yaml.safe_dump."""
+        p = tmp_md("---\nstatus: todo\n---\nBody.\n")
+        write_frontmatter(
+            p, {"status": "done", "count": 3, "tags": ["a", "b"], "ok": True}
+        )
+        fm, _ = read_document(p)
+        assert fm == {"status": "done", "count": 3, "tags": ["a", "b"], "ok": True}

@@ -25,9 +25,16 @@ CONTAINER_NAME="clasi-e2e"
 ENV_FILE=""
 # Stable (not mktemp -d) so the mounted file survives after start.sh exits —
 # the container keeps running detached and needs the bind source to persist.
-# Cleaned up by stop.sh, not by this script's exit trap.
+# On a successful run, cleaned up by stop.sh, not by this script's exit
+# trap. RUN_SUCCEEDED below gates that: the trap only removes it when
+# start.sh itself aborts before reaching a successful finish, so
+# credentials staged just before an early failure (container never
+# started, or started but never became ready) don't sit on disk as a live
+# copy of the host's OAuth credentials until someone notices and runs
+# stop.sh by hand.
 CREDS_STAGE_DIR="$SCRIPT_DIR/.creds-stage"
 RESUME=0
+RUN_SUCCEEDED=0
 
 CANONICAL_DIR="$SCRIPT_DIR/e2e-project"
 FALLBACK_DIR="$HOME/.clasi/e2e-project"
@@ -81,6 +88,10 @@ fi
 cleanup() {
     if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
         rm -f "$ENV_FILE"
+    fi
+    if [ "$RUN_SUCCEEDED" -ne 1 ] && [ -d "$CREDS_STAGE_DIR" ]; then
+        echo "Removing staged credentials at $CREDS_STAGE_DIR (start.sh did not complete successfully)..." >&2
+        rm -rf "$CREDS_STAGE_DIR"
     fi
 }
 trap cleanup EXIT
@@ -404,9 +415,17 @@ if ! CLAUDE_VERSION_OUTPUT="$(docker exec "$CONTAINER_NAME" claude --version 2>&
     echo "WARNING: 'claude --version' failed inside the container; recording the error output." >&2
 fi
 
+# --- Inspect the IMAGE, not the container: IMAGE_NAME and CONTAINER_NAME
+# are both "clasi-e2e" (same literal string), and plain `docker inspect
+# NAME` resolves containers before images when both exist under the same
+# name — so this used to silently record the CONTAINER's id (which
+# changes every run and identifies nothing about the build) under an
+# "image digest" heading. `docker image inspect` disambiguates by
+# querying the image namespace directly. Verified live: before this fix,
+# the recorded value was byte-identical to the `docker run` container id.
 IMAGE_DIGEST=""
-if ! IMAGE_DIGEST="$(docker inspect --format='{{.Id}}' "$IMAGE_NAME" 2>&1)"; then
-    echo "WARNING: could not resolve the image digest via docker inspect; recording the error output." >&2
+if ! IMAGE_DIGEST="$(docker image inspect --format='{{.Id}}' "$IMAGE_NAME" 2>&1)"; then
+    echo "WARNING: could not resolve the image digest via docker image inspect; recording the error output." >&2
 fi
 
 {
@@ -416,10 +435,12 @@ fi
     echo "=== clasi --version ==="
     echo "$CLASI_PREFLIGHT_OUTPUT"
     echo ""
-    echo "=== image digest (docker inspect --format='{{.Id}}' $IMAGE_NAME) ==="
+    echo "=== image digest (docker image inspect --format='{{.Id}}' $IMAGE_NAME) ==="
     echo "$IMAGE_DIGEST"
 } > "$VERSIONS_LOG"
 echo "  Versions recorded: $VERSIONS_LOG"
+
+RUN_SUCCEEDED=1
 
 echo ""
 echo "============================================"

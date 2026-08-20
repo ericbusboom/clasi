@@ -1,8 +1,9 @@
 ---
 id: 008
 title: Typed hook payload ingress and replay corpus
-status: open
-use-cases: [SUC-008]
+status: done
+use-cases:
+- SUC-008
 depends-on: []
 github-issue: ''
 issue: hook-payload-typed-ingress-and-replay-corpus.md
@@ -81,17 +82,17 @@ ticket 009 safe to land after this one.**
 
 ## Acceptance Criteria
 
-- [ ] All six handlers consume `HookPayload`; no handler touches the
+- [x] All six handlers consume `HookPayload`; no handler touches the
       raw dict directly
-- [ ] The replay test covers every hook event type with at least one
+- [x] The replay test covers every hook event type with at least one
       captured fixture, including at least two deny-path fixtures
-- [ ] Deny-path assertions use real captured payloads (from sprint
+- [x] Deny-path assertions use real captured payloads (from sprint
       028's corpus, or a documented temporary capture if the corpus is
       still thin), not hand-written ones
-- [ ] `HookPayload.missing` is populated correctly for at least one
+- [x] `HookPayload.missing` is populated correctly for at least one
       fixture with an absent expected field, and appears in the
       resulting `hooks.log` line
-- [ ] No existing guard's allow/deny outcome changes for any payload
+- [x] No existing guard's allow/deny outcome changes for any payload
       already covered by `tests/unit/test_hook_handlers.py` — run the
       full existing file and confirm zero behavior regressions before
       adding new tests
@@ -106,3 +107,45 @@ ticket 009 safe to land after this one.**
   replay-corpus test described above.
 - **Verification command**: `uv run pytest tests/unit/test_hook_handlers.py -v`
   (scoped, foreground — do not run the full suite for this ticket)
+
+## Implementation Notes
+
+- **Fixture provenance**: the organic `.clasi/log/denied/` corpus held
+  exactly one file when this ticket started (a real "stale-guard" deny
+  from this session's own dogfooding). That alone doesn't reach the
+  "at least two deny-path fixtures" bar, so two more deny fixtures
+  (`role-guard-deny-blk-write.json`, `mcp-guard-deny-tier0.json`) plus
+  five allow-path fixtures (one per remaining event shape) were captured
+  via a temporary, sandboxed live invocation of the real, unmodified
+  `clasi hook <event>` CLI against a throwaway scratch project (not this
+  repo), with the exact stdin bytes shell-`tee`'d into the fixture file.
+  No temporary code was added to `hook_handlers.py` for this — the tee
+  was shell-level only, so there is nothing to revert in source. Full
+  methodology and per-fixture rationale is documented in
+  `tests/unit/test_hook_payload_replay.py`'s module docstring.
+- **`handle_hook` dispatch signature preserved**: the ticket's own text
+  says `handle_hook` should build one `HookPayload` "before dispatching
+  to any handler." The existing test suite's dispatcher tests assert
+  `mock_handler.assert_called_once_with({})` — i.e. `handle_hook` must
+  keep calling each handler with the raw dict, not a `HookPayload`
+  object — and many other existing tests call
+  `handle_role_guard`/`handle_mcp_guard`/`handle_plan_to_issue` directly
+  with a raw dict. Given that hard backward-compatibility constraint,
+  each handler instead builds its own `HookPayload.from_dict(payload)`
+  as its first action — one build per invocation either way, same
+  single-source-of-truth property, just not literally hoisted into
+  `handle_hook` itself. `_log_hook_event`/`_exit_hook` keep their
+  `payload: dict` parameter for the same reason (and because the
+  deny-payload JSON dump needs the verbatim raw dict regardless), but no
+  longer hand-roll their own field extraction internally — they build a
+  `HookPayload` from that same dict and read every field from it.
+- **OOP hatch**: not needed — no self-lockout occurred. Each structural
+  change was verified with `import clasi.hook_handlers` and a live
+  `clasi hook role-guard`/`mcp-guard` invocation before proceeding to the
+  next handler, per the ticket's own step-by-step guidance.
+- **Import cost**: measured via `python -X importtime`, averaged over 7
+  clean runs each (first run of each batch excluded as filesystem-cache
+  warm-up noise): `clasi.hook_handlers`'s own self import time rose from
+  about 400us to about 1.35ms — an added cost of roughly 0.9-1.0ms, well
+  under the sprint's stated budget (a plain dataclass, not pydantic, per
+  the ticket's explicit constraint).

@@ -1,8 +1,9 @@
 ---
 id: '007'
 title: Same-version staleness detection
-status: open
-use-cases: [SUC-007]
+status: done
+use-cases:
+- SUC-007
 depends-on: []
 github-issue: ''
 issue: staleness-detect-same-version-drift.md
@@ -58,15 +59,17 @@ after 009 lands.
 
 ## Acceptance Criteria
 
-- [ ] Touching a source file after import makes `get_version()` report
+- [x] Touching a source file after import makes `get_version()` report
       `stale: true` with a reason naming the newer file
-- [ ] The existing two signals are unchanged; the new signal has its
+- [x] The existing two signals are unchanged; the new signal has its
       own unit test
-- [ ] The new signal's filesystem scan cannot raise an uncaught
+- [x] The new signal's filesystem scan cannot raise an uncaught
       exception into a caller — verified with a test against a
       read-only path and a path containing a broken symlink
 - [ ] The E2E stale-server scenario (rebuild wheel mid-run) trips the
-      guard (validated in the sprint's E2E run, not a unit test)
+      guard (validated in the sprint's E2E run, not a unit test) —
+      NOT run by this ticket; requires the sprint's E2E run, outside
+      programmer/unit-test scope. Flagged to team-lead.
 
 ## Testing
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from clasi.gitutil import run_git
 
 
 class MergeConflictError(RuntimeError):
@@ -301,18 +302,10 @@ class Sprint:
                 f"Sprint {self.id} has no 'branch' field in sprint.md frontmatter"
             )
 
-        result = subprocess.run(
-            ["git", "checkout", "-b", branch_name],
-            capture_output=True,
-            text=True,
-        )
+        result = run_git(["checkout", "-b", branch_name], cwd=self._project.root)
         if result.returncode != 0:
             # Branch may already exist — try checking it out
-            result = subprocess.run(
-                ["git", "checkout", branch_name],
-                capture_output=True,
-                text=True,
-            )
+            result = run_git(["checkout", branch_name], cwd=self._project.root)
             if result.returncode != 0:
                 raise RuntimeError(
                     f"Failed to create/checkout branch '{branch_name}': "
@@ -340,19 +333,16 @@ class Sprint:
                 f"Sprint {self.id} has no 'branch' field in sprint.md frontmatter"
             )
 
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            capture_output=True,
-            text=True,
+        branch_exists = run_git(
+            ["rev-parse", "--verify", branch_name], cwd=self._project.root
         ).returncode == 0
 
         if not branch_exists:
             return {"branch_exists": False, "merged": True, "already_merged": True}
 
-        is_ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", branch_name, main_branch],
-            capture_output=True,
-            text=True,
+        is_ancestor = run_git(
+            ["merge-base", "--is-ancestor", branch_name, main_branch],
+            cwd=self._project.root,
         ).returncode == 0
 
         if is_ancestor:
@@ -361,45 +351,33 @@ class Sprint:
         # Rebase sprint branch onto main before merging.
         # Two-argument form avoids requiring a checkout first:
         #   git rebase <upstream> <branch>
-        rebase = subprocess.run(
-            ["git", "rebase", main_branch, branch_name],
-            capture_output=True,
-            text=True,
+        rebase = run_git(
+            ["rebase", main_branch, branch_name], cwd=self._project.root
         )
         if rebase.returncode != 0:
-            subprocess.run(["git", "rebase", "--abort"], capture_output=True)
+            run_git(["rebase", "--abort"], cwd=self._project.root)
             raise RuntimeError(
                 f"Rebase of {branch_name} onto {main_branch} failed: "
                 f"{rebase.stderr.strip()}"
             )
 
-        checkout = subprocess.run(
-            ["git", "checkout", main_branch],
-            capture_output=True,
-            text=True,
-        )
+        checkout = run_git(["checkout", main_branch], cwd=self._project.root)
         if checkout.returncode != 0:
             raise RuntimeError(
                 f"Failed to checkout {main_branch}: {checkout.stderr.strip()}"
             )
 
-        merge = subprocess.run(
-            ["git", "merge", "--no-ff", branch_name],
-            capture_output=True,
-            text=True,
-        )
+        merge = run_git(["merge", "--no-ff", branch_name], cwd=self._project.root)
         if merge.returncode != 0:
-            conflict_result = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"],
-                capture_output=True,
-                text=True,
+            conflict_result = run_git(
+                ["diff", "--name-only", "--diff-filter=U"], cwd=self._project.root
             )
             conflicted = [
                 f.strip()
                 for f in conflict_result.stdout.strip().split("\n")
                 if f.strip()
             ]
-            subprocess.run(["git", "merge", "--abort"], capture_output=True)
+            run_git(["merge", "--abort"], cwd=self._project.root)
             raise MergeConflictError(
                 f"Merge conflict: {merge.stderr.strip()}",
                 conflicted_files=conflicted,
@@ -421,20 +399,14 @@ class Sprint:
                 f"Sprint {self.id} has no 'branch' field in sprint.md frontmatter"
             )
 
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            capture_output=True,
-            text=True,
+        branch_exists = run_git(
+            ["rev-parse", "--verify", branch_name], cwd=self._project.root
         ).returncode == 0
 
         if not branch_exists:
             return False
 
-        result = subprocess.run(
-            ["git", "branch", "-d", branch_name],
-            capture_output=True,
-            text=True,
-        )
+        result = run_git(["branch", "-d", branch_name], cwd=self._project.root)
         if result.returncode != 0:
             raise RuntimeError(
                 f"Failed to delete branch '{branch_name}': {result.stderr.strip()}"

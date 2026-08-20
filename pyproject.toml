@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clasi"
-version = "0.20260820.2"
+version = "0.20260820.3"
 description = "MCP server for AI-driven software engineering process — agents, skills, instructions, and artifact management"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,7 +21,7 @@ dependencies = [
     "dotconfig @ git+https://github.com/ericbusboom/dotconfig.git",
     "jinja2>=3.0",
     "jsonschema>=4.0",
-    "mcp>=1.0",
+    "mcp>=1.0,<2.0",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "python-frontmatter>=1.1.0",

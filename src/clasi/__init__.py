@@ -3,7 +3,21 @@
 MCP server for AI-driven software engineering process.
 """
 
+import time
+
 _cached_version = None
+
+_IMPORT_TIME = time.time()
+"""Wall-clock time this process first imported ``clasi``.
+
+Consumed by :mod:`clasi.staleness` (signal 3, same-version drift): a
+long-lived process (e.g. ``clasi mcp``) that imports ``clasi`` and then
+has its source edited on disk — with no version bump — keeps serving the
+old in-memory code while ``__version__``/``metadata_version`` stay
+identical, so signals 1 and 2 never fire. Comparing on-disk ``.py`` file
+mtimes against this timestamp catches that case regardless of version
+strings. Set exactly once, at import; never mutated.
+"""
 
 
 def __getattr__(name):

@@ -140,9 +140,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect(db_path: str | Path) -> sqlite3.Connection:
-    """Open a connection with WAL mode and foreign keys enabled."""
-    conn = sqlite3.connect(str(db_path))
+def _connect(db_path: str | Path, timeout: float = 1.0) -> sqlite3.Connection:
+    """Open a connection with WAL mode and foreign keys enabled.
+
+    *timeout* bounds (in seconds) how long sqlite3 will busy-wait for a
+    contended write lock before raising ``sqlite3.OperationalError:
+    database is locked``. Defaults to 1s, well under sqlite3's own 5s
+    default. Every read method here opens a short-lived connection per
+    call; under parallel agents those can contend, and the busy wait
+    alone can consume role-guard's entire 5s harness timeout, killing
+    the hook process -- an unrecoverable, unloggable fail-open (see
+    sprint 029 / ticket 004). A short timeout turns that into a fast,
+    catchable ``OperationalError`` instead.
+    """
+    conn = sqlite3.connect(str(db_path), timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -158,19 +169,38 @@ class StateDB:
 
     def __init__(self, db_path: str | Path):
         self._path = Path(db_path)
+        self._initialized = False
 
     @property
     def path(self) -> Path:
         return self._path
 
     def init(self) -> None:
-        """Create the database file and all tables if they do not exist."""
+        """Create the database file and all tables if they do not exist.
+
+        Runs at most once per ``StateDB`` instance -- a second (or
+        hundredth) call is a no-op, tracked by an instance-level flag
+        rather than re-running ``executescript(_SCHEMA)`` (a write
+        transaction) every time. Callers that share one ``StateDB``
+        instance across several method calls (e.g. ``Project.db``,
+        cached per ``Project``) get the schema-creation cost exactly
+        once instead of once per call. This does not change on-disk
+        correctness: additive schema changes (e.g. sprint 028's
+        `phase_transitions` table) still land on the first call against
+        any given database file, since ``CREATE TABLE IF NOT EXISTS``
+        is what makes migration of a pre-existing database safe, not
+        this flag -- a fresh process against that same file still runs
+        the full script once and picks up the new table.
+        """
+        if self._initialized:
+            return
         self._path.parent.mkdir(parents=True, exist_ok=True)
         conn = _connect(self._path)
         try:
             conn.executescript(_SCHEMA)
         finally:
             conn.close()
+        self._initialized = True
 
     def connect(self) -> sqlite3.Connection:
         """Open a new connection to this database (WAL mode, foreign keys on).
@@ -545,14 +575,22 @@ class StateDB:
     ) -> Optional[dict[str, Any]]:
         """Return the current lock holder, or None if no lock is held.
 
+        If the DB file does not exist, returns None without creating it
+        (ticket 029/004) -- no lock can be held in a database that was
+        never created, and a pure read must never have the side effect
+        of creating one.
+
         If *conn* is given, it is used directly and this method neither
         calls init() nor opens/closes its own connection — the caller
         owns the connection's lifecycle (see StateDB.connect()). Omitted
-        (the default), behavior is unchanged: init() runs and a fresh
-        connection is opened and closed internally.
+        (the default), behavior is unchanged except for the no-file case
+        above: init() runs and a fresh connection is opened and closed
+        internally.
         """
         _owns_conn = conn is None
         if _owns_conn:
+            if not self._path.exists():
+                return None
             self.init()
             conn = _connect(self._path)
         try:
@@ -611,14 +649,21 @@ class StateDB:
         recorded_at -- or None if no record exists. Records older than 24
         hours are automatically deleted with a warning on stderr.
 
+        If the DB file does not exist, returns None without creating it
+        (ticket 029/004) -- no recovery record can exist in a database
+        that was never created.
+
         If *conn* is given, it is used directly and this method neither
         calls init() nor opens/closes its own connection — the caller
         owns the connection's lifecycle (see StateDB.connect()). Omitted
-        (the default), behavior is unchanged: init() runs and a fresh
-        connection is opened and closed internally.
+        (the default), behavior is unchanged except for the no-file case
+        above: init() runs and a fresh connection is opened and closed
+        internally.
         """
         _owns_conn = conn is None
         if _owns_conn:
+            if not self._path.exists():
+                return None
             self.init()
             conn = _connect(self._path)
         try:
@@ -710,14 +755,21 @@ class StateDB:
     ) -> Optional[dict[str, Any]]:
         """Return the active agent record for the given agent_id, or None.
 
+        If the DB file does not exist, returns None without creating it
+        (ticket 029/004) -- no agent record can exist in a database that
+        was never created.
+
         If *conn* is given, it is used directly and this method neither
         calls init() nor opens/closes its own connection — the caller
         owns the connection's lifecycle (see StateDB.connect()). Omitted
-        (the default), behavior is unchanged: init() runs and a fresh
-        connection is opened and closed internally.
+        (the default), behavior is unchanged except for the no-file case
+        above: init() runs and a fresh connection is opened and closed
+        internally.
         """
         _owns_conn = conn is None
         if _owns_conn:
+            if not self._path.exists():
+                return None
             self.init()
             conn = _connect(self._path)
         try:
@@ -769,14 +821,22 @@ class StateDB:
         sentinel (empty string) rather than any other agent's tier.
         This replaces the .clasi-agent-tier file check.
 
+        If the DB file does not exist, returns the same "unresolved"
+        sentinel without creating it (ticket 029/004) -- an agent tier
+        cannot be resolved from a database that was never created, which
+        is exactly the same outcome as an unmatched agent_id.
+
         If *conn* is given, it is used directly and this method neither
         calls init() nor opens/closes its own connection — the caller
         owns the connection's lifecycle (see StateDB.connect()). Omitted
-        (the default), behavior is unchanged: init() runs and a fresh
-        connection is opened and closed internally.
+        (the default), behavior is unchanged except for the no-file case
+        above: init() runs and a fresh connection is opened and closed
+        internally.
         """
         _owns_conn = conn is None
         if _owns_conn:
+            if not self._path.exists():
+                return ""
             self.init()
             conn = _connect(self._path)
         try:
@@ -852,14 +912,26 @@ class StateDB:
         automatically deleted, with a warning on stderr, and this
         returns None as if no record existed.
 
+        If the DB file does not exist, returns None without creating it
+        (ticket 029/004) -- no OOP record can exist in a database that
+        was never created. This is the read path guards rely on to
+        decide whether OOP bypass is active; previously a missing DB
+        silently created an empty one here first (this method is a
+        default-``conn`` entry point), so the "absent" answer was
+        already correct by accident -- now it is correct without the
+        phantom-file side effect.
+
         If *conn* is given, it is used directly and this method neither
         calls init() nor opens/closes its own connection — the caller
         owns the connection's lifecycle (see StateDB.connect()). Omitted
-        (the default), behavior is unchanged: init() runs and a fresh
-        connection is opened and closed internally.
+        (the default), behavior is unchanged except for the no-file case
+        above: init() runs and a fresh connection is opened and closed
+        internally.
         """
         _owns_conn = conn is None
         if _owns_conn:
+            if not self._path.exists():
+                return None
             self.init()
             conn = _connect(self._path)
         try:

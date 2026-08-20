@@ -16,6 +16,7 @@ tested in dotconfig's own suite.
 
 import json
 import re
+import subprocess
 import unittest.mock
 
 import pytest
@@ -24,6 +25,7 @@ from clasi.versioning import (
     DEFAULT_FORMAT,
     DEFAULT_TRIGGER,
     VERSION_PATTERN,
+    _get_existing_tags,
     compute_next_version,
     detect_version_file,
     load_version_format,
@@ -152,6 +154,72 @@ class TestComputeNextVersionFormat:
         date_part = v.split(".")[1]
         today_year = date.today().strftime("%Y")
         assert date_part.startswith(today_year), f"Date component {date_part!r} does not start with year {today_year}"
+
+
+def _git(repo, *args: str) -> None:
+    result = subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+class TestVersioningCwdIndependence:
+    """Ticket 029/005 acceptance criterion: compute_next_version and
+    _get_existing_tags take an explicit project_root instead of relying
+    on implicit cwd. Proven by pointing the process cwd at a directory
+    that is not even a git repo, while passing the real repo explicitly
+    as project_root -- if either function silently fell back to the
+    process's own cwd, `git tag -l` would run in a non-git directory and
+    find nothing.
+    """
+
+    def test_get_existing_tags_uses_project_root_not_process_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        repo = tmp_path / "repo"
+        elsewhere = tmp_path / "elsewhere"
+        repo.mkdir()
+        elsewhere.mkdir()  # deliberately not a git repo at all
+
+        _git(repo, "init", "-q", "-b", "master")
+        _git(repo, "config", "user.email", "t@example.com")
+        _git(repo, "config", "user.name", "T")
+        (repo / "f.txt").write_text("x", encoding="utf-8")
+        _git(repo, "add", "f.txt")
+        _git(repo, "commit", "-q", "-m", "init")
+        _git(repo, "tag", "v0.20260101.7")
+
+        monkeypatch.chdir(elsewhere)
+        tags = _get_existing_tags(repo)
+        assert "v0.20260101.7" in tags
+
+    def test_compute_next_version_uses_project_root_not_process_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        from datetime import date
+
+        repo = tmp_path / "repo"
+        elsewhere = tmp_path / "elsewhere"
+        repo.mkdir()
+        elsewhere.mkdir()
+
+        _git(repo, "init", "-q", "-b", "master")
+        _git(repo, "config", "user.email", "t@example.com")
+        _git(repo, "config", "user.name", "T")
+        (repo / "f.txt").write_text("x", encoding="utf-8")
+        _git(repo, "add", "f.txt")
+        _git(repo, "commit", "-q", "-m", "init")
+
+        today_str = date.today().strftime("%Y%m%d")
+        existing_tag = f"v0.{today_str}.7"
+        _git(repo, "tag", existing_tag)
+
+        monkeypatch.chdir(elsewhere)
+        version = compute_next_version(project_root=repo)
+        # The next revision must be derived from the tag in *repo*
+        # (rev 7 -> 8), not from an empty tag list that a process-cwd
+        # fallback into the non-git `elsewhere` directory would produce.
+        assert version == f"0.{today_str}.8"
 
 
 class TestCloseSprintJsonShape:

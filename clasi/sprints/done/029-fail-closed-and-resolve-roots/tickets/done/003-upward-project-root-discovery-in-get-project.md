@@ -1,8 +1,9 @@
 ---
 id: '003'
 title: Upward project-root discovery in get_project()
-status: open
-use-cases: [SUC-003]
+status: done
+use-cases:
+- SUC-003
 depends-on: []
 github-issue: ''
 issue: get-project-has-no-upward-root-discovery.md
@@ -58,16 +59,16 @@ fighting you.
 
 ## Acceptance Criteria
 
-- [ ] `get_project()` resolves the correct project root when invoked
+- [x] `get_project()` resolves the correct project root when invoked
       from a subdirectory of the project (test simulating cwd several
       levels below `.clasi/`)
-- [ ] No regression for legitimate non-project cwds — an isolated
+- [x] No regression for legitimate non-project cwds — an isolated
       `tmp_path` fixture with no ancestor `.clasi/` still returns
       `Project(tmp_path)` unchanged
-- [ ] Test coverage spans multiple hook handlers that call
+- [x] Test coverage spans multiple hook handlers that call
       `get_project()` (role-guard, mcp-guard, at minimum), not just
       `_oop_active()` (already covered by the earlier narrower fix)
-- [ ] `uv run python -c "import clasi.hook_handlers"` succeeds after
+- [x] `uv run python -c "import clasi.hook_handlers"` succeeds after
       the change (module still imports cleanly)
 
 ## Testing

@@ -50,11 +50,16 @@ class TestDetectSprintFromBranch:
         with patch("clasi.tools.artifact_tools.subprocess.run") as mock_run:
             mock_run.return_value = self._make_run_result("sprint/001-test\n")
             _detect_sprint_from_branch()
-        mock_run.assert_called_once_with(
-            ["git", "branch", "--show-current"],
-            capture_output=True,
-            text=True,
-        )
+        # Anchored to project.root (029/005: root-anchored git calls) --
+        # never a bare, cwd-less git subprocess. The exact cwd value
+        # depends on the active project singleton, so only its presence
+        # (not its value) is asserted here.
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args == (["git", "branch", "--show-current"],)
+        assert call_kwargs["capture_output"] is True
+        assert call_kwargs["text"] is True
+        assert "cwd" in call_kwargs
 
 
 class TestCloseSSprintAutoDetect:

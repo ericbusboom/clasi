@@ -445,3 +445,258 @@ class TestProjectDbIntegration:
         db.register_sprint("001", "test")
         state = db.get_sprint_state("001")
         assert state["phase"] == "roadmap"
+
+
+class TestReadsDoNotCreateDatabase:
+    """Ticket 029/004: a read against a nonexistent DB path must not
+    create the file, and must return the method's own documented
+    "absent"/default value instead.
+
+    Covers the five methods that share the ``_owns_conn = conn is
+    None`` pattern (default-connection entry points): get_lock_holder,
+    get_recovery_state, get_active_agent, get_active_tier, get_oop.
+    These are also exactly the reads guards (role-guard, mcp-guard)
+    depend on for OOP state, the execution lock, and agent tier.
+    """
+
+    def test_get_lock_holder_creates_no_file(self, tmp_path):
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        result = sdb.get_lock_holder()
+
+        assert result is None
+        assert not db_path.exists()
+
+    def test_get_oop_creates_no_file(self, tmp_path):
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        result = sdb.get_oop()
+
+        assert result is None
+        assert not db_path.exists()
+
+    def test_get_active_tier_creates_no_file(self, tmp_path):
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        result = sdb.get_active_tier("agent-001")
+
+        assert result == ""
+        assert not db_path.exists()
+
+    def test_get_active_agent_creates_no_file(self, tmp_path):
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        result = sdb.get_active_agent("agent-001")
+
+        assert result is None
+        assert not db_path.exists()
+
+    def test_get_recovery_state_creates_no_file(self, tmp_path):
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        result = sdb.get_recovery_state()
+
+        assert result is None
+        assert not db_path.exists()
+
+    def test_reads_creates_no_parent_directory_either(self, tmp_path):
+        """A guard-level read against a project whose .clasi/ directory
+        doesn't exist yet must not even create that parent directory --
+        only init() (a real write path) does the mkdir."""
+        db_path = tmp_path / ".clasi" / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.parent.exists()
+
+        sdb.get_oop()
+        sdb.get_lock_holder()
+        sdb.get_active_tier("agent-001")
+
+        assert not db_path.parent.exists()
+
+    def test_write_path_still_creates_schema_on_fresh_db(self, tmp_path):
+        """Sanity check for the acceptance criterion that legitimate
+        write paths are unaffected: an explicit write against a
+        nonexistent path still creates the file and its schema."""
+        db_path = tmp_path / ".clasi.db"
+        sdb = StateDB(db_path)
+        assert not db_path.exists()
+
+        sdb.set_oop("testing", ttl_hours=1.0)
+
+        assert db_path.exists()
+        assert sdb.get_oop()["reason"] == "testing"
+
+
+class TestConnectBusyTimeout:
+    """Ticket 029/004: sqlite3.connect must use a short busy timeout
+    instead of sqlite3's own 5s default, so lock contention under
+    parallel agents fails fast (a catchable OperationalError) rather
+    than silently eating a hook's entire harness budget.
+    """
+
+    def test_connect_default_timeout_is_one_second(self):
+        """Verified via the _connect call site itself (its default
+        parameter value), not just behaviorally -- per the ticket's
+        explicit instruction not to rely on a timing-based test."""
+        import inspect
+
+        from clasi.state_db_class import _connect
+
+        default = inspect.signature(_connect).parameters["timeout"].default
+        assert default == 1.0
+        assert default < 5.0  # well under sqlite3's own default
+
+    def test_connect_passes_timeout_kwarg_to_sqlite3_connect(self, tmp_path, monkeypatch):
+        """The default timeout actually reaches sqlite3.connect (not just
+        declared and ignored)."""
+        import sqlite3
+
+        from clasi.state_db_class import _connect
+
+        captured = {}
+        real_connect = sqlite3.connect
+
+        def spy_connect(path, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+        conn = _connect(tmp_path / "t.db")
+        conn.close()
+
+        assert captured["timeout"] == 1.0
+
+    def test_state_db_methods_use_the_short_timeout(self, tmp_path, monkeypatch):
+        """A real StateDB call site (init(), which every method funnels
+        through at least once) opens its connection with the short
+        timeout, not sqlite3's 5s default."""
+        import sqlite3
+
+        captured = {}
+        real_connect = sqlite3.connect
+
+        def spy_connect(path, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+
+        assert captured["timeout"] == 1.0
+
+
+class TestInitRunsAtMostOncePerInstance:
+    """Ticket 029/004: init() must run at most once per StateDB
+    instance, tracked by an instance-level flag, instead of re-running
+    executescript(_SCHEMA) (a write transaction) on every call."""
+
+    def test_direct_repeated_init_calls_execute_schema_once(self, tmp_path, monkeypatch):
+        # sqlite3.Connection is an immutable C type -- its methods can't be
+        # monkeypatched directly (setattr raises TypeError). Instead, count
+        # calls via a Connection *subclass* (subclasses are plain, mutable
+        # Python classes) installed as sqlite3.connect's `factory`.
+        import sqlite3
+
+        calls = []
+
+        class _CountingConnection(sqlite3.Connection):
+            def executescript(self, script):
+                calls.append(script)
+                return super().executescript(script)
+
+        real_connect = sqlite3.connect
+
+        def spy_connect(path, *args, **kwargs):
+            kwargs.setdefault("factory", _CountingConnection)
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        sdb.init()
+        sdb.init()
+
+        assert len(calls) == 1
+
+    def test_init_flag_is_set_after_first_call(self, tmp_path):
+        sdb = StateDB(tmp_path / ".clasi.db")
+        assert sdb._initialized is False
+        sdb.init()
+        assert sdb._initialized is True
+
+    def test_schema_executed_once_across_multiple_different_methods(
+        self, tmp_path, monkeypatch
+    ):
+        """Every write method (register_sprint, acquire_lock, ...) and
+        every default-conn read method (get_active_tier,
+        get_lock_holder, ...) calls self.init() at its own entry point.
+        On one shared StateDB instance (e.g. Project.db, cached per
+        Project), only the FIRST of those calls should actually run
+        executescript."""
+        import sqlite3
+
+        calls = []
+
+        class _CountingConnection(sqlite3.Connection):
+            def executescript(self, script):
+                calls.append(script)
+                return super().executescript(script)
+
+        real_connect = sqlite3.connect
+
+        def spy_connect(path, *args, **kwargs):
+            kwargs.setdefault("factory", _CountingConnection)
+            return real_connect(path, *args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", spy_connect)
+
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.register_sprint("001", "test-sprint")
+        sdb.get_active_tier("agent-001")
+        sdb.get_lock_holder()
+        sdb.acquire_lock("001")
+        sdb.get_oop()
+
+        assert len(calls) == 1
+
+    def test_new_instance_against_same_file_still_runs_schema(self, tmp_path):
+        """The once-per-instance guard must not be mistaken for
+        once-per-file: a fresh StateDB instance against a
+        pre-populated database file still runs init()'s
+        CREATE TABLE IF NOT EXISTS script, which is what makes
+        additive migration (e.g. sprint 028's phase_transitions table)
+        safe on a database created before that table existed."""
+        db_path = tmp_path / ".clasi.db"
+
+        sdb1 = StateDB(db_path)
+        sdb1.init()
+        sdb1.register_sprint("001", "test-sprint")
+
+        # Simulate a database created before phase_transitions existed
+        # by dropping the table, then confirm a fresh instance's init()
+        # re-adds it.
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("DROP TABLE phase_transitions")
+        conn.commit()
+        conn.close()
+
+        sdb2 = StateDB(db_path)
+        sdb2.init()
+        state = sdb2.get_sprint_state("001")
+        assert state["phase_transitions"] == []

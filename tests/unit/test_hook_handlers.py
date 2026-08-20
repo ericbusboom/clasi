@@ -9,7 +9,9 @@ convenient way to exercise shared log-directory machinery were rewritten
 against handle_subagent_start instead.
 """
 
+import io
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +29,9 @@ from clasi.hook_handlers import (
     handle_hook,
     handle_role_guard,
     handle_mcp_guard,
+    HookPayload,
+    read_payload,
+    _BAD_PAYLOAD_KEY,
     _ensure_log_gitignore,
     _log_hook_event,
     _get_log_dir,
@@ -169,6 +174,24 @@ def _make_done_ticket(sprint_dir: Path, ticket_id: str, title: str = "Done ticke
     tickets_dir.mkdir(parents=True, exist_ok=True)
     content = f"---\nid: '{ticket_id}'\ntitle: {title}\nstatus: done\n---\n"
     (tickets_dir / f"{ticket_id}-{title.lower().replace(' ', '-')}.md").write_text(content)
+
+
+def _make_done_ticket_in_done_dir(
+    sprint_dir: Path, ticket_id: str, title: str = "Done ticket"
+) -> Path:
+    """Write a minimal done ticket file to sprint_dir/tickets/done/.
+
+    Unlike ``_make_done_ticket`` (which writes into ``tickets/`` directly),
+    this reproduces the actual reported-bug scenario (ticket 029-010): a
+    ticket already relocated to its sprint's ``tickets/done/`` subdirectory
+    after `move_ticket_to_done`. Returns the path to the written file.
+    """
+    done_dir = sprint_dir / "tickets" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    content = f"---\nid: '{ticket_id}'\ntitle: {title}\nstatus: done\n---\n"
+    path = done_dir / f"{ticket_id}-{title.lower().replace(' ', '-')}.md"
+    path.write_text(content)
+    return path
 
 
 class TestGetActiveTickets:
@@ -405,6 +428,134 @@ class TestLogHookEventFilePathAndTimestamp:
         rest = line[20:]
         expected_rest = f" {'role-guard':<16} 2 {'no-path':<12.12} "
         assert rest == expected_rest
+
+
+# ---------------------------------------------------------------------------
+# HookPayload.from_dict (ticket 029-008)
+# ---------------------------------------------------------------------------
+
+
+class TestHookPayloadFromDict:
+    """Unit coverage for the typed payload ingress itself, independent of
+    any handler — the nested-then-flat resolution and missing tracking
+    that used to be duplicated (and drifted) across handle_role_guard and
+    _log_hook_event now lives in exactly one place."""
+
+    def test_nested_file_path_resolved(self):
+        hp = HookPayload.from_dict(
+            {"tool_name": "Write", "tool_input": {"file_path": "src/clasi/foo.py"}}
+        )
+        assert hp.file_path == "src/clasi/foo.py"
+        assert hp.tool_name == "Write"
+
+    def test_path_and_new_path_also_resolve(self):
+        hp = HookPayload.from_dict({"tool_input": {"path": "a.md"}})
+        assert hp.file_path == "a.md"
+        hp2 = HookPayload.from_dict({"tool_input": {"new_path": "b.md"}})
+        assert hp2.file_path == "b.md"
+
+    def test_flat_top_level_fallback_when_no_tool_input_key(self):
+        """No 'tool_input' key at all -> falls back to the payload itself,
+        matching handle_role_guard's pre-existing idiom exactly."""
+        hp = HookPayload.from_dict({"file_path": "clasi/issues/x.md"})
+        assert hp.file_path == "clasi/issues/x.md"
+
+    def test_empty_tool_input_key_is_authoritative(self):
+        """A present-but-empty 'tool_input' is NOT the same as an absent
+        one — the top-level file_path must not be consulted."""
+        hp = HookPayload.from_dict({"tool_input": {}, "file_path": "clasi/issues/x.md"})
+        assert hp.file_path == ""
+
+    def test_non_dict_tool_input_does_not_raise(self):
+        """Hardening this dataclass adds over the pre-ticket per-site code
+        (see its docstring): a 'tool_input' value that is present but not
+        a dict resolves to an empty tool_input instead of raising. No real
+        Claude Code payload has ever sent this shape."""
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": "not-a-dict"})
+        assert hp.file_path == ""
+        assert hp.tool_input == {}
+
+    def test_null_tool_input_does_not_raise(self):
+        """Ticket 029-009's own explicit example: a JSON `null` tool_input
+        (Python None once parsed) must not raise AttributeError on
+        `.get()` — it resolves to an empty tool_input, same as any other
+        non-dict tool_input value, and `missing` still flags file_path for
+        a file tool so the caller fails closed rather than crashing."""
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": None})
+        assert hp.file_path == ""
+        assert hp.tool_input == {}
+        assert hp.missing == ["file_path"]
+
+    def test_bad_payload_flag_set_from_marker_key(self):
+        """read_payload() marks its {} fallback with _BAD_PAYLOAD_KEY when
+        stdin held non-empty, unparseable JSON (ticket 029-009) —
+        HookPayload surfaces that as bad_payload."""
+        hp = HookPayload.from_dict({_BAD_PAYLOAD_KEY: True})
+        assert hp.bad_payload is True
+
+    def test_bad_payload_flag_false_for_ordinary_payload(self):
+        hp = HookPayload.from_dict({"tool_name": "Write"})
+        assert hp.bad_payload is False
+        assert HookPayload.from_dict({}).bad_payload is False
+        assert HookPayload.from_dict(None).bad_payload is False
+
+    def test_missing_tracks_absent_file_path_for_file_tools(self):
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": {}})
+        assert hp.missing == ["file_path"]
+
+    def test_missing_empty_when_file_path_present(self):
+        hp = HookPayload.from_dict(
+            {"tool_name": "Edit", "tool_input": {"file_path": "x.py"}}
+        )
+        assert hp.missing == []
+
+    def test_missing_not_flagged_for_non_file_tools(self):
+        """mcp-guard / subagent events never carry a file_path — missing
+        must not spuriously flag it for tool names outside role-guard's
+        own Edit/Write/MultiEdit domain."""
+        hp = HookPayload.from_dict({"tool_name": "create_ticket"})
+        assert hp.missing == []
+        hp2 = HookPayload.from_dict({"agent_type": "programmer"})
+        assert hp2.missing == []
+
+    def test_caller_id_prefers_agent_id_over_session_id(self):
+        hp = HookPayload.from_dict({"agent_id": "a1", "session_id": "s1"})
+        assert hp.caller_id == "a1"
+        assert hp.caller_id_source == "agent_id"
+        assert hp.agent_id == "a1"
+        assert hp.session_id == "s1"
+
+    def test_caller_id_falls_back_to_session_id(self):
+        hp = HookPayload.from_dict({"session_id": "s1"})
+        assert hp.caller_id == "s1"
+        assert hp.caller_id_source == "session_id"
+
+    def test_caller_id_empty_when_neither_present(self):
+        hp = HookPayload.from_dict({})
+        assert hp.caller_id == ""
+        assert hp.caller_id_source == ""
+
+    def test_plan_file_path_uses_its_own_distinct_fallback(self):
+        """handle_plan_to_issue's pre-existing resolution defaults to {}
+        (not the whole payload) when 'tool_input' is absent — deliberately
+        different from the nested-then-flat file_path rule above, and
+        preserved as its own independent resolution."""
+        hp = HookPayload.from_dict({"planFilePath": "/tmp/x.md"})
+        assert hp.plan_file_path == ""  # no tool_input key -> {} default
+
+        hp2 = HookPayload.from_dict({"tool_input": {"planFilePath": "/tmp/y.md"}})
+        assert hp2.plan_file_path == "/tmp/y.md"
+
+    def test_none_payload_does_not_raise(self):
+        hp = HookPayload.from_dict(None)
+        assert hp.file_path == ""
+        assert hp.caller_id == ""
+        assert hp.missing == []
+
+    def test_is_frozen(self):
+        hp = HookPayload.from_dict({})
+        with pytest.raises(Exception):
+            hp.file_path = "mutated"
 
 
 # ---------------------------------------------------------------------------
@@ -1352,6 +1503,20 @@ class TestRoleGuardNestedPayloadShape:
         _write_fresh_config(tmp_path)
         assert _run_role_guard_payload(tmp_path, {}, "") == 2
 
+    def test_null_tool_input_denies_instead_of_crashing(self, tmp_path):
+        """Ticket 029-009 acceptance criterion: a null tool_input (e.g. a
+        real PreToolUse payload shape Claude Code could send) denies with
+        a clear reason instead of raising AttributeError on `.get()`.
+        Handler-level counterpart to
+        TestHookPayloadFromDict.test_null_tool_input_does_not_raise."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": None, "session_id": "null-ti"}
+        assert _run_role_guard_payload(tmp_path, payload, "") == 2
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert " 2 " in line
+        assert "no-path" in line
+        assert "missing=file_path" in line
+
     # --- Non-regression: artifact-dir allow-list still works live ---
 
     def test_tier0_issues_dir_allowed_with_real_nested_payload(self, tmp_path):
@@ -1923,6 +2088,142 @@ class TestOopDbBypassCwdIndependence:
             payload = _role_guard_payload("source/main.cpp")
             with pytest.raises(SystemExit) as exc:
                 handle_role_guard(payload)
+            assert exc.value.code == 0
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# get_project() upward project-root discovery (sprint 029 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestGetProjectUpwardRootDiscovery:
+    """get_project() must walk up from cwd looking for .clasi/, the same
+    way _oop_active() already does via _find_project_root() — generalizing
+    the narrower OOP-only fix (ticket 019-002) so every Project property
+    every handler resolves (issues_dir, sprints_dir, db_path,
+    protected_paths, ...) is anchored to the real project root instead of
+    silently inheriting whatever directory cwd happens to be.
+    """
+
+    def test_resolves_root_several_levels_below_dot_clasi(self, tmp_path):
+        """cwd several directories below the real root still resolves the
+        project root that actually contains .clasi/, not the subdirectory."""
+        (tmp_path / ".clasi").mkdir()
+        subdir = tmp_path / "a" / "b" / "c"
+        subdir.mkdir(parents=True)
+        project = _run_with_cwd(subdir, get_project)
+        assert project.root == tmp_path
+
+    def test_falls_back_to_cwd_unchanged_when_no_ancestor_dot_clasi(self, tmp_path):
+        """An isolated tmp_path fixture with no .clasi/ anywhere in its
+        ancestry must resolve exactly as before this change: Project(cwd)
+        unchanged. This is the non-regression case for a legitimate
+        non-project cwd (a bare tmp_path test fixture, or a real
+        invocation outside any CLASI checkout) — _find_project_root's own
+        documented fallback."""
+        project = _run_with_cwd(tmp_path, get_project)
+        assert project.root == tmp_path
+
+
+class TestRoleGuardResolvesRootFromSubdirCwd:
+    """Handler-level regression coverage for ticket 029-003 on
+    handle_role_guard: before this fix, get_project() was Project(cwd())
+    with no upward search, so a hook fired with cwd set to a subdirectory
+    resolved _proj.root to that subdirectory. _normalize_to_root_relative
+    then could not rewrite an absolute path under the REAL project root
+    to root-relative (Path.relative_to() raised, since the real root was
+    not an ancestor of the wrongly-resolved root), leaving it absolute —
+    which the outside-root rule then ALLOWED unconditionally. That turned
+    role-guard into allow-everything for any absolute-path write once cwd
+    drifted into a subdirectory, with a benign-looking "outside-root" log
+    line masking it (the confirmed root cause, RC-3, of a past incident).
+    """
+
+    def test_blocks_source_write_via_absolute_path_when_cwd_is_subdir(self, tmp_path):
+        """Before the fix: absolute path under the real root, cwd in a
+        subdirectory -> file_path stays absolute -> outside-root rule
+        fires -> ALLOWED (exit 0, the bug). After the fix: get_project()
+        finds the real root from the subdirectory, the path normalizes to
+        "clasi/project.py", the tier-0 source-code block rule matches ->
+        BLOCKED (exit 2, correct). This is the deliberate guard-outcome
+        change this ticket makes: MORE correct, not merely different."""
+        _write_fresh_config(tmp_path)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload(_abs(tmp_path, "clasi/project.py"))
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 2
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_still_allows_genuinely_outside_root_write_when_cwd_is_subdir(self, tmp_path):
+        """Control case: a path genuinely outside the project root (the
+        agent's own ~/.claude memory, not under tmp_path at all) must
+        remain ALLOWED even with cwd in a subdirectory and root discovery
+        now correct — proves the fix narrows the outside-root rule back to
+        paths that are actually outside the root, rather than blocking
+        everything from a subdirectory cwd."""
+        _write_fresh_config(tmp_path)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        mem = str(Path.home() / ".claude" / "projects" / "-some-other-repo" / "memory" / "a-note.md")
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload(mem)
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 0
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardResolvesRootFromSubdirCwd:
+    """Handler-level regression coverage for ticket 029-003 on
+    handle_mcp_guard: it resolves its DB-backed tier lookup through
+    get_project().db_path. Before this fix, a hook fired with cwd set to a
+    subdirectory resolved db_path against that subdirectory (where no
+    .clasi/.clasi.db exists), so the DB-backed tier lookup silently found
+    nothing and the caller fell back to being treated as tier 0 — even
+    when the caller was registered in the DB at a real, non-zero tier.
+    """
+
+    def test_db_backed_tier_resolves_correctly_when_cwd_is_subdir(self, tmp_path):
+        """A tier-2 (programmer) caller registered only in the DB (no
+        CLASI_AGENT_TIER env var) must still be resolved correctly, and
+        therefore allowed, when the hook fires from a subdirectory."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier2-caller", "programmer", "2")
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = {"tool_name": "create_ticket", "agent_id": "agent-tier2-caller"}
+            with pytest.raises(SystemExit) as exc:
+                handle_mcp_guard(payload)
             assert exc.value.code == 0
         finally:
             os.chdir(old_cwd)
@@ -2698,6 +2999,38 @@ class TestMcpGuardBlocksCreateSprintAtTierZero:
         assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "1") == 0
 
 
+class TestMcpGuardTierAllowlist:
+    """Ticket 029-009: mcp-guard's tier check became an explicit allowlist
+    (`agent_tier in ("1", "2")`) instead of a denylist
+    (`agent_tier not in ("", "0")`). Before this change, ANY unrecognized
+    tier string fell through to ALLOW by default — the same
+    "unanticipated input defaults to the unsafe action" shape as the
+    guard-crash class this ticket exists to close elsewhere. These tests
+    pin the new behavior: an unrecognized tier value now denies."""
+
+    def test_unrecognized_tier_string_denies(self, tmp_path):
+        """A tier value that is neither a known tier nor empty/'0' (e.g. a
+        future tier that doesn't exist yet, or a corrupted DB value) must
+        not silently allow."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "3") == 2
+        assert _run_mcp_guard(tmp_path, "create_ticket", "junk") == 2
+
+    def test_known_tiers_still_allowed(self, tmp_path):
+        """Non-regression: the two real tiers are unaffected by switching
+        from a denylist to an allowlist."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+        assert _run_mcp_guard(tmp_path, "create_ticket", "2") == 0
+
+    def test_tier_zero_and_unset_still_blocked(self, tmp_path):
+        """Non-regression: tier 0 / unset are still blocked, exactly as
+        before this ticket."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "0") == 2
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+
 # ---------------------------------------------------------------------------
 # Dual-mechanism stale-agent purge (ticket 019-003)
 # ---------------------------------------------------------------------------
@@ -3103,6 +3436,116 @@ class TestRoleGuardTicketStateGateRescoping:
         assert sprint_id == "019"
         assert active == []
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+
+class TestRoleGuardTicketStateGateTicketsExemption:
+    """Ticket 029-010: the ticket-state gate's only exemptions were
+    issues_dir/reflections_dir (see TestRoleGuardTicketStateGateRescoping
+    above). That left a tier-2 edit to a ticket file already relocated to
+    a sprint's tickets/done/ directory permanently unsatisfiable —
+    _get_active_tickets only ever recognizes tickets still sitting in
+    tickets/ with status: in-progress in their frontmatter, so a done
+    ticket can never make the gate pass by "starting or resuming" it (the
+    gate's own suggested remedy). This class covers the new tickets/
+    exemption (both the reported tickets/done/ bug and the related
+    ordering trap: a ticket file still in tickets/, not yet moved, whose
+    own status was just flipped to done), and proves the exemption is
+    scoped precisely — not a blanket tier-2 allow — the same way
+    TestRoleGuardTicketStateGateRescoping proves the issues_dir/
+    reflections_dir exemption is scoped.
+    """
+
+    def test_tier2_edit_to_ticket_in_done_dir_allowed_with_zero_in_progress(
+        self, tmp_path
+    ):
+        """AC1: a tier-2 edit to a ticket file already under
+        tickets/done/ is allowed even though zero tickets in the sprint
+        are in-progress — the exact reported-bug scenario (e.g. checking
+        off an acceptance criterion on a completed ticket after the
+        fact)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        ticket_path = _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        rel_path = str(ticket_path.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_edit_to_ticket_in_done_dir_allowed_with_other_ticket_in_progress(
+        self, tmp_path
+    ):
+        """AC1 explicitly requires this hold "regardless of whether some
+        other ticket in the sprint happens to be in-progress at the
+        time" — covered separately from the zero-in-progress case above
+        since that wording calls it out as its own condition."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        ticket_path = _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+        _make_in_progress_ticket(sprint_dir, "002", "Other active ticket")
+
+        rel_path = str(ticket_path.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_edit_to_own_ticket_still_in_tickets_dir_after_status_done_allowed(
+        self, tmp_path
+    ):
+        """The guard-ordering trap: a ticket's status is flipped to
+        `done` in place (file still in tickets/, not yet moved to
+        tickets/done/) — the very next tier-2 write, including finishing
+        that same ticket's own checkboxes, must not be blocked just
+        because no ticket is (any longer) status: in-progress anywhere
+        in the sprint. Uses _make_done_ticket (writes into tickets/
+        directly, not tickets/done/) per the Implementation Plan's step 5
+        — this is deliberately the ordering-trap scenario, not the
+        tickets/done/ scenario covered above."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket(sprint_dir, "010", "This very ticket")
+
+        rel_path = str(
+            (sprint_dir / "tickets" / "010-this-very-ticket.md").relative_to(tmp_path)
+        )
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_source_write_zero_in_progress_still_blocked_alongside_tickets_dir(
+        self, tmp_path
+    ):
+        """CRITICAL CONSTRAINT: the new exemption must not become a
+        blanket tier-2 allow. An ordinary source-path write, in the same
+        sprint state that now allows a tickets/done/ edit (lock held,
+        zero in-progress, a tickets/done/ ticket present), is still
+        blocked with gate=ticket-state:no-ticket."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+    def test_tier2_non_markdown_file_under_tickets_dir_not_exempt(self, tmp_path):
+        """A non-.md file living under the sprint's tickets/ tree (not a
+        real scenario today, but proves the exemption is scoped to
+        ticket .md files specifically, per the ticket's exact wording,
+        not "anything under tickets/") is still blocked."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+        stray = sprint_dir / "tickets" / "done" / "notes.txt"
+        stray.write_text("not a ticket file", encoding="utf-8")
+
+        rel_path = str(stray.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 2
+
+    def test_tier2_ticket_shaped_path_under_different_sprint_not_exempt(
+        self, tmp_path
+    ):
+        """A ticket-shaped .md path under a DIFFERENT sprint's tickets/
+        tree (not the sprint whose execution lock is currently held) is
+        still blocked — the exemption is scoped to the current sprint's
+        own tickets/ tree, resolved from the held lock, not any
+        tickets/ directory anywhere in the project."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        # A tickets/done/ ticket file for an unrelated, unlocked sprint.
+        other_sprint_dir = tmp_path / "clasi" / "sprints" / "099-other-sprint"
+        other_ticket = _make_done_ticket_in_done_dir(other_sprint_dir, "001", "Other ticket")
+
+        rel_path = str(other_ticket.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 2
 
 
 # ---------------------------------------------------------------------------
@@ -3995,6 +4438,87 @@ class TestLogHookEventDecisionsParam:
         assert "tool_name=Write file_path=x.py tier=2(db) match=clasi/issues/" in line
 
 
+class TestHookPayloadMissingSurfacesInHooksLog:
+    """HookPayload.missing (ticket 029-008) is surfaced into the SAME
+    decisions-list mechanism TestLogHookEventDecisionsParam covers above,
+    not a second parallel logging channel — see handle_role_guard's own
+    comment at the point it extends `decisions` from `hp.missing`."""
+
+    def test_missing_file_path_appears_in_hooks_log_line(self, tmp_path):
+        """An Edit/Write/MultiEdit call with no resolvable path — the
+        exact shape of the 876-event fail-open incident — carries
+        'missing=file_path' in the resulting hooks.log line, driven
+        through the real handler end to end (not _log_hook_event
+        called directly)."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "0") == 2
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "missing=file_path" in line
+
+    def test_missing_absent_when_file_path_present(self, tmp_path):
+        """The negative case: a resolvable file_path never adds the
+        missing= token."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "0") == 0
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "missing=" not in line
+
+
+class TestReadPayloadBadPayloadToken:
+    """Ticket 029-009 acceptance criterion: a non-empty, unparseable stdin
+    payload logs a 'bad-payload' token, distinguishing that case from a
+    legitimately empty/absent payload in hooks.log."""
+
+    def test_nonempty_unparseable_stdin_marks_bad_payload(self, monkeypatch):
+        """Unit-level: read_payload()'s own returned dict carries the
+        internal marker key when stdin held invalid JSON."""
+        monkeypatch.setattr(sys, "stdin", io.StringIO("{not valid json"))
+        result = read_payload()
+        assert result == {_BAD_PAYLOAD_KEY: True}
+
+    def test_tty_stdin_does_not_mark_bad_payload(self, monkeypatch):
+        """Negative control: no piped stdin at all (isatty) is a
+        legitimately empty payload, not a malformed one."""
+        class _FakeTtyStdin:
+            def isatty(self):
+                return True
+
+        monkeypatch.setattr(sys, "stdin", _FakeTtyStdin())
+        assert read_payload() == {}
+
+    def test_empty_piped_stdin_does_not_mark_bad_payload(self, monkeypatch):
+        """Negative control: whitespace-only piped stdin is also
+        legitimately empty, not malformed."""
+        monkeypatch.setattr(sys, "stdin", io.StringIO("   \n"))
+        assert read_payload() == {}
+
+    def test_bad_payload_token_appears_in_hooks_log_end_to_end(self, tmp_path, monkeypatch):
+        """Driven through the real handler end to end (not read_payload()
+        or _log_hook_event called directly): malformed stdin still fails
+        closed (no-path, tier 0) AND the resulting hooks.log line carries
+        the 'bad-payload' token distinguishing it from an ordinary
+        no-path denial."""
+        _write_fresh_config(tmp_path)
+        monkeypatch.setattr(sys, "stdin", io.StringIO("not valid json{{{"))
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_hook, "role-guard")
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "bad-payload" in line
+        assert "no-path" in line
+
+
 class TestLogHookEventDeniedPayloadDump:
     """Every denial (exit_code == 2) dumps the full payload to
     .clasi/log/denied/<ts>-<hook>.json, gitignored the same way log_dir
@@ -4111,19 +4635,26 @@ class TestMcpGuardDecisionTokensEndToEnd:
         assert "tier=1" in line
 
 
-class TestGuardInternalExceptionObservability:
-    """Hard scope boundary (ticket 028-005): a guard-internal exception is
-    caught, logged with a payload dump (same treatment as any other
-    denial-class event), and the ORIGINAL exception is re-raised
-    UNCHANGED — no new sys.exit(2) / _exit_hook(..., 2, ...) is added on
-    this path. That fail-closed behavior is sprint 029's job, not this
-    one's. These tests assert the exception type/message propagate
-    unchanged (pytest.raises(RuntimeError), not SystemExit) — if the
-    dispatcher wrapping had wrongly converted the crash into an exit, the
-    raises-type assertion below would fail.
+class TestGuardFailClosedExceptionBoundary:
+    """Fail-closed exception boundary (ticket 029-009).
+
+    Supersedes the old ``TestGuardInternalExceptionObservability`` class
+    (sprint 028 ticket 005): that class asserted a guard-internal
+    exception was caught, logged with a payload dump, and the ORIGINAL
+    exception RE-RAISED UNCHANGED (``pytest.raises(RuntimeError)`` /
+    ``pytest.raises(ValueError)`` propagating through ``handle_hook``) —
+    028-005's own docstring called that scope boundary out explicitly:
+    "no new sys.exit(2) ... that fail-closed behavior is sprint 029's job,
+    not this one's" (see ``git show 5b3079b``). This ticket IS that job:
+    the two tests below are deliberately rewritten to assert the NEW
+    contract — ``SystemExit(2)``, not the original exception type — which
+    is the intended, expected change this ticket makes, not a silent
+    behavior drift being smuggled past a stale assertion.
     """
 
-    def test_role_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+    def test_role_guard_crash_fails_closed_with_traceback(self, tmp_path, caplog):
+        """Acceptance criterion: a guard handler that raises produces
+        exit 2 AND a guard-crash log line with traceback."""
         _make_log_dir(tmp_path)
         payload = {
             "tool_name": "Write",
@@ -4133,13 +4664,25 @@ class TestGuardInternalExceptionObservability:
         with patch(
             "clasi.hook_handlers.handle_role_guard",
             side_effect=RuntimeError("boom-role-guard"),
-        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
-            with pytest.raises(RuntimeError, match="boom-role-guard"):
+        ), patch(
+            "clasi.hook_handlers.read_payload", return_value=payload,
+        ), caplog.at_level(logging.ERROR):
+            with pytest.raises(SystemExit) as exc:
                 _run_with_cwd(tmp_path, handle_hook, "role-guard")
+        assert exc.value.code == 2
 
         line = _last_hooks_log_line(tmp_path, "role-guard")
         assert " 2 " in line
         assert "guard-crash" in line
+
+        # A real traceback was captured via logger.exception, not just a
+        # bare message — exc_info is populated and the original
+        # exception's message is recoverable from the formatted record.
+        crash_records = [r for r in caplog.records if r.exc_info is not None]
+        assert crash_records, "expected a logged record with exc_info set"
+        assert any("boom-role-guard" in r.getMessage() for r in caplog.records) or any(
+            "boom-role-guard" in (r.exc_text or "") for r in crash_records
+        )
 
         denied_dir = tmp_path / ".clasi" / "log" / "denied"
         denied_files = list(denied_dir.glob("*-role-guard.json"))
@@ -4147,19 +4690,30 @@ class TestGuardInternalExceptionObservability:
         dumped = json.loads(denied_files[0].read_text(encoding="utf-8"))
         assert dumped == payload
 
-    def test_mcp_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+    def test_mcp_guard_crash_fails_closed_with_traceback(self, tmp_path, caplog):
+        """Acceptance criterion: a guard handler that raises produces
+        exit 2 AND a guard-crash log line with traceback."""
         _make_log_dir(tmp_path)
         payload = {"tool_name": "create_ticket", "session_id": "crash-test-mcp-guard"}
         with patch(
             "clasi.hook_handlers.handle_mcp_guard",
             side_effect=ValueError("boom-mcp-guard"),
-        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
-            with pytest.raises(ValueError, match="boom-mcp-guard"):
+        ), patch(
+            "clasi.hook_handlers.read_payload", return_value=payload,
+        ), caplog.at_level(logging.ERROR):
+            with pytest.raises(SystemExit) as exc:
                 _run_with_cwd(tmp_path, handle_hook, "mcp-guard")
+        assert exc.value.code == 2
 
         line = _last_hooks_log_line(tmp_path, "mcp-guard")
         assert " 2 " in line
         assert "guard-crash" in line
+
+        crash_records = [r for r in caplog.records if r.exc_info is not None]
+        assert crash_records, "expected a logged record with exc_info set"
+        assert any("boom-mcp-guard" in r.getMessage() for r in caplog.records) or any(
+            "boom-mcp-guard" in (r.exc_text or "") for r in crash_records
+        )
 
         denied_dir = tmp_path / ".clasi" / "log" / "denied"
         denied_files = list(denied_dir.glob("*-mcp-guard.json"))
@@ -4170,7 +4724,10 @@ class TestGuardInternalExceptionObservability:
     def test_non_guard_handler_crash_is_not_wrapped(self, tmp_path):
         """The exception-capture wrapping is scoped to role-guard/mcp-guard
         only (per the ticket's explicit scope) — a crash in some other
-        handler is neither caught nor given a guard-crash hooks.log line."""
+        handler is neither caught nor given a guard-crash hooks.log line,
+        and still propagates as its ORIGINAL exception type (unchanged by
+        this ticket — only role-guard/mcp-guard's own crash path is
+        converted to fail-closed)."""
         _make_log_dir(tmp_path)
         with patch(
             "clasi.hook_handlers.handle_status_inject",

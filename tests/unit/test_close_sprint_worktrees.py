@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -86,11 +86,15 @@ class TestPruneSprintWorktrees:
             )
 
         # Only the list call should have been made — no remove calls.
-        mock_run.assert_called_once_with(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True,
-            text=True,
-        )
+        # Anchored to an explicit root (029/005), so the exact cwd value
+        # (which falls back to the active project singleton here since no
+        # repo_root was passed) is not asserted, only its presence.
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        assert call_args == (["git", "worktree", "list", "--porcelain"],)
+        assert call_kwargs["capture_output"] is True
+        assert call_kwargs["text"] is True
+        assert "cwd" in call_kwargs
         assert pruned == []
         assert failed == []
 
@@ -111,16 +115,18 @@ class TestPruneSprintWorktrees:
         assert pruned == [expected_path]
         assert failed == []
 
-        remove_call = call(
-            ["git", "worktree", "remove", "--force", expected_path],
-            capture_output=True,
-            text=True,
-        )
-        mock_run.assert_any_call(
-            ["git", "worktree", "remove", "--force", expected_path],
-            capture_output=True,
-            text=True,
-        )
+        # Anchored to an explicit root (029/005) -- assert the git args
+        # and standard kwargs without pinning the exact cwd value.
+        matching_calls = [
+            c
+            for c in mock_run.call_args_list
+            if c.args == (["git", "worktree", "remove", "--force", expected_path],)
+        ]
+        assert len(matching_calls) == 1, mock_run.call_args_list
+        remove_call = matching_calls[0]
+        assert remove_call.kwargs["capture_output"] is True
+        assert remove_call.kwargs["text"] is True
+        assert "cwd" in remove_call.kwargs
 
     def test_prune_worktrees_non_blocking_failure(self):
         """A failed removal populates failed_paths but does not raise."""
