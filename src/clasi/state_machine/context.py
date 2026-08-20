@@ -91,6 +91,18 @@ class StateReader(Protocol):
         """Return True if the sprint branch has been merged into the default branch."""
         ...
 
+    def sprint_is_archived(self, sprint_id: str) -> bool:
+        """Return True iff the sprint directory lives under the archive (``sprints/done/``).
+
+        A cheap, directory-location-based signal — no git or DB access.
+        Mirrors the same authoritative archived signal
+        ``status/reporter.py``'s ``_is_terminal_sprint`` already uses for
+        its directory-location check (030/001): ``Project.list_sprints()``
+        is the only writer of that layout, so this can never disagree with
+        a real archive/close.
+        """
+        ...
+
     def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:
         """Return True if every ticket listed in *ticket_id*'s ``depends-on`` is done."""
         ...
@@ -207,6 +219,9 @@ class NullStateReader:
         return ""
 
     def branch_merged(self, sprint_id: str) -> bool:
+        return False
+
+    def sprint_is_archived(self, sprint_id: str) -> bool:
         return False
 
     def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:

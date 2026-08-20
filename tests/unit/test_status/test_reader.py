@@ -422,6 +422,39 @@ class TestBranchMerged:
 
 
 # ---------------------------------------------------------------------------
+# sprint_is_archived (030/002 regression fix)
+# ---------------------------------------------------------------------------
+
+
+class TestSprintIsArchived:
+    def test_false_for_active_sprint(self, project: Project, reader: ClasiStateReader) -> None:
+        _make_sprint(project, "001", branch="sprint/001-feature")
+        assert reader.sprint_is_archived("001") is False
+
+    def test_true_for_sprint_under_done_dir(self, project: Project, reader: ClasiStateReader) -> None:
+        sprint_dir = project.sprints_dir / "done" / "001-archived-sprint"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint.md").write_text(
+            "---\nid: '001'\ntitle: t\nbranch: sprint/001-x\nstatus: done\n---\n",
+            encoding="utf-8",
+        )
+        assert reader.sprint_is_archived("001") is True
+
+    def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
+        assert reader.sprint_is_archived("999") is False
+
+    def test_no_git_subprocess_spawned(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        """Purely a filesystem check — no git subprocess involved, unlike
+        branch_merged()."""
+        _make_sprint(project, "001", branch="sprint/001-feature")
+        calls = _count_real_git_calls(monkeypatch)
+        reader.sprint_is_archived("001")
+        assert len(calls) == 0
+
+
+# ---------------------------------------------------------------------------
 # Git-subprocess memoization (sprint 026 / ticket 003)
 # ---------------------------------------------------------------------------
 

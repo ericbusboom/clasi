@@ -494,6 +494,26 @@ class TestIsBranchMerged:
         assert is_branch_merged(ctx) is False
 
 
+class TestIsSprintArchived:
+    """030/002 regression fix: cheap, git-free directory-location check
+    declared first in the `closed` state's invariants so it short-circuits
+    `is_branch_merged` (which spawns a real git subprocess) for the common
+    case of an active, non-archived sprint."""
+
+    def test_true_when_archived(self):
+        reader = _mock_reader()
+        reader.sprint_is_archived.return_value = True
+        ctx = _sprint_ctx(reader=reader)
+        from clasi.state_machine.predicates.sprint import is_sprint_archived
+        assert is_sprint_archived(ctx) is True
+        reader.sprint_is_archived.assert_called_once_with("005")
+
+    def test_false_when_not_archived(self):
+        ctx = _sprint_ctx()  # NullStateReader returns False
+        from clasi.state_machine.predicates.sprint import is_sprint_archived
+        assert is_sprint_archived(ctx) is False
+
+
 # ---------------------------------------------------------------------------
 # Ticket predicates (13)
 # ---------------------------------------------------------------------------
@@ -840,6 +860,7 @@ class TestPredicateRegistration:
             "is_execution_lock_held_by_this_sprint",
             "is_all_tickets_done",
             "is_branch_merged",
+            "is_sprint_archived",
         ]
         for name in sprint_predicates:
             assert name in names, f"Missing sprint predicate: {name}"
@@ -897,16 +918,17 @@ class TestPredicateRegistration:
             assert name in names, f"Missing ticket predicate: {name}"
 
     def test_total_predicate_count(self):
-        """8 project + 8 sprint (shared is_on_sprint_branch) + 11 ticket = 27."""
+        """8 project + 9 sprint (shared is_on_sprint_branch) + 11 ticket = 28."""
         from clasi.state_machine.registry import list_predicates
 
         # is_on_sprint_branch is shared (registered once in project.py)
-        # Project: 8, Sprint: 8 new (is_architecture_present/is_usecases_present,
+        # Project: 8, Sprint: 9 (is_architecture_present/is_usecases_present,
         # is_review_satisfied, is_close_report_present removed;
-        # is_on_sprint_branch already counted), Ticket: 11
+        # is_on_sprint_branch already counted; is_sprint_archived added by
+        # 030/002's regression fix), Ticket: 11
         # (is_tests_passing, is_reopen_requested removed)
-        # Total unique: 8 + 8 + 11 = 27
+        # Total unique: 8 + 9 + 11 = 28
         names = list_predicates()
-        assert len(names) == 27, (
-            f"Expected 27 predicates, got {len(names)}: {names}"
+        assert len(names) == 28, (
+            f"Expected 28 predicates, got {len(names)}: {names}"
         )

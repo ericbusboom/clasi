@@ -23,9 +23,14 @@ a direct loose-file read (``.git/HEAD`` / ``.git/refs/remotes/origin/HEAD``)
 before falling back to the subprocess path — see
 :meth:`ClasiStateReader._git_branch_fast` /
 :meth:`ClasiStateReader._default_branch_fast`. The fallback, when taken,
-is still memoized exactly as before. ``branch_merged`` is unchanged — it
-always spawns a real ``git`` subprocess (a merge-base/ancestry check is
-not a single ref-file read).
+is still memoized exactly as before. ``branch_merged`` itself is
+unchanged — it always spawns a real ``git`` subprocess (a merge-base/
+ancestry check is not a single ref-file read) — but as of sprint 030
+(ticket 002's regression fix), the sprint machine's ``closed`` state
+checks the cheap, git-free ``sprint_is_archived`` invariant *first*, so
+``branch_merged`` is only actually reached for a sprint already
+confirmed archived by directory location. See
+:meth:`ClasiStateReader.sprint_is_archived`.
 
 Data sources per method
 -----------------------
@@ -47,6 +52,7 @@ Data sources per method
 | programmer_dispatched      | ticket FM        |
 | sprint_flag                | sprint.md FM     |
 | branch_merged              | git subprocess   |
+| sprint_is_archived         | Filesystem       |
 | dependencies_done          | ticket FMs       |
 | acceptance_criteria_met    | ticket body text |
 | tests_passing              | .clasi/test-cache|
@@ -159,8 +165,24 @@ class ClasiStateReader:
     # commit graph (loose objects + packfiles + packed-refs), not a
     # single ref-file read — reimplementing that from raw git internals
     # would risk exactly the "keep behavior identical" divergence this
-    # ticket must avoid, for a call that (per profiling) only fires for
-    # sprint states other than "executing" anyway.
+    # ticket must avoid.
+    #
+    # 030/002 regression note: this method used to be reached only for
+    # sprint states other than "executing" (per profiling at the time),
+    # because the sprint machine's `closed` state had other, cheap,
+    # always-False invariants ahead of `is_branch_merged` in its list
+    # that short-circuited `all()` first. 030/002 removed those
+    # unsatisfiable predicates, leaving `is_branch_merged` as `closed`'s
+    # sole invariant — which meant it was reached, and this spawned git,
+    # for *every* active sprint evaluated on the status-inject hot path
+    # (sprint 027's zero-git-subprocess-spawn budget), not just archived
+    # ones. The fix restores the cheap-first-predicate shape without
+    # reintroducing an unsatisfiable predicate: `closed`'s invariants are
+    # now `[is_sprint_archived, is_branch_merged]` — `is_sprint_archived`
+    # is a real, always-satisfiable-when-true, git-free directory check
+    # (see below) that is False for every non-archived sprint, so
+    # `all()` short-circuits before `branch_merged()` is ever called for
+    # the common case. See `sprint_is_archived()`.
     # ------------------------------------------------------------------
 
     def _git_dir(self) -> "Path | None":
@@ -308,6 +330,35 @@ class ClasiStateReader:
         both tickets/ and tickets/done/ with slug-aware glob + frontmatter confirm.
         """
         return self._find_ticket_path(sprint_id, ticket_id) is not None
+
+    def sprint_is_archived(self, sprint_id: str) -> bool:
+        """Return True iff the sprint directory lives under ``sprints/done/``.
+
+        Source: filesystem (a single ``Path.parent.name`` comparison on
+        the already-resolved sprint directory — no git or DB access).
+        Mirrors the directory-location check half of
+        ``status/reporter.py``'s ``_is_terminal_sprint`` (030/001):
+        ``Project.list_sprints()`` is the only writer of that archive
+        layout, so this is an authoritative, race-free signal that a
+        sprint has actually been archived, not merely declared closed in
+        frontmatter.
+
+        Used as a cheap first invariant for the sprint machine's
+        ``closed`` state (030/002 regression fix) — a sprint that is not
+        yet archived cannot be fully ``closed`` (that state's own
+        definition is "merged into default AND archived"; ``close_sprint``
+        performs both atomically), so this short-circuits before
+        ``is_branch_merged`` ever spawns a ``git`` subprocess for the
+        overwhelmingly common case of an active, non-archived sprint.
+
+        Returns False on any error (sprint not found, unreadable path,
+        etc.) — a sprint we cannot resolve is not affirmatively archived.
+        """
+        try:
+            sprint = self._project.get_sprint(sprint_id)
+            return sprint.path.parent.name == "done"
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------
     # Git methods

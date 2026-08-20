@@ -93,7 +93,17 @@ states:
     description: |
       Sprint has been merged into the default branch and archived.
       Execution lock has been released.
+
+      `is_sprint_archived` is declared before `is_branch_merged`
+      deliberately (030/002 regression fix): it is a cheap,
+      directory-location-based check with no git subprocess cost, and it
+      is False for every active (non-archived) sprint -- which is the
+      overwhelming majority of `evaluate_state` calls on the per-prompt
+      status-inject hot path. Python's `all()` short-circuits on the
+      first False, so `is_branch_merged` (which does spawn `git`) is
+      reached only once a sprint is already confirmed archived.
     invariants:
+      - is_sprint_archived
       - is_branch_merged
     transitions: {}
 
@@ -120,6 +130,8 @@ predicates:
     description: Returns True iff every ticket in this sprint is in the ticket-machine `done` state.
   is_branch_merged:
     description: Returns True iff the sprint branch has been merged into the default branch.
+  is_sprint_archived:
+    description: Returns True iff the sprint directory lives under sprints/done/ (a cheap, git-free, directory-location check).
 
 actions:
   write_planning_docs:
