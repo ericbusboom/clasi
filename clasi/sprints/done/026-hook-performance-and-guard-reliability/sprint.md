@@ -1,7 +1,7 @@
 ---
 id: '026'
 title: Hook performance and guard reliability
-status: planning-docs
+status: closed
 branch: sprint/026-hook-performance-and-guard-reliability
 worktree: false
 use-cases: []
