@@ -1443,6 +1443,35 @@ def reconcile_worktrees(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
+def _find_sprint_frontmatter_path(project: Project, sprint_id: str) -> Optional[Path]:
+    """Locate the sprint.md path for the candidate sprint directory matching
+    *sprint_id*, without parsing its frontmatter.
+
+    Mirrors ``Project.get_sprint``'s own candidate-selection logic (a
+    directory whose name equals *sprint_id* or starts with
+    ``"{sprint_id}-"``) so it finds the exact same file that caused
+    ``get_sprint`` to raise ``SprintFrontmatterError`` or
+    ``SprintIdMismatchError`` — those errors are raised precisely because
+    the frontmatter of this candidate is malformed or mismatched, so it
+    cannot be relied on to recover the path. Returns None only if no
+    candidate directory with an existing sprint.md can be found (should not
+    happen when called right after one of those errors was raised).
+    """
+    for location in [project.sprints_dir, project.sprints_dir / "done"]:
+        if not location.exists():
+            continue
+        for d in sorted(location.iterdir()):
+            if not d.is_dir():
+                continue
+            sprint_file = d / "sprint.md"
+            if not sprint_file.exists():
+                continue
+            dir_name = d.name
+            if dir_name == sprint_id or dir_name.startswith(f"{sprint_id}-"):
+                return sprint_file
+    return None
+
+
 def _close_sprint_full(
     sprint_id: str,
     branch_name: str,
@@ -1465,14 +1494,22 @@ def _close_sprint_full(
         sprint = project.get_sprint(sprint_id)
         sprint_dir = sprint.path
     except SprintFrontmatterError as e:
+        sprint_file_path = _find_sprint_frontmatter_path(project, sprint_id)
+        allowed_paths = [str(sprint_file_path)] if sprint_file_path else []
+        recorded = False
+        if allowed_paths and db.path.exists():
+            db.write_recovery_state(
+                sprint_id, "precondition", allowed_paths, str(e),
+            )
+            recorded = True
         return json.dumps({
             "status": "error",
             "error": {
                 "step": "precondition",
                 "message": str(e),
                 "recovery": {
-                    "recorded": False,
-                    "allowed_paths": [],
+                    "recorded": recorded,
+                    "allowed_paths": allowed_paths,
                     "instruction": (
                         "The sprint.md file has malformed frontmatter. "
                         "Fix the opening '---' fence in the file named in "
@@ -1484,14 +1521,22 @@ def _close_sprint_full(
             "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
         }, indent=2)
     except SprintIdMismatchError as e:
+        sprint_file_path = _find_sprint_frontmatter_path(project, sprint_id)
+        allowed_paths = [str(sprint_file_path)] if sprint_file_path else []
+        recorded = False
+        if allowed_paths and db.path.exists():
+            db.write_recovery_state(
+                sprint_id, "precondition", allowed_paths, str(e),
+            )
+            recorded = True
         return json.dumps({
             "status": "error",
             "error": {
                 "step": "precondition",
                 "message": str(e),
                 "recovery": {
-                    "recorded": False,
-                    "allowed_paths": [],
+                    "recorded": recorded,
+                    "allowed_paths": allowed_paths,
                     "instruction": (
                         "The sprint.md file has a missing or incorrect 'id:' field. "
                         "Correct the id field in the file named in the message, "

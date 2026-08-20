@@ -989,6 +989,162 @@ class TestCloseSprintFull:
         assert result["error"]["step"] == "precondition"
         assert "in-progress" in result["error"]["message"]
 
+    def test_precondition_ticket_not_done_records_recovery_state(self, work_dir):
+        """Regression guard (026/002): the ticket-not-done branch already
+        wrote recovery state before this ticket touched the other two
+        precondition branches, and must keep doing so unchanged."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "in-progress")
+
+        result = json.loads(close_sprint("001", branch_name="sprint/001-sprint"))
+        assert result["error"]["recovery"]["recorded"] is True
+        assert result["error"]["recovery"]["allowed_paths"] == [ticket["path"]]
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        recovery = get_recovery_state(db_path)
+        assert recovery is not None
+        assert recovery["step"] == "precondition"
+        assert recovery["allowed_paths"] == [ticket["path"]]
+
+    def test_frontmatter_fence_error_records_recovery_state(self, work_dir):
+        """A broken opening '---' fence in sprint.md must write recovery
+        state naming that exact file (026/002) -- previously this branch
+        returned `recovery: {recorded: False, allowed_paths: []}`, a dead
+        end the role-guard recovery bypass could never honor."""
+        from clasi.state_db import init_db
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        init_db(str(db_path))
+
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-recovery-fence"
+        sprint_dir.mkdir(parents=True)
+        sprint_file = sprint_dir / "sprint.md"
+        sprint_file.write_text(
+            "--\nid: '001'\ntitle: Broken Fence\n---\n\n# Sprint 001\n",
+            encoding="utf-8",
+        )
+
+        result = json.loads(
+            close_sprint("001", branch_name="sprint/001-recovery-fence")
+        )
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        assert result["error"]["recovery"]["recorded"] is True
+        assert result["error"]["recovery"]["allowed_paths"] == [str(sprint_file)]
+
+        recovery = get_recovery_state(db_path)
+        assert recovery is not None
+        assert recovery["sprint_id"] == "001"
+        assert recovery["step"] == "precondition"
+        assert recovery["allowed_paths"] == [str(sprint_file)]
+
+    def test_frontmatter_fence_error_recovery_permits_guarded_edit(self, work_dir):
+        """After a fence-error close_sprint call, a guarded Edit of the
+        exact sprint.md file named in the recovery instruction passes
+        role-guard with reason 'recovery' -- the whole point of writing
+        the recovery state. Real close_sprint + real handle_role_guard,
+        no mocked recovery lookup. The target path lives under
+        .clasi/sprints/ (role-guard's tier-0 block_prefixes), so an
+        exit-0 result can only come from the recovery bypass."""
+        from clasi.hook_handlers import handle_role_guard
+        from clasi.state_db import init_db
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        init_db(str(db_path))
+
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-recovery-fence"
+        sprint_dir.mkdir(parents=True)
+        sprint_file = sprint_dir / "sprint.md"
+        sprint_file.write_text(
+            "--\nid: '001'\ntitle: Broken Fence\n---\n\n# Sprint 001\n",
+            encoding="utf-8",
+        )
+
+        result = json.loads(
+            close_sprint("001", branch_name="sprint/001-recovery-fence")
+        )
+        assert result["error"]["recovery"]["recorded"] is True
+
+        payload = {
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(sprint_file)},
+            "session_id": "test-session-id",
+        }
+        with pytest.raises(SystemExit) as exc:
+            handle_role_guard(payload)
+        assert exc.value.code == 0
+
+        hooks_log = work_dir / ".clasi" / "log" / "hooks.log"
+        assert " recovery" in hooks_log.read_text(encoding="utf-8")
+
+    def test_id_mismatch_error_records_recovery_state(self, work_dir):
+        """A sprint.md whose 'id:' field doesn't match its directory must
+        write recovery state naming that exact file (026/002)."""
+        from clasi.state_db import init_db
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        init_db(str(db_path))
+
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-recovery-mismatch"
+        sprint_dir.mkdir(parents=True)
+        sprint_file = sprint_dir / "sprint.md"
+        sprint_file.write_text(
+            "---\nid: '999'\ntitle: Wrong Id\n---\n\n# Sprint 001\n",
+            encoding="utf-8",
+        )
+
+        result = json.loads(
+            close_sprint("001", branch_name="sprint/001-recovery-mismatch")
+        )
+        assert result["status"] == "error"
+        assert result["error"]["step"] == "precondition"
+        assert result["error"]["recovery"]["recorded"] is True
+        assert result["error"]["recovery"]["allowed_paths"] == [str(sprint_file)]
+
+        recovery = get_recovery_state(db_path)
+        assert recovery is not None
+        assert recovery["sprint_id"] == "001"
+        assert recovery["step"] == "precondition"
+        assert recovery["allowed_paths"] == [str(sprint_file)]
+
+    def test_id_mismatch_error_recovery_permits_guarded_edit(self, work_dir):
+        """After an id-mismatch close_sprint call, a guarded Edit of the
+        exact sprint.md file named in the recovery instruction passes
+        role-guard with reason 'recovery'. Real close_sprint + real
+        handle_role_guard, no mocked recovery lookup."""
+        from clasi.hook_handlers import handle_role_guard
+        from clasi.state_db import init_db
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        init_db(str(db_path))
+
+        sprint_dir = work_dir / ".clasi" / "sprints" / "001-recovery-mismatch"
+        sprint_dir.mkdir(parents=True)
+        sprint_file = sprint_dir / "sprint.md"
+        sprint_file.write_text(
+            "---\nid: '999'\ntitle: Wrong Id\n---\n\n# Sprint 001\n",
+            encoding="utf-8",
+        )
+
+        result = json.loads(
+            close_sprint("001", branch_name="sprint/001-recovery-mismatch")
+        )
+        assert result["error"]["recovery"]["recorded"] is True
+
+        payload = {
+            "tool_name": "Edit",
+            "tool_input": {"file_path": str(sprint_file)},
+            "session_id": "test-session-id",
+        }
+        with pytest.raises(SystemExit) as exc:
+            handle_role_guard(payload)
+        assert exc.value.code == 0
+
+        hooks_log = work_dir / ".clasi" / "log" / "hooks.log"
+        assert " recovery" in hooks_log.read_text(encoding="utf-8")
+
     @patch("clasi.worktree.reconcile_worktrees")
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")

@@ -1,8 +1,9 @@
 ---
 id: '002'
 title: 'close_sprint: recovery-state writes on frontmatter-fence and id-mismatch branches'
-status: open
-use-cases: [SUC-005]
+status: done
+use-cases:
+- SUC-005
 depends-on: []
 github-issue: ''
 issue: guard-dead-ends-no-ticket-gate-scope-and-close-sprint-recovery.md
@@ -27,20 +28,20 @@ branches write recovery state the same way the third already does.
 
 ## Acceptance Criteria
 
-- [ ] The frontmatter-fence-error branch calls
+- [x] The frontmatter-fence-error branch calls
       `db.write_recovery_state(sprint_id, "precondition", [<sprint.md path>],
       <error message>)` before returning, matching the pattern already
       used at `artifact_tools.py:1533-1552`.
-- [ ] The sprint-id-mismatch branch does the same.
-- [ ] `close_sprint` against a `sprint.md` with a broken frontmatter
+- [x] The sprint-id-mismatch branch does the same.
+- [x] `close_sprint` against a `sprint.md` with a broken frontmatter
       fence → the JSON response's `recovery.recorded` is `True` and
       `recovery.allowed_paths` contains the offending file's path.
-- [ ] A follow-up guarded `Edit` of that exact file passes with reason
+- [x] A follow-up guarded `Edit` of that exact file passes with reason
       `recovery`.
-- [ ] Same behavior verified for the sprint-id-mismatch branch.
-- [ ] The existing ticket-not-done branch's recovery behavior is
+- [x] Same behavior verified for the sprint-id-mismatch branch.
+- [x] The existing ticket-not-done branch's recovery behavior is
       unchanged (no regression).
-- [ ] Tests use real `close_sprint` invocations against fixture sprints
+- [x] Tests use real `close_sprint` invocations against fixture sprints
       with each malformed-frontmatter condition, not mocked responses.
 
 ## Implementation Plan
