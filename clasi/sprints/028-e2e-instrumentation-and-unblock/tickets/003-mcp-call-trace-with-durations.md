@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: MCP call trace with durations
-status: open
+status: done
 use-cases:
 - SUC-003
 depends-on: []
@@ -78,15 +78,15 @@ logic if the directory is already covered.
 
 ## Acceptance Criteria
 
-- [ ] Every MCP tool call (success and failure) appends one JSONL record
+- [x] Every MCP tool call (success and failure) appends one JSONL record
       to `.clasi/log/mcp-calls.jsonl` with `ts, agent, tool, args, ok,
       ms, result_len`.
-- [ ] The existing human-readable `mcp-server.log` `OK`/`FAIL` lines
+- [x] The existing human-readable `mcp-server.log` `OK`/`FAIL` lines
       include the call duration.
-- [ ] `.clasi/log/mcp-calls.jsonl` is covered by the existing log-dir
+- [x] `.clasi/log/mcp-calls.jsonl` is covered by the existing log-dir
       gitignore mechanism (verify, don't assume — add the call if it
       isn't already covered for this file).
-- [ ] A unit test asserts the JSONL record shape for one successful call
+- [x] A unit test asserts the JSONL record shape for one successful call
       and one failing call.
 
 ## Testing

@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -29,6 +31,100 @@ def _strip_none_sentinel(arguments: dict) -> dict:
     The input dict is never mutated; a new dict is always returned.
     """
     return {k: (None if v == "NONE" else v) for k, v in arguments.items()}
+
+
+def _write_call_trace(
+    log_dir: Path,
+    *,
+    agent: str,
+    tool: str,
+    args: dict,
+    ok: bool,
+    ms: int,
+    result_len: int | None,
+) -> None:
+    """Append one JSONL record for a single MCP tool call to ``mcp-calls.jsonl``.
+
+    Deliberately self-contained — takes only plain values (no reference to
+    the ``call_tool`` monkey-patch closure it is invoked from, see
+    ``_build_logged_call_tool`` below) so a later sprint (030, which
+    replaces that monkey-patch with a ``@clasi_tool`` decorator) can lift
+    this helper into the decorator without rewriting it.
+
+    Ensures ``log_dir`` is covered by the existing log-dir gitignore
+    mechanism (``hook_handlers._ensure_log_gitignore``) before writing.
+    ``mcp_server.py``'s own log setup (``Clasi._setup_logging``) creates
+    the directory but does not write the per-directory ``.gitignore`` the
+    way ``clasi init`` and ``hook_handlers.py`` do, so this call is not
+    redundant with anything upstream — it is the only guarantee for this
+    file in a project where the MCP server is the first thing to create
+    ``.clasi/log/``.
+    """
+    from clasi.hook_handlers import _ensure_log_gitignore
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_log_gitignore(log_dir)
+
+    record = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "agent": agent,
+        "tool": tool,
+        "args": args,
+        "ok": ok,
+        "ms": ms,
+        "result_len": result_len,
+    }
+    trace_file = log_dir / "mcp-calls.jsonl"
+    with open(trace_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def _build_logged_call_tool(original_call_tool, agent_name: str, log_dir: Path):
+    """Build the ``call_tool`` wrapper installed over ``_tool_manager.call_tool``.
+
+    Extracted to a module-level factory (rather than defined inline in
+    ``Clasi.run()``) so it can be unit tested against a fake
+    ``original_call_tool`` and a ``tmp_path`` log dir without booting the
+    real stdio server. The returned closure logs every call to
+    ``mcp-server.log`` (now with a duration) and, via ``_write_call_trace``,
+    to ``.clasi/log/mcp-calls.jsonl``.
+    """
+
+    async def _logged_call_tool(name, arguments, **kwargs):
+        # Strip "NONE" sentinel — agents use this string for optional params
+        # to avoid the Claude Code bug where any empty arg drops all args.
+        arguments = _strip_none_sentinel(arguments)
+        args_summary = {}
+        for k, v in arguments.items():
+            s = str(v)
+            args_summary[k] = s[:200] + "..." if len(s) > 200 else s
+        logger.info("[%s] CALL %s(%s)", agent_name, name, json.dumps(args_summary))
+        start = time.monotonic()
+        try:
+            result = await original_call_tool(name, arguments, **kwargs)
+            ms = int((time.monotonic() - start) * 1000)
+            result_str = str(result)
+            result_len = len(result_str)
+            if len(result_str) > 500:
+                result_str = result_str[:500] + "..."
+            logger.info("[%s]   OK %s (%dms) -> %s", agent_name, name, ms, result_str)
+            _write_call_trace(
+                log_dir, agent=agent_name, tool=name, args=args_summary,
+                ok=True, ms=ms, result_len=result_len,
+            )
+            return result
+        except Exception as e:
+            ms = int((time.monotonic() - start) * 1000)
+            logger.error(
+                "[%s]   FAIL %s (%dms) -> %s: %s", agent_name, name, ms, type(e).__name__, e,
+            )
+            _write_call_trace(
+                log_dir, agent=agent_name, tool=name, args=args_summary,
+                ok=False, ms=ms, result_len=None,
+            )
+            raise
+
+    return _logged_call_tool
 
 
 class Clasi:
@@ -233,28 +329,9 @@ class Clasi:
         # Wrap _tool_manager.call_tool to log every invocation
         _tm = self.server._tool_manager
         _original_call_tool = _tm.call_tool
-
-        async def _logged_call_tool(name, arguments, **kwargs):
-            # Strip "NONE" sentinel — agents use this string for optional params
-            # to avoid the Claude Code bug where any empty arg drops all args.
-            arguments = _strip_none_sentinel(arguments)
-            args_summary = {}
-            for k, v in arguments.items():
-                s = str(v)
-                args_summary[k] = s[:200] + "..." if len(s) > 200 else s
-            logger.info("[%s] CALL %s(%s)", agent_name, name, json.dumps(args_summary))
-            try:
-                result = await _original_call_tool(name, arguments, **kwargs)
-                result_str = str(result)
-                if len(result_str) > 500:
-                    result_str = result_str[:500] + "..."
-                logger.info("[%s]   OK %s -> %s", agent_name, name, result_str)
-                return result
-            except Exception as e:
-                logger.error("[%s]   FAIL %s -> %s: %s", agent_name, name, type(e).__name__, e)
-                raise
-
-        _tm.call_tool = _logged_call_tool
+        _tm.call_tool = _build_logged_call_tool(
+            _original_call_tool, agent_name, self.project.log_dir,
+        )
 
         self.server.run(transport="stdio")
 
