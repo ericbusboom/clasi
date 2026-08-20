@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
 - phase-2
 - mcp
 sprint: '030'
+tickets:
+- 030-005
 ---
 
 # MCP tools: one result envelope, owned NONE-sentinel stripping

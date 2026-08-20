@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - state-db
 - state-machine
 sprint: '030'
+tickets:
+- 030-001
 ---
 
 # One sprint-stage vocabulary with one writer

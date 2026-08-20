@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
 - phase-2
 - testing
 sprint: '030'
+tickets:
+- 030-006
 ---
 
 # Integration test: drive a sprint through the real writers, assert three-way state agreement

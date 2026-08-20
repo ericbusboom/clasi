@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - phase-2
 - state-machine
 sprint: '030'
+tickets:
+- 030-002
 ---
 
 # State machine: fix unsatisfiable and never-true predicates; define match semantics

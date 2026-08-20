@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - phase-2
 - tickets
 sprint: '030'
+tickets:
+- 030-003
 ---
 
 # Ticket status: one operation moves the file and writes the status

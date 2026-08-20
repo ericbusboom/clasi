@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - mcp
 - close-sprint
 sprint: '030'
+tickets:
+- 030-004
 ---
 
 # close_sprint: transactional state update, resumable steps, repairs after the test gate
