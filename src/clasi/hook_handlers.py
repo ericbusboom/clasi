@@ -23,8 +23,28 @@ logger = logging.getLogger(__name__)
 
 
 def get_project() -> Project:
-    """Return a Project instance rooted at the current working directory."""
-    return Project(Path.cwd())
+    """Return a Project instance rooted at the discovered project root.
+
+    Resolves the root by walking up from the current working directory
+    looking for a ``.clasi/`` directory (via ``_find_project_root``,
+    shared with ``_oop_active()``) rather than assuming cwd already is
+    the project root. A PreToolUse/PostToolUse hook can fire with cwd
+    set to a subdirectory of the project (e.g. editing a file two
+    directories deep) — before this, every ``Project`` property derived
+    from this function's return value (``issues_dir``, ``sprints_dir``,
+    ``db_path``, ``protected_paths``, ...) silently resolved against
+    that wrong subdirectory instead of the real root. This was the
+    structural root cause behind the narrower ``_oop_active()``-only fix
+    (ticket 019-002): every OTHER caller of this function inherited the
+    same no-upward-search assumption.
+
+    Falls back to ``Path.cwd()`` unchanged when no ``.clasi/`` is found
+    in any ancestor — matching ``_find_project_root``'s own documented
+    fallback exactly, so a legitimate non-project cwd (e.g. an isolated
+    ``tmp_path`` test fixture, or a real invocation outside any CLASI
+    checkout) resolves identically to before this change.
+    """
+    return Project(_find_project_root(Path.cwd()))
 
 
 def _normalize_to_root_relative(file_path: str, project: Optional[Project] = None) -> str:
@@ -152,12 +172,13 @@ def _oop_active(conn: Optional[sqlite3.Connection] = None) -> bool:
     this SAME discovered root (via ``Project(root).db_path``), not a bare
     cwd-relative path, for the same cwd-independence.
 
-    Caveat: ``get_project()`` elsewhere in this module is itself cwd-based
-    (``Project(Path.cwd())``, no upward search) — this helper deliberately
-    does NOT use it, resolving instead through the root ``_find_project_root``
-    discovers, so both channels stay cwd-independent together. Fixing
-    ``get_project()``'s own no-upward-search assumption is a separate,
-    out-of-scope issue.
+    Note: ``get_project()`` elsewhere in this module now performs the same
+    upward search (sprint 029 / ticket 003 generalized this helper's
+    approach to it), so both this function and ``get_project()`` resolve
+    the same root from the same cwd. This helper still resolves its own
+    root directly via ``_find_project_root`` rather than calling
+    ``get_project()``, so it has no dependency on ``get_project()``'s
+    behavior and both channels stay cwd-independent on their own terms.
 
     This is the single result and root-resolution point for OOP bypass. No
     handler in this module may check either flag-file path or the DB

@@ -1930,6 +1930,142 @@ class TestOopDbBypassCwdIndependence:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
 
 
+# ---------------------------------------------------------------------------
+# get_project() upward project-root discovery (sprint 029 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestGetProjectUpwardRootDiscovery:
+    """get_project() must walk up from cwd looking for .clasi/, the same
+    way _oop_active() already does via _find_project_root() — generalizing
+    the narrower OOP-only fix (ticket 019-002) so every Project property
+    every handler resolves (issues_dir, sprints_dir, db_path,
+    protected_paths, ...) is anchored to the real project root instead of
+    silently inheriting whatever directory cwd happens to be.
+    """
+
+    def test_resolves_root_several_levels_below_dot_clasi(self, tmp_path):
+        """cwd several directories below the real root still resolves the
+        project root that actually contains .clasi/, not the subdirectory."""
+        (tmp_path / ".clasi").mkdir()
+        subdir = tmp_path / "a" / "b" / "c"
+        subdir.mkdir(parents=True)
+        project = _run_with_cwd(subdir, get_project)
+        assert project.root == tmp_path
+
+    def test_falls_back_to_cwd_unchanged_when_no_ancestor_dot_clasi(self, tmp_path):
+        """An isolated tmp_path fixture with no .clasi/ anywhere in its
+        ancestry must resolve exactly as before this change: Project(cwd)
+        unchanged. This is the non-regression case for a legitimate
+        non-project cwd (a bare tmp_path test fixture, or a real
+        invocation outside any CLASI checkout) — _find_project_root's own
+        documented fallback."""
+        project = _run_with_cwd(tmp_path, get_project)
+        assert project.root == tmp_path
+
+
+class TestRoleGuardResolvesRootFromSubdirCwd:
+    """Handler-level regression coverage for ticket 029-003 on
+    handle_role_guard: before this fix, get_project() was Project(cwd())
+    with no upward search, so a hook fired with cwd set to a subdirectory
+    resolved _proj.root to that subdirectory. _normalize_to_root_relative
+    then could not rewrite an absolute path under the REAL project root
+    to root-relative (Path.relative_to() raised, since the real root was
+    not an ancestor of the wrongly-resolved root), leaving it absolute —
+    which the outside-root rule then ALLOWED unconditionally. That turned
+    role-guard into allow-everything for any absolute-path write once cwd
+    drifted into a subdirectory, with a benign-looking "outside-root" log
+    line masking it (the confirmed root cause, RC-3, of a past incident).
+    """
+
+    def test_blocks_source_write_via_absolute_path_when_cwd_is_subdir(self, tmp_path):
+        """Before the fix: absolute path under the real root, cwd in a
+        subdirectory -> file_path stays absolute -> outside-root rule
+        fires -> ALLOWED (exit 0, the bug). After the fix: get_project()
+        finds the real root from the subdirectory, the path normalizes to
+        "clasi/project.py", the tier-0 source-code block rule matches ->
+        BLOCKED (exit 2, correct). This is the deliberate guard-outcome
+        change this ticket makes: MORE correct, not merely different."""
+        _write_fresh_config(tmp_path)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload(_abs(tmp_path, "clasi/project.py"))
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 2
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_still_allows_genuinely_outside_root_write_when_cwd_is_subdir(self, tmp_path):
+        """Control case: a path genuinely outside the project root (the
+        agent's own ~/.claude memory, not under tmp_path at all) must
+        remain ALLOWED even with cwd in a subdirectory and root discovery
+        now correct — proves the fix narrows the outside-root rule back to
+        paths that are actually outside the root, rather than blocking
+        everything from a subdirectory cwd."""
+        _write_fresh_config(tmp_path)
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        mem = str(Path.home() / ".claude" / "projects" / "-some-other-repo" / "memory" / "a-note.md")
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = _role_guard_payload(mem)
+            with pytest.raises(SystemExit) as exc:
+                handle_role_guard(payload)
+            assert exc.value.code == 0
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+class TestMcpGuardResolvesRootFromSubdirCwd:
+    """Handler-level regression coverage for ticket 029-003 on
+    handle_mcp_guard: it resolves its DB-backed tier lookup through
+    get_project().db_path. Before this fix, a hook fired with cwd set to a
+    subdirectory resolved db_path against that subdirectory (where no
+    .clasi/.clasi.db exists), so the DB-backed tier lookup silently found
+    nothing and the caller fell back to being treated as tier 0 — even
+    when the caller was registered in the DB at a real, non-zero tier.
+    """
+
+    def test_db_backed_tier_resolves_correctly_when_cwd_is_subdir(self, tmp_path):
+        """A tier-2 (programmer) caller registered only in the DB (no
+        CLASI_AGENT_TIER env var) must still be resolved correctly, and
+        therefore allowed, when the hook fires from a subdirectory."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "agent-tier2-caller", "programmer", "2")
+        subdir = tmp_path / "tests" / "e2e"
+        subdir.mkdir(parents=True)
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(subdir)
+            payload = {"tool_name": "create_ticket", "agent_id": "agent-tier2-caller"}
+            with pytest.raises(SystemExit) as exc:
+                handle_mcp_guard(payload)
+            assert exc.value.code == 0
+        finally:
+            os.chdir(old_cwd)
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
 class TestRoleGuardProtectedPaths:
     """protected_paths: config gate — when configured, tier 0/1 blocking
     inverts from "block anything not on the artifact allow-list" to "block
