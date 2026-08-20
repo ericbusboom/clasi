@@ -1,7 +1,7 @@
 ---
 id: 029
 title: Fail closed and resolve roots
-status: planning-docs
+status: closed
 branch: sprint/029-fail-closed-and-resolve-roots
 worktree: false
 use-cases:
