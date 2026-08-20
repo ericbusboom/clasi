@@ -2085,7 +2085,11 @@ def get_sprint_phase(sprint_id: str) -> str:
     Args:
         sprint_id: The sprint ID (e.g., '002')
 
-    Returns JSON with {id, phase, gates, lock}.
+    Returns JSON with {id, phase, gates, lock, phase_transitions}, where
+    phase_transitions is an ordered (oldest-first) list of
+    {from_phase, to_phase, at} recording every phase advance this sprint
+    has made, written transactionally by advance_sprint_phase. Empty list
+    for a sprint that has never advanced past its initial phase.
     """
     try:
         state = get_project().db.get_sprint_state(sprint_id)
