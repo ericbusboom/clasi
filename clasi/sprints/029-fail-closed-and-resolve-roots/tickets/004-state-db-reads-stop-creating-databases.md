@@ -1,8 +1,9 @@
 ---
 id: '004'
 title: State DB reads stop creating databases
-status: open
-use-cases: [SUC-004]
+status: done
+use-cases:
+- SUC-004
 depends-on: []
 github-issue: ''
 issue: state-db-reads-stop-creating-databases.md
@@ -51,15 +52,15 @@ risk is narrowed, not eliminated, by this ticket).
 
 ## Acceptance Criteria
 
-- [ ] Read methods return their documented "absent"/default value when
+- [x] Read methods return their documented "absent"/default value when
       the DB file does not exist, without creating it
-- [ ] `sqlite3.connect` uses `timeout=1` (or similar short value) —
+- [x] `sqlite3.connect` uses `timeout=1` (or similar short value) —
       verify via the `_connect` call site, not just behaviorally
-- [ ] `init()` runs at most once per `StateDB` instance (add an
+- [x] `init()` runs at most once per `StateDB` instance (add an
       instance-level guard flag)
-- [ ] A test asserts that a read against a nonexistent DB path creates
+- [x] A test asserts that a read against a nonexistent DB path creates
       no file (`assert not db_path.exists()` after the call)
-- [ ] Every existing write path (anything that legitimately needs the
+- [x] Every existing write path (anything that legitimately needs the
       schema to exist) still creates it correctly — do not break
       `clasi init` or the first legitimate write to a fresh project
 
