@@ -309,7 +309,10 @@ The team-lead owns the full issue → done lifecycle. At each stage:
 Finishing the code is NOT finishing the ticket. A ticket is done when:
 1. All acceptance criteria are checked off (`- [x]`)
 2. Ticket frontmatter `status` is `done`
-3. All tests pass (`uv run pytest`)
+3. The ticket's scoped tests pass, run in the foreground by the
+   programmer agent (never backgrounded) — not a full `uv run pytest`
+   per ticket. The full suite is a once-per-sprint gate run once by
+   `execute-sprint` before `close-sprint`, not a per-ticket check.
 4. Changes are committed with ticket ID in the message
 5. `move_ticket_to_done(sprint_id, ticket_id)` is called
 

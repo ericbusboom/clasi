@@ -30,7 +30,14 @@ Read these for context:
 - Read the ticket and plan before writing any code.
 - Follow the project's coding standards and language instructions.
 - Write tests as specified in the ticket plan.
-- Run the full test suite to verify nothing is broken.
+- Run only the tests relevant to this ticket (the modules/files you
+  touched), in the foreground -- never with `run_in_background: true`.
+  The full suite is a once-per-sprint gate owned by execute-sprint/
+  close-sprint, not a per-ticket step.
+- NEVER background the test run. A backgrounded test run with no
+  foreground follow-up is not an acceptable way to end your turn --
+  stay alive to see the result, then commit and mark the ticket done in
+  the same turn.
 - Check off all acceptance criteria (`- [x]`) when done.
 - Set ticket frontmatter `status: done`.
 - Commit all changes with a message referencing ticket {{ ticket_id }}.
@@ -64,6 +71,7 @@ your work will be rejected.
 - **status**: "success" if all acceptance criteria met and tests pass,
   "partial" if some criteria remain, "failed" if tests fail.
 - **files_changed**: Every file you created or modified.
-- **tests_passed**: Result of `uv run pytest`.
+- **tests_passed**: Result of your ticket-scoped test run (e.g.
+  `uv run pytest <touched-modules> --no-cov`), run in the foreground.
 - **acceptance_criteria**: Count of total and checked-off criteria.
 - **errors**: (optional) List of issues encountered if status != "success".
