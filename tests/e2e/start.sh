@@ -306,17 +306,47 @@ if [ "$TMUX_READY" -ne 1 ]; then
     exit 1
 fi
 
+# --- Mint or resolve this run's id, and record it as the current run so
+# run.sh/validate.sh/stop.sh (and ticket 006's report.sh) can discover it
+# without the tester passing it around by hand on every invocation (the
+# Run-ID Handoff Contract — see run.sh/stop.sh/validate.sh for the same
+# resolution logic on the read side). This is the one run-id-minting path
+# in the harness: it extends the minimal timestamp-PID directory ticket
+# 001 built for its own preflight output, rather than replacing it, per
+# ticket 002's coordination note. --resume re-derives/preserves the
+# existing id instead of minting a new one, so a resumed run's captures
+# append to the same run directory instead of orphaning it. ---
+RUNS_DIR="$HOST_PROJECT_DIR/.e2e-runs"
+CURRENT_FILE="$RUNS_DIR/current"
+mkdir -p "$RUNS_DIR"
+
+if [ "$RESUME" -eq 1 ] && [ -s "$CURRENT_FILE" ]; then
+    RUN_ID="$(cat "$CURRENT_FILE")"
+    echo "=== --resume: continuing run $RUN_ID (from $CURRENT_FILE) ==="
+else
+    RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+fi
+# Overwritten (not appended) every time, including on --resume — a
+# resumed run re-derives/preserves the SAME id above, so this just
+# re-affirms the pointer rather than leaving a stale one behind.
+printf '%s\n' "$RUN_ID" > "$CURRENT_FILE"
+RUN_DIR="$RUNS_DIR/$RUN_ID"
+mkdir -p "$RUN_DIR"
+
+# --- Keep the subject's own git hygiene from sweeping run artifacts into
+# its sprint history: add .e2e-runs/ to the bind-mounted PROJECT's own
+# .gitignore (not this repo's tests/e2e/.gitignore), idempotently, before
+# the subject ever gets control. ---
+GITIGNORE_FILE="$HOST_PROJECT_DIR/.gitignore"
+if [ ! -f "$GITIGNORE_FILE" ] || ! grep -qxF '.e2e-runs/' "$GITIGNORE_FILE"; then
+    echo ".e2e-runs/" >> "$GITIGNORE_FILE"
+fi
+
 # --- Preflight: prove the auth path and clasi install actually work,
 # before handing the tester a session that looks ready but silently can't
 # do anything (the openrouter model-gate rejection is exactly this failure
-# mode). Aborts loudly on any failure — see module 1 in sprint.md. Output
-# from both probes lands in a minimal per-run directory under
-# .e2e-runs/; ticket 002 owns the full run-id/version/digest scheme and
-# may extend or supersede this directory. ---
+# mode). Aborts loudly on any failure — see module 1 in sprint.md. ---
 echo "=== Running preflight probe... ==="
-RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
-RUN_DIR="$HOST_PROJECT_DIR/.e2e-runs/$RUN_ID"
-mkdir -p "$RUN_DIR"
 PREFLIGHT_LOG="$RUN_DIR/preflight.txt"
 
 CLAUDE_PREFLIGHT_OUTPUT=""
@@ -361,13 +391,44 @@ fi
 
 echo "  Preflight OK. Output: $PREFLIGHT_LOG"
 
+# --- Record provenance: claude --version, clasi --version (reusing the
+# preflight probe's own output above rather than re-running it), and the
+# image digest, into the run directory. Best-effort/non-fatal — preflight
+# above already proved claude and clasi work; this is metadata for later
+# reconstruction (SUC-002), not a gate. ---
+echo "=== Recording versions and image digest... ==="
+VERSIONS_LOG="$RUN_DIR/versions.txt"
+
+CLAUDE_VERSION_OUTPUT=""
+if ! CLAUDE_VERSION_OUTPUT="$(docker exec "$CONTAINER_NAME" claude --version 2>&1)"; then
+    echo "WARNING: 'claude --version' failed inside the container; recording the error output." >&2
+fi
+
+IMAGE_DIGEST=""
+if ! IMAGE_DIGEST="$(docker inspect --format='{{.Id}}' "$IMAGE_NAME" 2>&1)"; then
+    echo "WARNING: could not resolve the image digest via docker inspect; recording the error output." >&2
+fi
+
+{
+    echo "=== claude --version ==="
+    echo "$CLAUDE_VERSION_OUTPUT"
+    echo ""
+    echo "=== clasi --version ==="
+    echo "$CLASI_PREFLIGHT_OUTPUT"
+    echo ""
+    echo "=== image digest (docker inspect --format='{{.Id}}' $IMAGE_NAME) ==="
+    echo "$IMAGE_DIGEST"
+} > "$VERSIONS_LOG"
+echo "  Versions recorded: $VERSIONS_LOG"
+
 echo ""
 echo "============================================"
 echo "  Ready! Drive sprints via print mode:"
-echo "    docker exec clasi-e2e claude -p '...'"
+echo "    ./run.sh <slug> \"<prompt>\" --max-turns <N>"
 echo "  Project dir: $HOST_PROJECT_DIR"
 echo "  Model: $E2E_MODEL"
 echo "  Auth: $E2E_AUTH"
+echo "  Run id: $RUN_ID"
 echo "  Run dir: $RUN_DIR"
 echo "============================================"
 exit 0
