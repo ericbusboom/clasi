@@ -701,6 +701,82 @@ class TestMoveTicketToDoneEdgeCases:
         assert Path(result2["new_path"]).exists()
 
 
+class TestTicketStatusSingleWriter:
+    """Frontmatter and directory location must agree after every status
+    transition -- update_ticket_status(path, "done") and
+    move_ticket_to_done both delegate to one combined primitive, and a
+    stray plan file must not affect ticket counts (sprint 030 ticket
+    003)."""
+
+    def _assert_agree(self, path_str, expected_status, expected_in_done):
+        fm = read_frontmatter(path_str)
+        assert fm["status"] == expected_status
+        assert (Path(path_str).parent.name == "done") == expected_in_done
+
+    def test_full_round_trip_stays_in_agreement(self, work_dir):
+        """open -> in-progress -> done -> reopen -> open: frontmatter and
+        directory location agree after every single transition."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        path = ticket["path"]
+        self._assert_agree(path, "open", False)
+
+        result = json.loads(update_ticket_status(path, "in-progress"))
+        self._assert_agree(result["path"], "in-progress", False)
+
+        result = json.loads(update_ticket_status(result["path"], "done"))
+        self._assert_agree(result["new_path"], "done", True)
+
+        result = json.loads(reopen_ticket(result["new_path"]))
+        self._assert_agree(result["new_path"], "open", False)
+
+    def test_update_ticket_status_done_matches_move_ticket_to_done(self, work_dir):
+        """No behavior divergence between the two entry points for a
+        ticket already in the expected pre-state (open, still in
+        tickets/)."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket_a = json.loads(create_ticket("001", "Task A"))
+        ticket_b = json.loads(create_ticket("001", "Task B"))
+
+        result_a = json.loads(update_ticket_status(ticket_a["path"], "done"))
+        result_b = json.loads(move_ticket_to_done(ticket_b["path"]))
+
+        assert Path(result_a["new_path"]).parent.name == "done"
+        assert Path(result_b["new_path"]).parent.name == "done"
+        assert read_frontmatter(result_a["new_path"])["status"] == "done"
+        assert read_frontmatter(result_b["new_path"])["status"] == "done"
+
+    def test_move_ticket_to_done_tolerant_after_update_already_moved(self, work_dir):
+        """move_ticket_to_done, called on the pre-move path after
+        update_ticket_status(path, "done") already moved the file, must
+        not raise -- the compatibility contract a caller still invoking
+        the two calls separately depends on."""
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        original_path = ticket["path"]
+
+        update_ticket_status(original_path, "done")
+        result = json.loads(move_ticket_to_done(original_path))
+
+        assert Path(result["new_path"]).exists()
+        assert Path(result["new_path"]).parent.name == "done"
+        assert read_frontmatter(result["new_path"])["status"] == "done"
+
+    def test_stray_plan_file_does_not_affect_list_tickets_count(self, work_dir):
+        create_sprint("Sprint")
+        _advance_to_ticketing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        plan_path = Path(ticket["path"]).parent / (Path(ticket["path"]).stem + "-plan.md")
+        plan_path.write_text("---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8")
+
+        result = json.loads(list_tickets(sprint_id="001"))
+
+        assert len(result) == 1
+
+
 class TestReopenTicket:
     def test_reopens_from_done(self, work_dir):
         """Ticket in done/ is moved back to tickets/ with status reset."""
@@ -1294,8 +1370,16 @@ class TestCloseSprintFull:
             '[project]\nname = "test"\nversion = "0.0.0"\n'
         )
         ticket = json.loads(create_ticket("001", "Task"))
-        # Set status to done but don't move to done/
-        update_ticket_status(ticket["path"], "done")
+        # Simulate frontmatter/directory drift directly. As of sprint 030
+        # ticket 003, update_ticket_status(path, "done") performs the
+        # tickets/done/ move in the same call, so this state (status: done,
+        # still in tickets/) can no longer be produced through that tool --
+        # write frontmatter directly (e.g. as if hand-edited) to exercise
+        # close_sprint's self-repair path for a ticket that drifted some
+        # other way.
+        fm = read_frontmatter(ticket["path"])
+        fm["status"] = "done"
+        write_frontmatter(ticket["path"], fm)
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest

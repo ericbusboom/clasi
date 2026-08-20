@@ -290,6 +290,19 @@ class TestAllTicketsDone:
     def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
         assert reader.all_tickets_done("999") is False
 
+    def test_stray_plan_file_does_not_affect_result(
+        self, project: Project, reader: ClasiStateReader
+    ) -> None:
+        """A stray <ticket>-plan.md companion left in tickets/ must not be
+        read as an undone ticket (sprint 030 ticket 003: shared listing
+        helper excludes *-plan.md companions)."""
+        sprint_dir = _make_sprint(project)
+        _make_ticket(sprint_dir, "001", status="done")
+        (sprint_dir / "tickets" / "001-test-ticket-plan.md").write_text(
+            "---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8"
+        )
+        assert reader.all_tickets_done("001") is True
+
 
 # ---------------------------------------------------------------------------
 # ticket_in_done_dir
@@ -921,3 +934,16 @@ class TestTicketCount:
 
     def test_zero_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
         assert reader.ticket_count("999") == 0
+
+    def test_stray_plan_file_does_not_inflate_count(
+        self, project: Project, reader: ClasiStateReader
+    ) -> None:
+        """A stray <ticket>-plan.md companion must not be counted as a
+        second ticket (sprint 030 ticket 003: shared listing helper
+        excludes *-plan.md companions)."""
+        sprint_dir = _make_sprint(project)
+        _make_ticket(sprint_dir, "001")
+        (sprint_dir / "tickets" / "001-test-ticket-plan.md").write_text(
+            "---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8"
+        )
+        assert reader.ticket_count("001") == 1

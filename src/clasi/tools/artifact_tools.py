@@ -943,15 +943,61 @@ def get_sprint_status(sprint_id: str) -> str:
 # --- Update tools (ticket 010) ---
 
 
+def _mark_ticket_done(ticket_path: Path) -> dict:
+    """Combined frontmatter-write + directory-move for a ticket's "done"
+    transition — the single primitive both ``update_ticket_status(path,
+    "done")`` and ``move_ticket_to_done`` delegate to (sprint 030 ticket
+    003), so the two stores can no longer be set independently.
+
+    Idempotent: if *ticket_path* (after ``resolve_artifact_path``) is
+    already in ``tickets/done/`` with ``status: done``, ``Ticket.mark_done()``
+    re-writes the same status and finds nothing left to move — it returns
+    successfully rather than raising. This tolerates a stale caller
+    invoking ``move_ticket_to_done`` on the pre-move path after
+    ``update_ticket_status(path, "done")`` already moved the file.
+
+    Returns the dict from ``Ticket.mark_done()`` (old_path, new_path,
+    old_status, new_status, and optionally plan_old_path/plan_new_path),
+    plus ``completed_issues`` if the post-move issue sweep auto-completed
+    any sprint issues.
+    """
+    tickets_dir = ticket_path.parent
+    if tickets_dir.name == "done":
+        tickets_dir = tickets_dir.parent
+    sprint_dir = tickets_dir.parent
+
+    project = get_project()
+    sprint = Sprint(sprint_dir, project)
+    ticket = Ticket(ticket_path, sprint)
+
+    result = ticket.mark_done()
+
+    completed = _sweep_done_issues(sprint)
+    if completed:
+        result["completed_issues"] = completed
+
+    return result
+
+
 @server.tool()
 def update_ticket_status(path: str, status: str) -> str:
     """Update a ticket's status in its YAML frontmatter.
 
+    For ``status="done"``, this performs both the frontmatter write and
+    the ``tickets/done/`` move in one call (sprint 030 ticket 003) —
+    internally delegating to ``Ticket.mark_done()``, the same combined
+    primitive ``move_ticket_to_done`` uses, rather than requiring a
+    separate ``move_ticket_to_done`` call afterward. For any other status
+    value, behavior is unchanged: a frontmatter write only — there is
+    nothing to move for open/in-progress/exception.
+
     Args:
         path: Path to the ticket file
-        status: New status (open, in-progress, done)
+        status: New status (open, in-progress, done, exception)
 
-    Returns JSON with {path, old_status, new_status}.
+    Returns JSON with {path, old_status, new_status} for a non-"done"
+    status, or {old_path, new_path, old_status, new_status, ...} (see
+    ``Ticket.mark_done()``) when status is "done".
     """
     valid_statuses = {"open", "in-progress", "done", "exception"}
     if status not in valid_statuses:
@@ -961,6 +1007,9 @@ def update_ticket_status(path: str, status: str) -> str:
         ticket_path = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
+
+    if status == "done":
+        return json.dumps(_mark_ticket_done(ticket_path), indent=2)
 
     artifact = Artifact(ticket_path)
     old_status = artifact.frontmatter.get("status", "unknown")
@@ -1044,38 +1093,29 @@ def throw_ticket_exception(
 
 @server.tool()
 def move_ticket_to_done(path: str) -> str:
-    """Move a ticket (and its plan file if exists) to the sprint's tickets/done/ directory.
+    """Move a ticket (and its plan file if exists) to the sprint's
+    tickets/done/ directory, setting status to "done" in the same call.
+
+    Thin alias for ``update_ticket_status(path, "done")`` — both delegate
+    to the same ``_mark_ticket_done`` / ``Ticket.mark_done()`` primitive
+    (sprint 030 ticket 003), so there is no behavior divergence between
+    the two entry points for a ticket already in the expected pre-state.
+    Tolerant of running after ``update_ticket_status(path, "done")``
+    already moved the file: ``resolve_artifact_path`` finds the ticket at
+    its new ``tickets/done/`` location, and re-marking an already-done
+    ticket is a no-op rather than an error.
 
     Args:
         path: Path to the ticket file
 
-    Returns JSON with {old_path, new_path}.
+    Returns JSON with {old_path, new_path, old_status, new_status, ...}.
     """
     try:
         ticket_path = resolve_artifact_path(path)
     except FileNotFoundError:
         raise ValueError(f"Ticket not found: {path}")
 
-    # Determine the tickets_dir (go up from done/ if already there)
-    tickets_dir = ticket_path.parent
-    if tickets_dir.name == "done":
-        tickets_dir = tickets_dir.parent
-    sprint_dir = tickets_dir.parent
-
-    # Create domain objects
-    project = get_project()
-    sprint = Sprint(sprint_dir, project)
-    ticket = Ticket(ticket_path, sprint)
-
-    # Move the ticket and its plan file
-    result = ticket.move_to_done_with_plan()
-
-    # Sweep all sprint issues and auto-complete any whose tickets are all done
-    completed = _sweep_done_issues(sprint)
-    if completed:
-        result["completed_issues"] = completed
-
-    return json.dumps(result, indent=2)
+    return json.dumps(_mark_ticket_done(ticket_path), indent=2)
 
 
 @server.tool()

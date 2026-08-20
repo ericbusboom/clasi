@@ -561,7 +561,10 @@ class ClasiStateReader:
         """Return True if every active ticket in *sprint_id* has status ``done``.
 
         Source: ticket frontmatter files in ``tickets/`` (not ``tickets/done/`` —
-        those are already confirmed done by their location).
+        those are already confirmed done by their location). Listed via the
+        shared ``list_ticket_files`` helper (sprint 030 ticket 003), which
+        excludes ``*-plan.md`` companion files — a stray plan file left in
+        ``tickets/`` cannot make this permanently False.
 
         A sprint with no active tickets (empty ``tickets/`` directory) returns
         True — there is nothing blocking completion.
@@ -571,10 +574,9 @@ class ClasiStateReader:
         try:
             sprint = self._project.get_sprint(sprint_id)
             tickets_dir = sprint.tickets_dir
-            if not tickets_dir.exists():
-                return True  # No tickets directory → nothing to block
             from clasi.frontmatter import read_frontmatter
-            for f in tickets_dir.glob("*.md"):
+            from clasi.ticket import list_ticket_files
+            for f in list_ticket_files(tickets_dir):
                 try:
                     fm = read_frontmatter(f)
                     if fm.get("status") != "done":
@@ -731,14 +733,15 @@ class ClasiStateReader:
     def ticket_count(self, sprint_id: str) -> int:
         """Return the number of ticket ``.md`` files in ``tickets/`` (excluding ``done/``).
 
-        Source: filesystem glob on ``tickets/*.md``.
+        Source: the shared ``list_ticket_files`` helper (sprint 030 ticket
+        003) on ``tickets/``, which excludes ``*-plan.md`` companion files
+        so a stray plan file cannot inflate this count.
         Returns 0 if the directory does not exist or on any error.
         """
         try:
             sprint = self._project.get_sprint(sprint_id)
             tickets_dir = sprint.tickets_dir
-            if not tickets_dir.exists():
-                return 0
-            return len(list(tickets_dir.glob("*.md")))
+            from clasi.ticket import list_ticket_files
+            return len(list_ticket_files(tickets_dir))
         except Exception:
             return 0

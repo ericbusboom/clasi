@@ -48,6 +48,13 @@ class TestUpdateTicketStatusException:
 
     def test_update_ticket_status_accepts_all_valid_statuses(self, tmp_path):
         """All four valid statuses are accepted without raising."""
+        # Isolate the project: as of sprint 030 ticket 003,
+        # update_ticket_status(path, "done") also runs the sprint-issue
+        # sweep, which reads get_project().issues_dir. Without an explicit
+        # set_project() here, that call falls back to Path.cwd() -- this
+        # repo's own real clasi/issues/ -- and can crash trying to compare
+        # against this test's made-up (nonexistent) sprint.md.
+        set_project(tmp_path)
         for status in ("open", "in-progress", "done", "exception"):
             path = _make_ticket(tmp_path)
             result = json.loads(update_ticket_status(path, status))

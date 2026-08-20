@@ -4,7 +4,7 @@ from pathlib import Path
 
 from clasi.project import Project
 from clasi.sprint import Sprint
-from clasi.ticket import Ticket
+from clasi.ticket import Ticket, list_ticket_files
 
 
 def _setup(tmp_path, ticket_id="001", title="Fix Bug", status="open",
@@ -221,6 +221,103 @@ class TestTicketMoveToDoneWithPlan:
         result = t.move_to_done_with_plan()
         assert result["old_path"] == old_path
         assert "done" in result["new_path"]
+
+
+class TestListTicketFiles:
+    """Test the shared list_ticket_files listing helper (sprint 030 ticket
+    003) -- the single primitive Sprint.list_tickets, all_tickets_done, and
+    ticket_count all route through, so a stray *-plan.md companion file
+    cannot be double-counted at any of those three sites."""
+
+    def test_missing_directory_returns_empty_list(self, tmp_path):
+        assert list_ticket_files(tmp_path / "nonexistent") == []
+
+    def test_excludes_plan_companion_files(self, tmp_path):
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        ticket_path = tickets_dir / "001-task.md"
+        ticket_path.write_text("---\nid: \"001\"\n---\n# Task\n", encoding="utf-8")
+        plan_path = tickets_dir / "001-task-plan.md"
+        plan_path.write_text("---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8")
+
+        result = list_ticket_files(tickets_dir)
+
+        assert result == [ticket_path]
+
+    def test_returns_sorted_list(self, tmp_path):
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+        first = tickets_dir / "001-a.md"
+        second = tickets_dir / "002-b.md"
+        for p in (second, first):
+            p.write_text("---\nid: x\n---\n", encoding="utf-8")
+
+        assert list_ticket_files(tickets_dir) == [first, second]
+
+
+class TestTicketMarkDone:
+    """Test Ticket.mark_done() -- the combined status-write + move
+    primitive both update_ticket_status(path, "done") and
+    move_ticket_to_done delegate to (sprint 030 ticket 003)."""
+
+    def test_mark_done_sets_status_and_moves(self, tmp_path):
+        _, _, t = _setup(tmp_path, status="in-progress")
+        old_path = t.path
+
+        result = t.mark_done()
+
+        assert not old_path.exists()
+        assert t.path.parent.name == "done"
+        assert t.status == "done"
+        assert result["old_status"] == "in-progress"
+        assert result["new_status"] == "done"
+        assert result["new_path"] == str(t.path)
+
+    def test_mark_done_moves_plan_file(self, tmp_path):
+        _, _, t = _setup(tmp_path, status="open")
+        plan_path = t.path.parent / (t.path.stem + "-plan.md")
+        plan_path.write_text("# Plan\n", encoding="utf-8")
+
+        result = t.mark_done()
+
+        assert "plan_new_path" in result
+        assert not plan_path.exists()
+        assert Path(result["plan_new_path"]).exists()
+        assert Path(result["plan_new_path"]).parent.name == "done"
+
+    def test_mark_done_idempotent(self, tmp_path):
+        """A second call on an already-done, already-moved ticket must not
+        raise -- this is what tolerates a stale caller invoking
+        move_ticket_to_done after update_ticket_status(path, "done")
+        already moved the file."""
+        _, _, t = _setup(tmp_path, status="open")
+        t.mark_done()
+
+        second = t.mark_done()
+
+        assert second["old_status"] == "done"
+        assert second["new_status"] == "done"
+        assert t.path.parent.name == "done"
+        assert t.status == "done"
+
+    def test_mark_done_is_exact_converse_of_reopen(self, tmp_path):
+        """Round trip: mark_done() then reopen() restores the exact
+        pre-done state -- frontmatter and directory location agree at
+        both ends."""
+        _, _, t = _setup(tmp_path, status="open")
+        original_path = t.path
+
+        t.mark_done()
+        assert t.path.parent.name == "done"
+        assert t.status == "done"
+
+        reopen_result = t.reopen()
+
+        assert t.path == original_path
+        assert t.path.parent.name != "done"
+        assert t.status == "open"
+        assert reopen_result["old_status"] == "done"
+        assert reopen_result["new_status"] == "open"
 
 
 class TestTicketReopen:

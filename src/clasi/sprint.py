@@ -187,16 +187,19 @@ class Sprint:
     # --- Ticket management ---
 
     def list_tickets(self, status: str | None = None) -> list[Ticket]:
-        """List tickets in this sprint, optionally filtered by status."""
-        from clasi.ticket import Ticket
+        """List tickets in this sprint, optionally filtered by status.
+
+        Uses the shared ``list_ticket_files`` helper (sprint 030 ticket
+        003), which excludes ``*-plan.md`` companion files, so a stray
+        plan file left in ``tickets/`` cannot appear in the result.
+        """
+        from clasi.ticket import Ticket, list_ticket_files
         from clasi.frontmatter import read_frontmatter
 
         results: list[Ticket] = []
 
         for location in [self.tickets_dir, self.tickets_done_dir]:
-            if not location.exists():
-                continue
-            for f in sorted(location.glob("*.md")):
+            for f in list_ticket_files(location):
                 fm = read_frontmatter(f)
                 if status and fm.get("status") != status:
                     continue

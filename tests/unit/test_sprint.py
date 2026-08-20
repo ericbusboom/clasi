@@ -344,6 +344,19 @@ class TestSprintTickets:
         assert len(done_tickets) == 1
         assert done_tickets[0].status == "done"
 
+    def test_list_tickets_excludes_stray_plan_file(self, tmp_path):
+        """A stray <ticket>-plan.md companion left in tickets/ must not be
+        counted as a ticket (sprint 030 ticket 003: shared listing helper
+        excludes *-plan.md companions)."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "First")
+        plan_path = sprint_dir / "tickets" / "001-first-plan.md"
+        plan_path.write_text("---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8")
+        s = Sprint(sprint_dir, proj)
+        tickets = s.list_tickets()
+        assert len(tickets) == 1
+        assert tickets[0].id == "001"
+
     def test_get_ticket(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         _add_ticket(sprint_dir, "001", "Fix Bug")

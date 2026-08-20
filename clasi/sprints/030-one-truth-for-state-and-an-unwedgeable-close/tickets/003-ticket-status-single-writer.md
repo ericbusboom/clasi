@@ -1,8 +1,9 @@
 ---
 id: '003'
 title: Ticket status single writer
-status: open
-use-cases: [SUC-004]
+status: done
+use-cases:
+- SUC-004
 depends-on: []
 github-issue: ''
 issue: ticket-status-single-writer.md
@@ -47,7 +48,7 @@ that ticket's Description.
 
 ## Acceptance Criteria
 
-- [ ] `update_ticket_status(path, "done")` performs both the frontmatter
+- [x] `update_ticket_status(path, "done")` performs both the frontmatter
       write and the `tickets/done/` move in one call — internally
       delegating to `Ticket.move_to_done()` (or
       `move_to_done_with_plan()`, matching today's plan-file-aware
@@ -55,24 +56,24 @@ that ticket's Description.
       call. For any status value other than `"done"`, behavior is
       unchanged (frontmatter write only — there is nothing to move for
       `open`/`in-progress`/`exception`).
-- [ ] `move_ticket_to_done` becomes a thin alias calling the same
+- [x] `move_ticket_to_done` becomes a thin alias calling the same
       combined path `update_ticket_status(path, "done")` now uses — not
       a second, independent implementation. No behavior divergence
       between the two entry points for a ticket already in the expected
       pre-state.
-- [ ] One shared ticket-listing helper, excluding `*-plan.md`
+- [x] One shared ticket-listing helper, excluding `*-plan.md`
       companions, is used by all three of: `Sprint.list_tickets`
       (`sprint.py`), `all_tickets_done`
       (`status/reader.py`), and `ticket_count` (`status/reader.py`) —
       replacing their three independent `glob("*.md")` call sites.
-- [ ] `reopen_ticket`'s existing converse logic (`ticket.py`'s
+- [x] `reopen_ticket`'s existing converse logic (`ticket.py`'s
       `reopen()`) is verified unchanged and still correct — it already
       does frontmatter+move together correctly; this ticket does not
       need to modify it, only confirm via test that it remains the exact
       converse of the newly-unified done-transition.
-- [ ] A test asserts frontmatter and directory agree after every status
+- [x] A test asserts frontmatter and directory agree after every status
       transition (`open`→`in-progress`→`done`→reopen back to `open`).
-- [ ] A test asserts a stray `*-plan.md` companion file in `tickets/`
+- [x] A test asserts a stray `*-plan.md` companion file in `tickets/`
       affects none of `list_tickets`, `all_tickets_done`, or
       `ticket_count`.
 
