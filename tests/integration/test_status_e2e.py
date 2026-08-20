@@ -360,18 +360,18 @@ class TestInconsistencyDetection:
     """V7: A sprint with status=planned while arch is absent produces state_drift."""
 
     def test_state_drift_entry_produced(self, tmp_path: Path) -> None:
-        """Synthetic sprint: frontmatter status=ticketed but no tickets exist.
+        """Synthetic sprint: frontmatter status=ticketing but the DB phase
+        was never advanced to match — a genuine divergence between the
+        two halves ``Sprint.set_sprint_stage()`` (030/001) is supposed to
+        keep in sync.
 
-        Under the single-doc model, ``open`` and ``planned`` share the same
-        invariant (``is_sprint_doc_present``) since planning content lives
-        inside sprint.md rather than in separate files whose presence can
-        be checked — so a declared status of ``planned`` with only
-        sprint.md present no longer produces a computed-state mismatch
-        (the ambiguity-resolution fallback in the reporter correctly picks
-        ``planned`` as the more-advanced match). ``ticketed`` remains
-        properly distinguishable (it still requires
-        ``is_pre_flight_satisfied``/``is_at_least_one_ticket``), so it is
-        used here to exercise state_drift detection.
+        Before sprint 030, sprint-level drift compared frontmatter
+        against the *computed sprint-machine* vocabulary. As of 030/001
+        it instead compares frontmatter ``status:`` against the DB's
+        recorded ``sprints.phase`` — so this fixture registers the sprint
+        in the DB directly (bypassing ``set_sprint_stage()``, which would
+        keep the two in sync) to reproduce a genuine writer-bug-shaped
+        divergence, the only way this check ever emits an entry now.
         """
         from clasi.project import Project
         from clasi.status import build_status
@@ -386,25 +386,27 @@ class TestInconsistencyDetection:
             encoding="utf-8",
         )
 
-        # Write a minimal state DB so sprint lookup works
         sprints_dir = clasi_dir / "sprints" / "099-test-sprint"
         sprints_dir.mkdir(parents=True)
         tickets_dir = sprints_dir / "tickets"
         tickets_dir.mkdir()
 
-        # Sprint.md declares status=ticketed but there are no tickets and
-        # no recorded gates — computed state cannot be "ticketed".
+        # Sprint.md declares status=ticketing; the DB (registered below)
+        # stays at its default "roadmap" phase — a genuine mismatch.
         sprint_md = sprints_dir / "sprint.md"
         sprint_md.write_text(
             "---\n"
             "id: '099'\n"
-            "status: ticketed\n"
+            "status: ticketing\n"
             "branch: sprint/099-test-sprint\n"
             "---\n\n# Test Sprint\n",
             encoding="utf-8",
         )
 
         project = Project(tmp_path)
+        project.db.register_sprint(
+            "099", "test-sprint", branch="sprint/099-test-sprint"
+        )
 
         status = build_status(project, agent="team-lead")
         inconsistencies = status.get("inconsistencies", [])
@@ -420,9 +422,10 @@ class TestInconsistencyDetection:
         )
         entry = sprint_drift[0]
         assert entry["kind"] == "state_drift"
-        assert entry["declared"] == "ticketed"
+        assert entry["declared"] == "ticketing"
         assert "computed" in entry
-        assert entry["computed"] != "ticketed"
+        assert entry["computed"] != "ticketing"
+        assert entry["computed"] == "roadmap"
         assert "explanation" in entry
 
     def test_state_drift_entry_has_required_fields(self, tmp_path: Path) -> None:

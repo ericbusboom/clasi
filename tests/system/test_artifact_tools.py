@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clasi.tools.artifact_tools import (
+    advance_sprint_phase,
     close_sprint,
     create_sprint,
     create_ticket,
@@ -19,6 +20,7 @@ from clasi.tools.artifact_tools import (
     list_tickets,
     move_ticket_to_done,
     reconcile_worktrees,
+    record_gate_result,
     reopen_ticket,
     update_ticket_status,
 )
@@ -418,16 +420,20 @@ class TestCloseSprint:
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
         # The directory is still named done/ — only the declared status
-        # changed (019-007). The two are independent.
+        # changed (019-007, then 030/001). The two are independent.
         assert "done" in result["new_path"]
         assert not os.path.exists(result["old_path"])
-        # Verify status was updated to the state machine's terminal state.
-        # 019-007: this asserted "done" until archive() was fixed to write
-        # "closed"; sprint.yaml has never defined a "done" state.
+        # Verify status was updated to the DB-phase vocabulary's terminal
+        # value. 030/001: this asserted "closed" (the *computed
+        # sprint-machine* vocabulary's terminal name, sprint 019-007's
+        # choice) until archive() was changed to write "done" — the
+        # DB-phase vocabulary's own terminal string, and the sole
+        # vocabulary frontmatter now mirrors. See sprint 030's sprint.md
+        # Design Rationale.
         from pathlib import Path
         sprint_file = Path(result["new_path"]) / "sprint.md"
         fm = read_frontmatter(sprint_file)
-        assert fm["status"] == "closed"
+        assert fm["status"] == "done"
 
 
 class TestInsertSprint:
@@ -562,13 +568,14 @@ class TestCloseSprintEdgeCases:
     def test_close_updates_status_and_moves(self, work_dir):
         create_sprint("Sprint")
         result = json.loads(close_sprint("001"))
-        # done/ is the archive directory name; "closed" is the declared
-        # state. 019-007 changed the latter only.
+        # done/ is the archive directory name; "done" is the declared
+        # status as of 030/001 (previously "closed", 019-007's choice —
+        # see sprint 030's sprint.md Design Rationale).
         assert "done" in result["new_path"]
         assert not os.path.exists(result["old_path"])
         sprint_file = Path(result["new_path"]) / "sprint.md"
         fm = read_frontmatter(sprint_file)
-        assert fm["status"] == "closed"
+        assert fm["status"] == "done"
 
     def test_close_advances_state_db(self, work_dir):
         create_sprint("Sprint")
@@ -1679,6 +1686,45 @@ class TestSystemRoundtrip:
         assert "001" in all_ids
         assert "002" in all_ids
         assert len(all_sprints) == 2
+
+    def test_list_sprints_finds_sprint_advanced_past_planning_docs(self, work_dir):
+        """030/001: list_sprints(status=...) filters on the full DB-phase
+        vocabulary, not just roadmap/planning-docs.
+
+        Before this ticket, Sprint.advance_phase() only touched the DB —
+        frontmatter status: was stuck at whatever detail_promote() last
+        wrote ("planning-docs"), so list_sprints(status="ticketing")
+        could never find a sprint actually at that phase.
+        advance_sprint_phase now routes through Sprint.set_sprint_stage(),
+        so frontmatter tracks every phase advance.
+        """
+        create_sprint("Sprint Alpha")  # 001
+        detail_sprint("001")  # roadmap -> planning-docs
+
+        # planning-docs -> architecture-review (no gate required)
+        json.loads(advance_sprint_phase("001"))
+        # architecture-review -> stakeholder-review (needs architecture_review gate)
+        record_gate_result("001", "architecture_review", "passed")
+        json.loads(advance_sprint_phase("001"))
+        # stakeholder-review -> ticketing (needs stakeholder_approval gate)
+        record_gate_result("001", "stakeholder_approval", "passed")
+        result = json.loads(advance_sprint_phase("001"))
+        assert result["new_phase"] == "ticketing"
+
+        ticketing_sprints = json.loads(list_sprints(status="ticketing"))
+        ticketing_ids = [s["id"] for s in ticketing_sprints]
+        assert "001" in ticketing_ids
+
+        # Not roadmap, not planning-docs — the mirrored value moved on.
+        assert "001" not in [s["id"] for s in json.loads(list_sprints(status="roadmap"))]
+        assert "001" not in [
+            s["id"] for s in json.loads(list_sprints(status="planning-docs"))
+        ]
+
+        # And frontmatter itself carries the mirrored value.
+        sprint_md = work_dir / ".clasi" / "sprints" / "001-sprint-alpha" / "sprint.md"
+        fm = read_frontmatter(sprint_md)
+        assert fm.get("status") == "ticketing"
 
 
 class TestCloseSprintLockAndDbGuard:

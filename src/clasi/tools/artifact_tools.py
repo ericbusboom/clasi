@@ -862,7 +862,10 @@ def list_sprints(status: Optional[str] = None) -> str:
     """List all sprints with their metadata.
 
     Args:
-        status: Optional filter by status (planning, active, done)
+        status: Optional filter by status — one of the DB-phase values
+            Sprint.set_sprint_stage() mirrors into frontmatter status:
+            (roadmap, planning-docs, architecture-review,
+            stakeholder-review, ticketing, executing, closing, done).
 
     Returns JSON array of {id, title, status, path, branch}.
     """

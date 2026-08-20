@@ -1,8 +1,9 @@
 ---
 id: '001'
 title: Single sprint-stage vocabulary and its one writer
-status: open
-use-cases: [SUC-001]
+status: done
+use-cases:
+- SUC-001
 depends-on: []
 github-issue: ''
 issue: single-sprint-stage-vocabulary.md
@@ -57,16 +58,16 @@ during planning, not assumed):
 
 ## Acceptance Criteria
 
-- [ ] `Sprint.set_sprint_stage(phase)` (new method on `Sprint` in
+- [x] `Sprint.set_sprint_stage(phase)` (new method on `Sprint` in
       `sprint.py`) writes the DB `sprints.phase` value and the sprint's
       frontmatter `status:` field together, in one call, and raises
       loudly (not `except: pass`) if either half fails.
-- [ ] `Sprint.detail_promote()` and `Sprint.advance_phase()` (the method
+- [x] `Sprint.detail_promote()` and `Sprint.advance_phase()` (the method
       `advance_sprint_phase` the MCP tool calls) route through
       `set_sprint_stage()` instead of each writing frontmatter and
       calling `self._project.db.advance_phase(...)` as two independent
       steps.
-- [ ] `Sprint.archive()` writes `status: "done"` instead of
+- [x] `Sprint.archive()` writes `status: "done"` instead of
       `status: "closed"`. This is a **value change only** — do not
       reorder `archive()`'s position within `close_sprint`'s step
       sequence in `tools/artifact_tools.py`'s `_close_sprint_full`; that
@@ -74,20 +75,20 @@ during planning, not assumed):
       does not touch DB phase directly (unchanged from today — DB phase
       advancement during close remains a separate step, redesigned by
       ticket 004).
-- [ ] The `"planning, active, done"` vocabulary is deleted from
+- [x] The `"planning, active, done"` vocabulary is deleted from
       `list_sprints`'s docstring in `tools/artifact_tools.py` (currently:
       `status: Optional filter by status (planning, active, done)`) and
       from `.claude/rules/clasi-artifacts.md` (currently instructs
       `list_sprints(status="active")`, a call that always returns `[]`
       since nothing writes that value).
-- [ ] `status/inconsistency.py`'s sprint-level check
+- [x] `status/inconsistency.py`'s sprint-level check
       (`_check_sprint`/`_explain_sprint_drift`) no longer compares
       frontmatter `status:` against the computed sprint-machine state
       name. It instead compares DB phase
       (`project.db.get_sprint_state(sprint_id)["phase"]`) against
       frontmatter `status:` — the same 8-value vocabulary on both sides,
       since `set_sprint_stage()` is now the sole writer of both.
-- [ ] `_sprint_terminal_states()`'s exemption (`status/inconsistency.py`,
+- [x] `_sprint_terminal_states()`'s exemption (`status/inconsistency.py`,
       currently `load_machine("sprint").terminal_states()`) is replaced
       with a directory-location check: a sprint physically under
       `sprints/done/` is exempt from stage-drift checking regardless of
@@ -95,13 +96,13 @@ during planning, not assumed):
       `status/reporter.py`'s `_is_terminal_sprint` already established
       (declared-status match OR physical location) rather than inventing
       a second, differently-shaped check.
-- [ ] `list_sprints(status=...)` (`Project.list_sprints`) is exercised by
+- [x] `list_sprints(status=...)` (`Project.list_sprints`) is exercised by
       a new test against the 8-value DB-phase vocabulary now written to
       frontmatter.
-- [ ] A new test (in `tests/unit/test_status/test_inconsistency.py` or
+- [x] A new test (in `tests/unit/test_status/test_inconsistency.py` or
       equivalent) asserts a healthy active sprint, created via real
       writers, produces zero `state_drift` entries.
-- [ ] **No file under `clasi/sprints/done/` is edited by this ticket.**
+- [x] **No file under `clasi/sprints/done/` is edited by this ticket.**
       Run `git status` before committing; if any `sprints/done/` path
       appears in the diff, revert it. Sprint 012's DB-row/frontmatter
       mismatch is left exactly as-is — the design tolerates it, it does
