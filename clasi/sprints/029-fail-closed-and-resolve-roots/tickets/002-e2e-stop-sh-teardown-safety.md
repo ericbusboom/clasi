@@ -1,8 +1,9 @@
 ---
 id: '002'
 title: E2E stop.sh teardown safety
-status: open
-use-cases: [SUC-002]
+status: done
+use-cases:
+- SUC-002
 depends-on: []
 github-issue: ''
 issue: stop-sh-teardown-gated-on-run-id.md
@@ -52,20 +53,20 @@ is not mirrored to the `design/` overlay (not a `src/clasi` subsystem).
 
 ## Acceptance Criteria
 
-- [ ] `stop.sh` always performs teardown (container removal,
+- [x] `stop.sh` always performs teardown (container removal,
       `.creds-stage` deletion) regardless of whether a run id resolves
-- [ ] When no run id resolves, `stop.sh` skips only the capture step,
+- [x] When no run id resolves, `stop.sh` skips only the capture step,
       reporting clearly that artifacts could not be saved and why — it
       does not abort
-- [ ] Credential staging is removed even when the container never
+- [x] Credential staging is removed even when the container never
       started, and even when `docker` itself errors — a `trap`-based
       cleanup or an unconditional final step, not a happy-path line
-- [ ] `start.sh`'s `cleanup()` trap also removes `.creds-stage`, not
+- [x] `start.sh`'s `cleanup()` trap also removes `.creds-stage`, not
       just `$ENV_FILE`
-- [ ] Exercised by a test (or a documented manual check) that runs
+- [x] Exercised by a test (or a documented manual check) that runs
       `stop.sh` with no `.e2e-runs/current` present and asserts the
       container and `.creds-stage` are both gone afterward
-- [ ] The existing `guarded_wipe` safety check (refuses to wipe
+- [x] The existing `guarded_wipe` safety check (refuses to wipe
       anything not ending in `/e2e-project`) is preserved unchanged —
       this ticket must not weaken that guard while restructuring the
       rest of the script
@@ -84,3 +85,24 @@ is not mirrored to the `design/` overlay (not a `src/clasi` subsystem).
   from a clean state, then confirm `docker ps -a | grep clasi-e2e` and
   `ls tests/e2e/.creds-stage` both come up empty. No `uv run pytest`
   scope for this ticket — shell-only change.
+- **Manually verified (implementation)**: backed up the real
+  `.e2e-runs/current` pointer, removed it, started a throwaway container
+  named `clasi-e2e` (stub `sh -c "sleep 300"` entrypoint on the existing
+  `clasi-e2e:latest` image — no model calls, no real credentials) and
+  staged a dummy (non-real) `.creds-stage/.credentials.json`. Ran
+  `./tests/e2e/stop.sh` with no `--run-id` and no resolvable
+  `.e2e-runs/current`: exited 0, printed a `WARNING: could not resolve a
+  run id ... Skipping capture ... Container/credential teardown still
+  proceeds.` message (no abort), then stopped/removed the container and
+  removed `.creds-stage` — confirmed via `docker ps -a` and `ls
+  .creds-stage` both empty afterward. Separately re-ran with an explicit
+  `--run-id` against a fresh stub container to confirm the resolved-run-id
+  (happy) path still captures `container.log` and tears down in the same
+  message order as the pre-change baseline (capture, then stop/remove
+  container, then remove creds, then "Done. Image kept for reuse."). The
+  dummy creds-stage file and throwaway run directory were removed as part
+  of/after this verification; the real `.e2e-runs/current` pointer and the
+  team-lead's existing captured run directory were restored/left
+  untouched. `shellcheck tests/e2e/stop.sh tests/e2e/start.sh` shows only
+  the two pre-existing warnings (SC2329 on `start.sh`'s `cleanup()`,
+  SC2034 on `start.sh`'s loop var `i`) — no new warnings.
