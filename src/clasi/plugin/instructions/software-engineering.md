@@ -76,11 +76,16 @@ Supporting skills used during ticket execution:
 
 ## Artifacts
 
-### 1. Project Overview (`.clasi/design/overview.md`) — Recommended
+### 1. Project Overview (`overview.md` in the configured design directory) — Recommended
 
 A single lightweight document created at project start. Replaces the separate
 brief, use cases, and technical plan files for new projects. Detailed planning
 lives in sprints.
+
+The "configured design directory" is `Project.design_dir`: resolved
+from `paths.design` in `.clasi/config.yaml` (the `paths:` map),
+defaulting to `docs/design/` when unset. Never hardcode
+`.clasi/design/` — that is not the default.
 
 Contents:
 - Project name
@@ -145,8 +150,8 @@ top-level files remain valid:
 - **Technical Plan** (`.clasi/technical-plan.md`) — Architecture, tech stack,
   component design, data model, APIs, deployment, security.
 
-New projects should use the single `.clasi/design/overview.md` instead
-of the three separate top-level files.
+New projects should use the single `overview.md` in the configured
+design directory instead of the three separate top-level files.
 
 ### Diagrams in Architecture Documents
 
@@ -555,12 +560,12 @@ each exception in isolation.
 
 ```
 .clasi/
-├── design/
-│   └── overview.md              # Project overview (recommended)
 ├── brief.md                     # Top-level brief (legacy)
 ├── usecases.md                  # Top-level use cases (legacy)
 ├── technical-plan.md            # Top-level technical plan (legacy, pre-sprint 016)
 docs/
+├── design/                      # Configured design dir (paths.design), default shown
+│   └── overview.md              # Project overview (recommended)
 └── architecture/                # Versioned architecture documents
     ├── architecture-014.md      # Architecture at end of sprint 014
     ├── architecture-015.md      # Architecture at end of sprint 015

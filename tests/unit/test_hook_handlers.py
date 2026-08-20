@@ -3147,6 +3147,134 @@ class TestRoleGuardTier1ArtifactDirAllowList:
 
 
 # ---------------------------------------------------------------------------
+# Ticket 026-005: tier-1 artifact-dir allow list against a CUSTOM
+# (non-default) configured design_dir — not just the fresh-layout
+# default docs/design/ that TestRoleGuardTier1ArtifactDirAllowList above
+# exercises. This closes the "configured-path agreement" gap: ticket
+# 026-001 proved the allow-list mechanics work; this proves they follow
+# whatever paths.design a project actually configures, matching the
+# project-initiation skill's new "resolve, don't hardcode" instruction.
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardTier1CustomDesignDir:
+    """A project whose .clasi/config.yaml sets paths.design to a
+    NON-default value (i.e. not docs/design/) — the fresh-layout
+    default already covered by TestRoleGuardTier1ArtifactDirAllowList.
+    Using a genuinely custom path here (rather than reusing the default)
+    is what actually distinguishes "role-guard reads paths.design" from
+    "role-guard happens to allow the hardcoded default" — the field bug
+    this ticket fixes was specifically about a project with a custom
+    paths.design value (pxt-nezha-diffdrive: paths.design: docs/design,
+    but even the plain default was already broken by the SKILL.md
+    hardcode; this test asserts the guard side is correct for an
+    arbitrary configured value, not just the default one).
+    """
+
+    _CUSTOM_DESIGN = "documentation/design-docs"
+
+    def _write_config_with_custom_design(self, root: Path, design_path: str) -> None:
+        import yaml
+
+        clasi_dir = root / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        data = {"process": "se", "paths": {"design": design_path}}
+        (clasi_dir / "config.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    def _last_role_guard_line(self, tmp_path: Path) -> str:
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        return matching[-1]
+
+    def test_tier1_custom_design_dir_allowed_reason_artifact_dir(self, tmp_path):
+        """Real captured tier-1 payload, write into the CUSTOM configured
+        design_dir (not the docs/design default) → allowed, reason
+        artifact-dir."""
+        self._write_config_with_custom_design(tmp_path, self._CUSTOM_DESIGN)
+        assert _run_role_guard(
+            tmp_path, f"{self._CUSTOM_DESIGN}/overview.md", "1"
+        ) == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_source_path_still_blocked_with_custom_design_dir_configured(
+        self, tmp_path
+    ):
+        """Same custom design_dir config, but a source-path write is
+        still blocked for tier 1 — the custom allow-list entry must not
+        widen scope beyond the configured design dir itself."""
+        self._write_config_with_custom_design(tmp_path, self._CUSTOM_DESIGN)
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        assert " 2 blk-write" in self._last_role_guard_line(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-005: end-to-end scenario — project-initiation's resolved
+# design_dir, role-guard's allow list, and overview_exists() all agree
+# on the same location
+# ---------------------------------------------------------------------------
+
+
+class TestProjectInitiationConfiguredDesignDirEndToEnd:
+    """Closes the loop the field bug report described: a project
+    configured with a (non-default) paths.design and no
+    protected_paths: — a dispatched sprint-planner (tier 1) following
+    the now-fixed project-initiation skill resolves Project.design_dir
+    (instead of hardcoding .clasi/design/), writes the three initiation
+    documents there, each write gated through the real handle_role_guard
+    PreToolUse hook with a real captured nested payload shape — and once
+    written, ClasiStateReader.overview_exists() (the filesystem check
+    backing the state machine's is_overview_present predicate, which
+    gates the `initialize` transition) recognizes them at that same
+    location. Before this ticket, the skill hardcoded .clasi/design/,
+    which overview_exists() never looks at (it reads
+    project.design_dir), so this exact chain was permanently broken
+    regardless of ticket 026-001's allow-list fix.
+    """
+
+    def test_tier1_writes_three_documents_and_overview_exists_agrees(self, tmp_path):
+        import yaml
+
+        from clasi.project import Project
+        from clasi.status.reader import ClasiStateReader
+
+        custom_design = "documentation/design-docs"
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        (clasi_dir / "config.yaml").write_text(
+            yaml.safe_dump({"process": "se", "paths": {"design": custom_design}}),
+            encoding="utf-8",
+        )
+
+        # This is exactly what the project-initiation skill's step 1 now
+        # instructs the team-lead to resolve before dispatching — via
+        # the SAME Project.design_dir the state machine reads from, not
+        # a hardcoded .clasi/design/ literal.
+        project = Project(tmp_path)
+        design_dir = project.design_dir
+        assert design_dir == tmp_path / custom_design
+
+        # The sprint-planner (tier 1) writes each of the three documents.
+        # Each write is gated through the real role-guard hook first,
+        # with a real captured nested payload shape, exactly as Claude
+        # Code sends a Write tool call.
+        for doc_name in ("overview.md", "specification.md", "usecases.md"):
+            rel_path = f"{custom_design}/{doc_name}"
+            assert _run_role_guard(tmp_path, rel_path, "1") == 0
+            design_dir.mkdir(parents=True, exist_ok=True)
+            (design_dir / doc_name).write_text(f"# {doc_name}\n", encoding="utf-8")
+
+        # overview_exists() — backing is_overview_present — must see the
+        # file at the SAME path role-guard just allowed the write to.
+        # This is the "configured-path agreement" this ticket closes:
+        # skill instruction, design_dir resolution, and the state
+        # machine's own read all point at one place.
+        reader = ClasiStateReader(project)
+        assert reader.overview_exists() is True
+
+
+# ---------------------------------------------------------------------------
 # Ticket 026-001, item 3: recovery-state directory-prefix matching
 # ---------------------------------------------------------------------------
 

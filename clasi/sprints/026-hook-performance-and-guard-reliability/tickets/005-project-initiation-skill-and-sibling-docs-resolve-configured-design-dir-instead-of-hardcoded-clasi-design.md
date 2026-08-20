@@ -2,9 +2,11 @@
 id: '005'
 title: 'project-initiation skill and sibling docs: resolve configured design_dir instead
   of hardcoded .clasi/design/'
-status: open
-use-cases: [SUC-007]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-007
+depends-on:
+- '001'
 github-issue: ''
 issue: role-guard-tier1-design-dir-and-initiation-skill-hardcoded-path.md
 completes_issue: true
@@ -35,12 +37,12 @@ the write would still be blocked regardless of what the skill instructs.
 
 ## Acceptance Criteria
 
-- [ ] `project-initiation/SKILL.md` instructs writing the three
+- [x] `project-initiation/SKILL.md` instructs writing the three
       initiation documents to the project's configured `design_dir`
       (resolved dynamically, e.g. via `get_status` or an MCP tool that
       reports `Project.design_dir`), not a hardcoded `.clasi/design/`
       literal.
-- [ ] Every sibling doc found by `grep -rl '\.clasi/design'` under
+- [x] Every sibling doc found by `grep -rl '\.clasi/design'` under
       `src/clasi/plugin/` is reviewed and updated consistently:
       `instructions/software-engineering.md`,
       `agents/sprint-planner/plan-sprint.md`,
@@ -48,21 +50,77 @@ the write would still be blocked regardless of what the skill instructs.
       `agents/team-lead/project-status.md`,
       `skills/sprint-roadmap/SKILL.md`, `skills/project-status/SKILL.md`,
       `skills/architecture-authoring/SKILL.md`.
-- [ ] `migrate_command.py`'s `.clasi/design/` references are reviewed
+- [x] `migrate_command.py`'s `.clasi/design/` references are reviewed
       individually — only literal instructional/default-path references
       are changed; legitimate migration-source-path literals (the old
       location migrate reads *from*) are left alone. Document which
       category each hit fell into in the PR/commit description.
-- [ ] Regression test: real captured payload, tier 1, write to a
+- [x] Regression test: real captured payload, tier 1, write to a
       custom-configured `design_dir` (e.g. `docs/design`) → allowed,
       reason `artifact-dir`; tier 1, write to a source path → still
       blocked.
-- [ ] End-to-end scenario test: a project configured with
+- [x] End-to-end scenario test: a project configured with
       `paths.design: docs/design` and no `protected_paths:` — a
       dispatched sprint-planner (tier 1) following `project-initiation`
       writes the three documents successfully, and the project's
       `initialize` transition (`overview_exists()`) recognizes them,
       advancing past `uninitialized`.
+
+## Implementation Notes
+
+**get_status has no design_dir field**: confirmed by inspecting
+`get_status`/`build_status`/`narrow_status` (src/clasi/tools/process_tools.py,
+src/clasi/status/__init__.py) — no MCP-facing field reports
+`Project.design_dir`. Every instructional replacement therefore tells
+the reader to resolve `paths.design` from the `paths:` map in
+`.clasi/config.yaml` directly (default `docs/design/` when the file or
+key is absent), rather than pointing at a nonexistent `get_status`
+field.
+
+**Files changed (plugin source, `src/clasi/plugin/`)**:
+`skills/project-initiation/SKILL.md`,
+`instructions/software-engineering.md` (2 literal hits, plus the
+Directory Layout ASCII tree, which showed the same wrong
+`.clasi/design/overview.md` default and would have self-contradicted
+the fixed prose two sections above it — updated for consistency even
+though it wasn't a literal grep hit),
+`agents/sprint-planner/plan-sprint.md`, `agents/sprint-planner/agent.md`,
+`agents/team-lead/project-status.md`, `skills/sprint-roadmap/SKILL.md`,
+`skills/project-status/SKILL.md`, `skills/architecture-authoring/SKILL.md`.
+
+**`migrate_command.py` — single hit, reviewed, left unchanged**: line 67,
+`CANDIDATE_LOCATIONS["design"] = [".clasi/design", "docs/clasi/design"]`.
+Per the module's own docstring ("Destinations are always resolved live
+from the Project object"), this table lists legacy/alternate *source*
+locations `clasi migrate` moves artifacts *from* — never a
+current/target instructional path. This is exactly the "legitimate
+migration-source-path literal" category the ticket calls out; no change
+made.
+
+**Installed-copy convention (checked `src/clasi/platforms/claude.py`
+and the sprint 022/021 commit history, e.g. b52c63f, 248048c)**: skills
+are installed as a tracked canonical copy at
+`.agents/skills/<name>/SKILL.md` (git-tracked, dogfooded in this repo)
+aliased via symlink at `.claude/skills/<name>/SKILL.md`
+(`.claude/` is entirely gitignored). Agents have no tracked canonical
+mirror — `.claude/agents/<name>/*.md` are gitignored direct copies of
+`src/clasi/plugin/agents/<name>/*.md` with nothing else tracking them.
+Applied accordingly: propagated the same fix into the four affected
+`.agents/skills/*/SKILL.md` canonical copies
+(`project-initiation`, `sprint-roadmap`, `project-status`,
+`architecture-authoring` — targeted edits only, not a full
+reconciliation of `architecture-authoring`'s unrelated pre-existing
+drift from plugin source found while diffing) so `.claude/skills/*`
+picks them up live via the symlink; also refreshed the three
+gitignored `.claude/agents/*.md` copies by re-copying the fixed plugin
+source over them (mirrors what `clasi init`'s installer does) purely
+for this session's own live agent-definition consistency — these are
+untracked and not part of the commit.
+
+**Bonus (adjacent, not in the ticket's file list)**: `README.md:91`
+carried the identical `.clasi/design/overview.md` claim in
+user-facing top-level documentation. Fixed for consistency with the
+rest of this pass.
 
 ## Implementation Plan
 

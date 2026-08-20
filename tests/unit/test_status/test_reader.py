@@ -680,6 +680,31 @@ class TestOverviewExists:
         assert not project.design_dir.exists()
         assert reader.overview_exists() is False
 
+    def test_true_with_custom_configured_design_dir(self, tmp_path: Path) -> None:
+        """Ticket 026-005: overview_exists() must follow a NON-default
+        paths.design config value, not just the docs/design/ default
+        exercised above. This is the reader-side half of the
+        "configured-path agreement" the ticket closes — a write into
+        whatever design_dir a project actually configures must be seen
+        by the SAME predicate that gates the `initialize` transition.
+        """
+        _git_init(tmp_path)
+        (tmp_path / ".clasi").mkdir()
+        (tmp_path / ".clasi" / "config.yaml").write_text(
+            "process: se\npaths:\n  design: documentation/design-docs\n",
+            encoding="utf-8",
+        )
+        _git_commit(tmp_path, "initial")
+
+        project = Project(tmp_path)
+        assert project.design_dir == tmp_path / "documentation" / "design-docs"
+
+        project.design_dir.mkdir(parents=True, exist_ok=True)
+        (project.design_dir / "overview.md").write_text("# Overview\n")
+
+        reader = ClasiStateReader(project)
+        assert reader.overview_exists() is True
+
 
 # ---------------------------------------------------------------------------
 # sprint_artifact_exists
