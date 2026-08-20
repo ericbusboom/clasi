@@ -24,6 +24,7 @@ issues:
 - hook-payload-typed-ingress-and-replay-corpus.md
 - mcp-2-breaks-every-fresh-install.md
 - stop-sh-teardown-gated-on-run-id.md
+- role-guard-cannot-see-done-tickets.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
