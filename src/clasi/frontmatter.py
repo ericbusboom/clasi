@@ -12,6 +12,9 @@ Frontmatter is delimited by --- lines at the top of a file:
 Implemented using the python-frontmatter package.
 """
 
+import os
+import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -73,29 +76,45 @@ def _parse(
     post = _fm.loads(content)
     metadata = dict(post.metadata)
 
-    if not metadata:
-        # No frontmatter or empty frontmatter — fall back to raw parse
-        # to return the full content as body (matching original behaviour).
-        end = content.find("---", 3)
-        if end == -1:
-            return {}, content
-        end_of_line = content.find("\n", end)
-        if end_of_line == -1:
-            end_of_line = len(content)
-        body = content[end_of_line + 1:]
-        return {}, body
-
     # Locate the body start in the raw content so we return exactly
     # what follows the closing ---, including any leading/trailing newlines.
-    end = content.find("---", 3)
-    if end == -1:
+    # This is line-anchored: only a line that is *exactly* "---" (modulo a
+    # trailing \r for CRLF files) closes the fence. A "---" that merely
+    # appears somewhere inside a frontmatter value (a multi-line scalar, a
+    # markdown horizontal rule folded into a quoted string, etc.) must not
+    # be mistaken for the closing delimiter — doing so mis-slices the body,
+    # and the next write would persist that corruption to disk.
+    body_start = _find_body_start(content)
+    if body_start == -1:
+        # No line-anchored closing fence found — fall back to raw parse,
+        # returning the full content as body (matching original behaviour
+        # for e.g. a fence with no closing "---" line at all).
         return {}, content
-    end_of_line = content.find("\n", end)
-    if end_of_line == -1:
-        end_of_line = len(content)
-    body = content[end_of_line + 1:]
 
+    body = content[body_start:]
     return metadata, body
+
+
+def _find_body_start(content: str) -> int:
+    """Return the index in ``content`` where the frontmatter body begins.
+
+    Scans line-by-line, starting after the opening ``---`` line, for the
+    first line that is *exactly* ``---`` (ignoring a trailing ``\\r`` for
+    CRLF files). Returns the index of the character immediately following
+    that line's terminator (i.e. where the body starts), or -1 if no such
+    line is found.
+    """
+    lines = content.splitlines(keepends=True)
+    if not lines:
+        return -1
+
+    pos = len(lines[0])  # Skip past the opening fence line.
+    for line in lines[1:]:
+        pos += len(line)
+        if line.rstrip("\r\n") == "---":
+            return pos
+
+    return -1
 
 
 def read_frontmatter(path: str | Path) -> dict[str, Any]:
@@ -123,7 +142,44 @@ def write_frontmatter(path: str | Path, data: dict[str, Any]) -> None:
 
 
 def _write_document(path: Path, data: dict[str, Any], body: str) -> None:
-    """Write frontmatter + body to path in the canonical format."""
-    yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False).strip()
+    """Write frontmatter + body to path in the canonical format, atomically.
+
+    Writes the full content to a temp file in the *same directory* as
+    ``path`` (so ``os.replace`` — atomic only within a filesystem — is
+    guaranteed to land on the same filesystem), then atomically replaces
+    ``path`` with it. A crash or exception at any point before the
+    ``os.replace`` call leaves the original file completely untouched,
+    instead of the previous truncate-in-place ``write_text`` which could
+    leave a half-written, corrupt file on disk.
+
+    Preserves the existing file's permission bits, if any — a plain
+    ``os.replace`` would otherwise hand the destination path the temp
+    file's (umask-derived) permissions.
+
+    Uses ``yaml.safe_dump`` rather than ``yaml.dump`` — the frontmatter
+    values passed here always originate from data previously loaded as
+    YAML (or plain JSON-compatible dicts), so there is no legitimate need
+    for ``yaml.dump``'s unsafe Python-object tags.
+    """
+    yaml_str = yaml.safe_dump(data, default_flow_style=False, sort_keys=False).strip()
     content = f"---\n{yaml_str}\n---\n{body}"
-    path.write_text(content, encoding="utf-8")
+
+    existing_mode: int | None = None
+    if path.exists():
+        existing_mode = stat.S_IMODE(path.stat().st_mode)
+
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        if existing_mode is not None:
+            os.chmod(tmp_path, existing_mode)
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
