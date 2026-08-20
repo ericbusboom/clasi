@@ -15,13 +15,42 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from clasi.schemas import loader as _loader
-from clasi.schemas.graph import ArtifactGraph as _ArtifactGraph
-
 _logger = _logging.getLogger(__name__)
 
-_schema_path = _res.files("clasi.schemas").joinpath("se-process", "schema.yaml")
-PHASES = _ArtifactGraph(_loader.load(_schema_path)).phases()
+# PHASES is computed lazily -- see __getattr__ below (sprint 027 / ticket
+# 003). Computing it eagerly here required `from clasi.schemas import
+# loader` and `from clasi.schemas.graph import ArtifactGraph`, both of
+# which import the Pydantic-backed `clasi.schemas.models`/`.loader`
+# submodules directly (about 60-70ms of import cost, measured via
+# `python -X importtime`) -- paid on EVERY import of this module, even
+# though nothing in StateDB's own read methods (get_lock_holder,
+# get_sprint_state, get_oop, ...) ever touches PHASES. Only
+# `advance_phase` (here) and the sprint-lifecycle tooling in
+# `tools/artifact_tools.py` (advance_phase-adjacent phase-index checks)
+# actually need it -- neither runs on the read-only status-inject hot
+# path, which imports this module solely for `StateDB`'s read methods
+# via `_oop_db_record`/`project.db`.
+_PHASES_CACHE: list[str] | None = None
+
+
+def _compute_phases() -> list[str]:
+    global _PHASES_CACHE
+    if _PHASES_CACHE is None:
+        from clasi.schemas import loader as _loader
+        from clasi.schemas.graph import ArtifactGraph as _ArtifactGraph
+
+        schema_path = _res.files("clasi.schemas").joinpath(
+            "se-process", "schema.yaml"
+        )
+        _PHASES_CACHE = _ArtifactGraph(_loader.load(schema_path)).phases()
+    return _PHASES_CACHE
+
+
+def __getattr__(name: str):
+    """PEP 562 lazy resolution for :data:`PHASES` -- see comment above."""
+    if name == "PHASES":
+        return _compute_phases()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 VALID_GATE_NAMES = {"architecture_review", "stakeholder_approval"}
 VALID_GATE_RESULTS = {"passed", "failed", "skipped"}
@@ -259,8 +288,9 @@ class StateDB:
             if current == "done":
                 raise ValueError(f"Sprint '{sprint_id}' is already done")
 
-            idx = PHASES.index(current)
-            next_phase = PHASES[idx + 1]
+            phases = _compute_phases()
+            idx = phases.index(current)
+            next_phase = phases[idx + 1]
 
             # Check gate requirements
             required_gate = _GATE_REQUIREMENTS.get(current)

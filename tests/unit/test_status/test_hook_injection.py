@@ -414,6 +414,153 @@ class TestGitCallAndLoadMachineCountCollapse:
 
 
 # ---------------------------------------------------------------------------
+# Git-subprocess-spawn collapse in a REAL git repo (sprint 027 / ticket 003)
+#
+# The class above (TestGitCallAndLoadMachineCountCollapse) runs its fixture
+# in a plain tmp_path with no .git at all, so ClasiStateReader's new
+# ref-file fast path (git_branch/default_branch reading .git/HEAD and
+# .git/refs/remotes/origin/HEAD directly) never engages there — every
+# subprocess.run call in that test already goes through the pre-existing
+# fallback path unchanged. This class git-inits the same fixtures so the
+# fast path is actually exercised, matching how this repo (and any real
+# clone) looks on disk.
+# ---------------------------------------------------------------------------
+
+
+def _git_init_fixture(root):
+    """Turn *root* into a real git repo with a committed initial state and
+    a refs/remotes/origin/HEAD file, matching what a real clone looks like
+    on disk (see this repo's own .git/refs/remotes/origin/HEAD, which
+    reads exactly `ref: refs/remotes/origin/master`). Writing the ref file
+    directly avoids needing an actual network remote for the test."""
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=root, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=root, check=True, capture_output=True,
+    )
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=root, check=True, capture_output=True,
+    )
+    origin_dir = root / ".git" / "refs" / "remotes" / "origin"
+    origin_dir.mkdir(parents=True)
+    (origin_dir / "HEAD").write_text(
+        "ref: refs/remotes/origin/master\n", encoding="utf-8",
+    )
+
+
+class TestGitSpawnCollapseInRealRepo:
+    def test_zero_git_subprocess_spawns_for_realistic_fixture(self, tmp_path):
+        """With a real git repo (attached HEAD + refs/remotes/origin/HEAD
+        present, matching this project's own on-disk shape), git_branch()
+        and default_branch() both answer from their ref-file fast path —
+        the sprint's under-200ms target requires this to actually be 0,
+        not just <=3 (the bound the non-git fixture above still checks,
+        for the fallback path's own behavior)."""
+        _build_realistic_multi_sprint_fixture(tmp_path)
+        _git_init_fixture(tmp_path)
+
+        real_run = subprocess.run
+        calls: list[tuple] = []
+
+        def counting_run(cmd, **kwargs):
+            calls.append(tuple(cmd))
+            return real_run(cmd, **kwargs)
+
+        with patch("clasi.status.reader.subprocess.run", side_effect=counting_run):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output != ""
+        assert len(calls) == 0, f"expected 0 git subprocess calls, got {calls}"
+
+    def test_zero_git_subprocess_spawns_for_closed_archived_fixture(self, tmp_path):
+        """Same assertion against the fixture that mirrors this repo's
+        actual on-disk shape (6 archived status:closed sprints + 1
+        executing) — the fixture ticket 007 built to reproduce the
+        exclude_done leak this repo hit for real."""
+        _build_fixture_with_closed_status_archived_sprints(tmp_path)
+        _git_init_fixture(tmp_path)
+
+        real_run = subprocess.run
+        calls: list[tuple] = []
+
+        def counting_run(cmd, **kwargs):
+            calls.append(tuple(cmd))
+            return real_run(cmd, **kwargs)
+
+        with patch("clasi.status.reader.subprocess.run", side_effect=counting_run):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output != ""
+        assert len(calls) == 0, f"expected 0 git subprocess calls, got {calls}"
+
+    def test_programmer_agent_also_zero_git_subprocess_spawns(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+        _git_init_fixture(tmp_path)
+
+        real_run = subprocess.run
+        calls: list[tuple] = []
+
+        def counting_run(cmd, **kwargs):
+            calls.append(tuple(cmd))
+            return real_run(cmd, **kwargs)
+
+        with patch("clasi.status.reader.subprocess.run", side_effect=counting_run):
+            output = _run_status_inject(tmp_path, agent="programmer")
+
+        assert output != ""
+        assert len(calls) == 0, f"expected 0 git subprocess calls, got {calls}"
+
+
+# ---------------------------------------------------------------------------
+# clasi.schemas / pydantic not imported by the status-inject hot path
+# (sprint 027 / ticket 003)
+#
+# state_db_class.PHASES used to be computed eagerly at module-import time
+# via `from clasi.schemas.graph import ArtifactGraph` + `from clasi.schemas
+# import loader` -- about 60-70ms of Pydantic import cost (measured via
+# `python -X importtime`) paid on every hook invocation that touches
+# project.db (i.e. essentially all of them), even though PHASES is only
+# used by advance_phase/close_sprint's write path, never by a read-only
+# status build. clasi/schemas/__init__.py itself also used to eagerly
+# import .graph/.models for its own re-exports, which meant even
+# state_machine.loader's unrelated resource-path lookup
+# (importlib.resources.files("clasi.schemas")) paid the same cost. Both
+# were made lazy (PEP 562 module __getattr__); this test proves the status-
+# inject path no longer triggers either.
+# ---------------------------------------------------------------------------
+
+
+class TestSchemasNotImportedOnStatusInjectHotPath:
+    def test_pydantic_not_imported_by_real_status_inject(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        purged = {}
+        for name in list(sys.modules):
+            if name == "pydantic" or name.startswith("pydantic."):
+                purged[name] = sys.modules.pop(name)
+            if name == "clasi.schemas.graph" or name == "clasi.schemas.models":
+                purged[name] = sys.modules.pop(name)
+        try:
+            output = _run_status_inject(tmp_path, agent="team-lead")
+            assert output != ""
+            assert "pydantic" not in sys.modules, (
+                "status-inject must not eagerly import pydantic -- it is "
+                "only needed by state_db_class.PHASES (advance_phase's "
+                "write path), never by a read-only status build"
+            )
+            assert "clasi.schemas.graph" not in sys.modules
+            assert "clasi.schemas.models" not in sys.modules
+        finally:
+            sys.modules.update(purged)
+
+
+# ---------------------------------------------------------------------------
 # done/ exclusion at the hook level (fix 1)
 # ---------------------------------------------------------------------------
 

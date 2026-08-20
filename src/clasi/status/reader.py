@@ -18,6 +18,15 @@ As of sprint 026, the git-subprocess-backed methods (``git_branch``,
 :meth:`ClasiStateReader._run_git` — never across instances or processes.
 Every other method remains an uncached direct read on every call.
 
+As of sprint 027, ``git_branch`` and ``default_branch`` additionally try
+a direct loose-file read (``.git/HEAD`` / ``.git/refs/remotes/origin/HEAD``)
+before falling back to the subprocess path — see
+:meth:`ClasiStateReader._git_branch_fast` /
+:meth:`ClasiStateReader._default_branch_fast`. The fallback, when taken,
+is still memoized exactly as before. ``branch_merged`` is unchanged — it
+always spawns a real ``git`` subprocess (a merge-base/ancestry check is
+not a single ref-file read).
+
 Data sources per method
 -----------------------
 
@@ -25,8 +34,8 @@ Data sources per method
 | Method                     | Source           |
 +============================+==================+
 | file_exists                | Filesystem       |
-| git_branch                 | git subprocess   |
-| default_branch             | git subprocess   |
+| git_branch                 | .git/HEAD*       |
+| default_branch             | .git/refs/*HEAD  |
 | execution_lock             | StateDB          |
 | sprint_phase               | StateDB          |
 | sprint_gate                | StateDB          |
@@ -50,6 +59,10 @@ Data sources per method
 | sprint_artifact_exists     | Filesystem       |
 | ticket_file_present        | Filesystem       |
 +----------------------------+------------------+
+
+``*`` — fast path is a direct ref-file read; falls back to the git
+subprocess call (memoized, as before) whenever it can't confidently
+answer. See the sprint-027 paragraph above.
 """
 
 from __future__ import annotations
@@ -60,6 +73,24 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from clasi.project import Project
+
+# Sentinel distinguishing "not yet resolved" from "resolved to None" in
+# ClasiStateReader._git_dir()'s memoization -- None is itself a valid
+# resolved value (no .git found at all).
+_UNSET = object()
+
+_HEADS_PREFIX = "refs/heads/"
+_ORIGIN_HEAD_PREFIX = "refs/remotes/origin/"
+
+
+def _looks_like_object_id(text: str) -> bool:
+    """Return True if *text* looks like a full git object id (SHA-1/SHA-256).
+
+    Used to recognize a detached-HEAD ``.git/HEAD`` payload (a raw hex
+    object id) as opposed to a symbolic ref line or unrecognized content
+    this module should not guess about.
+    """
+    return len(text) in (40, 64) and all(c in "0123456789abcdef" for c in text.lower())
 
 
 class ClasiStateReader:
@@ -84,6 +115,9 @@ class ClasiStateReader:
         # ``is_on_sprint_branch`` invoking ``git_branch()`` once per state/
         # transition it's checked against) into a single subprocess call.
         self._git_cache: dict[tuple[str, ...], "subprocess.CompletedProcess[str]"] = {}
+        # Resolved real git-directory, memoized per instance (sprint 027 /
+        # ticket 003) — see _git_dir().
+        self._git_dir_cache: "Path | None | object" = _UNSET
 
     def _run_git(self, *args: str) -> "subprocess.CompletedProcess[str]":
         """Run ``git <args>`` in the project root, memoized per instance.
@@ -102,6 +136,132 @@ class ClasiStateReader:
                 text=True,
             )
         return self._git_cache[args]
+
+    # ------------------------------------------------------------------
+    # Git-directory / ref-file fast path (sprint 027 / ticket 003)
+    #
+    # git_branch() and default_branch() answer questions git itself
+    # resolves by reading a loose ref file (no repository-wide history
+    # walk involved) — HEAD's symref for the current branch, and
+    # refs/remotes/origin/HEAD's symref for the configured default
+    # branch. Reading those files directly avoids spawning a `git`
+    # subprocess entirely for the common case (about 20-30ms of process-
+    # creation overhead per spawn on this machine, per 026/007's own
+    # Measurement Notes), while falling back to the exact same
+    # subprocess-based method used before whenever the fast path can't
+    # confidently produce the answer (missing file, unreadable, or
+    # unrecognized content) — so behavior for every edge case the
+    # subprocess path already handled (non-git directory, detached HEAD,
+    # no remote configured, ...) is unchanged.
+    #
+    # branch_merged() is NOT given a fast path: `git branch --merged
+    # <default>` is a real ancestry/merge-base computation over the full
+    # commit graph (loose objects + packfiles + packed-refs), not a
+    # single ref-file read — reimplementing that from raw git internals
+    # would risk exactly the "keep behavior identical" divergence this
+    # ticket must avoid, for a call that (per profiling) only fires for
+    # sprint states other than "executing" anyway.
+    # ------------------------------------------------------------------
+
+    def _git_dir(self) -> "Path | None":
+        """Resolve and memoize this project's real git directory.
+
+        Handles both a normal repository (``.git`` is a directory) and a
+        linked worktree or submodule (``.git`` is a file containing a
+        ``gitdir: <path>`` pointer, per git's own convention). Returns
+        ``None`` if neither form is found — callers treat that as "fall
+        back to the git subprocess", which itself already returns a safe
+        default for a non-git directory.
+
+        Memoized per instance: the answer cannot change within a single
+        hook invocation's lifetime (same cache-lifetime contract as
+        ``_git_cache`` above).
+        """
+        if self._git_dir_cache is _UNSET:
+            self._git_dir_cache = self._resolve_git_dir()
+        return self._git_dir_cache  # type: ignore[return-value]
+
+    def _resolve_git_dir(self) -> "Path | None":
+        dot_git = self._project.root / ".git"
+        try:
+            if dot_git.is_dir():
+                return dot_git
+            if dot_git.is_file():
+                text = dot_git.read_text(encoding="utf-8").strip()
+                if text.startswith("gitdir:"):
+                    pointer = text[len("gitdir:"):].strip()
+                    pointer_path = Path(pointer)
+                    if not pointer_path.is_absolute():
+                        pointer_path = (self._project.root / pointer_path).resolve()
+                    if pointer_path.is_dir():
+                        return pointer_path
+        except Exception:
+            pass
+        return None
+
+    def _read_ref_file(self, relative_path: str) -> "str | None":
+        """Read a loose ref/HEAD file directly, bypassing a git spawn.
+
+        Returns the stripped file content, or ``None`` if the git
+        directory can't be resolved, the file doesn't exist, or it can't
+        be read. ``None`` must always be treated by callers as "fall
+        back to the subprocess-based path" — never as a semantic result
+        (an empty/missing ref is not the same thing as "detached" or
+        "no remote", which are decided by the *fallback* method's own
+        established semantics).
+        """
+        git_dir = self._git_dir()
+        if git_dir is None:
+            return None
+        try:
+            path = git_dir / relative_path
+            if not path.is_file():
+                return None
+            return path.read_text(encoding="utf-8").strip()
+        except Exception:
+            return None
+
+    def _git_branch_fast(self) -> "str | None":
+        """Resolve the current branch name from ``.git/HEAD`` directly.
+
+        Mirrors ``git branch --show-current``'s own output exactly:
+        attached HEAD returns the branch name; detached HEAD returns
+        ``""``. Returns ``None`` (never a guess) whenever the file's
+        content isn't one of those two recognized shapes, so the caller
+        falls back to the real subprocess call.
+        """
+        content = self._read_ref_file("HEAD")
+        if content is None:
+            return None
+        if content.startswith("ref:"):
+            ref = content[len("ref:"):].strip()
+            if ref.startswith(_HEADS_PREFIX):
+                return ref[len(_HEADS_PREFIX):]
+            return None  # symref outside refs/heads/ — don't guess
+        if _looks_like_object_id(content):
+            return ""  # detached HEAD, matches --show-current's empty output
+        return None
+
+    def _default_branch_fast(self) -> "str | None":
+        """Resolve the default branch from ``refs/remotes/origin/HEAD``.
+
+        That ref is always a symbolic ref when it exists at all (git
+        never packs symrefs — only direct/OID refs go into
+        ``packed-refs``), so a direct loose-file read is safe whenever
+        the file is present. Returns ``None`` (never a guess, e.g. never
+        "master") when the file is absent or unrecognized, so the caller
+        falls back to the real subprocess call and its own established
+        "master" fallback.
+        """
+        content = self._read_ref_file("refs/remotes/origin/HEAD")
+        if content is None:
+            return None
+        if not content.startswith("ref:"):
+            return None
+        ref = content[len("ref:"):].strip()
+        if ref.startswith(_ORIGIN_HEAD_PREFIX):
+            return ref[len(_ORIGIN_HEAD_PREFIX):]
+        return ref
 
     # ------------------------------------------------------------------
     # Filesystem methods
@@ -156,12 +316,19 @@ class ClasiStateReader:
     def git_branch(self) -> str:
         """Return the current git branch name.
 
-        Source: ``git branch --show-current`` in ``project.root``.
-        Returns ``""`` on any subprocess or decode error.
+        Source: a direct read of ``.git/HEAD`` (fast path — see
+        :meth:`_git_branch_fast`) when that can confidently answer;
+        otherwise falls back to ``git branch --show-current`` in
+        ``project.root``, exactly as before. Returns ``""`` on any
+        subprocess or decode error, or for a detached HEAD.
 
-        Memoized per instance via :meth:`_run_git` — repeated calls within
-        one reader's lifetime shell out once.
+        The fallback subprocess call is memoized per instance via
+        :meth:`_run_git` — repeated calls within one reader's lifetime
+        shell out at most once.
         """
+        fast = self._git_branch_fast()
+        if fast is not None:
+            return fast
         try:
             result = self._run_git("branch", "--show-current")
             if result.returncode != 0:
@@ -173,17 +340,26 @@ class ClasiStateReader:
     def default_branch(self) -> str:
         """Return the repository default branch name.
 
-        Source: ``git symbolic-ref refs/remotes/origin/HEAD`` with a
-        fallback to ``"master"`` if the remote reference is not set.
+        Source: a direct read of ``.git/refs/remotes/origin/HEAD`` (fast
+        path — see :meth:`_default_branch_fast`) when that file exists
+        and resolves cleanly; otherwise falls back to ``git symbolic-ref
+        refs/remotes/origin/HEAD`` exactly as before, with a fallback to
+        ``"master"`` if the remote reference is not set.
 
         Resolution order:
-        1. ``git symbolic-ref refs/remotes/origin/HEAD`` → strip
+        1. Direct read of ``refs/remotes/origin/HEAD`` under the
+           resolved git directory → strip ``refs/remotes/origin/`` prefix.
+        2. ``git symbolic-ref refs/remotes/origin/HEAD`` → strip
            ``refs/remotes/origin/`` prefix.
-        2. Fall back to ``"master"``.
+        3. Fall back to ``"master"``.
 
-        Memoized per instance via :meth:`_run_git` — repeated calls within
-        one reader's lifetime shell out once.
+        The fallback subprocess call is memoized per instance via
+        :meth:`_run_git` — repeated calls within one reader's lifetime
+        shell out at most once.
         """
+        fast = self._default_branch_fast()
+        if fast is not None:
+            return fast
         try:
             result = self._run_git("symbolic-ref", "refs/remotes/origin/HEAD")
             if result.returncode == 0:
