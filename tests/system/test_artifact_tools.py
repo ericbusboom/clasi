@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -197,13 +198,17 @@ class TestCreateTicket:
         assert "`uv run pytest`" in content
 
     def test_invalid_sprint(self, work_dir):
-        with pytest.raises(ValueError, match="not found"):
-            create_ticket("999", "Orphan")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(create_ticket("999", "Orphan"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
     def test_blocked_before_ticketing_phase(self, work_dir):
         create_sprint("My Sprint")
-        with pytest.raises(ValueError, match="roadmap.*phase"):
-            create_ticket("001", "Too Early")
+        result = json.loads(create_ticket("001", "Too Early"))
+        assert result["ok"] is False
+        assert re.search("roadmap.*phase", result["error"]["message"])
 
     def test_auto_links_single_sprint_issue_when_no_issue_param(self, work_dir):
         """create_ticket without issue param auto-links the sole sprint todo.
@@ -342,6 +347,15 @@ class TestListTickets:
         result = json.loads(list_tickets(status="done"))
         assert len(result) == 0
 
+    def test_unknown_sprint_id_returns_error_not_empty_list(self, work_dir):
+        """sprint 030/005 (SUC-005): a typo'd/unknown sprint_id must return
+        the uniform {"ok": false, "error": ...} envelope, not `[]` -- which
+        looked exactly like "sprint exists, has no tickets"."""
+        create_sprint("Sprint")
+        result = json.loads(list_tickets(sprint_id="999"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
+
 
 class TestGetSprintStatus:
     def test_status_with_tickets(self, work_dir):
@@ -356,8 +370,9 @@ class TestGetSprintStatus:
         assert result["tickets"]["done"] == 0
 
     def test_not_found(self, work_dir):
-        with pytest.raises(ValueError, match="not found"):
-            get_sprint_status("999")
+        result = json.loads(get_sprint_status("999"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
     def test_worktree_defaults_false(self, work_dir):
         create_sprint("Sprint")
@@ -389,8 +404,9 @@ class TestUpdateTicketStatus:
         create_sprint("Sprint")
         _advance_to_ticketing(work_dir, "001")
         ticket = json.loads(create_ticket("001", "Task"))
-        with pytest.raises(ValueError, match="Invalid status"):
-            update_ticket_status(ticket["path"], "invalid")
+        result = json.loads(update_ticket_status(ticket["path"], "invalid"))
+        assert result["ok"] is False
+        assert "Invalid status" in result["error"]["message"]
 
 
 class TestMoveTicketToDone:
@@ -504,8 +520,9 @@ class TestInsertSprint:
         # Advance Beta (002) past planning-docs
         _advance_to_ticketing(work_dir, "002")
 
-        with pytest.raises(ValueError, match="cannot be renumbered"):
-            insert_sprint("001", "Urgent")
+        result = json.loads(insert_sprint("001", "Urgent"))
+        assert result["ok"] is False
+        assert "cannot be renumbered" in result["error"]["message"]
 
     def test_insert_with_tickets_updates_references(self, work_dir):
         create_sprint("Alpha")
@@ -517,13 +534,15 @@ class TestInsertSprint:
         create_ticket("002", "Task B")
 
         # Now insert after Alpha — but Beta is in ticketing phase, should fail
-        with pytest.raises(ValueError, match="cannot be renumbered"):
-            insert_sprint("001", "Inserted")
+        result = json.loads(insert_sprint("001", "Inserted"))
+        assert result["ok"] is False
+        assert "cannot be renumbered" in result["error"]["message"]
 
     def test_insert_after_nonexistent_sprint(self, work_dir):
         create_sprint("Alpha")
-        with pytest.raises(ValueError, match="not found"):
-            insert_sprint("999", "Ghost")
+        result = json.loads(insert_sprint("999", "Ghost"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
     def test_new_sprint_has_full_structure(self, work_dir):
         """Single-doc model: insert_sprint writes only sprint.md (+ tickets dirs)."""
@@ -643,16 +662,18 @@ class TestCloseSprintEdgeCases:
         assert "done" in result["new_path"]
 
     def test_close_nonexistent_sprint(self, work_dir):
-        with pytest.raises(ValueError, match="not found"):
-            close_sprint("999")
+        result = json.loads(close_sprint("999"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
     def test_close_destination_already_exists(self, work_dir):
         create_sprint("Sprint")
         done_dir = work_dir / ".clasi" / "sprints" / "done"
         done_dir.mkdir(parents=True)
         (done_dir / "001-sprint").mkdir()
-        with pytest.raises(ValueError, match="already exists"):
-            close_sprint("001")
+        result = json.loads(close_sprint("001"))
+        assert result["ok"] is False
+        assert "already exists" in result["error"]["message"]
 
 
 class TestMoveTicketToDoneEdgeCases:
@@ -686,8 +707,9 @@ class TestMoveTicketToDoneEdgeCases:
         assert Path(result["new_path"]).exists()
 
     def test_ticket_not_found(self, work_dir):
-        with pytest.raises(ValueError, match="not found"):
-            move_ticket_to_done("/nonexistent/ticket.md")
+        result = json.loads(move_ticket_to_done("/nonexistent/ticket.md"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
     def test_resolves_done_path_for_already_moved_ticket(self, work_dir):
         """If ticket is already in done/, resolve_artifact_path still finds it."""
@@ -824,9 +846,11 @@ class TestReopenTicket:
         assert fm["status"] == "open"
 
     def test_ticket_not_found_raises_error(self, work_dir):
-        """Nonexistent ticket raises ValueError."""
-        with pytest.raises(ValueError, match="Ticket not found"):
-            reopen_ticket("/nonexistent/ticket.md")
+        """Nonexistent ticket returns an {"ok": false, "error": ...} envelope
+        (sprint 030/005: @clasi_tool converts the domain ValueError)."""
+        result = json.loads(reopen_ticket("/nonexistent/ticket.md"))
+        assert result["ok"] is False
+        assert "Ticket not found" in result["error"]["message"]
 
     def test_reopen_preserves_other_frontmatter(self, work_dir):
         """Reopening preserves fields like title, id, use-cases."""
@@ -1111,6 +1135,54 @@ class TestCloseSprintFull:
         assert "precondition_verification" in result["completed_steps"]
         assert "tests" not in result["completed_steps"]
         assert result["error"]["recovery"]["instruction"] is not None
+
+    @patch("clasi.worktree.reconcile_worktrees")
+    @patch("clasi.tools.artifact_tools.create_version_tag")
+    @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
+    @patch("subprocess.run")
+    def test_test_command_skip_sentinel_actually_skips_tests(
+        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+    ):
+        """sprint 030/005: test_command="SKIP" is the explicit, documented
+        sentinel that actually skips the tests step -- replacing the
+        unreachable test_command="" mechanism. Proven two ways: (1) no
+        subprocess.run call is ever given pytest-shaped output/mocked as
+        the test run (the side_effect list below has no "tests" entry at
+        all -- if the tests step ran, the sequence would desync and the
+        next assertion on git["merged"] would fail against the wrong mock
+        result, or the side_effect iterator would raise StopIteration);
+        (2) the "repairs" list names the "SKIP" sentinel explicitly.
+        """
+        create_sprint("Sprint")
+        _advance_to_executing(work_dir, "001")
+        ticket = json.loads(create_ticket("001", "Task"))
+        update_ticket_status(ticket["path"], "done")
+        move_ticket_to_done(ticket["path"])
+
+        # No "pytest" entry -- the tests step must never call subprocess.run.
+        mock_run.side_effect = [
+            self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
+            self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
+            self._make_subprocess_result(0),  # git commit (version bump)
+            self._make_subprocess_result(0, ""),  # git status --porcelain .clasi.db (clean)
+            self._make_subprocess_result(0),  # git rev-parse --verify branch (merge check)
+            self._make_subprocess_result(1),  # git merge-base --is-ancestor (not yet merged)
+            self._make_subprocess_result(0),  # git rebase master sprint/001-sprint
+            self._make_subprocess_result(0),  # git checkout master
+            self._make_subprocess_result(0),  # git merge --no-ff
+            self._make_subprocess_result(0),  # git push --tags
+            self._make_subprocess_result(0),  # git rev-parse --verify branch (delete check)
+            self._make_subprocess_result(0),  # git branch -d
+            self._make_subprocess_result(0, "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"),  # git worktree list --porcelain
+        ]
+        mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+
+        result = json.loads(
+            close_sprint("001", branch_name="sprint/001-sprint", test_command="SKIP")
+        )
+        assert result["status"] == "success", result
+        assert result["git"]["merged"] is True
+        assert 'skipped tests (test_command is "SKIP")' in result["repairs"]
 
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")

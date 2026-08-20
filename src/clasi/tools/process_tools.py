@@ -27,6 +27,7 @@ from clasi import __version__
 from clasi.frontmatter import read_document, read_frontmatter
 from clasi.mcp_server import server, content_path, get_project
 from clasi.skill_resolve import resolve_skill_body
+from clasi.tools._common import clasi_tool
 
 
 def _list_definitions(directory: Path) -> list[dict[str, str]]:
@@ -196,6 +197,7 @@ def get_se_overview() -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_agents() -> str:
     """List all available agent definitions.
 
@@ -206,6 +208,7 @@ def list_agents() -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_skills() -> str:
     """List all available skill definitions.
 
@@ -220,6 +223,7 @@ def list_skills() -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_instructions() -> str:
     """List all available instruction files.
 
@@ -229,6 +233,7 @@ def list_instructions() -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_agent_definition(name: str) -> str:
     """Get the full markdown content of a named agent definition.
 
@@ -259,6 +264,7 @@ def get_agent_definition(name: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_skill_definition(name: str) -> str:
     """Get the full markdown content of a named skill definition.
 
@@ -291,6 +297,7 @@ def get_skill_definition(name: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_instruction(name: str) -> str:
     """Get the full markdown content of a named instruction file.
 
@@ -301,6 +308,7 @@ def get_instruction(name: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_language_instructions() -> str:
     """List all available language instruction files.
 
@@ -310,6 +318,7 @@ def list_language_instructions() -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_language_instruction(language: str) -> str:
     """Get the full markdown content of a language instruction file.
 
@@ -366,6 +375,7 @@ ACTIVITY_GUIDES: dict[str, dict[str, list[str]]] = {
 
 
 @server.tool()
+@clasi_tool
 def get_activity_guide(activity: str) -> str:
     """Get tailored guidance for a specific SE activity.
 
@@ -423,6 +433,7 @@ def _parse_parent_refs(content: str) -> list[str]:
 
 
 @server.tool()
+@clasi_tool
 def get_use_case_coverage() -> str:
     """Report use case coverage across sprints.
 
@@ -496,6 +507,7 @@ def get_use_case_coverage() -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_version() -> str:
     """Return the installed CLASI package version.
 
@@ -531,6 +543,7 @@ def get_version() -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_status(
     agent: str = "team-lead",
     sprint_id: str | None = None,

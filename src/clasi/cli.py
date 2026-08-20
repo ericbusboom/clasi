@@ -318,7 +318,7 @@ def sprint() -> None:
 @click.option("--delete-branch/--no-delete-branch", default=True, show_default=True,
               help="Whether to delete the sprint branch after merge.")
 @click.option("--test-command", default=None,
-              help="Shell command to run tests. Pass empty string to skip.")
+              help='Shell command to run tests. Pass "SKIP" to skip.')
 def sprint_close(
     sprint_id: str,
     branch_name: str | None,

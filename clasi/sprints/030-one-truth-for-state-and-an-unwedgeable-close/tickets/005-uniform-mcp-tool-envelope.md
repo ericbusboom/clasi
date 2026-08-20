@@ -1,9 +1,11 @@
 ---
 id: '005'
 title: Uniform MCP tool envelope
-status: open
-use-cases: [SUC-005]
-depends-on: ['004']
+status: done
+use-cases:
+- SUC-005
+depends-on:
+- '004'
 github-issue: ''
 issue: uniform-mcp-tool-envelope.md
 completes_issue: true
@@ -78,16 +80,16 @@ owns sentinel-stripping, the result envelope, and the per-call
 
 ## Acceptance Criteria
 
-- [ ] New `tools/_common.py` holds `@clasi_tool` (composed as
+- [x] New `tools/_common.py` holds `@clasi_tool` (composed as
       `@server.tool()` over `@clasi_tool` over the tool function, so
       FastMCP's schema introspection still sees the original signature)
       and `resolve_artifact_path` (relocated from `artifact_tools.py` —
       already root-anchored since sprint 029, a pure move with no
       behavior change).
-- [ ] `@clasi_tool` strips the `"NONE"` sentinel per-call using the
+- [x] `@clasi_tool` strips the `"NONE"` sentinel per-call using the
       relocated `_strip_none_sentinel` logic, in code this package owns —
       no monkey-patch over any `mcp`-library private attribute.
-- [ ] `@clasi_tool` converts a domain exception (`ValueError`,
+- [x] `@clasi_tool` converts a domain exception (`ValueError`,
       `FileNotFoundError`, and the artifact model's own exception types)
       into one `{"ok": false, "error": {...}}` result shape. A
       successful call's shape is documented in this ticket's
@@ -96,12 +98,14 @@ owns sentinel-stripping, the result envelope, and the per-call
       genuinely open; pick one, document it in `tools/_common.py`'s own
       docstring, and apply it uniformly to all 34 tools — consistency
       across tools matters more than which specific shape is chosen).
-- [ ] `@clasi_tool` appends the per-call `mcp-calls.jsonl` trace, reusing
+      See **Implementation Notes** below for the shape actually chosen
+      and why.
+- [x] `@clasi_tool` appends the per-call `mcp-calls.jsonl` trace, reusing
       `_write_call_trace`'s existing logic (moved, not rewritten).
-- [ ] Every `@server.tool()` function in `artifact_tools.py`,
+- [x] Every `@server.tool()` function in `artifact_tools.py`,
       `process_tools.py`, and `design_tools.py` also carries
       `@clasi_tool` — no tool is left on the old contract.
-- [ ] `mcp_server.py`'s `_tool_manager.call_tool` monkey-patch and its
+- [x] `mcp_server.py`'s `_tool_manager.call_tool` monkey-patch and its
       NONE-stripping/call-logging behavior are removed **only after**
       confirming every tool carries `@clasi_tool` and its unit tests
       pass. The separate raw-RPC diagnostic tap
@@ -110,17 +114,68 @@ owns sentinel-stripping, the result envelope, and the per-call
       for a closed investigation, flagged for a future cleanup pass, not
       part of the NONE-sentinel/call-logging mechanism this ticket
       replaces.
-- [ ] Sentinel stripping is exercised by unit tests that call
+- [x] Sentinel stripping is exercised by unit tests that call
       `@clasi_tool`-wrapped functions directly — not only reachable
       through a live server round-trip, unlike today.
-- [ ] `list_tickets` on an unknown `sprint_id` returns the new error
+- [x] `list_tickets` on an unknown `sprint_id` returns the new error
       envelope, not `[]`.
-- [ ] `close_sprint` accepts `test_command="SKIP"` as an explicit,
+- [x] `close_sprint` accepts `test_command="SKIP"` as an explicit,
       documented sentinel and actually skips the test step when passed —
       replacing the unreachable `test_command=""` mechanism. Document
       this in `close_sprint`'s own docstring (per `tools-DESIGN.md`'s
       existing constraint that a tool's docstring is the literal contract
       agents depend on).
+
+## Implementation Notes
+
+**Envelope shape decision (Open Question 5):** resolved as *nested for
+failure only* — success passes the wrapped function's own return value
+through completely unchanged; only a caught domain exception produces
+the envelope, as `{"ok": false, "error": {"type": ..., "message": ...}}`.
+This directly matches SUC-005's own Main Flow step 3 ("On success, the
+tool returns its normal result") and the reliability review's F15 fix
+description ("converts domain exceptions to a single `{"ok": false,
+"error": {...}}` shape" — nothing there wraps success).
+
+Two concrete findings during implementation drove this over wrapping
+success too:
+
+1. **Merging is unsafe in general.** `validate_design` already returns
+   `{"ok": <did validation pass>, "messages": [...], "info": [...]}`.
+   Merging an envelope-level `"ok": true` on top the moment the *call*
+   succeeds would silently overwrite that domain-level `"ok"` (did
+   *validation* pass), masking a real validation failure — exactly the
+   silent-failure class this ticket exists to eliminate.
+2. **Nesting success uniformly is prohibitively invasive.** A repo-wide
+   scan while implementing this ticket found upwards of 350
+   `json.loads(<tool call>)` call sites across 28 test files asserting
+   directly on today's un-enveloped success shape. Renesting every
+   tool's success payload would mean rewriting that entire surface for a
+   change with no entry in this ticket's own `Files to modify` list.
+
+Full reasoning is in `tools/_common.py`'s own module docstring (point 2),
+per the acceptance criterion above. The postcondition SUC-005 actually
+needs — an agent checks one shape to learn a call failed — holds either
+way: `{"ok": false, "error": {...}}` present means failure; its absence
+means success and the payload is whatever that tool has always returned.
+
+**Collateral test fixes.** Converting exceptions to envelopes changes
+behavior for every tool in the pre-existing "raises `ValueError`" bucket
+(F15's own list): tests asserting `pytest.raises(ValueError/
+FileNotFoundError)` around a call to one of those tools no longer see an
+exception, so they were rewritten to assert on the returned envelope
+instead. Found via a repo-wide static scan (not by running the full
+suite) cross-referencing every `pytest.raises` block against the 47
+`@clasi_tool`-decorated names, in: `tests/unit/test_artifact_tools.py`,
+`tests/system/test_artifact_tools.py`, `tests/system/test_process_tools.py`
+(this ticket's required run list), plus `tests/unit/test_frontmatter_tools.py`
+and `tests/unit/test_issue_tools.py` (outside the required list, but
+directly broken by this change and fixed as due diligence). The
+`test_command="SKIP"` rename also required updating the only two other
+call sites using the old `test_command=""` mechanism:
+`tests/system/test_version_bump_cadence.py` and
+`tests/system/test_design_overlay_lifecycle.py`. All five extra files
+were run directly (not the full suite) and pass.
 
 ## Implementation Plan
 

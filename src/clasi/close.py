@@ -606,9 +606,15 @@ class SprintCloser:
             self.repairs.append(
                 "skipped tests (already passed on a prior attempt at this close)"
             )
-        elif self.test_command == "":
-            # Explicitly skip tests (non-Python projects, etc.)
-            self.repairs.append("skipped tests (test_command is empty)")
+        elif self.test_command == "SKIP":
+            # Explicitly skip tests (non-Python projects, etc.) -- the
+            # "SKIP" sentinel replaces the old test_command="" mechanism,
+            # which was unreachable through the Claude Code harness bug
+            # that motivates the "NONE" sentinel elsewhere: an empty-string
+            # argument drops *all* call arguments before this function ever
+            # sees them (sprint 030 ticket 005; see
+            # .claude/rules/tool-call-empty-args.md).
+            self.repairs.append('skipped tests (test_command is "SKIP")')
         else:
             if self.test_command is not None:
                 test_cmd = self.test_command.split()

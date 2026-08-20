@@ -16,11 +16,13 @@ import logging
 
 from clasi.design import validate
 from clasi.mcp_server import server, get_project
+from clasi.tools._common import clasi_tool
 
 logger = logging.getLogger("clasi.design_tools")
 
 
 @server.tool()
+@clasi_tool
 def validate_design(overlay_dir: str | None = None) -> str:
     """Validate the project's persistent design doc set.
 

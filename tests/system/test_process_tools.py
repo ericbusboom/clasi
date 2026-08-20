@@ -102,8 +102,11 @@ class TestLanguageInstructions:
         assert "pytest" in result
 
     def test_get_language_instruction_not_found(self):
-        with pytest.raises(ValueError, match="not found"):
-            get_language_instruction("nonexistent-language")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(get_language_instruction("nonexistent-language"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
 
 
 class TestActivityGuide:
@@ -113,8 +116,11 @@ class TestActivityGuide:
             assert f"Activity Guide: {activity}" in result
 
     def test_unknown_activity(self):
-        with pytest.raises(ValueError, match="Unknown activity"):
-            get_activity_guide("nonexistent")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(get_activity_guide("nonexistent"))
+        assert result["ok"] is False
+        assert "Unknown activity" in result["error"]["message"]
 
     def test_implementation_guide_contains_all_sections(self):
         result = get_activity_guide("implementation")

@@ -39,6 +39,7 @@ from clasi.templates import (
 )
 from clasi.ticket import Ticket
 from clasi.issue import Issue
+from clasi.tools._common import clasi_tool, resolve_artifact_path
 from clasi.versioning import (
     compute_next_version,
     create_version_tag,
@@ -50,44 +51,10 @@ from clasi.versioning import (
 
 logger = logging.getLogger("clasi.artifact")
 
-
-def resolve_artifact_path(path: str) -> Path:
-    """Find a file whether it's in its original location or a done/ subdirectory.
-
-    A relative *path* is anchored to ``project.root`` (not the process's
-    own cwd) before any existence check runs, so a natural root-relative
-    artifact path (e.g. a ticket path returned by another tool) resolves
-    correctly regardless of what directory the MCP server process happens
-    to be sitting in. Absolute paths are used as-is.
-
-    Resolution order:
-    1. Given path as-is
-    2. Insert done/ before the filename (e.g., tickets/001.md -> tickets/done/001.md)
-    3. Remove done/ from the path (e.g., tickets/done/001.md -> tickets/001.md)
-
-    Returns the resolved Path.
-    Raises FileNotFoundError if none of the candidates exist.
-    """
-    p = Path(path)
-    p = p if p.is_absolute() else get_project().root / p
-    if p.exists():
-        return p
-
-    # Try inserting done/ before the filename
-    with_done = p.parent / "done" / p.name
-    if with_done.exists():
-        return with_done
-
-    # Try removing done/ from the path
-    parts = p.parts
-    if "done" in parts:
-        without_done = Path(*[part for part in parts if part != "done"])
-        if without_done.exists():
-            return without_done
-
-    raise FileNotFoundError(
-        f"Artifact not found: {path} (also checked done/ variants)"
-    )
+# resolve_artifact_path moved to clasi.tools._common (sprint 030 ticket
+# 005), imported above -- re-exported here so `from
+# clasi.tools.artifact_tools import resolve_artifact_path` (existing
+# callers, existing tests) keeps working unchanged.
 
 
 
@@ -107,6 +74,7 @@ def resolve_artifact_path(path: str) -> Path:
 
 
 @server.tool()
+@clasi_tool
 def create_sprint(title: str) -> str:
     """Create a new sprint directory with a template sprint.md.
 
@@ -135,6 +103,7 @@ def create_sprint(title: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def detail_sprint(sprint_id: str) -> str:
     """Promote a roadmap sprint to detail planning.
 
@@ -216,6 +185,7 @@ def _derive_overlay_slug(project: Project, canonical_path: Path) -> str:
 
 
 @server.tool()
+@clasi_tool
 def seed_sprint_design_overlay(sprint_id: str, doc_names: Optional[list] = None) -> str:
     """Seed and commit pristine copies of canonical design docs into a sprint's overlay.
 
@@ -377,6 +347,7 @@ def _renumber_sprint_dir(sprint_dir: Path, old_id: str, new_id: str) -> Path:
 
 
 @server.tool()
+@clasi_tool
 def insert_sprint(after_sprint_id: str, title: str) -> str:
     """Insert a new sprint after the given sprint ID, renumbering subsequent sprints.
 
@@ -476,6 +447,7 @@ def insert_sprint(after_sprint_id: str, title: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def link_sprint_issues(sprint_id: str, issue_filenames: list[str]) -> str:
     """Establish bidirectional sprint↔issue links during the roadmap phase.
 
@@ -566,6 +538,7 @@ def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
 
 
 @server.tool()
+@clasi_tool
 def create_ticket(
     sprint_id: str,
     title: str,
@@ -647,6 +620,7 @@ def create_ticket(
 
 
 @server.tool()
+@clasi_tool
 def add_issue_ref(ticket_path: str, issue_filename: str) -> str:
     """Add a bidirectional link between a ticket and an issue post-creation.
 
@@ -724,6 +698,7 @@ def add_issue_ref(ticket_path: str, issue_filename: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_sprints(status: Optional[str] = None) -> str:
     """List all sprints with their metadata.
 
@@ -749,6 +724,7 @@ def list_sprints(status: Optional[str] = None) -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) -> str:
     """List tickets, optionally filtered by sprint and/or status.
 
@@ -757,15 +733,16 @@ def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) 
         status: Optional status filter (open, in-progress, done)
 
     Returns JSON array of {id, title, status, sprint_id, path}.
+
+    Raises ValueError if sprint_id is given but does not match any known
+    sprint (e.g. a typo'd ID) -- previously this silently returned `[]`,
+    indistinguishable from "sprint exists, has no tickets".
     """
     project = get_project()
     results = []
 
     if sprint_id:
-        try:
-            sprints_to_scan = [project.get_sprint(sprint_id)]
-        except ValueError:
-            return json.dumps([], indent=2)
+        sprints_to_scan = [project.get_sprint(sprint_id)]
     else:
         sprints_to_scan = project.list_sprints()
 
@@ -785,6 +762,7 @@ def list_tickets(sprint_id: Optional[str] = None, status: Optional[str] = None) 
 
 
 @server.tool()
+@clasi_tool
 def get_sprint_status(sprint_id: str) -> str:
     """Get a summary of a sprint's status including ticket counts.
 
@@ -846,6 +824,7 @@ def _mark_ticket_done(ticket_path: Path) -> dict:
 
 
 @server.tool()
+@clasi_tool
 def update_ticket_status(path: str, status: str) -> str:
     """Update a ticket's status in its YAML frontmatter.
 
@@ -889,6 +868,7 @@ def update_ticket_status(path: str, status: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def throw_ticket_exception(
     path: str,
     thrown_by: str,
@@ -958,6 +938,7 @@ def throw_ticket_exception(
 
 
 @server.tool()
+@clasi_tool
 def move_ticket_to_done(path: str) -> str:
     """Move a ticket (and its plan file if exists) to the sprint's
     tickets/done/ directory, setting status to "done" in the same call.
@@ -985,6 +966,7 @@ def move_ticket_to_done(path: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def reopen_ticket(path: str) -> str:
     """Reopen a completed ticket by moving it from done/ back to the sprint's tickets/ directory.
 
@@ -1036,6 +1018,7 @@ def _detect_sprint_from_branch() -> tuple[str, str] | None:
 
 
 @server.tool()
+@clasi_tool
 def close_sprint(
     sprint_id: Optional[str] = None,
     branch_name: Optional[str] = None,
@@ -1067,7 +1050,14 @@ def close_sprint(
         push_tags: Whether to push tags after tagging (default: True)
         delete_branch: Whether to delete the sprint branch after merge (default: True)
         test_command: Shell command to run tests. Defaults to 'uv run pytest'.
-            Pass empty string to skip tests entirely (for non-Python projects).
+            Pass the literal string "SKIP" to skip tests entirely (for
+            non-Python projects or a deliberate no-test close). This is the
+            only supported skip mechanism -- an empty string is
+            unreachable in practice (the Claude Code harness bug documented
+            in .claude/rules/tool-call-empty-args.md drops *all* arguments
+            when any one argument is empty or null, so `test_command=""`
+            never arrives) and "NONE" maps to `None` (the default
+            'uv run pytest'), not to "skip".
         test_timeout: Seconds to allow the test command to run before it is
             considered hung and killed. Resolution order (highest priority
             first): (1) this parameter, if not None; (2) a top-level
@@ -1205,6 +1195,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def reconcile_worktrees(sprint_id: str) -> str:
     """Reconcile worktree state for a sprint on demand.
 
@@ -1285,6 +1276,7 @@ def _close_sprint_full(
 
 
 @server.tool()
+@clasi_tool
 def clear_sprint_recovery(sprint_id: str) -> str:
     """Clear the recovery state record for a sprint.
 
@@ -1309,6 +1301,7 @@ def clear_sprint_recovery(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def get_sprint_phase(sprint_id: str) -> str:
     """Get a sprint's current lifecycle phase and gate status.
 
@@ -1329,6 +1322,7 @@ def get_sprint_phase(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def advance_sprint_phase(sprint_id: str) -> str:
     """Advance a sprint to the next lifecycle phase.
 
@@ -1349,6 +1343,7 @@ def advance_sprint_phase(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def record_gate_result(
     sprint_id: str,
     gate: str,
@@ -1376,6 +1371,7 @@ def record_gate_result(
 
 
 @server.tool()
+@clasi_tool
 def acquire_execution_lock(sprint_id: str) -> str:
     """Acquire the execution lock for a sprint and create the sprint branch.
 
@@ -1420,6 +1416,7 @@ def acquire_execution_lock(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def release_execution_lock(sprint_id: str) -> str:
     """Release the execution lock held by a sprint.
 
@@ -1441,6 +1438,7 @@ def release_execution_lock(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def list_issues() -> str:
     """List all active issue files with sprint/ticket linkage.
 
@@ -1467,6 +1465,7 @@ def list_issues() -> str:
 
 
 @server.tool()
+@clasi_tool
 def move_issue_to_done(
     filename: str,
     sprint_id: str | None = None,
@@ -1519,6 +1518,7 @@ def move_issue_to_done(
 
 
 @server.tool()
+@clasi_tool
 def split_issue(
     filename: str,
     new_filename: str,
@@ -1593,6 +1593,7 @@ def split_issue(
 
 
 @server.tool()
+@clasi_tool
 def create_github_issue(title: str, body: str, labels: list[str] | None = None) -> str:
     """Create a GitHub issue in the current repository.
 
@@ -1770,6 +1771,7 @@ def _check_gh_access(repo: str | None = None) -> tuple[bool, str]:
 
 
 @server.tool()
+@clasi_tool
 def list_github_issues(
     repo: str | None = None,
     labels: str | None = None,
@@ -1817,6 +1819,7 @@ def list_github_issues(
 
 
 @server.tool()
+@clasi_tool
 def close_github_issue(issue_number: int, repo: str | None = None) -> str:
     """Close a GitHub issue using the gh CLI.
 
@@ -1891,6 +1894,7 @@ def close_github_issue(issue_number: int, repo: str | None = None) -> str:
 
 
 @server.tool()
+@clasi_tool
 def read_artifact_frontmatter(path: str) -> str:
     """Read YAML frontmatter from a file.
 
@@ -1911,6 +1915,7 @@ def read_artifact_frontmatter(path: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def write_artifact_frontmatter(path: str, updates: str) -> str:
     """Update YAML frontmatter on a file, merging with existing fields.
 
@@ -1945,6 +1950,7 @@ def write_artifact_frontmatter(path: str, updates: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def tag_version(major: int = 0) -> str:
     """Compute the next version, update pyproject.toml, and create a git tag.
 
@@ -2053,6 +2059,7 @@ def _collect_tickets(sprint_dir: Path) -> list:
 
 
 @server.tool()
+@clasi_tool
 def review_sprint_pre_execution(sprint_id: str) -> str:
     """Validate sprint state before execution begins.
 
@@ -2203,6 +2210,7 @@ def review_sprint_pre_execution(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def review_sprint_pre_close(sprint_id: str) -> str:
     """Validate sprint state before closing.
 
@@ -2322,6 +2330,7 @@ def review_sprint_pre_close(sprint_id: str) -> str:
 
 
 @server.tool()
+@clasi_tool
 def review_sprint_post_close(sprint_id: str) -> str:
     """Validate sprint state after closing.
 
