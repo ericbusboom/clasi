@@ -1774,11 +1774,36 @@ handle_plan_to_todo = handle_plan_to_issue
 # ---------------------------------------------------------------------------
 
 
+# Event names sprint 026 (ticket 004) retired end to end: their
+# hooks.json / .claude/settings.json registrations, handler functions,
+# _ROUTING_TABLE entries, and cli.py Choice entries were all removed as
+# dead code (0 of 2,447 logged hook events, ever). Hook registrations are
+# snapshotted at session start, or baked into a consumer project's
+# .claude/settings.json by whatever `clasi init` last wrote there — both
+# upgrade on a different schedule than the CLI itself. A session or
+# install can therefore still invoke one of these names long after the
+# code that served it is gone; sprint 027 (ticket 001) makes that a
+# graceful no-op (exit 0, one stderr deprecation line, a hooks.log entry)
+# instead of the hard error every other unrecognized name still gets.
+#
+# This is a small, explicitly named allowlist for *known* retirements,
+# not a blanket catch-all for any unrecognized name — a typo in a brand
+# new registration must keep failing loudly. See this sprint's
+# design/DESIGN.md ("Design Rationale") for why the catch-all
+# alternative was rejected. The allowlist is a bridge to re-running
+# `clasi init` (which drops these from a fresh install), not a
+# permanent mechanism — expect it to need pruning as these retirements
+# age out of realistic installed-registration lifetimes.
+_RETIRED_EVENTS = frozenset({"commit-check", "task-created", "task-completed"})
+
+
 def handle_hook(event: str) -> None:
     """Read stdin JSON and dispatch to the correct hook handler.
 
-    Routes the event name to the appropriate handler function. Exits with
-    code 1 for unknown event names.
+    Routes the event name to the appropriate handler function. A name in
+    _RETIRED_EVENTS no-ops (exit 0, one stderr deprecation line, a
+    hooks.log entry) instead of erroring — see that set's docstring.
+    Exits with code 1 for any other unrecognized event name, unchanged.
     """
     payload = read_payload()
 
@@ -1796,6 +1821,14 @@ def handle_hook(event: str) -> None:
 
     handler = _ROUTING_TABLE.get(event)
     if handler is None:
+        if event in _RETIRED_EVENTS:
+            print(
+                f"clasi hook: '{event}' is retired and no longer does "
+                "anything; re-run `clasi init` to refresh this project's "
+                "hook registrations.",
+                file=sys.stderr,
+            )
+            _exit_hook(event, payload, 0, "retired-evt")
         print(f"clasi hook: unknown event '{event}'", file=sys.stderr)
         sys.exit(1)
 

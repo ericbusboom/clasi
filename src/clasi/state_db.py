@@ -12,7 +12,6 @@ from typing import Any, Optional
 
 from clasi.state_db_class import (
     StateDB,
-    PHASES,
     VALID_GATE_NAMES,
     VALID_GATE_RESULTS,
     _SCHEMA,
@@ -181,3 +180,21 @@ def clear_oop(db_path: str | Path) -> dict[str, Any]:
 def get_oop(db_path: str | Path) -> Optional[dict[str, Any]]:
     """Read the OOP bypass record, auto-clearing it past expiry."""
     return StateDB(db_path).get_oop()
+
+
+def __getattr__(name: str):
+    """PEP 562 lazy resolution for :data:`PHASES` (sprint 027 / ticket 003).
+
+    Mirrors ``state_db_class``'s own lazy ``PHASES`` -- re-exporting it
+    here via a plain module-level ``from clasi.state_db_class import
+    PHASES`` would immediately force the underlying Pydantic-backed
+    schema-graph computation on every import of THIS module, undoing
+    that laziness for any caller of the wrapper API instead of the
+    class directly. Deferred the same way so both entry points share
+    one computation, cached the first time either is actually accessed.
+    """
+    if name == "PHASES":
+        from clasi.state_db_class import PHASES as _phases
+
+        return _phases
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

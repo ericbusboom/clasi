@@ -432,19 +432,37 @@ class TestGitCallMemoization:
     """``ClasiStateReader``'s git-subprocess-backed methods memoize their
     result per instance — repeated calls to the same git query within one
     reader's lifetime shell out once, not once per call (sprint 026 /
-    ticket 003)."""
+    ticket 003).
 
-    def test_repeated_git_branch_calls_shell_out_once(
+    As of sprint 027 / ticket 003, ``git_branch`` and ``default_branch``
+    additionally try a direct ref-file read before ever reaching
+    ``_run_git`` — see ``TestGitBranchFastPath`` / ``TestDefaultBranchFastPath``
+    below for spawn-count assertions on that path directly. The counts
+    below reflect this fixture's specific shape: a real git repo (attached
+    HEAD -> git_branch's fast path always succeeds, 0 spawns) with no
+    remote configured (refs/remotes/origin/HEAD absent -> default_branch's
+    fast path always misses, falling back to the subprocess exactly as
+    before)."""
+
+    def test_repeated_git_branch_calls_shell_out_zero_times(
         self, project: Project, reader: ClasiStateReader, monkeypatch
     ) -> None:
+        """git_branch()'s fast path (direct .git/HEAD read) answers this
+        fixture's attached-HEAD case without ever touching subprocess.run
+        — a strictly stronger result than 026's "memoized to one spawn"
+        (027 collapses the surviving spawn away entirely for this case)."""
         calls = _count_real_git_calls(monkeypatch)
         for _ in range(5):
             reader.git_branch()
-        assert len(calls) == 1
+        assert len(calls) == 0
 
     def test_repeated_default_branch_calls_shell_out_once(
         self, project: Project, reader: ClasiStateReader, monkeypatch
     ) -> None:
+        """This fixture has no remote configured, so default_branch()'s
+        fast path (refs/remotes/origin/HEAD read) always misses and falls
+        back to the subprocess path — unchanged from 026, still memoized
+        to exactly one real spawn across repeated calls."""
         calls = _count_real_git_calls(monkeypatch)
         for _ in range(5):
             reader.default_branch()
@@ -458,9 +476,12 @@ class TestGitCallMemoization:
             reader.git_branch()
         for _ in range(3):
             reader.default_branch()
-        # Two distinct git queries -> two real subprocess calls total,
+        # git_branch's fast path answers from .git/HEAD directly (0
+        # spawns, this fixture has an attached HEAD); default_branch has
+        # no remote to read a fast-path file from, so it falls back to
+        # the subprocess path once (memoized). One real spawn total,
         # regardless of how many times each was individually requested.
-        assert len(calls) == 2
+        assert len(calls) == 1
 
     def test_branch_merged_across_multiple_sprints_shares_one_merged_list(
         self, project: Project, reader: ClasiStateReader, monkeypatch
@@ -476,21 +497,32 @@ class TestGitCallMemoization:
 
         # `git branch --merged <default>` does not depend on sprint_id —
         # it's the SAME command for every sprint in this reader instance,
-        # so it (plus the one `default_branch` resolution it depends on)
-        # must shell out exactly twice total, not twice per sprint.
+        # so it (plus the one `default_branch` resolution it depends on,
+        # which falls back to a subprocess call since this fixture has no
+        # remote) must shell out exactly twice total, not twice per
+        # sprint. branch_merged() itself has no fast path (see module
+        # docstring) — a merge-base/ancestry check always spawns.
         assert len(calls) == 2
 
     def test_new_instance_starts_with_an_empty_cache(
         self, project: Project, monkeypatch
     ) -> None:
         """The cache is per-instance, not process-global — a fresh reader
-        must not inherit another reader's cached git results."""
+        must not inherit another reader's cached git results.
+
+        Uses default_branch() rather than git_branch(): this fixture has
+        no remote, so default_branch() always falls back to a real
+        subprocess spawn regardless of caching, making it possible to
+        observe whether reader_b actually shells out again. git_branch()
+        would be a vacuous check here — its fast path answers straight
+        from .git/HEAD and never touches subprocess.run at all, cached or
+        not (see TestGitBranchFastPath)."""
         reader_a = ClasiStateReader(project)
-        reader_a.git_branch()
+        reader_a.default_branch()
 
         calls = _count_real_git_calls(monkeypatch)
         reader_b = ClasiStateReader(project)
-        reader_b.git_branch()
+        reader_b.default_branch()
 
         assert len(calls) == 1
 
@@ -502,6 +534,120 @@ class TestGitCallMemoization:
         first = reader.git_branch()
         second = reader.git_branch()
         assert first == second != ""
+
+
+# ---------------------------------------------------------------------------
+# git_branch / default_branch fast-path (sprint 027 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestGitBranchFastPath:
+    """git_branch() reads .git/HEAD directly instead of spawning
+    `git branch --show-current`, whenever it can confidently answer."""
+
+    def test_attached_head_zero_subprocess_calls(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        calls = _count_real_git_calls(monkeypatch)
+        branch = reader.git_branch()
+        assert branch != ""
+        assert len(calls) == 0
+
+    def test_attached_head_matches_subprocess_result(
+        self, project: Project, monkeypatch
+    ) -> None:
+        """The fast path and the subprocess path must agree on the same
+        repo state — verified by comparing the fast-path answer against
+        a real `git branch --show-current` invocation."""
+        reader = ClasiStateReader(project)
+        fast_result = reader.git_branch()
+
+        real = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=project.root, capture_output=True, text=True,
+        )
+        assert fast_result == real.stdout.strip()
+
+    def test_detached_head_returns_empty_string_zero_subprocess_calls(
+        self, project: Project, monkeypatch
+    ) -> None:
+        """Detached HEAD is the edge case the ticket explicitly calls out
+        to keep identical: `.git/HEAD` holds a raw commit SHA rather than
+        a `ref:` line, and `git branch --show-current` itself returns ""
+        in that state — the fast path must match exactly, without
+        spawning a subprocess to find out."""
+        subprocess.run(
+            ["git", "checkout", "--detach", "HEAD"],
+            cwd=project.root, check=True, capture_output=True,
+        )
+        reader = ClasiStateReader(project)
+
+        calls = _count_real_git_calls(monkeypatch)
+        assert reader.git_branch() == ""
+        assert len(calls) == 0
+
+    def test_non_git_dir_falls_back_and_returns_empty_string(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        non_git = tmp_path / "not-a-repo"
+        non_git.mkdir()
+        proj = Project(non_git)
+        r = ClasiStateReader(proj)
+
+        calls = _count_real_git_calls(monkeypatch)
+        assert r.git_branch() == ""
+        # No .git directory at all -> fast path can't resolve a git dir,
+        # falls back to the subprocess (which itself fails gracefully).
+        assert len(calls) == 1
+
+    def test_worktree_style_gitdir_pointer_file_resolved(
+        self, project: Project, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`.git` is sometimes a file (linked worktrees, submodules)
+        containing `gitdir: <path>` rather than a directory. The fast
+        path must follow that pointer, not silently misresolve or
+        (worse) read the wrong repo's HEAD."""
+        real_git_dir = project.root / ".git"
+        linked_dir = tmp_path / "linked-worktree"
+        linked_dir.mkdir()
+        (linked_dir / ".git").write_text(f"gitdir: {real_git_dir}\n", encoding="utf-8")
+
+        fake_project = Project(linked_dir)
+        reader = ClasiStateReader(fake_project)
+
+        calls = _count_real_git_calls(monkeypatch)
+        branch = reader.git_branch()
+        assert branch != ""
+        assert len(calls) == 0
+
+
+class TestDefaultBranchFastPath:
+    """default_branch() reads .git/refs/remotes/origin/HEAD directly
+    instead of spawning `git symbolic-ref`, whenever that file exists."""
+
+    def test_origin_head_file_present_zero_subprocess_calls(
+        self, project: Project, monkeypatch
+    ) -> None:
+        origin_dir = project.root / ".git" / "refs" / "remotes" / "origin"
+        origin_dir.mkdir(parents=True)
+        (origin_dir / "HEAD").write_text(
+            "ref: refs/remotes/origin/main\n", encoding="utf-8",
+        )
+        reader = ClasiStateReader(project)
+
+        calls = _count_real_git_calls(monkeypatch)
+        assert reader.default_branch() == "main"
+        assert len(calls) == 0
+
+    def test_no_remote_falls_back_to_master(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        """No refs/remotes/origin/HEAD file at all -> fast path misses,
+        falls back to the subprocess path's own "master" fallback
+        (unchanged behavior from 026)."""
+        calls = _count_real_git_calls(monkeypatch)
+        assert reader.default_branch() == "master"
+        assert len(calls) == 1
 
 
 # ---------------------------------------------------------------------------

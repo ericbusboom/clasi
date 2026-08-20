@@ -467,6 +467,16 @@ def mcp():
             "codex-plan-to-issue",
             "codex-plan-to-todo",
             "status-inject",
+            # Retired (sprint 027 / ticket 001). Kept in this Choice list —
+            # not removed — so a stale hook registration (a session
+            # snapshotted before the sprint-026 removal, or a consumer
+            # project whose .claude/settings.json was installed by a
+            # pre-026 `clasi init`) doesn't get rejected by click itself
+            # before handle_hook's retired-event no-op path ever runs.
+            # See hook_handlers._RETIRED_EVENTS.
+            "commit-check",
+            "task-created",
+            "task-completed",
         ]
     ),
 )
@@ -487,11 +497,19 @@ def hook(event):
       codex-plan-to-todo   Stop(Codex): alias for codex-plan-to-issue (deprecated).
       status-inject        UserPromptSubmit: prepend CLASI status block to context.
 
-    (sprint 026 / ticket 004): task-created, task-completed, and
-    commit-check were removed — TaskCreated/TaskCompleted never fired in
-    2,447 logged hook events, and commit-check read an env var Claude
-    Code never sets (the payload arrives on stdin). Their handler
-    functions were deleted from clasi.hook_handlers alongside this.
+    Retired events (sprint 026 / ticket 004 removed their handlers and
+    hooks.json registrations; sprint 027 / ticket 001 made the CLI
+    tolerate a stale registration that still names them instead of
+    hard-erroring on every invocation):
+      commit-check    No-op. Read an env var Claude Code never sets.
+      task-created    No-op. Never fired in 2,447 logged hook events.
+      task-completed  No-op. Never fired in 2,447 logged hook events.
+
+    A retired name exits 0 with a single stderr deprecation line (see
+    handle_hook). Any name outside both the live list above and the
+    retired set is a genuinely unrecognized event and is rejected here
+    by click before handle_hook ever runs — that's the typo-protection
+    path, unchanged.
     """
     from clasi.hook_handlers import handle_hook
 

@@ -415,7 +415,8 @@ class TestCloseSSprintWorktreeResultJSON:
     def _subprocess_side_effects(self, worktree_stdout: str) -> list:
         return [
             self._mock_ok(0, "all tests passed"),  # pytest
-            self._mock_ok(0),                       # git add -A (version bump)
+            self._mock_ok(0),                       # git config rebase.autoStash (version bump prep)
+            self._mock_ok(0),                       # git add <archive paths + version file> (version bump)
             self._mock_ok(0),                       # git commit (version bump)
             self._mock_ok(0, ""),                   # git status --porcelain (clean)
             self._mock_ok(0),                       # git rev-parse --verify branch

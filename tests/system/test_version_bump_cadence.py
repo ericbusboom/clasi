@@ -214,3 +214,134 @@ class TestVersionBumpCadenceDryRun:
         # leftover from a legacy path).
         tags = _run(["git", "tag", "-l"], cwd=work_dir).stdout.split()
         assert len(tags) <= 1, f"expected at most one version tag, found {tags}"
+
+
+class TestVersionBumpCommitScoping:
+    """Regression for 027/002: close_sprint's real bump commit sweeping
+    unrelated untracked/modified files into the release commit (sprint
+    026's config/devices.json incident, 'chore: bump version to
+    0.20260819.1', 5b9afb7). Drives the same real `close_sprint` path as
+    the cadence test above, but the point here is what the bump commit's
+    file list contains, not how many bump commits exist.
+    """
+
+    def test_bump_commit_excludes_unrelated_untracked_and_modified_files(
+        self, work_dir: Path
+    ) -> None:
+        # An unrelated tracked file that predates the sprint branch --
+        # committed to master before the branch exists, so its committed
+        # content is bit-identical on both master and the sprint branch.
+        # It gets a local, uncommitted modification right before
+        # close_sprint runs and is never staged by any ticket commit --
+        # exactly the config/devices.json shape (untracked before the
+        # fix; here proven for both untracked *and* modified-tracked).
+        # Keeping the committed blob identical on both branches also
+        # means the merge step's real `git rebase` + `git checkout
+        # master` + `git merge --no-ff` never need to touch this path,
+        # so the uncommitted local edit survives the whole lifecycle
+        # undisturbed regardless of the bug being tested.
+        tracked_file = work_dir / "unrelated_tracked.txt"
+        tracked_file.write_text("original\n", encoding="utf-8")
+        _run(["git", "add", "unrelated_tracked.txt"], cwd=work_dir)
+        _run(
+            ["git", "commit", "-m", "chore: add unrelated tracked file"],
+            cwd=work_dir,
+        )
+
+        create_result = json.loads(create_sprint("Scoped Bump"))
+        sprint_id = create_result["id"]
+        sprint_dir = Path(create_result["path"])
+        branch_name = create_result["branch"]
+
+        write_frontmatter(
+            sprint_dir / "sprint.md",
+            {
+                "id": sprint_id,
+                "title": "Scoped Bump",
+                "status": "active",
+                "branch": branch_name,
+            },
+        )
+
+        _advance_to_ticketing(work_dir, sprint_id)
+
+        create_ticket(sprint_id, "Do thing")
+        ticket_path = sprint_dir / "tickets" / "001-do-thing.md"
+        assert ticket_path.exists(), f"expected ticket file at {ticket_path}"
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        acquire_lock(db_path, sprint_id)
+        advance_phase(db_path, sprint_id)  # ticketing -> executing
+
+        _run(["git", "checkout", "-b", branch_name], cwd=work_dir)
+
+        (work_dir / "feature.py").write_text("# ticket work\n", encoding="utf-8")
+        update_ticket_status(str(ticket_path), "done")
+        move_ticket_to_done(str(ticket_path))
+        _git_commit(work_dir, f"feat: implement ticket ({sprint_id}-001)")
+
+        # Seed the unrelated untracked file and modify the unrelated
+        # tracked file. Both are left deliberately uncommitted, planted
+        # after the last ticket commit -- nothing in this sprint's own
+        # work ever touches or stages them.
+        untracked_file = work_dir / "unrelated_untracked.txt"
+        untracked_file.write_text("scratch\n", encoding="utf-8")
+        tracked_file.write_text("locally modified, never staged\n", encoding="utf-8")
+
+        advance_phase(db_path, sprint_id)  # executing -> closing
+        advance_phase(db_path, sprint_id)  # closing -> done
+
+        result = json.loads(
+            close_sprint(
+                sprint_id=sprint_id,
+                branch_name=branch_name,
+                main_branch="master",
+                push_tags=False,
+                delete_branch=False,
+                test_command="",
+            )
+        )
+        assert result["status"] == "success", result
+        assert "version" in result, "close_sprint did not report a version bump"
+
+        # Both files remain exactly as left: the untracked file is still
+        # untracked, and the tracked file's local edit is still unstaged
+        # -- neither was swept into any commit the close created.
+        status = _run(["git", "status", "--porcelain"], cwd=work_dir).stdout
+        assert "?? unrelated_untracked.txt" in status, status
+        assert " M unrelated_tracked.txt" in status, status
+        assert untracked_file.read_text(encoding="utf-8") == "scratch\n"
+        assert (
+            tracked_file.read_text(encoding="utf-8")
+            == "locally modified, never staged\n"
+        )
+
+        # The bump commit's changed-file list is exactly the version file
+        # it wrote -- no incidental inclusions from either unrelated file
+        # (a full assertion needs both: nothing extra went in, and the
+        # unrelated files stayed out).
+        log = _run(["git", "log", "--all", "--oneline"], cwd=work_dir).stdout
+        bump_lines = [
+            line for line in log.splitlines() if "chore: bump version to" in line
+        ]
+        assert len(bump_lines) == 1, f"expected exactly one bump commit, found {bump_lines}"
+        bump_sha = bump_lines[0].split()[0]
+
+        changed_files = _run(
+            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", bump_sha],
+            cwd=work_dir,
+        ).stdout.split()
+        # The bump commit legitimately includes the paths this close run's
+        # own steps produced -- the version file, plus the archived sprint
+        # directory's old/new location (Step 3's move, which close_sprint
+        # has always folded into this same commit so the tree is clean for
+        # Step 6's merge, and which this ticket does not touch). The one
+        # thing that must never appear here is a file that predates the
+        # close and belongs to no ticket -- exactly the config/devices.json
+        # shape from the sprint 026 incident, reproduced here as both an
+        # untracked and a modified-tracked file.
+        assert "pyproject.toml" in changed_files, (
+            f"bump commit must include the version file, found {changed_files}"
+        )
+        assert "unrelated_untracked.txt" not in changed_files, changed_files
+        assert "unrelated_tracked.txt" not in changed_files, changed_files

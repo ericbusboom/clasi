@@ -617,18 +617,76 @@ class TestHandleHook:
         assert "no-such-event" in captured.err
 
     @pytest.mark.parametrize("event", ["task-created", "task-completed", "commit-check"])
-    def test_removed_events_are_unknown(self, event, capsys):
-        """(sprint 026 / ticket 004): task-created, task-completed, and
-        commit-check were removed as dead-code registrations (0 of 2,447
-        logged hook events, ever) — handle_hook no longer routes them and
-        must fall through to the same unknown-event exit-1 path as any
-        other unrecognized event name, not silently no-op."""
+    def test_retired_events_no_op_exit_0(self, event, tmp_path, capsys):
+        """(sprint 027 / ticket 001): task-created, task-completed, and
+        commit-check were removed as dead-code registrations in sprint 026
+        (ticket 004), but hook registrations are snapshotted at session
+        start or baked into a consumer's .claude/settings.json by a
+        pre-026 `clasi init` — a stale registration can still invoke one
+        of these names long after the code that served it is gone. This
+        was the sprint-027 regression: handle_hook used to fall through
+        to the generic unknown-event exit-1 path for these names,
+        erroring on every Bash call in an affected session. It must now
+        no-op: exit 0, with exactly one deprecation line on stderr and no
+        other stderr noise.
+
+        Real Claude Code PostToolUse/Bash-shaped payload on stdin (not a
+        synthetic empty payload) per the ticket's testing requirement.
+        """
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m test"},
+            "session_id": "retired-event-test-session",
+        }
+        with patch("clasi.hook_handlers.read_payload", return_value=payload):
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_hook, event)
+        assert exc.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.err.strip() != ""
+        assert len(captured.err.splitlines()) == 1
+        assert event in captured.err
+        assert "retired" in captured.err.lower()
+        assert "clasi init" in captured.err
+
+    def test_retired_event_writes_hooks_log_entry(self, tmp_path):
+        """A retired-event no-op writes a hooks.log line distinguishable
+        from a normal dispatch line — the reason field carries the
+        `retired-evt` tag (this module's short reason-code convention,
+        e.g. `tier-allowed`, `oop-bypass`), so a retired-event line can be
+        told apart from any live-event dispatch line by grep alone."""
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m test"},
+            "session_id": "retired-event-log-test",
+        }
+        with patch("clasi.hook_handlers.read_payload", return_value=payload):
+            with pytest.raises(SystemExit):
+                _run_with_cwd(tmp_path, handle_hook, "commit-check")
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        assert hooks_log.exists()
+        lines = hooks_log.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        line = lines[0]
+        assert "commit-check" in line
+        assert " 0 " in line
+        assert "retired-evt" in line
+        assert "session_id=retired-event-log-test" in line
+
+    def test_unknown_event_still_hard_errors_not_in_retired_allowlist(self, capsys):
+        """A genuinely unknown/typo'd event name — one in neither the live
+        routing table nor the retired-event allowlist — still hard-errors,
+        unchanged. The retired-event allowlist is a small, explicitly
+        named set, not a blanket catch-all for any unrecognized name."""
         with patch("clasi.hook_handlers.read_payload", return_value={}):
             with pytest.raises(SystemExit) as exc:
-                handle_hook(event)
+                handle_hook("commit-cheque")  # typo, not a retired name
         assert exc.value.code == 1
         captured = capsys.readouterr()
-        assert event in captured.err
+        assert "commit-cheque" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -2072,6 +2130,131 @@ class TestRoleGuardRealCliInvocationPath:
     # check_staleness() against real importlib.metadata shapes for both
     # stale and current versions without depending on any binary existing
     # on disk.
+
+
+# ---------------------------------------------------------------------------
+# Retired hook events: real CLI invocation path (027/001)
+#
+# The pre-026 registrations below are captured verbatim from git history
+# (commit 046db36^, the last commit before sprint 026 ticket 004 removed
+# them) — the exact shape a session snapshotted before that removal, or a
+# consumer project's pre-026 `clasi init` install, still carries.
+# ---------------------------------------------------------------------------
+
+
+_PRE_026_SETTINGS_JSON = {
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {"type": "command", "command": "clasi hook commit-check"},
+                ],
+            },
+            {
+                "matcher": "ExitPlanMode",
+                "hooks": [
+                    {"type": "command", "command": "clasi hook plan-to-issue"},
+                ],
+            },
+        ],
+        "TaskCreated": [
+            {
+                "matcher": ".*",
+                "hooks": [
+                    {"type": "command", "command": "clasi hook task-created"},
+                ],
+            },
+        ],
+        "TaskCompleted": [
+            {
+                "matcher": ".*",
+                "hooks": [
+                    {"type": "command", "command": "clasi hook task-completed"},
+                ],
+            },
+        ],
+    }
+}
+
+
+@pytest.mark.skipif(
+    not _CURRENT_CLASI.exists(),
+    reason="requires the project's own .venv/bin/clasi (editable install)",
+)
+class TestRetiredHookEventRealCliInvocationPath:
+    """027/001: a session or consumer install carrying a pre-026
+    .claude/settings.json must run Bash calls cleanly against the
+    post-fix clasi — the retired-event hook it names exits 0, with no
+    error surfaced to the calling tool. Exercised through the real
+    `clasi hook <event>` CLI entrypoint (subprocess), the same path
+    Claude Code itself invokes per settings.json — not handle_hook()
+    called in-process, since the regression this ticket fixes lived one
+    layer up, in cli.py's click.Choice (it rejected retired names before
+    handle_hook ever ran).
+    """
+
+    def _write_pre_026_settings(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / "settings.json").write_text(
+            json.dumps(_PRE_026_SETTINGS_JSON, indent=2), encoding="utf-8"
+        )
+
+    def test_stale_commit_check_registration_runs_bash_calls_cleanly(self, tmp_path):
+        """The exact registration from the field report: PostToolUse/Bash
+        -> `clasi hook commit-check`. Post-fix, this must exit 0 with no
+        error surfaced — the regression was every Bash call erroring in
+        an affected session."""
+        _write_fresh_config(tmp_path)
+        self._write_pre_026_settings(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "git status"},
+            "session_id": "pre-026-fixture-session",
+        }
+        result = _subprocess.run(
+            [str(_CURRENT_CLASI), "hook", "commit-check"],
+            input=json.dumps(payload),
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("event", ["task-created", "task-completed"])
+    def test_stale_task_lifecycle_registrations_run_cleanly(self, tmp_path, event):
+        """The other two pre-026 registrations (TaskCreated/TaskCompleted
+        Claude Code event types, dispatched to the `task-created`/
+        `task-completed` CLI event names) also no-op cleanly post-fix."""
+        _write_fresh_config(tmp_path)
+        self._write_pre_026_settings(tmp_path)
+        payload = {"task_id": "t1", "task_subject": "test task"}
+        result = _subprocess.run(
+            [str(_CURRENT_CLASI), "hook", event],
+            input=json.dumps(payload),
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_genuinely_unknown_event_still_errors_via_real_cli(self, tmp_path):
+        """Control: a typo'd/unrecognized event name still hard-errors
+        through the real CLI, unchanged."""
+        _write_fresh_config(tmp_path)
+        result = _subprocess.run(
+            [str(_CURRENT_CLASI), "hook", "commit-cheque"],
+            input="{}",
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode != 0
 
 
 # ---------------------------------------------------------------------------
