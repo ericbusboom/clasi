@@ -2,7 +2,7 @@
 id: '001'
 title: Retired hook events no-op instead of erroring; regression tests for both the
   no-op and hard-error paths
-status: open
+status: done
 use-cases:
 - SUC-001
 depends-on: []
@@ -71,41 +71,42 @@ directly against current source — start here, don't re-derive):
 
 Per the issue's own Verification section:
 
-- [ ] `clasi hook` exits 0 for each retired event name — `commit-check`,
+- [x] `clasi hook` exits 0 for each retired event name — `commit-check`,
       `task-created`, `task-completed` — and their documented alias
       forms (`TaskCreated`/`TaskCompleted` were the removed
       registrations' actual event names; confirm the exact casing/form
       `hooks.json` used pre-026 via git history if needed), given a
       real captured payload on stdin (not a synthetic empty payload).
-- [ ] Each no-op prints exactly one deprecation line to stderr — no
+- [x] Each no-op prints exactly one deprecation line to stderr — no
       other stderr noise.
-- [ ] Each no-op writes a `retired-event`-tagged entry to `hooks.log`,
+- [x] Each no-op writes a `retired-event`-tagged entry to `hooks.log`,
       distinguishable from normal dispatch lines (dated timestamp, per
       026's existing format).
-- [ ] A genuinely unknown/typo'd event name (not in the live routing
+- [x] A genuinely unknown/typo'd event name (not in the live routing
       table and not in the retired-event allowlist) still exits
       non-zero, unchanged from current behavior.
-- [ ] A session/fixture carrying a pre-026 `.claude/settings.json`
+- [x] A session/fixture carrying a pre-026 `.claude/settings.json`
       (including the `commit-check` PostToolUse/Bash registration) runs
       `Bash` calls cleanly against the post-fix `clasi`: the hook exits
       0, no error surfaced to the calling tool.
-- [ ] `cli.py`'s `hook` command argument no longer rejects a retired
+- [x] `cli.py`'s `hook` command argument no longer rejects a retired
       name at the click-parsing layer — verify with a direct CLI
       invocation (`clasi hook commit-check < payload`), not just a unit
       test against `handle_hook` in isolation.
-- [ ] After a `clasi init` refresh in a fixture project, the retired
+- [x] After a `clasi init` refresh in a fixture project, the retired
       registrations are absent from the freshly-installed
       `.claude/settings.json`, confirming the no-op path is a bridge
       state, not a permanent one (existing `clasi init` behavior from
       026 ticket 004 — this criterion is a regression check, not new
       work).
-- [ ] (If implemented — see sprint.md Open Questions for whether this
+- [x] (If implemented — see sprint.md Open Questions for whether this
       fits this ticket's budget) A stale-hook-registration detection
       nudge in `clasi init --check` or the existing staleness check
       recommends re-running `clasi init` when installed
       `.claude/settings.json` still names retired events. If deferred,
       note that explicitly in this ticket's Implementation Notes rather
-      than silently dropping it.
+      than silently dropping it. **Deferred — see Implementation Notes
+      below.**
 
 ## Testing
 
@@ -131,3 +132,53 @@ Per the issue's own Verification section:
 - **Verification command**: run the specific new/modified test modules
   directly (e.g. `uv run pytest tests/unit/test_hook_handlers.py -k
   retired`), not the full suite.
+
+## Implementation Notes
+
+**Exact retired names confirmed via git history**: `git show
+046db36^:src/clasi/plugin/hooks/hooks.json` (the last commit before
+026/004 removed them) shows the actual `clasi hook <event>` CLI
+argument values used pre-026 were `commit-check`, `task-created`, and
+`task-completed` — all lowercase-hyphenated. `TaskCreated`/
+`TaskCompleted` are the *Claude Code hook event type* names (the JSON
+keys under `"hooks"`, alongside `PreToolUse`/`PostToolUse`/etc.), not
+CLI-argument alias forms — the CLI argument dispatched from both was
+always the lowercase-hyphen form. So there are exactly three retired
+CLI event names, no additional alias forms at the CLI layer:
+`_RETIRED_EVENTS = frozenset({"commit-check", "task-created",
+"task-completed"})` in `hook_handlers.py`.
+
+**Approach**: `cli.py`'s `hook` command's `click.Choice` list gained
+the three retired names (kept as a `click.Choice`, not moved to a plain
+string — this means click itself still hard-rejects any name outside
+the combined live+retired list, so a genuinely new typo keeps failing
+loudly at the earliest possible layer). `hook_handlers.handle_hook`
+gained the `_RETIRED_EVENTS` allowlist check between the routing-table
+miss and the existing `sys.exit(1)` fallback: a retired name prints one
+deprecation line to stderr (naming the event and recommending `clasi
+init`) and calls the existing `_exit_hook(event, payload, 0,
+"retired-evt")` helper — reusing 026/004's own `_log_hook_event` "exit
++ log" pattern rather than adding a parallel logging path. The
+`hooks.log` reason-code column carries `retired-evt` (11 chars, fits
+this module's existing 12-char reason-code convention — e.g.
+`tier-allowed`, `oop-bypass` — without truncation), and the event_type
+column carries the actual retired event name (e.g. `commit-check`).
+Together those two columns make a retired-event line distinguishable
+from any live dispatch line by grep alone, since no live event now
+shares either value.
+
+**Stale-hook-registration detection nudge — deferred, not implemented**
+(sprint.md Open Questions explicitly frames this as ticket-time-decided
+and offers "split into its own follow-up issue" as a valid outcome).
+Decision: defer to a follow-up issue rather than fold into this ticket.
+Reasoning: the no-op allowlist above is the load-bearing fix (it's what
+stops sessions/installs from erroring today) and is already a
+substantial, well-scoped change on its own; a staleness-check or `clasi
+init --check` extension is additive UX on top of an already-safe
+no-op, not a correctness requirement, and doing it well (deciding
+whether it lives in `staleness.py`'s `check_staleness()`, which already
+runs on effectively every hook call per this repo's own git-commits
+rule doc, or a new `clasi init --check` subcommand that doesn't exist
+yet) is a separate design decision worth its own ticket rather than a
+rushed addition here. No code changes were made toward it in this
+ticket; `clasi init --check` does not exist as of this ticket.

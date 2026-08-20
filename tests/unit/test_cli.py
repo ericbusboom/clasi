@@ -1,5 +1,6 @@
 """Tests for the CLASI CLI entry point."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,6 +51,68 @@ class TestInitCommand:
         assert result1.exit_code == 0
         result2 = runner.invoke(cli, ["init", str(tmp_path)])
         assert result2.exit_code == 0
+
+
+class TestHookCommandRetiredEvents:
+    """027/001: a retired event name (commit-check, task-created,
+    task-completed — sprint 026/004 removed their handlers and routing,
+    but hook registrations are snapshotted at session start or baked
+    into a consumer's .claude/settings.json by a pre-026 `clasi init`)
+    must no-op through the CLI, not hard-error. Exercised at the CLI
+    layer via CliRunner.invoke — the regression this ticket fixes lived
+    in cli.py's click.Choice, above handle_hook, so a test that only
+    calls handle_hook() in isolation would not have caught it.
+    """
+
+    RETIRED_EVENTS = ["commit-check", "task-created", "task-completed"]
+
+    def _real_payload(self) -> str:
+        """A real Claude Code PostToolUse/Bash-shaped payload, not a
+        synthetic empty one — matches the ticket's testing requirement."""
+        return json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "git commit -m test"},
+            "session_id": "cli-retired-event-test",
+        })
+
+    def test_retired_event_exits_0(self):
+        runner = CliRunner()
+        for event in self.RETIRED_EVENTS:
+            result = runner.invoke(cli, ["hook", event], input=self._real_payload())
+            assert result.exit_code == 0, (
+                f"{event}: expected exit 0, got {result.exit_code}: {result.output}"
+            )
+
+    def test_retired_event_prints_exactly_one_deprecation_line(self):
+        runner = CliRunner()
+        for event in self.RETIRED_EVENTS:
+            result = runner.invoke(cli, ["hook", event], input=self._real_payload())
+            lines = [ln for ln in result.output.splitlines() if ln.strip()]
+            assert len(lines) == 1, f"{event}: expected exactly one line, got {lines}"
+            assert event in lines[0]
+            assert "clasi init" in lines[0]
+
+    def test_retired_event_not_rejected_by_click_choice(self):
+        """The regression itself: before this ticket, click's Choice
+        argument rejected a retired name as a usage error (exit code 2,
+        'Error: Invalid value ...') before handle_hook ever ran. Confirm
+        that no longer happens — the retired name is accepted as a valid
+        argument and reaches the no-op path instead."""
+        runner = CliRunner()
+        for event in self.RETIRED_EVENTS:
+            result = runner.invoke(cli, ["hook", event], input=self._real_payload())
+            assert "Invalid value" not in result.output
+            assert "Usage:" not in result.output
+            assert result.exit_code != 2
+
+    def test_unknown_event_still_rejected_by_click_choice(self):
+        """A genuinely unknown/typo'd event name — not live, not
+        retired — is still rejected at the click-parsing layer exactly
+        as before this ticket: a usage error, non-zero exit."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["hook", "commit-cheque"], input="{}")
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
 
 
 class TestMcpCommand:
