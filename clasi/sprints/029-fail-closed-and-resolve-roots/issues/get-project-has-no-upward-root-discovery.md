@@ -1,6 +1,8 @@
 ---
-status: pending
+status: in-progress
 sprint: 029
+tickets:
+- 029-003
 ---
 
 # get_project() has no upward root discovery

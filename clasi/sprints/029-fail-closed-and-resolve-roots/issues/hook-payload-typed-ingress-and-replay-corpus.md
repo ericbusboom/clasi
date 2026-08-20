@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - hooks
 - testing
 sprint: 029
+tickets:
+- 029-008
 ---
 
 # Hooks: one typed payload ingress and a captured-payload replay corpus

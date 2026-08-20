@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - phase-1
 - artifacts
 sprint: 029
+tickets:
+- 029-006
 ---
 
 # Frontmatter I/O: line-anchored parsing and atomic writes

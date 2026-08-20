@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - state-db
 - enforcement
 sprint: 029
+tickets:
+- 029-004
 ---
 
 # State DB: reads stop creating databases; short busy timeout

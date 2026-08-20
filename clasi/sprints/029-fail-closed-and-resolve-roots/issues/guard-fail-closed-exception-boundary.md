@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - hooks
 - enforcement
 sprint: 029
+tickets:
+- 029-009
 ---
 
 # Guards: fail-closed exception boundary — a crash must never be a silent allow

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - mcp
 - git
 sprint: 029
+tickets:
+- 029-005
 ---
 
 # Tools layer: one root-anchored git helper; artifact paths resolve against project root

@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - phase-1
 - staleness
 sprint: 029
+tickets:
+- 029-007
 ---
 
 # Staleness: detect same-version source drift via mtime-vs-import-time
