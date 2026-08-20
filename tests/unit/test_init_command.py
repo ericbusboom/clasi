@@ -415,6 +415,48 @@ class TestHooksConfig:
         assert data["other"] == "kept"
         assert "hooks" in data
 
+    def test_installed_hooks_omit_dead_registrations(self, target_dir):
+        """(sprint 026 / ticket 004): a fresh clasi init fixture's
+        installed hook settings must not contain commit-check,
+        TaskCreated, or TaskCompleted — 0 of 2,447 logged hook events,
+        ever. Asserts against the real installed .claude/settings.json,
+        not the packaged hooks.json directly (see test_hooks_json.py for
+        that), to also exercise the installer's copy path end to end."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        settings_path = target_dir / ".claude" / "settings.json"
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+
+        assert "TaskCreated" not in data["hooks"]
+        assert "TaskCompleted" not in data["hooks"]
+
+        all_commands = [
+            h.get("command", "")
+            for entries in data["hooks"].values()
+            for entry in entries
+            for h in entry.get("hooks", [])
+        ]
+        assert not any("commit-check" in cmd for cmd in all_commands)
+
+    def test_installed_hooks_match_trimmed_plugin_hooks_json(self, target_dir):
+        """The installed .claude/settings.json hook list is byte-for-byte
+        the packaged (trimmed) hooks.json's "hooks" object — the
+        installer copies it wholesale (clasi.platforms.claude), so this
+        also transitively proves every installed registration carries an
+        explicit timeout, matching hooks.json itself (see
+        test_hooks_json.py::TestExplicitTimeouts)."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+
+        settings_path = target_dir / ".claude" / "settings.json"
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+
+        plugin_hooks_path = _PLUGIN_DIR / "hooks" / "hooks.json"
+        plugin_hooks = json.loads(plugin_hooks_path.read_text(encoding="utf-8"))
+
+        assert data["hooks"] == plugin_hooks["hooks"]
+
     def test_no_py_files_copied_to_hooks_dir(self, target_dir):
         """No .py files are copied to <target>/.claude/hooks/ during init."""
         target_dir.mkdir()

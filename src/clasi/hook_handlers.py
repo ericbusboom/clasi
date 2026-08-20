@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import sqlite3
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -307,6 +306,22 @@ def _log_hook_event(
 
     Creates .clasi/log/ if .clasi/ exists. Wraps everything in
     try/except so logging never causes a hook to fail.
+
+    Timestamp format (ticket 026-004): ``%Y-%m-%dT%H:%M:%SZ`` — a date
+    component was added because the previous ``%H:%M:%SZ``-only format
+    made multi-day log analysis impossible (every day's events looked
+    identical). Still a single whitespace-free token, so the line
+    remains splittable on whitespace exactly as before.
+
+    file_path/path/new_path resolution (ticket 026-004): Claude Code
+    nests these under ``payload["tool_input"]`` for PreToolUse/
+    PostToolUse events (the same shape ``handle_role_guard`` resolves
+    from) — NOT at the payload top level. Reading them from the top
+    level (the previous behavior) meant essentially no blocked-write log
+    line ever recorded which file was blocked. Mirrors
+    ``handle_role_guard``'s own ``payload.get("tool_input", payload)``
+    idiom so a payload with no ``tool_input`` key at all (e.g. a flat
+    synthetic payload) still resolves the fields from the top level.
     """
     try:
         _proj = get_project()
@@ -316,13 +331,26 @@ def _log_hook_event(
         log_dir.mkdir(parents=True, exist_ok=True)
         _ensure_log_gitignore(log_dir)
 
-        timestamp = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         reason_fixed = f"{reason:<12.12}"
 
-        # Build a short summary of key payload fields
+        # Build a short summary of key payload fields. tool_name and the
+        # tail fields (task_id, ...) are always top-level in real Claude
+        # Code payloads; file_path/path/new_path are nested under
+        # tool_input — see the docstring above.
+        tool_input = payload.get("tool_input", payload) if payload else {}
         key_fields: list[str] = []
-        for key in ("tool_name", "file_path", "path", "new_path", "task_id",
-                    "task_subject", "agent_type", "agent_id", "session_id"):
+
+        tool_name = payload.get("tool_name")
+        if tool_name:
+            key_fields.append(f"tool_name={tool_name}")
+
+        for key in ("file_path", "path", "new_path"):
+            value = tool_input.get(key) if isinstance(tool_input, dict) else None
+            if value:
+                key_fields.append(f"{key}={value}")
+
+        for key in ("task_id", "task_subject", "agent_type", "agent_id", "session_id"):
             value = payload.get(key)
             if value:
                 key_fields.append(f"{key}={value}")
@@ -981,7 +1009,7 @@ def _get_sprint_context(
     connection) for the current invocation (e.g. ``handle_role_guard``'s
     per-invocation cache) reuse both. Both default to None, preserving
     this function's original independent resolution for every other
-    caller (status-inject, subagent-stop, task-completed, ...).
+    caller (status-inject, subagent-start, subagent-stop, ...).
     """
     _proj = project if project is not None else get_project()
     if not _proj.clasi_dir.exists():
@@ -1448,145 +1476,6 @@ def handle_subagent_stop(payload: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task lifecycle — TaskCreated / TaskCompleted
-# ---------------------------------------------------------------------------
-
-
-def handle_task_created(payload: dict) -> None:
-    """Log when a programmer task starts.
-
-    Creates a log file in .clasi/log/ with frontmatter and writes an
-    .active/task-{task_id}.json marker so task_completed can find it.
-    """
-    log_dir, sprint_id = _get_sprint_context()
-    if log_dir is None:
-        _exit_hook("task-created", payload, 0, "no-log-dir")
-
-    task_id = payload.get("task_id", "")
-    task_subject = payload.get("task_subject", "")
-    teammate_name = payload.get("teammate_name", "")
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    active_tickets = _get_active_tickets(sprint_id)
-    tickets_str = ", ".join(active_tickets)
-
-    # Create the log file
-    _next = _next_log_number(log_dir)
-    safe_subject = task_subject[:40].replace("/", "-").replace(" ", "-").lower() if task_subject else "task"
-    log_file = log_dir / f"{_next:03d}-{safe_subject}.md"
-
-    lines = [
-        "---",
-        f"task_id: {task_id}",
-        f"task_subject: {task_subject}",
-        f"teammate_name: {teammate_name}",
-        f'sprint_id: "{sprint_id}"',
-        f'tickets: "{tickets_str}"',
-        f"started_at: {timestamp}",
-        "---",
-        "",
-        f"# Task: {task_subject}",
-        "",
-    ]
-    log_file.write_text("\n".join(lines))
-
-    # Register in DB so task_completed can find the log file
-    task_marker_id = f"task-{task_id}"
-    try:
-        db_path = get_project().db_path
-        if db_path.exists() or (db_path.parent.exists()):
-            from clasi.state_db import register_active_agent
-            register_active_agent(
-                str(db_path), task_marker_id, "task", "2", str(log_file)
-            )
-    except Exception:
-        pass
-
-    _exit_hook("task-created", payload, 0, "logged")
-
-
-def handle_task_completed(payload: dict) -> None:
-    """Append transcript to the log file created by task_created.
-
-    Finds the .active marker, appends duration to frontmatter, extracts
-    the prompt from the transcript, and appends the transcript content.
-    """
-    log_dir = _get_log_dir()
-    if log_dir is None:
-        _exit_hook("task-done", payload, 0, "no-log-dir")
-
-    task_id = payload.get("task_id", "")
-    transcript_path = payload.get("transcript_path", "")
-    stop_time = datetime.now(timezone.utc)
-
-    # Find the log file from the DB record written by task_created
-    task_marker_id = f"task-{task_id}"
-    log_file = None
-    started_at = None
-    try:
-        db_path = get_project().db_path
-        if db_path.exists():
-            from clasi.state_db import get_active_agent, remove_active_agent
-            record = get_active_agent(str(db_path), task_marker_id)
-            if record:
-                if record.get("log_file"):
-                    log_file = Path(record["log_file"])
-                started_at = record.get("started_at")
-            remove_active_agent(str(db_path), task_marker_id)
-    except Exception:
-        pass
-
-    if not log_file or not log_file.exists():
-        _exit_hook("task-done", payload, 0, "no-log-file")
-
-    # Add duration to frontmatter by rewriting the file
-    if started_at:
-        try:
-            duration_s = (stop_time - datetime.fromisoformat(started_at)).total_seconds()
-            content = log_file.read_text(encoding="utf-8")
-            content = content.replace(
-                "---\n\n",
-                f"stopped_at: {stop_time.isoformat()}\n"
-                f"duration_seconds: {duration_s:.1f}\n"
-                "---\n\n",
-                1,
-            )
-            log_file.write_text(content, encoding="utf-8")
-        except (ValueError, OSError):
-            pass
-
-    lines = []
-
-    # Extract prompt from transcript
-    prompt = ""
-    if transcript_path:
-        prompt = _extract_prompt_from_transcript(transcript_path)
-
-    if prompt:
-        lines.extend(["## Prompt", "", prompt, ""])
-
-    # Append transcript as markdown + raw JSON
-    if transcript_path:
-        transcript_file = Path(transcript_path)
-        if transcript_file.exists():
-            try:
-                transcript_content = transcript_file.read_text(encoding="utf-8")
-                messages = []
-                for line in transcript_content.splitlines():
-                    if line.strip():
-                        messages.append(json.loads(line))
-                lines.extend(_render_transcript_lines(messages))
-            except OSError:
-                pass
-
-    if lines:
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-
-    _exit_hook("task-done", payload, 0, "logged")
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1881,36 +1770,6 @@ handle_plan_to_todo = handle_plan_to_issue
 
 
 # ---------------------------------------------------------------------------
-# Commit check — PostToolUse hook for Bash (git commit on master/main)
-# ---------------------------------------------------------------------------
-
-
-def handle_commit_check(payload: dict) -> None:
-    """Print a reminder when a git commit is made on master or main.
-
-    Reads TOOL_INPUT from the environment. If it contains 'git commit'
-    and the current branch is master or main, prints a reminder message.
-    Never blocks — always exits 0.
-    """
-    tool_input = os.environ.get("TOOL_INPUT", "")
-    if "git commit" in tool_input:
-        try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True,
-                text=True,
-            )
-            branch = result.stdout.strip()
-            if branch in ("master", "main"):
-                print(
-                    "CLASI: You committed on master. Call tag_version() to bump the version."
-                )
-        except (OSError, subprocess.SubprocessError):
-            pass
-    sys.exit(0)
-
-
-# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1927,14 +1786,11 @@ def handle_hook(event: str) -> None:
         "role-guard": handle_role_guard,
         "subagent-start": handle_subagent_start,
         "subagent-stop": handle_subagent_stop,
-        "task-created": handle_task_created,
-        "task-completed": handle_task_completed,
         "mcp-guard": handle_mcp_guard,
         "plan-to-issue": handle_plan_to_issue,
         "plan-to-todo": handle_plan_to_issue,  # backward-compatible alias
         "codex-plan-to-issue": handle_codex_plan_to_issue,
         "codex-plan-to-todo": handle_codex_plan_to_issue,  # backward-compatible alias
-        "commit-check": handle_commit_check,
         "status-inject": handle_status_inject,
     }
 

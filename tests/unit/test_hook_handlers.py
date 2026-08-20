@@ -1,18 +1,25 @@
-"""Tests for TaskCreated and TaskCompleted hook handlers."""
+"""Tests for clasi.hook_handlers.
+
+(sprint 026 / ticket 004): handle_task_created, handle_task_completed,
+and handle_commit_check — and their TaskCreated/TaskCompleted/
+commit-check registrations — were removed as dead code (0 of 2,447
+logged hook events, ever). Their test coverage was removed alongside
+them; a couple of tests that merely reused handle_task_created as a
+convenient way to exercise shared log-directory machinery were rewritten
+against handle_subagent_start instead.
+"""
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from clasi.hook_handlers import (
-    handle_task_created,
-    handle_task_completed,
     handle_subagent_start,
     handle_subagent_stop,
-    handle_commit_check,
     handle_plan_to_issue,
     handle_plan_to_todo,  # backward-compatible alias
     handle_codex_plan_to_issue,
@@ -21,6 +28,7 @@ from clasi.hook_handlers import (
     handle_role_guard,
     handle_mcp_guard,
     _ensure_log_gitignore,
+    _log_hook_event,
     _get_log_dir,
     _get_sprint_context,
     _get_active_tickets,
@@ -91,239 +99,6 @@ def _run_with_cwd(tmp_path: Path, fn, *args, **kwargs):
         os.chdir(old)
 
 
-def _task_created_payload(
-    task_id="t-001",
-    task_subject="Implement feature X",
-    teammate_name="programmer",
-    session_id="sess-abc",
-    transcript_path="",
-    cwd="/tmp",
-    permission_mode="default",
-) -> dict:
-    return {
-        "task_id": task_id,
-        "task_subject": task_subject,
-        "teammate_name": teammate_name,
-        "session_id": session_id,
-        "transcript_path": transcript_path,
-        "cwd": cwd,
-        "permission_mode": permission_mode,
-        "hook_event_name": "TaskCreated",
-    }
-
-
-def _task_completed_payload(
-    task_id="t-001",
-    task_subject="Implement feature X",
-    teammate_name="programmer",
-    session_id="sess-abc",
-    transcript_path="",
-    cwd="/tmp",
-    permission_mode="default",
-) -> dict:
-    return {
-        "task_id": task_id,
-        "task_subject": task_subject,
-        "teammate_name": teammate_name,
-        "session_id": session_id,
-        "transcript_path": transcript_path,
-        "cwd": cwd,
-        "permission_mode": permission_mode,
-        "hook_event_name": "TaskCompleted",
-    }
-
-
-# ---------------------------------------------------------------------------
-# TaskCreated tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleTaskCreated:
-    def test_creates_log_file_with_frontmatter(self, tmp_path):
-        """task_created creates a log file with correct frontmatter fields."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload()
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-
-        content = log_files[0].read_text()
-        assert "task_id: t-001" in content
-        assert "task_subject: Implement feature X" in content
-        assert "teammate_name: programmer" in content
-        assert "started_at:" in content
-
-    def test_creates_active_marker(self, tmp_path):
-        """task_created registers task-{id} in the DB as an active agent."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        payload = _task_created_payload(task_id="t-42")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        record = get_active_agent(db_path, "task-t-42")
-        assert record is not None
-        assert "log_file" in record
-        assert "started_at" in record
-
-    def test_marker_log_file_points_to_created_log(self, tmp_path):
-        """The DB record's log_file path matches the created log file."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        payload = _task_created_payload(task_id="t-10")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        record = get_active_agent(db_path, "task-t-10")
-        assert record is not None
-        # The record stores the log file path (relative or absolute).
-        # Verify it refers to the same filename as the created log file.
-        assert Path(record["log_file"]).name == log_files[0].name
-
-    def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_created exits 0 gracefully if .clasi/log does not exist."""
-        payload = _task_created_payload()
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-    def test_log_filename_derived_from_subject(self, tmp_path):
-        """Log filename slug is derived from task_subject."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload(task_subject="My Great Task")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        # slug should be lowercase, spaces replaced with dashes
-        assert "my-great-task" in log_files[0].name
-
-
-# ---------------------------------------------------------------------------
-# TaskCompleted tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleTaskCompleted:
-    def _setup_active_task(self, tmp_path, task_id="t-001", task_subject="Task"):
-        """Run task_created to set up the log and marker files."""
-        payload = _task_created_payload(task_id=task_id, task_subject=task_subject)
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-    def test_appends_duration_to_frontmatter(self, tmp_path):
-        """task_completed adds stopped_at and duration_seconds to frontmatter."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-001")
-
-        payload = _task_completed_payload(task_id="t-001")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "stopped_at:" in content
-        assert "duration_seconds:" in content
-
-    def test_removes_active_marker_after_completion(self, tmp_path):
-        """task_completed removes the DB record for the task."""
-        _make_log_dir(tmp_path)
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        self._setup_active_task(tmp_path, task_id="t-002")
-
-        # The DB record should exist after task_created
-        assert get_active_agent(db_path, "task-t-002") is not None
-
-        payload = _task_completed_payload(task_id="t-002")
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        # The DB record should be gone after task_completed
-        assert get_active_agent(db_path, "task-t-002") is None
-
-    def test_appends_transcript_content(self, tmp_path):
-        """task_completed appends the transcript as a JSON code block."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-003")
-
-        # Write a fake transcript JSONL
-        transcript_file = tmp_path / "transcript.jsonl"
-        messages = [
-            {"role": "user", "content": "Do this task."},
-            {"role": "assistant", "content": "Done."},
-        ]
-        transcript_file.write_text("\n".join(json.dumps(m) for m in messages))
-
-        payload = _task_completed_payload(
-            task_id="t-003",
-            transcript_path=str(transcript_file),
-        )
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        content = log_files[0].read_text()
-        assert "## Transcript" in content
-        assert "```json" in content
-        assert "Do this task." in content
-
-    def test_extracts_prompt_from_transcript(self, tmp_path):
-        """task_completed extracts the first user message as prompt."""
-        _make_log_dir(tmp_path)
-        self._setup_active_task(tmp_path, task_id="t-004")
-
-        transcript_file = tmp_path / "transcript.jsonl"
-        messages = [
-            {"role": "user", "content": "The initial prompt text."},
-            {"role": "assistant", "content": "Response."},
-        ]
-        transcript_file.write_text("\n".join(json.dumps(m) for m in messages))
-
-        payload = _task_completed_payload(
-            task_id="t-004",
-            transcript_path=str(transcript_file),
-        )
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-
-        log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        content = log_files[0].read_text()
-        assert "## Prompt" in content
-        assert "The initial prompt text." in content
-
-    def test_exits_zero_when_log_dir_missing(self, tmp_path):
-        """task_completed exits 0 gracefully if .clasi/log does not exist."""
-        payload = _task_completed_payload()
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
-
-    def test_exits_zero_when_no_marker(self, tmp_path):
-        """task_completed exits 0 gracefully if no marker file exists."""
-        _make_log_dir(tmp_path)
-        payload = _task_completed_payload(task_id="nonexistent")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, payload)
-        assert exc.value.code == 0
-
-
 # ---------------------------------------------------------------------------
 # Sprint-scoped log directory tests
 # ---------------------------------------------------------------------------
@@ -373,79 +148,6 @@ class TestGetLogDir:
         _setup_db_with_lock(tmp_path, sprint_id="003")
         _run_with_cwd(tmp_path, _get_log_dir)
         assert (tmp_path / ".clasi" / "log" / "sprint-003").is_dir()
-
-
-class TestSprintScopedLogging:
-    def test_task_created_uses_sprint_subdir_when_lock_held(self, tmp_path):
-        """task_created writes log to sprint subdir when execution lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="001")
-        payload = _task_created_payload(task_id="t-sprint-001")
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "task_id: t-sprint-001" in content
-
-    def test_task_created_active_marker_in_db(self, tmp_path):
-        """task_created registers the task in the DB (not a file marker)."""
-        _make_log_dir(tmp_path)
-        db_path = _setup_db_with_lock(tmp_path, sprint_id="001")
-        payload = _task_created_payload(task_id="t-marker")
-
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-
-        record = get_active_agent(db_path, "task-t-marker")
-        assert record is not None
-        assert record["agent_type"] == "task"
-
-    def test_task_completed_finds_log_in_sprint_subdir(self, tmp_path):
-        """task_completed appends to log in sprint subdir when lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="001")
-
-        # task_created sets up the log
-        create_payload = _task_created_payload(task_id="t-full")
-        with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, create_payload)
-
-        # task_completed should find it in the same sprint subdir
-        complete_payload = _task_completed_payload(task_id="t-full")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_completed, complete_payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-001"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert "stopped_at:" in content
-        assert "duration_seconds:" in content
-
-    def test_task_created_falls_back_to_base_dir_without_lock(self, tmp_path):
-        """task_created uses base log dir when no sprint holds the lock."""
-        _make_log_dir(tmp_path)
-        # DB exists but no lock
-        db_path = str(tmp_path / ".clasi" / ".clasi.db")
-        init_db(db_path)
-        register_sprint(db_path, "001", "sprint-001")
-
-        payload = _task_created_payload(task_id="t-fallback")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        base_log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        # Sprint subdir should not have been created
-        assert not (base_log_dir / "sprint-001").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -515,39 +217,15 @@ class TestGetActiveTickets:
 
 
 class TestSprintIdInFrontmatter:
-    def test_task_created_includes_sprint_id_when_lock_held(self, tmp_path):
-        """task_created writes sprint_id to frontmatter when an execution lock is held."""
-        _make_log_dir(tmp_path)
-        _setup_db_with_lock(tmp_path, sprint_id="002")
-        payload = _task_created_payload(task_id="t-sid")
+    def test_subagent_start_includes_tickets_in_frontmatter(self, tmp_path):
+        """handle_subagent_start writes in-progress ticket IDs to frontmatter.
 
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
-        log_files = list(sprint_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert 'sprint_id: "002"' in content
-
-    def test_task_created_includes_empty_sprint_id_when_no_lock(self, tmp_path):
-        """task_created writes empty sprint_id when no execution lock is held."""
-        _make_log_dir(tmp_path)
-        payload = _task_created_payload(task_id="t-nosid")
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
-        assert exc.value.code == 0
-
-        base_log_dir = tmp_path / ".clasi" / "log"
-        log_files = list(base_log_dir.glob("[0-9][0-9][0-9]-*.md"))
-        assert len(log_files) == 1
-        content = log_files[0].read_text()
-        assert 'sprint_id: ""' in content
-
-    def test_task_created_includes_tickets_in_frontmatter(self, tmp_path):
-        """task_created writes in-progress ticket IDs to frontmatter."""
+        (sprint 026 / ticket 004): formerly covered via the now-removed
+        handle_task_created, which shared this frontmatter-writing logic
+        (both go through _get_active_tickets). Rewritten against
+        handle_subagent_start, the surviving handler, to keep the
+        tickets-in-frontmatter behavior covered.
+        """
         _write_legacy_pin(tmp_path)
         _make_log_dir(tmp_path)
         _setup_db_with_lock(tmp_path, sprint_id="002")
@@ -556,9 +234,14 @@ class TestSprintIdInFrontmatter:
         sprint_dir = tmp_path / ".clasi" / "sprints" / "002-test-sprint"
         _make_in_progress_ticket(sprint_dir, "007", "Feature A")
 
-        payload = _task_created_payload(task_id="t-tickets")
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "abc123",
+            "session_id": "sess-xyz",
+            "hook_event_name": "SubagentStart",
+        }
         with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_task_created, payload)
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
         assert exc.value.code == 0
 
         sprint_log_dir = tmp_path / ".clasi" / "log" / "sprint-002"
@@ -608,6 +291,120 @@ class TestSprintIdInFrontmatter:
         assert len(log_files) == 1
         content = log_files[0].read_text()
         assert 'sprint_id: ""' in content
+
+
+# ---------------------------------------------------------------------------
+# _log_hook_event: file_path resolution + dated timestamps (ticket 026-004)
+# ---------------------------------------------------------------------------
+
+
+class TestLogHookEventFilePathAndTimestamp:
+    """_log_hook_event previously read file_path/path/new_path from the
+    payload's TOP level, but Claude Code's real PreToolUse/PostToolUse
+    payloads nest them under ``tool_input`` — the same shape
+    handle_role_guard itself resolves from (see _role_guard_payload).
+    That mismatch meant essentially no blocked-write log line ever
+    recorded which file was blocked (1 of 2,447 real log lines, from a
+    synthetic test). Also covers the timestamp format gaining a date
+    component, since multi-day log analysis was impossible with
+    %H:%M:%SZ alone.
+    """
+
+    def _last_line(self, tmp_path: Path, event_type: str = "role-guard") -> str:
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if event_type in ln]
+        assert matching, f"no {event_type} log line found: {lines}"
+        return matching[-1]
+
+    def test_file_path_read_from_nested_tool_input(self, tmp_path):
+        """Real Claude Code payload shape: file_path nested under
+        tool_input. This is the exact shape that previously produced no
+        file_path in the log line at all."""
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/clasi/foo.py"},
+            "session_id": "sess-log-test",
+        }
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 2, "blk-write")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=src/clasi/foo.py" in line
+
+    def test_path_and_new_path_also_read_from_tool_input(self, tmp_path):
+        """path and new_path — file_path's siblings in the same nested
+        shape — are resolved the same way."""
+        _make_log_dir(tmp_path)
+        payload = {"tool_input": {"path": "a.md", "new_path": "b.md"}}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "allow")
+
+        line = self._last_line(tmp_path)
+        assert "path=a.md" in line
+        assert "new_path=b.md" in line
+
+    def test_top_level_fallback_when_no_tool_input_key(self, tmp_path):
+        """A flat payload with no 'tool_input' key at all (e.g. a
+        synthetic/non-PreToolUse payload) still resolves file_path from
+        the top level — mirrors handle_role_guard's own
+        payload.get('tool_input', payload) fallback idiom."""
+        _make_log_dir(tmp_path)
+        payload = {"file_path": "clasi/issues/x.md"}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "artifact-dir")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=clasi/issues/x.md" in line
+
+    def test_empty_tool_input_key_does_not_fall_back_to_top_level(self, tmp_path):
+        """When 'tool_input' IS present (even empty), it is authoritative
+        — a top-level file_path is not consulted. Matches
+        handle_role_guard's identical resolution semantics exactly, so
+        the two never disagree about what a given payload means."""
+        _make_log_dir(tmp_path)
+        payload = {"tool_input": {}, "file_path": "clasi/issues/x.md"}
+        _run_with_cwd(tmp_path, _log_hook_event, "role-guard", payload, 0, "artifact-dir")
+
+        line = self._last_line(tmp_path)
+        assert "file_path=" not in line
+
+    def test_timestamp_has_date_component(self, tmp_path):
+        """Timestamp format gained a date component (was %H:%M:%SZ only,
+        making multi-day log analysis impossible)."""
+        _make_log_dir(tmp_path)
+        _run_with_cwd(tmp_path, _log_hook_event, "status-inject", {}, 0, "injected")
+
+        line = self._last_line(tmp_path, event_type="status-inject")
+        timestamp_token = line.split(" ", 1)[0]
+        # Must parse as a dated, second-precision UTC timestamp.
+        parsed = datetime.strptime(timestamp_token, "%Y-%m-%dT%H:%M:%SZ")
+        assert parsed.year >= 2026
+
+    def test_line_still_fixed_width_parseable(self, tmp_path, monkeypatch):
+        """event_type and reason columns remain fixed-width, left-
+        justified fields — only the timestamp token grew (to add the
+        date). Compares byte offsets, not a naive whitespace split:
+        padding spaces and separator spaces are both literal " "
+        characters and indistinguishable by splitting, which is exactly
+        why the format is documented as fixed-width in the first place.
+        """
+        monkeypatch.delenv("CLASI_AGENT_TIER", raising=False)
+        monkeypatch.delenv("CLASI_AGENT_NAME", raising=False)
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 2, "no-path",
+        )
+
+        line = self._last_line(tmp_path)
+        timestamp_field = line[:20]
+        # Also covered by test_timestamp_has_date_component; re-checked
+        # here since this test's byte offsets below depend on its width.
+        datetime.strptime(timestamp_field, "%Y-%m-%dT%H:%M:%SZ")
+
+        # self._last_line() reads via splitlines(), which strips the
+        # trailing newline _log_hook_event writes — not present here.
+        rest = line[20:]
+        expected_rest = f" {'role-guard':<16} 2 {'no-path':<12.12} "
+        assert rest == expected_rest
 
 
 # ---------------------------------------------------------------------------
@@ -783,24 +580,6 @@ class TestHandleHook:
                 handle_hook("subagent-stop")
             mock_handler.assert_called_once_with({})
 
-    def test_routes_task_created(self):
-        """handle_hook('task-created') calls handle_task_created."""
-        with patch("clasi.hook_handlers.handle_task_created") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("task-created")
-            mock_handler.assert_called_once_with({})
-
-    def test_routes_task_completed(self):
-        """handle_hook('task-completed') calls handle_task_completed."""
-        with patch("clasi.hook_handlers.handle_task_completed") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("task-completed")
-            mock_handler.assert_called_once_with({})
-
     def test_routes_mcp_guard(self):
         """handle_hook('mcp-guard') calls handle_mcp_guard."""
         with patch("clasi.hook_handlers.handle_mcp_guard") as mock_handler, \
@@ -828,15 +607,6 @@ class TestHandleHook:
                 handle_hook("plan-to-todo")
             mock_handler.assert_called_once_with({})
 
-    def test_routes_commit_check(self):
-        """handle_hook('commit-check') calls handle_commit_check."""
-        with patch("clasi.hook_handlers.handle_commit_check") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("commit-check")
-            mock_handler.assert_called_once_with({})
-
     def test_unknown_event_exits_1(self, capsys):
         """handle_hook exits with code 1 for unknown event names."""
         with patch("clasi.hook_handlers.read_payload", return_value={}):
@@ -846,63 +616,19 @@ class TestHandleHook:
         captured = capsys.readouterr()
         assert "no-such-event" in captured.err
 
-
-# ---------------------------------------------------------------------------
-# handle_commit_check tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleCommitCheck:
-    def test_prints_reminder_on_master_with_git_commit(self, capsys, monkeypatch):
-        """Prints reminder when TOOL_INPUT has 'git commit' and branch is master."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'fix: something'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "master\n"})()
+    @pytest.mark.parametrize("event", ["task-created", "task-completed", "commit-check"])
+    def test_removed_events_are_unknown(self, event, capsys):
+        """(sprint 026 / ticket 004): task-created, task-completed, and
+        commit-check were removed as dead-code registrations (0 of 2,447
+        logged hook events, ever) — handle_hook no longer routes them and
+        must fall through to the same unknown-event exit-1 path as any
+        other unrecognized event name, not silently no-op."""
+        with patch("clasi.hook_handlers.read_payload", return_value={}):
             with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
+                handle_hook(event)
+        assert exc.value.code == 1
         captured = capsys.readouterr()
-        assert "CLASI: You committed on master" in captured.out
-
-    def test_prints_reminder_on_main_with_git_commit(self, capsys, monkeypatch):
-        """Prints reminder when TOOL_INPUT has 'git commit' and branch is main."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'feat: new thing'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "main\n"})()
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert "CLASI: You committed on master" in captured.out
-
-    def test_silent_when_not_on_master(self, capsys, monkeypatch):
-        """No output when TOOL_INPUT has 'git commit' but branch is not master/main."""
-        monkeypatch.setenv("TOOL_INPUT", "git commit -m 'fix: bug'")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            mock_run.return_value = type("R", (), {"stdout": "feature/my-feature\n"})()
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_silent_when_tool_input_lacks_git_commit(self, capsys, monkeypatch):
-        """No subprocess call and no output when TOOL_INPUT has no 'git commit'."""
-        monkeypatch.setenv("TOOL_INPUT", "git status")
-        with patch("clasi.hook_handlers.subprocess.run") as mock_run:
-            with pytest.raises(SystemExit) as exc:
-                handle_commit_check({})
-        assert exc.value.code == 0
-        mock_run.assert_not_called()
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_exits_zero_when_tool_input_missing(self, capsys, monkeypatch):
-        """handle_commit_check exits 0 when TOOL_INPUT env var is not set."""
-        monkeypatch.delenv("TOOL_INPUT", raising=False)
-        with pytest.raises(SystemExit) as exc:
-            handle_commit_check({})
-        assert exc.value.code == 0
+        assert event in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -2384,12 +2110,23 @@ class TestEnsureLogGitignore:
         assert content == "*\n!.gitignore\n"
 
     def test_hook_invocation_creates_gitignore(self, tmp_path):
-        """A hook invocation that creates the log dir also writes .gitignore."""
+        """A hook invocation that creates the log dir also writes .gitignore.
+
+        (sprint 026 / ticket 004): rewritten against handle_subagent_start
+        (previously handle_task_created, now removed as dead code) — any
+        handler that creates the log dir exercises the same
+        _ensure_log_gitignore call, so this is not a coverage loss.
+        """
         # Set up a .clasi dir without pre-creating the log dir so hook creates it
         _write_legacy_pin(tmp_path)
-        payload = _task_created_payload(task_id="t-gitignore-test")
+        payload = {
+            "agent_type": "programmer",
+            "agent_id": "gitignore-test",
+            "session_id": "sess-gitignore-test",
+            "hook_event_name": "SubagentStart",
+        }
         with pytest.raises(SystemExit):
-            _run_with_cwd(tmp_path, handle_task_created, payload)
+            _run_with_cwd(tmp_path, handle_subagent_start, payload)
         log_dir = tmp_path / ".clasi" / "log"
         gitignore = log_dir / ".gitignore"
         assert gitignore.exists(), ".gitignore was not created in log dir by hook"
@@ -3364,12 +3101,13 @@ class TestRoleGuardTier1ArtifactDirAllowList:
     def _last_role_guard_line(self, tmp_path: Path) -> str:
         """Return the most recent role-guard hooks.log line.
 
-        _log_hook_event only logs the top-level payload["file_path"] key
-        (never present for role-guard's real nested
-        tool_input.file_path payload shape), so the file path itself is
-        never in the line — each test here makes exactly one
-        _run_role_guard() call, so the last (only) role-guard line is
-        unambiguous.
+        Each test here makes exactly one _run_role_guard() call, so the
+        last (only) role-guard line is unambiguous. (sprint 026 / ticket
+        004: _log_hook_event now reads file_path from the same nested
+        tool_input shape role-guard itself resolves from, so the logged
+        line does include it — this helper no longer needs to route
+        around its absence, it just doesn't need it for these
+        reason-code assertions.)
         """
         hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
         lines = hooks_log.read_text(encoding="utf-8").splitlines()
