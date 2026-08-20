@@ -298,6 +298,7 @@ def _ensure_log_gitignore(log_dir: Path) -> None:
 
 def _log_hook_event(
     event_type: str, payload: dict, exit_code: int, reason: str,
+    decisions: Optional[list[str]] = None,
 ) -> None:
     """Append a single line to .clasi/log/hooks.log.
 
@@ -322,6 +323,23 @@ def _log_hook_event(
     ``handle_role_guard``'s own ``payload.get("tool_input", payload)``
     idiom so a payload with no ``tool_input`` key at all (e.g. a flat
     synthetic payload) still resolves the fields from the top level.
+
+    decisions (ticket 028-005 — "Guard Decision Trail"): an optional,
+    ordered list of short, informal decision-trail tokens (e.g.
+    ``tier=2(db)``, ``match=clasi/issues/``, ``gate=ticket-state:no-
+    ticket``) explaining *why* a guard reached this exit — hooks.log
+    previously recorded only *what* was decided. Tokens are appended
+    verbatim after the existing key_fields, space-joined the same way
+    key_fields itself is. ``None`` (the default) or an empty list
+    produces exactly today's line shape — additive, not a format
+    break for any pre-existing caller.
+
+    Deny-payload dump (ticket 028-005): whenever ``exit_code == 2``,
+    the full ``payload`` dict is also written as JSON to
+    ``<log_dir>/denied/<timestamp>-<event_type>.json`` (the same
+    timestamp as this line, for correlation) so a denial can be
+    inspected/replayed in full — the hooks.log line itself only ever
+    carries a handful of summarized key fields.
     """
     try:
         _proj = get_project()
@@ -360,19 +378,32 @@ def _log_hook_event(
         if tier or name:
             key_fields.append(f"tier={tier or '0'} name={name or 'team-lead'}")
 
+        if decisions:
+            key_fields.extend(decisions)
+
         line = f"{timestamp} {event_type:<16} {exit_code} {reason_fixed} {' '.join(key_fields)}\n"
         hooks_log = log_dir / "hooks.log"
         with open(hooks_log, "a", encoding="utf-8") as f:
             f.write(line)
+
+        if exit_code == 2:
+            denied_dir = log_dir / "denied"
+            denied_dir.mkdir(parents=True, exist_ok=True)
+            _ensure_log_gitignore(denied_dir)
+            denied_file = denied_dir / f"{timestamp}-{event_type}.json"
+            denied_file.write_text(
+                json.dumps(payload, indent=2, default=str), encoding="utf-8",
+            )
     except Exception:
         pass  # Logging must never cause a hook to fail
 
 
 def _exit_hook(
     event_type: str, payload: dict, exit_code: int, reason: str,
+    decisions: Optional[list[str]] = None,
 ) -> None:
     """Log the hook event and exit with the given code."""
-    _log_hook_event(event_type, payload, exit_code, reason)
+    _log_hook_event(event_type, payload, exit_code, reason, decisions=decisions)
     sys.exit(exit_code)
 
 
@@ -600,6 +631,12 @@ def handle_role_guard(payload: dict) -> None:
     _protected_paths, _excluded_paths = _load_role_guard_config(_proj)
     _db_conn: Optional[sqlite3.Connection] = None
 
+    # Decision trail (ticket 028-005): short, informal tokens appended by
+    # each check as it evaluates, so a hooks.log line records *why* a
+    # decision was reached, not just *what* it was. Read (not reassigned)
+    # by the _exit closure below, so no `nonlocal` is needed there.
+    decisions: list[str] = []
+
     def _conn() -> Optional[sqlite3.Connection]:
         nonlocal _db_conn
         if _db_conn is None and _proj.db_path.exists():
@@ -616,7 +653,7 @@ def handle_role_guard(payload: dict) -> None:
                 _db_conn.close()
             except Exception:
                 pass
-        _exit_hook("role-guard", payload, code, reason)
+        _exit_hook("role-guard", payload, code, reason, decisions=decisions)
 
     # Claude Code's own plan-mode plan file (~/.claude/plans/<name>.md).
     # This lies outside the project root, so the general outside-root
@@ -631,6 +668,7 @@ def handle_role_guard(payload: dict) -> None:
                 Path(file_path) == _plans_dir
                 or _plans_dir in Path(file_path).parents
             ):
+                decisions.append("match=claude-plans-dir")
                 _exit(0, "claude-plans-dir")
         except (OSError, ValueError):
             # Malformed path string — fall through to normal handling
@@ -669,6 +707,8 @@ def handle_role_guard(payload: dict) -> None:
         except Exception:
             pass
 
+    decisions.append(f"tier={agent_tier or '0'}{'(db)' if _tier_source_db else ''}")
+
     # No path in payload — nothing to guard against. This must be fail
     # CLOSED for tier 0/1: directory-scope enforcement cannot be applied
     # without a path, and silently allowing here is exactly how the
@@ -685,6 +725,7 @@ def handle_role_guard(payload: dict) -> None:
             "(tier=%s, payload keys=%s) — failing closed",
             agent_tier or "0", present_keys,
         )
+        decisions.append("missing=file_path")
         _exit(2, "no-path")
 
     # Outside-root writes are ALLOWED for every tier. CLASI's role-guard
@@ -701,6 +742,7 @@ def handle_role_guard(payload: dict) -> None:
     # narrow ~/.claude/plans/** allow-list above, which is retained only so
     # its specific "claude-plans-dir" reason keeps appearing in logs.
     if file_path and Path(file_path).is_absolute():
+        decisions.append("match=outside-root")
         _exit(0, "outside-root")
 
     # OOP bypass: .clasi/oop (or legacy .clasi-oop) enables direct writes
@@ -708,6 +750,7 @@ def handle_role_guard(payload: dict) -> None:
     # the team-lead. Reuses the shared connection (see _oop_active's
     # docstring for why this is safe).
     if _oop_active(conn=_conn()):
+        decisions.append("match=oop-bypass")
         _exit(0, "oop-bypass")
 
     # Recovery state bypass: allows specific paths during sprint recovery
@@ -721,6 +764,7 @@ def handle_role_guard(payload: dict) -> None:
                 _recovery_entry_matches(entry, file_path, _proj)
                 for entry in recovery.get("allowed_paths", [])
             ):
+                decisions.append("match=recovery-state")
                 _exit(0, "recovery")
         except Exception:
             pass
@@ -732,6 +776,7 @@ def handle_role_guard(payload: dict) -> None:
     safe_prefixes = [".claude/", "CLAUDE.md", "AGENTS.md"]
     for prefix in safe_prefixes:
         if file_path == prefix or file_path.startswith(prefix):
+            decisions.append(f"match={prefix}")
             _exit(0, "safe-prefix")
 
     # Staleness fail-closed gate: when this repo IS the CLASI source repo
@@ -767,6 +812,7 @@ def handle_role_guard(payload: dict) -> None:
             "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
+        decisions.append("gate=stale-guard")
         _exit(2, "stale-guard")
 
     # _protected_paths / _excluded_paths were already resolved at the top
@@ -820,7 +866,12 @@ def handle_role_guard(payload: dict) -> None:
                     "fallback: .clasi/oop).",
                     file=sys.stderr,
                 )
+                decisions.append("gate=ticket-state:no-ticket")
                 _exit(2, "no-ticket")
+            else:
+                decisions.append("gate=ticket-state:ok")
+        else:
+            decisions.append("gate=ticket-state:skipped")
 
     # Tier 2 (programmer) can write anywhere — that's their job.
     # Checked after the ticket-state gate above (and after the no-path /
@@ -843,6 +894,7 @@ def handle_role_guard(payload: dict) -> None:
                     "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
                     file=sys.stderr,
                 )
+                decisions.append(f"match=blk-sprint:{blk}")
                 _exit(2, "blk-sprint")
 
     if agent_tier in ("", "0", "1"):
@@ -851,12 +903,14 @@ def handle_role_guard(payload: dict) -> None:
         # matrix note above.
         for alw in _allow_prefixes:
             if file_path.startswith(alw):
+                decisions.append(f"match={alw}")
                 _exit(0, "artifact-dir")
 
     # Sprint-planner (tier 1) can write to sprint directories they own.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
     _sprints_prefix = _block_prefixes[0]
     if agent_tier == "1" and file_path.startswith(_sprints_prefix):
+        decisions.append(f"match={_sprints_prefix}")
         _exit(0, "tier-1")
 
     # protected_paths gate: when the stakeholder has explicitly configured
@@ -879,9 +933,12 @@ def handle_role_guard(payload: dict) -> None:
         # harness scripts under a protected tests/ root) — checked first
         # so an exclusion always wins over a broader protected prefix.
         if any(file_path.startswith(p) for p in _excluded_paths):
+            decisions.append("match=excluded-path")
             _exit(0, "excluded-path")
         if not any(file_path.startswith(p) for p in _protected_paths):
+            decisions.append("gate=protected-paths:outside")
             _exit(0, "outside-protected-paths")
+        decisions.append("gate=protected-paths:inside")
 
     # --- BLOCK ---
     # If we reach here, the write is not permitted for this tier.
@@ -915,6 +972,7 @@ def handle_role_guard(payload: dict) -> None:
             file=sys.stderr,
         )
         print("- programmer agent for source code and tests", file=sys.stderr)
+    decisions.append("gate=no-allow-match")
     _exit(2, "blk-write")
 
 
@@ -929,9 +987,14 @@ def handle_mcp_guard(payload: dict) -> None:
     The sprint-planner (Tier 1) and programmer (Tier 2) are allowed.
     OOP bypass: if .clasi/oop (or legacy .clasi-oop) exists, allow all tiers.
     """
+    # Decision trail (ticket 028-005): see handle_role_guard's matching
+    # comment — short, informal tokens appended as each check evaluates.
+    decisions: list[str] = []
+
     # OOP bypass
     if _oop_active():
-        _exit_hook("mcp-guard", payload, 0, "oop-bypass")
+        decisions.append("match=oop-bypass")
+        _exit_hook("mcp-guard", payload, 0, "oop-bypass", decisions=decisions)
 
     # Staleness fail-closed gate — see the matching gate and rationale in
     # handle_role_guard. Same narrow scope: only the structural "this repo
@@ -955,7 +1018,8 @@ def handle_mcp_guard(payload: dict) -> None:
             "create .clasi/oop if clasi itself is broken).",
             file=sys.stderr,
         )
-        _exit_hook("mcp-guard", payload, 2, "stale-guard")
+        decisions.append("gate=stale-guard")
+        _exit_hook("mcp-guard", payload, 2, "stale-guard", decisions=decisions)
 
     caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
 
@@ -964,18 +1028,23 @@ def handle_mcp_guard(payload: dict) -> None:
     # If no env var, check the DB for the caller's own active-agent tier.
     # Keyed on caller_id — never a filter-less lookup, which with
     # concurrent agents would return an arbitrary agent's tier.
+    _tier_source_db = False
     if not agent_tier:
         try:
             db_path_tier = get_project().db_path
             if db_path_tier.exists():
                 from clasi.state_db import get_active_tier
                 agent_tier = get_active_tier(str(db_path_tier), caller_id)
+                if agent_tier:
+                    _tier_source_db = True
         except Exception:
             pass
 
+    decisions.append(f"tier={agent_tier or '0'}{'(db)' if _tier_source_db else ''}")
+
     # Only block Tier 0 (team-lead / interactive session)
     if agent_tier not in ("", "0"):
-        _exit_hook("mcp-guard", payload, 0, "tier-allowed")
+        _exit_hook("mcp-guard", payload, 0, "tier-allowed", decisions=decisions)
 
     tool_name = payload.get("tool_name", "")
     print(
@@ -983,7 +1052,8 @@ def handle_mcp_guard(payload: dict) -> None:
         "Dispatch to sprint-planner agent to create planning artifacts.",
         file=sys.stderr,
     )
-    _exit_hook("mcp-guard", payload, 2, "blk-mcp")
+    decisions.append("gate=tier-0-blocked")
+    _exit_hook("mcp-guard", payload, 2, "blk-mcp", decisions=decisions)
 
 
 # ---------------------------------------------------------------------------
@@ -1692,6 +1762,11 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
     of the fix — stripping a redundant ``issue-`` filename prefix — but the
     resulting file may still carry plan-shaped prose that needs a later
     manual or sprint-planner-side reshape.
+
+    Routed through ``_exit_hook`` (ticket 028-005) instead of raw
+    ``sys.exit`` so ``codex-plan-to-issue`` events finally appear in
+    ``hooks.log`` — previously zero ever did, for either this handler or
+    ``handle_plan_to_issue``.
     """
     import re
 
@@ -1700,14 +1775,15 @@ def handle_codex_plan_to_issue(payload: dict) -> None:
     message = payload.get("last_assistant_message", "")
     match = re.search(r"<proposed_plan>(.*?)</proposed_plan>", message, re.DOTALL)
     if not match:
-        sys.exit(0)
+        _exit_hook("codex-plan-to-issue", payload, 0, "no-plan-tag")
 
     plan_text = match.group(1).strip()
     issue_dir = get_project().issues_dir
     result = plan_to_issue_from_text(plan_text, issue_dir)
     if result:
         print(f"CLASI: Codex plan saved as TODO: {result}")
-    sys.exit(0)
+        _exit_hook("codex-plan-to-issue", payload, 0, "saved")
+    _exit_hook("codex-plan-to-issue", payload, 0, "no-file")
 
 
 # Backward-compatible alias
@@ -1719,6 +1795,10 @@ def handle_plan_to_issue(payload: dict) -> None:
 
     Calls plan_to_issue() with the standard directories and prints the
     path of the created issue file if one was created.
+
+    Routed through ``_exit_hook`` (ticket 028-005) instead of raw
+    ``sys.exit`` so ``plan-to-issue`` events finally appear in
+    ``hooks.log`` — previously zero ever did.
     """
     from clasi.plan_to_issue import plan_to_issue
 
@@ -1761,8 +1841,8 @@ def handle_plan_to_issue(payload: dict) -> None:
             }),
             file=sys.stderr,
         )
-        sys.exit(2)
-    sys.exit(0)
+        _exit_hook("plan-to-issue", payload, 2, "rewrite-req")
+    _exit_hook("plan-to-issue", payload, 0, "no-file")
 
 
 # Backward-compatible alias
@@ -1832,4 +1912,23 @@ def handle_hook(event: str) -> None:
         print(f"clasi hook: unknown event '{event}'", file=sys.stderr)
         sys.exit(1)
 
-    handler(payload)
+    if event in ("role-guard", "mcp-guard"):
+        # Guard-internal exception observability (ticket 028-005): catch,
+        # log a crash-class hooks.log line (with a payload dump — same
+        # treatment as any other denial), then re-raise the ORIGINAL
+        # exception UNCHANGED so the program's eventual exit code and
+        # stderr traceback are identical to pre-ticket behavior. This is
+        # deliberately NOT a fail-closed fix (no new sys.exit(2) /
+        # _exit_hook(..., 2, ...) is added on this path) — installing
+        # that belongs to sprint 029's fail-closed exception boundary,
+        # not this observability-only ticket. SystemExit — the guard's
+        # own normal allow/deny exit via _exit_hook — is a BaseException,
+        # not an Exception, so it is never intercepted here; only a
+        # genuine internal crash is.
+        try:
+            handler(payload)
+        except Exception:
+            _log_hook_event(event, payload, 2, "guard-crash")
+            raise
+    else:
+        handler(payload)

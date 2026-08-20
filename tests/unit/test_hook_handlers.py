@@ -700,7 +700,7 @@ class TestHandlePlanToIssue:
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_issue({})
+                _run_with_cwd(tmp_path, handle_plan_to_issue, {})
         assert exc.value.code == 0
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
@@ -708,36 +708,36 @@ class TestHandlePlanToIssue:
         assert str(args[1]).endswith("issues")
         assert kwargs.get("plan_file") is None
 
-    def test_prints_result_path_when_issue_created(self, capsys):
+    def test_prints_result_path_when_issue_created(self, tmp_path, capsys):
         """handle_plan_to_issue writes JSON to stderr and exits 2 when plan_to_issue returns a path."""
         todo_path = Path(".clasi/issues/001-my-plan.md")
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = todo_path
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_issue({})
+                _run_with_cwd(tmp_path, handle_plan_to_issue, {})
         assert exc.value.code == 2
         captured = capsys.readouterr()
         assert "001-my-plan.md" in captured.err
         data = json.loads(captured.err)
         assert data["decision"] == "block"
 
-    def test_no_output_when_no_plan_file(self, capsys):
+    def test_no_output_when_no_plan_file(self, tmp_path, capsys):
         """handle_plan_to_issue prints nothing when plan_to_issue returns None."""
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit) as exc:
-                handle_plan_to_issue({})
+                _run_with_cwd(tmp_path, handle_plan_to_issue, {})
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_passes_plan_file_path_from_payload(self):
+    def test_passes_plan_file_path_from_payload(self, tmp_path):
         """handle_plan_to_issue passes planFilePath from payload as plan_file argument."""
         payload = {"tool_input": {"planFilePath": "/tmp/my-plan.md"}}
         with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
             mock_p2t.return_value = None
             with pytest.raises(SystemExit):
-                handle_plan_to_issue(payload)
+                _run_with_cwd(tmp_path, handle_plan_to_issue, payload)
         args, kwargs = mock_p2t.call_args
         assert args[0] == Path.home() / ".claude" / "plans"
         # issues_dir resolves via config; test just checks it ends with "issues"
@@ -3927,3 +3927,315 @@ class TestRoleGuardThrowExceptionRecoveryScenario:
             "clasi/sprints/026-test-sprint/design/DESIGN.md",
             "1",
         ) == 0
+
+
+# ---------------------------------------------------------------------------
+# Ticket 028-005: Guard decision trail and deny-payload capture
+# ---------------------------------------------------------------------------
+
+
+def _last_hooks_log_line(tmp_path: Path, event_type: str) -> str:
+    """Return the most recent hooks.log line for *event_type*."""
+    hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+    lines = hooks_log.read_text(encoding="utf-8").splitlines()
+    matching = [ln for ln in lines if event_type in ln]
+    assert matching, f"no {event_type} log line found: {lines}"
+    return matching[-1]
+
+
+class TestLogHookEventDecisionsParam:
+    """_log_hook_event / _exit_hook accept an optional decisions: list[str]
+    parameter (ticket 028-005). A call with none produces exactly today's
+    line shape — additive, not a format break for any pre-existing caller
+    (all 245 pre-ticket tests already assert this implicitly by continuing
+    to pass; these tests pin the contract explicitly).
+    """
+
+    def test_no_decisions_arg_produces_unchanged_line(self, tmp_path):
+        """Omitting decisions entirely matches the pre-ticket line shape."""
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 2, "no-path",
+        )
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        rest = line[20:]  # skip the timestamp, same offset as the
+        # pre-existing test_line_still_fixed_width_parseable
+        assert rest == f" {'role-guard':<16} 2 {'no-path':<12.12} "
+
+    def test_none_decisions_produces_unchanged_line(self, tmp_path):
+        """Explicit decisions=None is identical to omitting the arg."""
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 0, "allow", None,
+        )
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        rest = line[20:]
+        assert rest == f" {'role-guard':<16} 0 {'allow':<12.12} "
+
+    def test_empty_list_decisions_produces_unchanged_line(self, tmp_path):
+        """An empty list is falsy, same as None — no trailing tokens."""
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 0, "allow", [],
+        )
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        rest = line[20:]
+        assert rest == f" {'role-guard':<16} 0 {'allow':<12.12} "
+
+    def test_decisions_appended_space_joined_after_key_fields(self, tmp_path):
+        """Tokens land after the existing key_fields, space-joined —
+        matching key_fields' own join style."""
+        _make_log_dir(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {"file_path": "x.py"}}
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", payload, 0, "allow",
+            ["tier=2(db)", "match=clasi/issues/"],
+        )
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "tool_name=Write file_path=x.py tier=2(db) match=clasi/issues/" in line
+
+
+class TestLogHookEventDeniedPayloadDump:
+    """Every denial (exit_code == 2) dumps the full payload to
+    .clasi/log/denied/<ts>-<hook>.json, gitignored the same way log_dir
+    itself is (ticket 028-005)."""
+
+    def test_denial_writes_full_payload_json(self, tmp_path):
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/clasi/foo.py"},
+            "session_id": "deny-dump-test",
+        }
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", payload, 2, "blk-write",
+        )
+        denied_dir = tmp_path / ".clasi" / "log" / "denied"
+        denied_files = list(denied_dir.glob("*-role-guard.json"))
+        assert len(denied_files) == 1
+        dumped = json.loads(denied_files[0].read_text(encoding="utf-8"))
+        assert dumped == payload
+
+    def test_denied_filename_uses_the_lines_own_timestamp(self, tmp_path):
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "mcp-guard", {"tool_name": "x"}, 2, "blk-mcp",
+        )
+        line = _last_hooks_log_line(tmp_path, "mcp-guard")
+        timestamp = line.split(" ", 1)[0]
+        denied_file = tmp_path / ".clasi" / "log" / "denied" / f"{timestamp}-mcp-guard.json"
+        assert denied_file.exists()
+
+    def test_denied_dir_gets_own_gitignore(self, tmp_path):
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 2, "blk-write",
+        )
+        gitignore = tmp_path / ".clasi" / "log" / "denied" / ".gitignore"
+        assert gitignore.exists()
+        assert gitignore.read_text(encoding="utf-8") == "*\n!.gitignore\n"
+
+    def test_allow_does_not_write_a_denied_file(self, tmp_path):
+        _make_log_dir(tmp_path)
+        _run_with_cwd(
+            tmp_path, _log_hook_event, "role-guard", {}, 0, "allow",
+        )
+        denied_dir = tmp_path / ".clasi" / "log" / "denied"
+        assert not denied_dir.exists() or list(denied_dir.glob("*.json")) == []
+
+
+class TestRoleGuardDecisionTokensEndToEnd:
+    """handle_role_guard accumulates decision tokens across its checks and
+    passes them through on every exit path (allow and deny alike) —
+    driven through the real handler, not _log_hook_event directly."""
+
+    def test_allow_path_carries_tier_and_match_tokens(self, tmp_path):
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/issues/x.md", "") == 0
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "tier=0" in line
+        assert "match=" in line
+        assert "issues" in line
+
+    def test_deny_path_carries_tier_and_gate_tokens(self, tmp_path):
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "tier=0" in line
+        assert "gate=no-allow-match" in line
+
+    def test_tier2_db_sourced_tier_token_format(self, tmp_path):
+        """Matches the informal style example from sprint.md's Design
+        Rationale (tier=2(db)) when the tier is DB-resolved rather than
+        env-resolved."""
+        import os
+
+        from clasi.state_db import init_db, register_active_agent
+
+        _write_fresh_config(tmp_path)
+        db_path = tmp_path / ".clasi" / ".clasi.db"
+        init_db(str(db_path))
+        register_active_agent(str(db_path), "caller-1", "programmer", "2")
+
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-1"
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 0
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "tier=2(db)" in line
+
+
+class TestMcpGuardDecisionTokensEndToEnd:
+    """handle_mcp_guard accumulates decision tokens across its checks and
+    passes them through on every exit path."""
+
+    def test_deny_path_carries_tier_and_gate_tokens(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+        line = _last_hooks_log_line(tmp_path, "mcp-guard")
+        assert "tier=0" in line
+        assert "gate=tier-0-blocked" in line
+
+    def test_allow_path_carries_tier_token(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+        line = _last_hooks_log_line(tmp_path, "mcp-guard")
+        assert "tier=1" in line
+
+
+class TestGuardInternalExceptionObservability:
+    """Hard scope boundary (ticket 028-005): a guard-internal exception is
+    caught, logged with a payload dump (same treatment as any other
+    denial-class event), and the ORIGINAL exception is re-raised
+    UNCHANGED — no new sys.exit(2) / _exit_hook(..., 2, ...) is added on
+    this path. That fail-closed behavior is sprint 029's job, not this
+    one's. These tests assert the exception type/message propagate
+    unchanged (pytest.raises(RuntimeError), not SystemExit) — if the
+    dispatcher wrapping had wrongly converted the crash into an exit, the
+    raises-type assertion below would fail.
+    """
+
+    def test_role_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+        _make_log_dir(tmp_path)
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "src/clasi/foo.py"},
+            "session_id": "crash-test-role-guard",
+        }
+        with patch(
+            "clasi.hook_handlers.handle_role_guard",
+            side_effect=RuntimeError("boom-role-guard"),
+        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
+            with pytest.raises(RuntimeError, match="boom-role-guard"):
+                _run_with_cwd(tmp_path, handle_hook, "role-guard")
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert " 2 " in line
+        assert "guard-crash" in line
+
+        denied_dir = tmp_path / ".clasi" / "log" / "denied"
+        denied_files = list(denied_dir.glob("*-role-guard.json"))
+        assert len(denied_files) == 1
+        dumped = json.loads(denied_files[0].read_text(encoding="utf-8"))
+        assert dumped == payload
+
+    def test_mcp_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+        _make_log_dir(tmp_path)
+        payload = {"tool_name": "create_ticket", "session_id": "crash-test-mcp-guard"}
+        with patch(
+            "clasi.hook_handlers.handle_mcp_guard",
+            side_effect=ValueError("boom-mcp-guard"),
+        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
+            with pytest.raises(ValueError, match="boom-mcp-guard"):
+                _run_with_cwd(tmp_path, handle_hook, "mcp-guard")
+
+        line = _last_hooks_log_line(tmp_path, "mcp-guard")
+        assert " 2 " in line
+        assert "guard-crash" in line
+
+        denied_dir = tmp_path / ".clasi" / "log" / "denied"
+        denied_files = list(denied_dir.glob("*-mcp-guard.json"))
+        assert len(denied_files) == 1
+        dumped = json.loads(denied_files[0].read_text(encoding="utf-8"))
+        assert dumped == payload
+
+    def test_non_guard_handler_crash_is_not_wrapped(self, tmp_path):
+        """The exception-capture wrapping is scoped to role-guard/mcp-guard
+        only (per the ticket's explicit scope) — a crash in some other
+        handler is neither caught nor given a guard-crash hooks.log line."""
+        _make_log_dir(tmp_path)
+        with patch(
+            "clasi.hook_handlers.handle_status_inject",
+            side_effect=RuntimeError("boom-status-inject"),
+        ), patch("clasi.hook_handlers.read_payload", return_value={}):
+            with pytest.raises(RuntimeError, match="boom-status-inject"):
+                _run_with_cwd(tmp_path, handle_hook, "status-inject")
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        content = hooks_log.read_text(encoding="utf-8") if hooks_log.exists() else ""
+        assert "guard-crash" not in content
+
+
+class TestPlanHandlersRoutedThroughExitHook:
+    """handle_plan_to_issue and handle_codex_plan_to_issue are routed
+    through _exit_hook (not raw sys.exit), so plan-to-issue/
+    codex-plan-to-issue events appear in hooks.log for the first time
+    (ticket 028-005) — confirmed zero such lines existed before this
+    ticket."""
+
+    def test_codex_no_plan_tag_writes_hooks_log_line(self, tmp_path):
+        _make_log_dir(tmp_path)
+        payload = {"last_assistant_message": "no tag here"}
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_codex_plan_to_issue, payload)
+        assert exc.value.code == 0
+        line = _last_hooks_log_line(tmp_path, "codex-plan-to-issue")
+        assert " 0 " in line
+        assert "no-plan-tag" in line
+
+    def test_codex_saved_writes_hooks_log_line(self, tmp_path):
+        _write_legacy_pin(tmp_path)
+        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
+        message = "<proposed_plan>\n# Plan\n\nDetails.\n</proposed_plan>"
+        payload = {"last_assistant_message": message}
+        with pytest.raises(SystemExit) as exc:
+            _run_with_cwd(tmp_path, handle_codex_plan_to_issue, payload)
+        assert exc.value.code == 0
+        line = _last_hooks_log_line(tmp_path, "codex-plan-to-issue")
+        assert " 0 " in line
+        assert "saved" in line
+
+    def test_plan_to_issue_no_file_writes_hooks_log_line(self, tmp_path):
+        _make_log_dir(tmp_path)
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
+            mock_p2t.return_value = None
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_plan_to_issue, {})
+        assert exc.value.code == 0
+        line = _last_hooks_log_line(tmp_path, "plan-to-issue")
+        assert " 0 " in line
+        assert "no-file" in line
+
+    def test_plan_to_issue_rewrite_req_writes_hooks_log_line(self, tmp_path):
+        _make_log_dir(tmp_path)
+        todo_path = Path(".clasi/issues/001-my-plan.md")
+        with patch("clasi.plan_to_issue.plan_to_issue") as mock_p2t:
+            mock_p2t.return_value = todo_path
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_plan_to_issue, {})
+        assert exc.value.code == 2
+        line = _last_hooks_log_line(tmp_path, "plan-to-issue")
+        assert " 2 " in line
+        assert "rewrite-req" in line
+
+        denied_dir = tmp_path / ".clasi" / "log" / "denied"
+        denied_files = list(denied_dir.glob("*-plan-to-issue.json"))
+        assert len(denied_files) == 1
