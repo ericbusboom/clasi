@@ -1121,7 +1121,33 @@ def _add_gate_imperative(narrowed: dict, sprint_id: str, active_tickets: list[st
     )
 
 
-def _build_status_block(agent: str) -> str:
+def _trim_empty_preflight_sprints(narrowed: dict) -> None:
+    """Drop ``available_transitions`` from sprint entries with zero
+    tickets, in place (sprint 026 / ticket 003).
+
+    A sprint with ``tickets.total == 0`` cannot be in the ``ticketed``,
+    ``executing``, ``review``, or ``closed`` states (all four require at
+    least one ticket file — see ``is_at_least_one_ticket`` in
+    ``sprint.yaml``), so it is necessarily still in an early, empty
+    pre-flight state (``open``/``planned``/``pre-flight``) with nothing
+    for anyone to act on right now. Its ``available_transitions`` list
+    (each entry carrying a nested ``blocked_by`` list) measured as about
+    61% of a typical injected status block's byte size and is pure noise
+    for that state — nobody is currently blocked on firing a transition
+    for a sprint that has no tickets yet.
+
+    Sprints with at least one ticket (``tickets.total > 0``, including
+    the currently-executing sprint) are never touched — their
+    ``available_transitions``/``blocked_by`` detail is exactly the
+    "next step" information the status block exists to surface.
+    """
+    for sprint_entry in narrowed.get("sprints", []):
+        tickets = sprint_entry.get("tickets") or {}
+        if tickets.get("total", 0) == 0:
+            sprint_entry.pop("available_transitions", None)
+
+
+def _build_status_block(agent: str, skip_inconsistencies: bool = False) -> str:
     """Build a ``## CLASI status`` fenced YAML block for *agent*.
 
     Resolves the active ``sprint_id`` via :func:`_get_sprint_context` and,
@@ -1133,7 +1159,19 @@ def _build_status_block(agent: str) -> str:
 
     The status-block assembly excludes ``done/`` sprints and tickets
     (``exclude_done=True``) — this hook path is the only caller that opts
-    into that; on-demand callers (MCP tools) still see full history.
+    into that; on-demand callers (MCP tools) still see full history. It
+    also drops ``available_transitions``/``blocked_by`` detail for any
+    sprint with zero tickets (see :func:`_trim_empty_preflight_sprints`)
+    — the same "hook path only" scoping as ``exclude_done``.
+
+    *skip_inconsistencies*, when True, skips
+    :func:`~clasi.status.inconsistency.detect_inconsistencies` (measured
+    at about 400ms). Only :func:`handle_status_inject` (the
+    ``UserPromptSubmit`` hook, fired on every prompt) passes True;
+    :func:`handle_subagent_start` leaves it False, and the ``clasi
+    status`` CLI / ``get_status`` MCP tool never go through this function
+    at all — they call :func:`~clasi.status.build_status` directly with
+    the default ``skip_inconsistencies=False``.
 
     Returns an empty string if building fails (e.g. no status data
     available). Never raises — callers rely on this being safe. Failures
@@ -1171,11 +1209,13 @@ def _build_status_block(agent: str) -> str:
         full = build_status(
             project, agent=agent, sprint_id=sprint_id or None,
             ticket_id=ticket_id, exclude_done=True,
+            skip_inconsistencies=skip_inconsistencies,
         )
         narrowed = narrow_status(
             full, agent=agent, sprint_id=sprint_id or None, ticket_id=ticket_id,
         )
         _add_gate_imperative(narrowed, sprint_id, active_tickets)
+        _trim_empty_preflight_sprints(narrowed)
         yaml_text = to_yaml(narrowed)
         return f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
     except Exception:
@@ -1193,6 +1233,11 @@ def handle_status_inject(payload: dict) -> None:
 
     Silent no-op (exit 0, no output) only if ``.clasi/`` does not exist
     (project not CLASI-initialized).
+
+    This is the hot per-prompt path (fires on every ``UserPromptSubmit``),
+    so it calls :func:`_build_status_block` with ``skip_inconsistencies=True``
+    — the ``detect_inconsistencies`` pass (about 400ms) is skipped here
+    only; ``clasi status`` and the ``project-status`` skill still run it.
 
     When OOP bypass is active (either channel — file or DB, see
     ``_oop_active``/``_oop_status_lines``), this NEVER goes silent: it
@@ -1213,7 +1258,7 @@ def handle_status_inject(payload: dict) -> None:
         _exit_hook("status-inject", payload, 0, "oop-bypass")
 
     agent = os.environ.get("CLASI_AGENT_NAME", "team-lead")
-    block = _build_status_block(agent)
+    block = _build_status_block(agent, skip_inconsistencies=True)
     if block:
         print(block)
     _exit_hook("status-inject", payload, 0, "injected")

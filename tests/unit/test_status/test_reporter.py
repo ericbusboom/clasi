@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -168,6 +169,68 @@ class TestTopLevelKeys:
 
     def test_inconsistencies_is_empty_list(self, reporter_empty):
         result = reporter_empty.build()
+        assert result["inconsistencies"] == []
+
+
+# ---------------------------------------------------------------------------
+# skip_inconsistencies (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestSkipInconsistencies:
+    """``skip_inconsistencies`` exists ONLY so the status-inject hook path
+    can skip the ~400ms detect_inconsistencies pass. The default (False)
+    must leave every existing caller (``clasi status`` CLI, ``get_status``
+    MCP tool / project-status skill) unchanged."""
+
+    def test_default_calls_detect_inconsistencies(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies", return_value=[]
+        ) as mock_detect:
+            StatusReporter(empty_project, reader=null_reader).build()
+        mock_detect.assert_called_once()
+
+    def test_skip_inconsistencies_true_does_not_call_detect(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies"
+        ) as mock_detect:
+            StatusReporter(empty_project, reader=null_reader).build(
+                skip_inconsistencies=True
+            )
+        mock_detect.assert_not_called()
+
+    def test_skip_inconsistencies_true_still_returns_empty_list(self, empty_project, null_reader):
+        result = StatusReporter(empty_project, reader=null_reader).build(
+            skip_inconsistencies=True
+        )
+        assert result["inconsistencies"] == []
+
+    def test_skip_inconsistencies_does_not_change_other_keys(self, empty_project, null_reader):
+        default_result = StatusReporter(empty_project, reader=null_reader).build()
+        skipped_result = StatusReporter(empty_project, reader=null_reader).build(
+            skip_inconsistencies=True
+        )
+        default_result.pop("computed_at")
+        skipped_result.pop("computed_at")
+        default_result.pop("inconsistencies")
+        skipped_result.pop("inconsistencies")
+        assert default_result == skipped_result
+
+    def test_build_status_default_calls_detect_inconsistencies(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies", return_value=[]
+        ) as mock_detect:
+            build_status(empty_project, reader=null_reader)
+        mock_detect.assert_called_once()
+
+    def test_build_status_passes_skip_inconsistencies_through(self, empty_project, null_reader):
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies"
+        ) as mock_detect:
+            result = build_status(
+                empty_project, reader=null_reader, skip_inconsistencies=True
+            )
+        mock_detect.assert_not_called()
         assert result["inconsistencies"] == []
 
 

@@ -11,9 +11,33 @@ import textwrap
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
+import clasi.state_machine.loader as loader_module
 from clasi.state_machine.loader import load_machine
 from clasi.state_machine.models import Machine, MachineSyntaxError
+
+
+# ---------------------------------------------------------------------------
+# Cache isolation (sprint 026 / ticket 003: load_machine is now
+# functools.lru_cache'd, process-lifetime). Tests in this module patch
+# importlib.resources.as_file to inject alternate YAML text for the SAME
+# machine names ("project") that other tests in this module load for
+# real — without clearing the cache first, a monkeypatched test would
+# silently get back the real, already-cached Machine instead of parsing
+# its patched (often intentionally invalid) text. Per this sprint's
+# state_machine-DESIGN.md overlay note, tests that need a fresh parse
+# must clear the cache explicitly rather than relying on caching being
+# disabled — this autouse fixture does that before AND after every test
+# in this module so no state leaks in either direction.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_load_machine_cache():
+    load_machine.cache_clear()
+    yield
+    load_machine.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -421,3 +445,72 @@ class TestAllMachinesConsistency:
             assert state.description, (
                 f"Machine {name!r}: state {state_name!r} has empty description"
             )
+
+
+# ---------------------------------------------------------------------------
+# Process-lifetime caching (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadMachineCaching:
+    """``load_machine`` is wrapped with ``functools.lru_cache(maxsize=None)``
+    — repeated calls for the same name return the identical cached
+    ``Machine`` object and parse the underlying YAML exactly once per
+    distinct name, not once per call."""
+
+    def test_repeated_calls_same_name_return_identical_object(self):
+        m1 = load_machine("project")
+        m2 = load_machine("project")
+        assert m1 is m2
+
+    def test_yaml_parsed_once_per_name_across_repeated_calls(self, monkeypatch):
+        real_safe_load = yaml.safe_load
+        calls: list[str] = []
+
+        def counting_safe_load(text):
+            calls.append(text)
+            return real_safe_load(text)
+
+        monkeypatch.setattr(loader_module.yaml, "safe_load", counting_safe_load)
+
+        for _ in range(5):
+            load_machine("project")
+        for _ in range(5):
+            load_machine("sprint")
+        for _ in range(5):
+            load_machine("ticket")
+
+        # 3 distinct machine names x 5 calls each = 15 total load_machine()
+        # calls; without caching that's 15 YAML parses. With lru_cache it
+        # collapses to exactly one parse per distinct name.
+        assert len(calls) == 3
+
+    def test_cache_clear_forces_a_fresh_parse(self, monkeypatch):
+        real_safe_load = yaml.safe_load
+        calls: list[str] = []
+
+        def counting_safe_load(text):
+            calls.append(text)
+            return real_safe_load(text)
+
+        monkeypatch.setattr(loader_module.yaml, "safe_load", counting_safe_load)
+
+        load_machine("project")
+        load_machine("project")
+        assert len(calls) == 1
+
+        load_machine.cache_clear()
+        load_machine("project")
+        assert len(calls) == 2
+
+    def test_failed_parse_is_not_cached(self, monkeypatch):
+        """A name that raises must not poison the cache — the next call
+        (e.g. after the underlying condition is fixed) tries again rather
+        than replaying the failure or a stale success."""
+        bad_yaml = "machine: test\n  bad indentation:\nfoo: [unclosed"
+        _patch_yaml_text(monkeypatch, bad_yaml)
+
+        with pytest.raises(MachineSyntaxError):
+            load_machine("project")
+        with pytest.raises(MachineSyntaxError):
+            load_machine("project")

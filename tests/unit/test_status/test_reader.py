@@ -409,6 +409,102 @@ class TestBranchMerged:
 
 
 # ---------------------------------------------------------------------------
+# Git-subprocess memoization (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+def _count_real_git_calls(monkeypatch):
+    """Patch subprocess.run to count invocations while still running the
+    real command (so callers observe real output), and return the list
+    it appends argv tuples to."""
+    real_run = subprocess.run
+    calls: list[tuple[str, ...]] = []
+
+    def counting_run(cmd, **kwargs):
+        calls.append(tuple(cmd))
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", counting_run)
+    return calls
+
+
+class TestGitCallMemoization:
+    """``ClasiStateReader``'s git-subprocess-backed methods memoize their
+    result per instance — repeated calls to the same git query within one
+    reader's lifetime shell out once, not once per call (sprint 026 /
+    ticket 003)."""
+
+    def test_repeated_git_branch_calls_shell_out_once(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        calls = _count_real_git_calls(monkeypatch)
+        for _ in range(5):
+            reader.git_branch()
+        assert len(calls) == 1
+
+    def test_repeated_default_branch_calls_shell_out_once(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        calls = _count_real_git_calls(monkeypatch)
+        for _ in range(5):
+            reader.default_branch()
+        assert len(calls) == 1
+
+    def test_git_branch_and_default_branch_cache_independently(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        calls = _count_real_git_calls(monkeypatch)
+        for _ in range(3):
+            reader.git_branch()
+        for _ in range(3):
+            reader.default_branch()
+        # Two distinct git queries -> two real subprocess calls total,
+        # regardless of how many times each was individually requested.
+        assert len(calls) == 2
+
+    def test_branch_merged_across_multiple_sprints_shares_one_merged_list(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        _make_sprint(project, "001", branch="sprint/001-a")
+        _make_sprint(project, "002", branch="sprint/002-b")
+        _make_sprint(project, "003", branch="sprint/003-c")
+
+        calls = _count_real_git_calls(monkeypatch)
+        reader.branch_merged("001")
+        reader.branch_merged("002")
+        reader.branch_merged("003")
+
+        # `git branch --merged <default>` does not depend on sprint_id —
+        # it's the SAME command for every sprint in this reader instance,
+        # so it (plus the one `default_branch` resolution it depends on)
+        # must shell out exactly twice total, not twice per sprint.
+        assert len(calls) == 2
+
+    def test_new_instance_starts_with_an_empty_cache(
+        self, project: Project, monkeypatch
+    ) -> None:
+        """The cache is per-instance, not process-global — a fresh reader
+        must not inherit another reader's cached git results."""
+        reader_a = ClasiStateReader(project)
+        reader_a.git_branch()
+
+        calls = _count_real_git_calls(monkeypatch)
+        reader_b = ClasiStateReader(project)
+        reader_b.git_branch()
+
+        assert len(calls) == 1
+
+    def test_git_branch_result_unaffected_by_memoization(
+        self, project: Project, reader: ClasiStateReader
+    ) -> None:
+        """Caching must not change the returned value — only how many
+        times it shells out to compute it."""
+        first = reader.git_branch()
+        second = reader.git_branch()
+        assert first == second != ""
+
+
+# ---------------------------------------------------------------------------
 # dependencies_done
 # ---------------------------------------------------------------------------
 

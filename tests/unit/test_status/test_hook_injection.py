@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import logging
 import os
+import subprocess
 import sys
 from io import StringIO
 from pathlib import Path
@@ -23,8 +24,14 @@ import clasi.state_machine.predicates  # noqa: F401 — side-effect: registers a
 import clasi.state_machine.predicates.project
 import clasi.state_machine.predicates.sprint
 import clasi.state_machine.predicates.ticket
+from clasi.state_machine.loader import load_machine
+import clasi.state_machine.loader as loader_module
 from clasi.state_machine.registry import clear_registry
-from clasi.hook_handlers import handle_status_inject, handle_subagent_start
+from clasi.hook_handlers import (
+    handle_status_inject,
+    handle_subagent_start,
+    _trim_empty_preflight_sprints,
+)
 from clasi.state_db import init_db, register_sprint, acquire_lock
 
 
@@ -286,6 +293,78 @@ class TestRealStatusBlockSize:
 
 
 # ---------------------------------------------------------------------------
+# Git-call and load_machine parse-count collapse across a REAL, realistic
+# multi-sprint build_status invocation (sprint 026 / ticket 003).
+#
+# These are structural call-count assertions, not wall-clock timing —
+# the ticket explicitly calls out that a mock/debug-counter assertion is
+# required, not variance-prone timing alone (timing is covered separately
+# by the `time clasi hook status-inject` measurement recorded in the
+# ticket file).
+# ---------------------------------------------------------------------------
+
+
+class TestGitCallAndLoadMachineCountCollapse:
+    def test_git_subprocess_call_count_stays_small_across_multi_sprint_status(
+        self, tmp_path
+    ):
+        """Baseline measured about 28 git subprocess calls for one
+        build_status invocation (is_on_sprint_branch alone shelled out
+        14x). Per-instance memoization in ClasiStateReader must collapse
+        this to about 3 distinct git queries (show-current, symbolic-ref,
+        branch --merged <default>) regardless of how many sprints/tickets
+        the evaluated machines touch."""
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        real_run = subprocess.run
+        calls: list[tuple] = []
+
+        def counting_run(cmd, **kwargs):
+            calls.append(tuple(cmd))
+            return real_run(cmd, **kwargs)
+
+        with patch("clasi.status.reader.subprocess.run", side_effect=counting_run):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output != ""
+        assert len(calls) <= 3, f"expected <=3 git subprocess calls, got {calls}"
+
+    def test_load_machine_parse_count_is_three_across_multi_sprint_status(
+        self, tmp_path
+    ):
+        """Baseline measured about 20 load_machine re-parses for one
+        build_status invocation (project/sprint/ticket machines
+        re-parsed once per evaluation). functools.lru_cache must collapse
+        this to exactly 3 real parse-and-construct passes — one per
+        distinct machine name — no matter how many sprints/tickets are
+        evaluated.
+
+        Counts calls to the module-private ``_build_machine`` (reached
+        only on an actual cache miss inside ``load_machine``) rather than
+        ``yaml.safe_load`` directly — the latter is also used elsewhere
+        in the codebase (e.g. config.yaml parsing) and would over-count.
+        """
+        _build_realistic_multi_sprint_fixture(tmp_path)
+        load_machine.cache_clear()
+
+        real_build_machine = loader_module._build_machine
+        calls: list[str] = []
+
+        def counting_build_machine(data, source_name):
+            calls.append(source_name)
+            return real_build_machine(data, source_name)
+
+        with patch.object(
+            loader_module, "_build_machine", side_effect=counting_build_machine
+        ):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert output != ""
+        assert len(calls) == 3, f"expected exactly 3 parses, got {calls}"
+        assert set(calls) == {"project", "sprint", "ticket"}
+
+
+# ---------------------------------------------------------------------------
 # done/ exclusion at the hook level (fix 1)
 # ---------------------------------------------------------------------------
 
@@ -314,6 +393,160 @@ class TestHookExcludesDone:
         # tickets (001, 002, 003) must be excluded.
         assert "019-006" in detail_ids or "006" in detail_ids
         assert not ({"019-001", "001"} & detail_ids)
+
+
+# ---------------------------------------------------------------------------
+# available_transitions/blocked_by trim for empty pre-flight sprints
+# (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestTrimEmptyPreflightSprintsHelper:
+    """Direct unit tests for _trim_empty_preflight_sprints, isolated from
+    the rest of the hook pipeline: a sprint entry with zero tickets has
+    available_transitions dropped; a sprint entry with at least one
+    ticket is left completely untouched."""
+
+    def test_drops_available_transitions_for_zero_ticket_sprint(self):
+        narrowed = {
+            "sprints": [
+                {
+                    "id": "025",
+                    "state": "planned",
+                    "available_transitions": [
+                        {"name": "architecture-review", "to": "pre-flight",
+                         "fireable": True, "blocked_by": []},
+                    ],
+                    "tickets": {"total": 0},
+                },
+            ],
+        }
+        _trim_empty_preflight_sprints(narrowed)
+        assert "available_transitions" not in narrowed["sprints"][0]
+
+    def test_keeps_available_transitions_for_sprint_with_tickets(self):
+        entry = {
+            "id": "019",
+            "state": "executing",
+            "available_transitions": [
+                {"name": "complete", "to": "review",
+                 "fireable": False, "blocked_by": ["is_all_tickets_done"]},
+            ],
+            "tickets": {"total": 3, "by_state": {"open": 3}},
+        }
+        narrowed = {"sprints": [dict(entry)]}
+        _trim_empty_preflight_sprints(narrowed)
+        assert narrowed["sprints"][0] == entry
+
+    def test_other_sprint_keys_unaffected_by_trim(self):
+        narrowed = {
+            "sprints": [
+                {"id": "025", "state": "open",
+                 "available_transitions": [{"name": "plan"}],
+                 "tickets": {"total": 0}},
+            ],
+        }
+        _trim_empty_preflight_sprints(narrowed)
+        sprint_entry = narrowed["sprints"][0]
+        assert sprint_entry["id"] == "025"
+        assert sprint_entry["state"] == "open"
+        assert sprint_entry["tickets"] == {"total": 0}
+
+    def test_missing_sprints_key_is_a_noop(self):
+        narrowed = {"agent": "team-lead"}
+        _trim_empty_preflight_sprints(narrowed)  # must not raise
+        assert narrowed == {"agent": "team-lead"}
+
+    def test_missing_tickets_block_treated_as_zero(self):
+        """A sprint entry with no `tickets` key at all (defensive) is
+        treated the same as total == 0 -> trimmed, never raises."""
+        narrowed = {"sprints": [{"id": "099", "available_transitions": [{"name": "x"}]}]}
+        _trim_empty_preflight_sprints(narrowed)
+        assert "available_transitions" not in narrowed["sprints"][0]
+
+    def test_no_available_transitions_key_is_a_noop(self):
+        """A sprint entry that already lacks available_transitions (e.g.
+        narrowed away by a different agent view) must not raise."""
+        narrowed = {"sprints": [{"id": "099", "tickets": {"total": 0}}]}
+        _trim_empty_preflight_sprints(narrowed)
+        assert "available_transitions" not in narrowed["sprints"][0]
+
+
+def _build_fixture_with_empty_and_active_sprints(tmp_path: Path) -> str:
+    """One executing sprint with an in-progress ticket, plus one bare
+    (sprint.md only, zero tickets) pre-flight sprint — the exact contrast
+    the trim targets: the empty sprint's available_transitions must be
+    dropped from the injected block; the active sprint's must not."""
+    _write_fresh_config(tmp_path)
+    sprints_root = tmp_path / "clasi" / "sprints"
+
+    active_sid = "019"
+    active_dir = sprints_root / f"{active_sid}-current-sprint"
+    _write_sprint_md(active_dir, active_sid, "Current Sprint", status="executing")
+    _write_ticket(active_dir, "001", "In progress ticket", status="in-progress")
+
+    empty_sid = "025"
+    empty_dir = sprints_root / f"{empty_sid}-future-sprint"
+    _write_sprint_md(empty_dir, empty_sid, "Future Sprint", status="open")
+    (empty_dir / "tickets").mkdir(parents=True, exist_ok=True)
+
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, active_sid, "current-sprint")
+    acquire_lock(db_path, active_sid)
+
+    return active_sid
+
+
+class TestTrimEmptyPreflightSprintsEndToEnd:
+    """Real, unmocked handle_status_inject output — proves the trim is
+    actually wired into the hook path (not just correct in isolation),
+    and that a sprint with tickets keeps its full detail."""
+
+    def test_empty_sprint_available_transitions_absent_from_output(self, tmp_path):
+        _build_fixture_with_empty_and_active_sprints(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        empty_sprint = next(s for s in parsed["sprints"] if s["id"] == "025")
+        assert empty_sprint["tickets"]["total"] == 0
+        assert "available_transitions" not in empty_sprint
+
+    def test_active_ticketed_sprint_available_transitions_present(self, tmp_path):
+        _build_fixture_with_empty_and_active_sprints(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        active_sprint = next(s for s in parsed["sprints"] if s["id"] == "019")
+        assert active_sprint["tickets"]["total"] >= 1
+        assert "available_transitions" in active_sprint
+
+
+# ---------------------------------------------------------------------------
+# detect_inconsistencies removed from the status-inject hook path
+# (sprint 026 / ticket 003)
+# ---------------------------------------------------------------------------
+
+
+class TestStatusInjectSkipsInconsistencies:
+    """End-to-end confirmation, against the REAL (unmocked) hook handler,
+    that detect_inconsistencies never runs on the status-inject path.
+    The clasi status CLI / get_status MCP tool path is verified
+    unaffected in tests/integration/test_status_e2e.py."""
+
+    def test_detect_inconsistencies_not_called_on_real_status_inject(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        with patch(
+            "clasi.status.inconsistency.detect_inconsistencies"
+        ) as mock_detect:
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        mock_detect.assert_not_called()
+        parsed = _extract_yaml(output)
+        assert parsed["inconsistencies"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -590,8 +823,9 @@ class TestStatusInjectValid:
         _make_clasi_dir(tmp_path)
         captured_agent = {}
 
-        def fake_build(agent: str) -> str:
+        def fake_build(agent: str, skip_inconsistencies: bool = False) -> str:
             captured_agent["agent"] = agent
+            captured_agent["skip_inconsistencies"] = skip_inconsistencies
             return f"## CLASI status\n\n```yaml\nagent: {agent}\n```\n"
 
         with _chdir(tmp_path):
@@ -605,8 +839,9 @@ class TestStatusInjectValid:
         _make_clasi_dir(tmp_path)
         captured_agent = {}
 
-        def fake_build(agent: str) -> str:
+        def fake_build(agent: str, skip_inconsistencies: bool = False) -> str:
             captured_agent["agent"] = agent
+            captured_agent["skip_inconsistencies"] = skip_inconsistencies
             return f"## CLASI status\n\n```yaml\nagent: {agent}\n```\n"
 
         env_without_agent = {k: v for k, v in os.environ.items() if k != "CLASI_AGENT_NAME"}
@@ -616,6 +851,22 @@ class TestStatusInjectValid:
                     _capture_stdout(handle_status_inject, {})
 
         assert captured_agent["agent"] == "team-lead"
+
+    def test_passes_skip_inconsistencies_true(self, tmp_path):
+        """status-inject is the hot per-prompt path — it must opt out of
+        the ~400ms detect_inconsistencies pass (sprint 026 / ticket 003)."""
+        _make_clasi_dir(tmp_path)
+        captured = {}
+
+        def fake_build(agent: str, skip_inconsistencies: bool = False) -> str:
+            captured["skip_inconsistencies"] = skip_inconsistencies
+            return "## CLASI status\n\n```yaml\nagent: team-lead\n```\n"
+
+        with _chdir(tmp_path):
+            with patch("clasi.hook_handlers._build_status_block", side_effect=fake_build):
+                _capture_stdout(handle_status_inject, {})
+
+        assert captured["skip_inconsistencies"] is True
 
     def test_empty_block_no_output(self, tmp_path):
         """If _build_status_block returns empty string, no output is produced."""
@@ -703,6 +954,25 @@ class TestSubagentStartStatusBlock:
                 )
 
         assert captured_agent["agent"] == "team-lead"
+
+    def test_does_not_pass_skip_inconsistencies_true(self, tmp_path):
+        """Ticket 003 scopes the detect_inconsistencies removal to the
+        status-inject (UserPromptSubmit) hook path only — subagent-start's
+        status block must keep running it, unchanged."""
+        _make_clasi_dir(tmp_path)
+        captured = {}
+
+        def fake_build(agent: str, skip_inconsistencies: bool = False) -> str:
+            captured["skip_inconsistencies"] = skip_inconsistencies
+            return f"## CLASI status\n\n```yaml\nagent: {agent}\n```\n"
+
+        with _chdir(tmp_path):
+            with patch("clasi.hook_handlers._build_status_block", side_effect=fake_build):
+                _capture_stdout(
+                    handle_subagent_start, self._minimal_payload("programmer")
+                )
+
+        assert captured["skip_inconsistencies"] is False
 
     def test_oop_suppresses_status_block(self, tmp_path):
         clasi_dir = _make_clasi_dir(tmp_path)

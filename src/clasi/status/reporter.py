@@ -90,6 +90,7 @@ class StatusReporter:
         sprint_id: str | None = None,
         ticket_id: str | None = None,
         exclude_done: bool = False,
+        skip_inconsistencies: bool = False,
     ) -> dict:
         """Build and return the full status dict.
 
@@ -98,7 +99,8 @@ class StatusReporter:
         dict matching the canonical output shape.
 
         The ``inconsistencies:`` key is populated by
-        :func:`~clasi.status.inconsistency.detect_inconsistencies`.
+        :func:`~clasi.status.inconsistency.detect_inconsistencies`, unless
+        *skip_inconsistencies* is True (see below).
 
         Args:
             agent: The requesting agent name (e.g. ``"team-lead"``,
@@ -117,6 +119,14 @@ class StatusReporter:
                 keep the default ``False`` so they continue to return full
                 history including archived (``done/``) sprints and
                 tickets.
+            skip_inconsistencies: When True, ``detect_inconsistencies`` is
+                not run and ``inconsistencies`` is returned as ``[]``.
+                Intended ONLY for the ``status-inject`` (``UserPromptSubmit``)
+                hook path — sprint 026 measured this pass at about 400ms
+                running inline on every prompt for no per-prompt benefit.
+                The ``clasi status`` CLI and the ``project-status`` skill
+                (via MCP ``get_status``) must keep the default ``False``
+                so drift detection stays available on demand, unchanged.
 
         Returns:
             A dict with top-level keys: ``agent``, ``computed_at``,
@@ -152,8 +162,9 @@ class StatusReporter:
         }
 
         # --- inconsistency detection ---
-        from clasi.status.inconsistency import detect_inconsistencies
-        status["inconsistencies"] = detect_inconsistencies(project, status)
+        if not skip_inconsistencies:
+            from clasi.status.inconsistency import detect_inconsistencies
+            status["inconsistencies"] = detect_inconsistencies(project, status)
 
         return status
 
