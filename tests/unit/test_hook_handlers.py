@@ -28,7 +28,11 @@ from clasi.hook_handlers import (
     _ext_to_language,
     _oop_active,
     _oop_source,
+    _recovery_entry_matches,
+    _load_role_guard_config,
+    get_project,
 )
+from clasi.project import Project
 from clasi.state_db import (
     init_db,
     register_sprint,
@@ -40,6 +44,8 @@ from clasi.state_db import (
     set_oop,
     get_oop,
     clear_oop,
+    write_recovery_state,
+    get_recovery_state,
 )
 
 
@@ -2982,13 +2988,21 @@ def _setup_sprint_with_lock(
 
 
 class TestRoleGuardTicketStateGate:
-    """Ticket-state gate (ticket 019-004): block Edit/Write/MultiEdit when
-    a sprint execution lock is held, zero tickets in that sprint are
-    status: in-progress, and OOP is not active — REGARDLESS of tier,
-    including tier 2 (the gate that was previously entirely absent for
-    programmers). Uses real sprint/ticket directory structures on disk,
-    not mocks of _get_sprint_context() / _get_active_tickets() — this
-    sprint's standard is no hand-built fixtures that bypass real logic.
+    """Ticket-state gate (ticket 019-004; RESCOPED by ticket 026-001): block
+    Edit/Write/MultiEdit when a sprint execution lock is held, zero
+    tickets in that sprint are status: in-progress, and OOP is not
+    active. As of ticket 026-001 this gate applies to TIER 2 ONLY (not
+    tier 0/1 — see TestRoleGuardTicketStateGateRescoping below for that
+    change), and is additionally exempt for issues_dir/reflections_dir
+    writes at every tier it applies to, so incident capture (the
+    issue/self-reflect skills) is never blocked by it — see the source
+    issue's "exception routing deadlocks by construction" finding: a
+    thrown ticket exception (status: exception, never in-progress) used
+    to dead-end every agent's writes, including the sprint-planner/
+    team-lead writes needed to recover. Uses real sprint/ticket directory
+    structures on disk, not mocks of _get_sprint_context() /
+    _get_active_tickets() — this sprint's standard is no hand-built
+    fixtures that bypass real logic.
     """
 
     def test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked(
@@ -3038,28 +3052,44 @@ class TestRoleGuardTicketStateGate:
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 0
 
-    def test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked(
+    def test_lock_held_zero_in_progress_tickets_tier0_source_write_still_blocked(
         self, tmp_path, capsys
     ):
-        """Sprint executing + zero in-progress tickets + tier 0/1 +
-        source-path write -> exit 2 (gate applies to all tiers, not just
-        tier 2)."""
+        """Sprint executing + zero in-progress tickets + tier 0 +
+        source-path write -> STILL exit 2 (the underlying "team-lead
+        cannot write source" rule is unchanged), but as of ticket
+        026-001 the gate itself no longer applies to tier 0/1, so this
+        now falls through to the ordinary blk-write path — the message
+        is the standard ROLE VIOLATION write-attempt message, NOT the
+        ticket-gate-specific "execution lock is held" message (that
+        message is now reserved for tier 2, gated by this same
+        condition — see test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked
+        above). Renamed from the previous
+        test_lock_held_zero_in_progress_tickets_tier0_source_write_blocked
+        to make explicit that the deny OUTCOME (exit 2) is preserved
+        while the ROUTE producing it intentionally changed."""
         sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "") == 2
         stderr = capsys.readouterr().err
-        assert "019" in stderr
-        assert "in-progress" in stderr
+        assert "attempted direct file write to" in stderr
+        assert "execution lock" not in stderr
 
-    def test_lock_held_zero_in_progress_tickets_tier1_source_write_blocked(
-        self, tmp_path
+    def test_lock_held_zero_in_progress_tickets_tier1_source_write_still_blocked(
+        self, tmp_path, capsys
     ):
-        """Same gate applies to tier 1 as well, not only tier 0/2."""
+        """Same as the tier-0 case above: tier 1 writing source code is
+        still blocked (exit 2), but no longer via the ticket-gate
+        message — tier 1's own "sprint-planner cannot write source"
+        rule already covers it regardless of ticket state."""
         sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        stderr = capsys.readouterr().err
+        assert "attempted direct file write to" in stderr
+        assert "execution lock" not in stderr
 
     def test_lock_held_zero_in_progress_tickets_safe_prefix_still_allowed(
         self, tmp_path
@@ -3072,6 +3102,71 @@ class TestRoleGuardTicketStateGate:
         _make_done_ticket(sprint_dir, "001", "Some done ticket")
 
         assert _run_role_guard(tmp_path, "CLAUDE.md", "2") == 0
+
+
+class TestRoleGuardTicketStateGateRescoping:
+    """Ticket 026-001: the ticket-state gate no longer applies to tier 0/1
+    at all, and is exempt for issues_dir/reflections_dir writes even for
+    the tier-2 callers it does still gate. These are the NEW behaviors
+    this ticket adds on top of the pre-existing 019-004 gate (covered by
+    TestRoleGuardTicketStateGate above) — every case here sets up the
+    exact "gate would otherwise fire" precondition (lock held, zero
+    in-progress tickets) via real sprint/ticket fixtures, matching this
+    sprint's no-hand-built-fixtures discipline.
+    """
+
+    def test_tier0_write_to_allow_listed_path_now_allowed(self, tmp_path):
+        """Tier 0 + lock held + zero in-progress tickets + write to an
+        allow-listed artifact dir (clasi/issues/) -> exit 0.
+
+        Before ticket 026-001, the ticket-state gate ran BEFORE any
+        allow-list check and applied to every tier, so this exact write
+        was blocked (reason no-ticket) despite being on the allow list.
+        Rescoping the gate to tier-2-only is what makes this allowed."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/issues/incident.md", "") == 0
+
+    def test_tier1_write_to_allow_listed_path_now_allowed(self, tmp_path):
+        """Same as above for tier 1: a sprint-planner writing to
+        clasi/reflections/ during a gate-triggering state is now
+        allowed (it always should have been — this is exactly the
+        exception-routing deadlock the source issue named)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/reflections/note.md", "1") == 0
+
+    def test_tier2_issues_dir_write_exempt_from_gate(self, tmp_path):
+        """Tier 2 + lock held + zero in-progress tickets + write under
+        issues_dir -> exit 0 (exempt), even though the SAME state blocks
+        an ordinary tier-2 source write (see
+        test_lock_held_zero_in_progress_tickets_tier2_source_write_blocked).
+        This is the "team-lead's issue-capture skill is not the same
+        write the gate exists to police" carve-out from the source
+        issue."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/issues/incident.md", "2") == 0
+
+    def test_tier2_reflections_dir_write_exempt_from_gate(self, tmp_path):
+        """Same exemption for reflections_dir (self-reflect skill)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "clasi/reflections/note.md", "2") == 0
+
+    def test_tier2_source_write_still_gated_regression(self, tmp_path):
+        """Regression: tier 2 writing to a NON-exempt path (source code)
+        under the SAME lock-held/zero-in-progress state is still blocked
+        with reason no-ticket — the exemption is scoped to issues_dir/
+        reflections_dir specifically, not a blanket tier-2 bypass."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="019")
+        _make_done_ticket(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
 
     def test_gate_uses_get_sprint_context_and_get_active_tickets_live(
         self, tmp_path
@@ -3248,3 +3343,538 @@ class TestMcpGuardStalenessFailClosed:
         tier-allowed exit."""
         _write_fresh_config(tmp_path)
         assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 1: tier 1 now consults the artifact-dir allow list
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardTier1ArtifactDirAllowList:
+    """Tier 1 (sprint-planner) now consults the same artifact-dir allow
+    list (issues_dir, reflections_dir, design_dir, clasi_dir, log_dir)
+    tier 0 does — previously only the sprints_dir prefix was allow-listed
+    for tier 1, so a sprint-planner writing e.g. clasi/issues/x.md fell
+    through to the final BLOCK, contradicting the function's own
+    documented matrix. Reason is asserted via hooks.log (not just exit
+    code) so a fix that merely widened some OTHER allow path could not
+    accidentally pass this test.
+    """
+
+    def _last_role_guard_line(self, tmp_path: Path) -> str:
+        """Return the most recent role-guard hooks.log line.
+
+        _log_hook_event only logs the top-level payload["file_path"] key
+        (never present for role-guard's real nested
+        tool_input.file_path payload shape), so the file path itself is
+        never in the line — each test here makes exactly one
+        _run_role_guard() call, so the last (only) role-guard line is
+        unambiguous.
+        """
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        return matching[-1]
+
+    def test_tier1_issues_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_reflections_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/reflections/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_design_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "docs/design/x.md", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_clasi_state_dir_allowed_reason_artifact_dir(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/config.yaml", "1") == 0
+        assert " 0 artifact-dir" in self._last_role_guard_line(tmp_path)
+
+    def test_tier1_source_still_blocked_regression(self, tmp_path, capsys):
+        """Regression: the allow-list extension does not widen tier 1's
+        write scope beyond artifact dirs + sprints_dir — source code is
+        still blocked, and (per this ticket's docstring-matrix update)
+        that block is now reason blk-write, matching the documented
+        matrix exactly."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "1") == 2
+        assert " 2 blk-write" in self._last_role_guard_line(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 3: recovery-state directory-prefix matching
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardRecoveryStateMatching:
+    """Recovery-state matching honors directory-prefix entries in
+    allowed_paths, not just exact-path equality — existing exact-path
+    entries must still match exactly (no regression). Uses real
+    write_recovery_state() DB calls and real handle_role_guard
+    invocations (never a mocked get_recovery_state()), mirroring the
+    real caller shapes in artifact_tools.py's close_sprint recovery
+    writes: an absolute file path (str(ticket_file)) and an absolute
+    directory path (str(project.design_dir)).
+    """
+
+    def test_exact_relative_path_entry_matches(self, tmp_path):
+        """A root-relative exact-path entry still matches exactly (no
+        regression from the directory-prefix addition)."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition",
+            ["clasi/sprints/019-x/sprint.md"], "broken frontmatter",
+        )
+
+        assert _run_role_guard(tmp_path, "clasi/sprints/019-x/sprint.md", "") == 0
+
+    def test_exact_absolute_path_entry_matches(self, tmp_path):
+        """The real caller shape: an ABSOLUTE file-path entry (mirroring
+        str(ticket_file) in artifact_tools.py's ticket-not-done branch)
+        matches the same file's root-relative form after normalization."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        abs_ticket = tmp_path / "clasi" / "sprints" / "019-x" / "tickets" / "001-x.md"
+        write_recovery_state(
+            db_path, "019", "precondition", [str(abs_ticket)], "ticket not done",
+        )
+
+        assert _run_role_guard(
+            tmp_path, "clasi/sprints/019-x/tickets/001-x.md", "",
+        ) == 0
+
+    def test_non_matching_entry_still_blocked(self, tmp_path):
+        """Deny path: a recovery record exists but names a DIFFERENT
+        file — the write under test must still be blocked."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition",
+            ["clasi/sprints/019-x/sprint.md"], "broken frontmatter",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/unrelated.py", "") == 2
+
+    def test_directory_entry_absolute_matches_file_under_it(self, tmp_path):
+        """The real caller shape from close_sprint's design_overlay_apply
+        branch: an ABSOLUTE DIRECTORY entry (str(project.design_dir))
+        matches a file written under that directory — previously
+        silently inert (exact-match-only). The directory must actually
+        exist on disk for the is-dir detection to fire (real
+        design_dir always does in practice)."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        design_dir = tmp_path / "docs" / "design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        write_recovery_state(
+            db_path, "019", "design_overlay_apply",
+            [str(design_dir)], "overlay validation failed",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design/architecture.md", "") == 0
+
+    def test_directory_entry_with_trailing_slash_matches(self, tmp_path):
+        """Root-relative directory entry WITH a trailing slash also
+        matches any file under it — no filesystem is-dir check required
+        (the trailing slash alone signals "directory")."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "merge", ["docs/design/"], "merge conflict",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design/sub/architecture.md", "") == 0
+
+    def test_directory_entry_does_not_match_sibling_file(self, tmp_path):
+        """Deny path: a directory entry must not match a file OUTSIDE
+        that directory, even one with a similar-looking name."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        design_dir = tmp_path / "docs" / "design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        write_recovery_state(
+            db_path, "019", "design_overlay_apply",
+            [str(design_dir)], "overlay validation failed",
+        )
+
+        assert _run_role_guard(tmp_path, "docs/design-other/x.md", "") == 2
+
+    def test_file_entry_does_not_match_suffix_variant(self, tmp_path):
+        """Deny path: an exact FILE entry must not incorrectly match a
+        DIFFERENT file that merely shares its string as a prefix (e.g.
+        an entry for foo.py must not match foo.py.bak) — the
+        directory-prefix addition must not loosen exact-file matching
+        into a bare string-prefix match. Uses a plain source path (not
+        under any artifact-dir allow-list prefix) so an ALLOW here could
+        only come from the recovery match itself, never from an
+        unrelated allow-listed directory."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "precondition", ["src/clasi/foo.py"], "x",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py.bak", "") == 2
+
+    def test_merge_conflicted_files_list_entries_match(self, tmp_path):
+        """Mirrors the merge-conflict recovery shape (conflicted:
+        list[str] of relative file paths from git, per
+        artifact_tools.py's merge step) — multiple exact-path entries,
+        each independently matchable, and a file NOT in the list still
+        blocked."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        write_recovery_state(
+            db_path, "019", "merge",
+            ["src/clasi/a.py", "src/clasi/b.py"], "merge conflict",
+        )
+
+        assert _run_role_guard(tmp_path, "src/clasi/a.py", "") == 0
+        assert _run_role_guard(tmp_path, "src/clasi/b.py", "") == 0
+        assert _run_role_guard(tmp_path, "src/clasi/c.py", "") == 2
+
+
+class TestRecoveryEntryMatchesUnit:
+    """Direct unit coverage of _recovery_entry_matches(), independent of
+    the full handle_role_guard integration tests above."""
+
+    def test_exact_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("clasi/issues/x.md", "clasi/issues/x.md", proj)
+
+    def test_no_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert not _recovery_entry_matches("clasi/issues/x.md", "clasi/issues/y.md", proj)
+
+    def test_trailing_slash_directory_prefix_match(self, tmp_path):
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("docs/design/", "docs/design/x.md", proj)
+
+    def test_is_dir_directory_prefix_match(self, tmp_path):
+        (tmp_path / "docs" / "design").mkdir(parents=True)
+        proj = Project(tmp_path)
+        assert _recovery_entry_matches("docs/design", "docs/design/x.md", proj)
+
+    def test_non_dir_shaped_entry_does_not_prefix_match(self, tmp_path):
+        """A file-shaped entry (no trailing slash, not an actual
+        directory on disk) must not directory-prefix-match — otherwise
+        every exact-path entry would accidentally also match any file
+        "under" it as a bare string prefix."""
+        proj = Project(tmp_path)
+        assert not _recovery_entry_matches(
+            "docs/design/x.md", "docs/design/x.md/extra", proj,
+        )
+
+    def test_absolute_entry_normalized_before_match(self, tmp_path):
+        proj = Project(tmp_path)
+        abs_entry = str(tmp_path / "clasi" / "issues" / "x.md")
+        assert _recovery_entry_matches(abs_entry, "clasi/issues/x.md", proj)
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 4: block-message agent identity from the DB
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardBlockMessageAgentIdentity:
+    """The block message names the DB-registered agent (via
+    get_active_agent, keyed on caller_id) when the tier itself was
+    resolved from the DB — not the CLASI_AGENT_NAME env default, which
+    is typically unset for a dispatched subagent and would otherwise
+    misreport it as "team-lead".
+    """
+
+    def test_tier_from_db_names_db_registered_agent(self, tmp_path, capsys):
+        """Tier resolved via the DB fallback (no CLASI_AGENT_TIER env
+        var) -> the block message names the agent_type from THAT SAME
+        active_agents row, not "team-lead"."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "planner-caller", "sprint-planner", "1")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            payload = _role_guard_payload("src/clasi/foo.py")
+            payload["agent_id"] = "planner-caller"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "sprint-planner (tier 1)" in stderr
+            assert "team-lead (tier 1)" not in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+    def test_tier_from_env_var_still_uses_env_name_regression(self, tmp_path, capsys):
+        """Regression: when the tier comes from CLASI_AGENT_TIER (not the
+        DB), the block message still uses CLASI_AGENT_NAME (or its
+        "team-lead" default) exactly as before — the DB-name resolution
+        is scoped to the DB-sourced-tier case only."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        # A DB row exists for a DIFFERENT agent_id — proves it is not
+        # consulted at all when the tier came from the env var.
+        register_active_agent(db_path, "some-other-agent", "programmer", "2")
+
+        import os
+
+        old_tier = os.environ.get("CLASI_AGENT_TIER")
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            os.environ["CLASI_AGENT_TIER"] = "1"
+            payload = _role_guard_payload("src/clasi/foo.py")
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            assert "team-lead (tier 1)" in stderr
+        finally:
+            if old_tier is None:
+                os.environ.pop("CLASI_AGENT_TIER", None)
+            else:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+    def test_tier_from_db_but_no_matching_agent_row_falls_back_to_default(
+        self, tmp_path, capsys,
+    ):
+        """Edge case: agent_tier resolves truthy from the DB (e.g. "0"),
+        but by the time the block message is built the row is gone (or
+        never had an agent_type) — falls back to the CLASI_AGENT_NAME
+        default rather than raising."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "caller-x", "unknown", "0")
+
+        import os
+
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        old_name = os.environ.pop("CLASI_AGENT_NAME", None)
+        try:
+            payload = _role_guard_payload("src/clasi/foo.py")
+            payload["agent_id"] = "caller-x"
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_role_guard, payload)
+            assert exc.value.code == 2
+            stderr = capsys.readouterr().err
+            # agent_type "unknown" IS present on the row, so it is used —
+            # confirms the DB-name path is live even for tier "0".
+            assert "unknown (tier 0)" in stderr
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+            if old_name is not None:
+                os.environ["CLASI_AGENT_NAME"] = old_name
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001, item 5: per-invocation caching — call-count assertions
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardPerInvocationCaching:
+    """get_project() and config.yaml parsing each happen at most ONCE
+    within handle_role_guard's own guard-evaluation logic per invocation
+    (down from ~5 / ~3), and the shared sqlite connection is opened at
+    most once overall — verified via mock call-count assertions against
+    a scenario built to reach every DB/config touch point in the
+    function: tier resolution via the DB fallback, the OOP check, the
+    recovery-state check, the artifact-dir/protected-paths config read,
+    and (since the write is ultimately blocked) the block message's
+    DB-backed agent-name lookup. The ticket-state gate is not reached
+    (tier 0 in this scenario, and the gate is tier-2-only as of this
+    same ticket) — its own DB touch is covered separately by
+    TestRoleGuardTicketStateGate.
+
+    get_project() and _load_config() are mocked at module scope, so
+    their call counts also include ONE call each from _log_hook_event()
+    — a separate, pre-existing helper (shared by every hook handler, not
+    just role-guard) that resolves its own Project instance to write the
+    hooks.log line when _exit_hook() runs at the very end of the
+    invocation. That resolution is outside this ticket's scope (it is
+    not one of handle_role_guard's own checks, and touching it would
+    affect every other hook handler too) and was already exactly one
+    call before this ticket; the assertions below are therefore == 2
+    (1 from handle_role_guard's own single consolidated call + 1 from
+    logging), not literally 1 — the sqlite-connection assertions, which
+    are NOT affected by _log_hook_event (it never touches the DB), are
+    the ones that land on the ticket's literal "1" target.
+    """
+
+    def _setup_full_traversal_scenario(self, tmp_path: Path) -> None:
+        """Registers a tier-0 DB-resolved agent and a config.yaml with no
+        matching recovery/OOP state, so a source-code write walks every
+        check site down to the final BLOCK."""
+        _write_fresh_config(tmp_path)
+        db_path = _init_db_only(tmp_path)
+        register_active_agent(db_path, "caller-full-traversal", "unknown", "0")
+
+    def test_get_project_called_once(self, tmp_path):
+        import clasi.hook_handlers as hh
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_get_project = hh.get_project
+        try:
+            with patch(
+                "clasi.hook_handlers.get_project", side_effect=real_get_project,
+            ) as mock_get_project:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                # 1 from handle_role_guard's own consolidated _proj, plus
+                # 1 from _log_hook_event's separate, unrelated resolution
+                # at exit-logging time (see class docstring) — down from
+                # ~5 calls within the guard logic itself before this
+                # ticket (+ the same always-present logging call).
+                assert mock_get_project.call_count == 2, (
+                    f"expected get_project() called once by handle_role_guard's "
+                    f"own logic (+1 from _log_hook_event's separate logging "
+                    f"call = 2 total), got {mock_get_project.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_config_yaml_parsed_once(self, tmp_path):
+        import clasi.project as project_mod
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_load_config = project_mod._load_config
+        try:
+            with patch(
+                "clasi.project._load_config", side_effect=real_load_config,
+            ) as mock_load_config:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                # 1 from _load_role_guard_config's single parse (which
+                # also primes _proj's paths-config cache, so no OTHER
+                # property access re-parses), plus 1 from
+                # _log_hook_event's separate Project instance resolving
+                # its own log_dir at exit-logging time (see class
+                # docstring) — down from ~3 independent parses within
+                # the guard logic itself before this ticket.
+                assert mock_load_config.call_count == 2, (
+                    f"expected config.yaml parsed once by handle_role_guard's "
+                    f"own logic (+1 from _log_hook_event's separate logging "
+                    f"call = 2 total), got {mock_load_config.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_sqlite_connection_opened_once(self, tmp_path):
+        from clasi.state_db_class import StateDB
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("src/clasi/foo.py")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_connect = StateDB.connect
+        try:
+            with patch.object(
+                StateDB, "connect", autospec=True, side_effect=real_connect,
+            ) as mock_connect:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 2
+                assert mock_connect.call_count == 1, (
+                    f"expected one shared sqlite connection opened, got "
+                    f"{mock_connect.call_count}"
+                )
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+    def test_allow_path_scenario_also_uses_single_connection(self, tmp_path):
+        """Same call-count guarantee on an ALLOW outcome (artifact-dir),
+        not just the BLOCK path above — confirms the cache is shared
+        regardless of which exit reason fires."""
+        from clasi.state_db_class import StateDB
+
+        self._setup_full_traversal_scenario(tmp_path)
+        payload = _role_guard_payload("clasi/issues/x.md")
+        payload["agent_id"] = "caller-full-traversal"
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        real_connect = StateDB.connect
+        try:
+            with patch.object(
+                StateDB, "connect", autospec=True, side_effect=real_connect,
+            ) as mock_connect:
+                with pytest.raises(SystemExit) as exc:
+                    _run_with_cwd(tmp_path, handle_role_guard, payload)
+                assert exc.value.code == 0
+                assert mock_connect.call_count == 1
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+
+# ---------------------------------------------------------------------------
+# Ticket 026-001 scenario test: throw_ticket_exception -> sprint-planner
+# can edit the sprint's architecture without OOP
+# ---------------------------------------------------------------------------
+
+
+class TestRoleGuardThrowExceptionRecoveryScenario:
+    """The ticket's own required scenario test (unit-level, per the
+    ticket's instructions): a thrown ticket exception during an active
+    sprint (execution lock held, the exception ticket's status flips to
+    `exception` — never `in-progress`, so zero tickets are in-progress)
+    must not deadlock a dispatched sprint-planner's (tier 1) ability to
+    edit the sprint's own architecture/design artifacts, without an OOP
+    bypass. Before ticket 026-001 this was blocked (no-ticket) because
+    the ticket-state gate applied to every tier and ran before every
+    allow list — even though tier 1 is exactly the role dispatched to
+    fix the architecture after an exception is thrown.
+    """
+
+    def test_sprint_planner_can_edit_sprint_architecture_after_exception_no_oop(
+        self, tmp_path,
+    ):
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="026")
+        # Simulate the post-exception state named by the ticket: the
+        # ticket that threw the exception is NOT in-progress (its status
+        # flipped to `exception`) -- zero in-progress tickets, lock
+        # still held, no OOP bypass anywhere.
+        tickets_dir = sprint_dir / "tickets"
+        tickets_dir.mkdir(parents=True, exist_ok=True)
+        (tickets_dir / "001-x.md").write_text(
+            "---\nid: '001'\ntitle: X\nstatus: exception\n---\n"
+        )
+
+        assert not (tmp_path / ".clasi" / "oop").exists()
+        assert _run_role_guard(
+            tmp_path,
+            "clasi/sprints/026-test-sprint/design/DESIGN.md",
+            "1",
+        ) == 0

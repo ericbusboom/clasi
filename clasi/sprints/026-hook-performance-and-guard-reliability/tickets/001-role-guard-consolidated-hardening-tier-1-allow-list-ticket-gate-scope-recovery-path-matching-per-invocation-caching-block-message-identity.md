@@ -2,8 +2,12 @@
 id: '001'
 title: 'role-guard consolidated hardening: tier-1 allow list, ticket-gate scope, recovery-path
   matching, per-invocation caching, block-message identity'
-status: open
-use-cases: [SUC-004, SUC-006, SUC-007, SUC-008]
+status: done
+use-cases:
+- SUC-004
+- SUC-006
+- SUC-007
+- SUC-008
 depends-on: []
 github-issue: ''
 issue:
@@ -47,34 +51,49 @@ ticket:
 
 ## Acceptance Criteria
 
-- [ ] Tier 1 + write to configured `design_dir` (or issues/reflections/
+- [x] Tier 1 + write to configured `design_dir` (or issues/reflections/
       clasi-state/log dirs) → allowed, reason `artifact-dir`.
-- [ ] Tier 1 + write to a source/test path → still blocked, reason
+- [x] Tier 1 + write to a source/test path → still blocked, reason
       `blk-write` (docstring matrix and implementation now agree).
-- [ ] Execution lock held, zero tickets in-progress, tier-2 source write
+- [x] Execution lock held, zero tickets in-progress, tier-2 source write
       → blocked, reason `no-ticket` (unchanged).
-- [ ] Same state, tier-0/1 write to an allow-listed path → allowed (no
+- [x] Same state, tier-0/1 write to an allow-listed path → allowed (no
       longer gated by ticket-state).
-- [ ] Same state, any tier, write under `issues_dir` or `reflections_dir`
+- [x] Same state, any tier, write under `issues_dir` or `reflections_dir`
       → allowed (never gated by ticket-state).
-- [ ] Recovery record containing a directory entry (e.g.
+- [x] Recovery record containing a directory entry (e.g.
       `str(project.design_dir)`) → a file write under that directory
       passes with reason `recovery`; existing exact-path entries still
       match exactly (no regression).
-- [ ] Block message names the DB-registered agent (via `get_active_agent`)
+- [x] Block message names the DB-registered agent (via `get_active_agent`)
       when tier was resolved from the DB, not the `CLASI_AGENT_NAME` env
       default.
-- [ ] `get_project()` call count within one `handle_role_guard`
+- [x] `get_project()` call count within one `handle_role_guard`
       invocation drops from about 5 to 1; config parsed once, not 3x;
       one sqlite connection opened, not 4 (verified via a debug counter
-      or mock call-count assertion).
-- [ ] `time clasi hook role-guard < captured-payload.json` shows the
+      or mock call-count assertion). Verified via
+      `TestRoleGuardPerInvocationCaching` (mock call-count assertions):
+      `get_project()` and config parsing are each called exactly once by
+      `handle_role_guard`'s own logic — the tests assert a total of 2,
+      not 1, because the mocks patch the shared module-level functions,
+      which also each pick up one unrelated, pre-existing call from
+      `_log_hook_event`'s own separate Project resolution when writing
+      the hooks.log line at exit (out of this ticket's scope; shared by
+      every hook handler). The sqlite-connection count, unaffected by
+      `_log_hook_event` (it never touches the DB), lands on the literal
+      "1" target directly.
+- [x] `time clasi hook role-guard < captured-payload.json` shows the
       startup-floor savings consistent with the reduced call counts
-      above.
-- [ ] Regression tests use real captured hook payloads (not synthetic)
+      above. Verified manually against `.venv/bin/clasi` with a real
+      nested payload (~0.11-0.16s real time, dominated by the Python
+      interpreter/import startup floor as expected — the eliminated
+      redundant get_project()/config-parse/sqlite-connect calls are
+      microsecond-scale in-process work, so their removal is consistent
+      with, not separately visible against, that floor).
+- [x] Regression tests use real captured hook payloads (not synthetic)
       and assert both the allow path and the deny path for every
       condition above. No existing deny-path assertion is weakened.
-- [ ] Scenario test: `throw_ticket_exception` → a dispatched
+- [x] Scenario test: `throw_ticket_exception` → a dispatched
       sprint-planner can edit the sprint's architecture without OOP
       (exercises the ticket-gate scoping end-to-end).
 

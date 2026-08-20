@@ -135,6 +135,21 @@ class StateDB:
         finally:
             conn.close()
 
+    def connect(self) -> sqlite3.Connection:
+        """Open a new connection to this database (WAL mode, foreign keys on).
+
+        Does NOT call init() — callers needing schema guarantees should
+        rely on the individual query methods' default (conn=None)
+        behavior, which calls init() automatically, or call init()
+        themselves first. This method exists for a caller that wants to
+        share ONE connection across several StateDB method calls within
+        a single short-lived process (see handle_role_guard's
+        per-invocation cache in hook_handlers.py) instead of each method
+        opening and closing its own. The caller owns the returned
+        connection's lifecycle and must close it.
+        """
+        return _connect(self._path)
+
     def register_sprint(
         self,
         sprint_id: str,
@@ -467,10 +482,21 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_lock_holder(self) -> Optional[dict[str, Any]]:
-        """Return the current lock holder, or None if no lock is held."""
-        self.init()
-        conn = _connect(self._path)
+    def get_lock_holder(
+        self, conn: Optional[sqlite3.Connection] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Return the current lock holder, or None if no lock is held.
+
+        If *conn* is given, it is used directly and this method neither
+        calls init() nor opens/closes its own connection — the caller
+        owns the connection's lifecycle (see StateDB.connect()). Omitted
+        (the default), behavior is unchanged: init() runs and a fresh
+        connection is opened and closed internally.
+        """
+        _owns_conn = conn is None
+        if _owns_conn:
+            self.init()
+            conn = _connect(self._path)
         try:
             lock_row = conn.execute(
                 "SELECT sprint_id, acquired_at FROM execution_locks WHERE id = 1"
@@ -482,7 +508,8 @@ class StateDB:
                 "acquired_at": lock_row["acquired_at"],
             }
         finally:
-            conn.close()
+            if _owns_conn:
+                conn.close()
 
     def write_recovery_state(
         self,
@@ -517,15 +544,25 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_recovery_state(self) -> Optional[dict[str, Any]]:
+    def get_recovery_state(
+        self, conn: Optional[sqlite3.Connection] = None,
+    ) -> Optional[dict[str, Any]]:
         """Read the recovery state record, auto-clearing stale entries.
 
         Returns a dict with sprint_id, step, allowed_paths, reason, and
         recorded_at -- or None if no record exists. Records older than 24
         hours are automatically deleted with a warning on stderr.
+
+        If *conn* is given, it is used directly and this method neither
+        calls init() nor opens/closes its own connection — the caller
+        owns the connection's lifecycle (see StateDB.connect()). Omitted
+        (the default), behavior is unchanged: init() runs and a fresh
+        connection is opened and closed internally.
         """
-        self.init()
-        conn = _connect(self._path)
+        _owns_conn = conn is None
+        if _owns_conn:
+            self.init()
+            conn = _connect(self._path)
         try:
             row = conn.execute(
                 "SELECT sprint_id, step, allowed_paths, reason, recorded_at "
@@ -553,7 +590,8 @@ class StateDB:
                 "recorded_at": row["recorded_at"],
             }
         finally:
-            conn.close()
+            if _owns_conn:
+                conn.close()
 
     def clear_recovery_state(self) -> dict[str, Any]:
         """Delete the recovery state record.
@@ -609,10 +647,21 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_active_agent(self, agent_id: str) -> Optional[dict[str, Any]]:
-        """Return the active agent record for the given agent_id, or None."""
-        self.init()
-        conn = _connect(self._path)
+    def get_active_agent(
+        self, agent_id: str, conn: Optional[sqlite3.Connection] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Return the active agent record for the given agent_id, or None.
+
+        If *conn* is given, it is used directly and this method neither
+        calls init() nor opens/closes its own connection — the caller
+        owns the connection's lifecycle (see StateDB.connect()). Omitted
+        (the default), behavior is unchanged: init() runs and a fresh
+        connection is opened and closed internally.
+        """
+        _owns_conn = conn is None
+        if _owns_conn:
+            self.init()
+            conn = _connect(self._path)
         try:
             row = conn.execute(
                 "SELECT agent_id, agent_type, tier, log_file, started_at "
@@ -629,7 +678,8 @@ class StateDB:
                 "started_at": row["started_at"],
             }
         finally:
-            conn.close()
+            if _owns_conn:
+                conn.close()
 
     def remove_active_agent(self, agent_id: str) -> dict[str, Any]:
         """Remove the active agent record for the given agent_id.
@@ -648,7 +698,9 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_active_tier(self, agent_id: str) -> str:
+    def get_active_tier(
+        self, agent_id: str, conn: Optional[sqlite3.Connection] = None,
+    ) -> str:
         """Return the tier of the active agent identified by agent_id.
 
         Queries active_agents WHERE agent_id = ? — this answers "what
@@ -658,9 +710,17 @@ class StateDB:
         agent_id, the tier is unresolvable: return the "unresolved"
         sentinel (empty string) rather than any other agent's tier.
         This replaces the .clasi-agent-tier file check.
+
+        If *conn* is given, it is used directly and this method neither
+        calls init() nor opens/closes its own connection — the caller
+        owns the connection's lifecycle (see StateDB.connect()). Omitted
+        (the default), behavior is unchanged: init() runs and a fresh
+        connection is opened and closed internally.
         """
-        self.init()
-        conn = _connect(self._path)
+        _owns_conn = conn is None
+        if _owns_conn:
+            self.init()
+            conn = _connect(self._path)
         try:
             row = conn.execute(
                 "SELECT tier FROM active_agents WHERE agent_id = ?",
@@ -670,7 +730,8 @@ class StateDB:
                 return ""
             return row["tier"]
         finally:
-            conn.close()
+            if _owns_conn:
+                conn.close()
 
     def clear_stale_agents(self, ttl_hours: int = 24) -> dict[str, Any]:
         """Delete active_agents records older than ttl_hours.
@@ -723,16 +784,26 @@ class StateDB:
         finally:
             conn.close()
 
-    def get_oop(self) -> Optional[dict[str, Any]]:
+    def get_oop(
+        self, conn: Optional[sqlite3.Connection] = None,
+    ) -> Optional[dict[str, Any]]:
         """Read the OOP bypass record, auto-clearing it past expiry.
 
         Returns a dict with set_at, reason, and expires_at -- or None if
         no record exists. A record whose expires_at is in the past is
         automatically deleted, with a warning on stderr, and this
         returns None as if no record existed.
+
+        If *conn* is given, it is used directly and this method neither
+        calls init() nor opens/closes its own connection — the caller
+        owns the connection's lifecycle (see StateDB.connect()). Omitted
+        (the default), behavior is unchanged: init() runs and a fresh
+        connection is opened and closed internally.
         """
-        self.init()
-        conn = _connect(self._path)
+        _owns_conn = conn is None
+        if _owns_conn:
+            self.init()
+            conn = _connect(self._path)
         try:
             row = conn.execute(
                 "SELECT set_at, reason, expires_at FROM oop_state WHERE id = 1"
@@ -758,7 +829,8 @@ class StateDB:
                 "expires_at": row["expires_at"],
             }
         finally:
-            conn.close()
+            if _owns_conn:
+                conn.close()
 
     def clear_oop(self) -> dict[str, Any]:
         """Delete the OOP bypass record.
