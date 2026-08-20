@@ -1069,6 +1069,7 @@ Before tickets can be created, all of the following must be true:
 | 006 | Atomic, line-anchored frontmatter I/O | — | `atomic-line-anchored-frontmatter-io.md` |
 | 007 | Same-version staleness detection | — | `staleness-detect-same-version-drift.md` |
 | 008 | Typed hook payload ingress and replay corpus | — | `hook-payload-typed-ingress-and-replay-corpus.md` |
+| 010 | Role-guard ticket-state gate must not block edits to completed tickets | — | `role-guard-cannot-see-done-tickets.md` |
 | 009 | Guard fail-closed exception boundary | 003, 007, 008 | `guard-fail-closed-exception-boundary.md` |
 
 Tickets execute serially in the order listed. Ticket 001 is the sprint's
@@ -1079,3 +1080,19 @@ architecture self-review (see Architecture Design Rationale), not a
 blanket "everything before the boundary" rule — tickets 004-006 remain
 sequenced before 009 for general risk-reduction even though they are
 not formal prerequisites.
+
+**Ticket 010, added mid-execution** (discovered via
+`role-guard-cannot-see-done-tickets.md`, reported after tickets 001-008
+had already landed): the ticket-state gate's `_get_active_tickets` glob
+is non-recursive, so it cannot see tickets already relocated to
+`tickets/done/` — editing a completed ticket (e.g. to record after-the-
+fact evidence) raises a false, permanently-unsatisfiable
+`no ticket is in-progress` violation. Deliberately placed **before**
+ticket 009 in this table, out of numeric order: ticket 009 converts every
+guard failure, including this gate's false denials, from a silent allow
+into a hard block, so this fix must land first or the false violation
+becomes materially worse the moment 009 arms. No formal `depends-on` was
+added to ticket 009 itself for this — it is out of scope for the dispatch
+that added ticket 010 — so this row-order note is the operative
+constraint; whoever executes 009 should treat 010 as a real predecessor
+despite the absence of a `depends-on` entry.

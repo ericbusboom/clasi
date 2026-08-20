@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - hooks
 - enforcement
 sprint: 029
+tickets:
+- 029-010
 ---
 
 # role-guard globs tickets/*.md non-recursively, so editing a done ticket is permanently blocked
