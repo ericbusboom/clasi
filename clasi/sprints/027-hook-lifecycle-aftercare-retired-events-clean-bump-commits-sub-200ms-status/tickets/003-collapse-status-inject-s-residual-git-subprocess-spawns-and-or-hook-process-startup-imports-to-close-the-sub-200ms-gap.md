@@ -2,7 +2,7 @@
 id: '003'
 title: Collapse status-inject's residual git-subprocess spawns and/or hook-process
   startup imports to close the sub-200ms gap
-status: open
+status: in-progress
 use-cases:
 - SUC-003
 depends-on: []
