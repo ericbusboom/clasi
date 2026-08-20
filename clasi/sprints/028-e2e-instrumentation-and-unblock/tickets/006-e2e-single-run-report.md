@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: E2E single run report
-status: open
+status: done
 use-cases:
 - SUC-006
 depends-on:
@@ -90,17 +90,17 @@ writing the parser for its section.
 
 ## Acceptance Criteria
 
-- [ ] One command (`tests/e2e/report.sh <run-id>` or equivalent) produces
+- [x] One command (`tests/e2e/report.sh <run-id>` or equivalent) produces
       `.e2e-runs/<run-id>/run-report.md` from a finished run's directory.
-- [ ] The report includes all seven sources listed above, each in its
+- [x] The report includes all seven sources listed above, each in its
       own clearly headed section.
-- [ ] The report is self-contained markdown a human can read top to
+- [x] The report is self-contained markdown a human can read top to
       bottom — no other artifact needed to interpret it (each section
       states what it's summarizing, not just raw dumped data).
-- [ ] `validate.sh` itself is unmodified by this ticket (it already
+- [x] `validate.sh` itself is unmodified by this ticket (it already
       gained the tee behavior in ticket 002); `report.sh` only reads
       `validate.sh`'s tee'd output file.
-- [ ] Running `report.sh` against a run directory that is missing one of
+- [x] Running `report.sh` against a run directory that is missing one of
       the five upstream sources (e.g. a run predating this sprint) fails
       gracefully — a clear "section unavailable" note in that part of the
       report, not a hard crash that loses the rest of the report.
