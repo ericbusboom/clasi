@@ -27,6 +27,7 @@ from clasi.hook_handlers import (
     handle_hook,
     handle_role_guard,
     handle_mcp_guard,
+    HookPayload,
     _ensure_log_gitignore,
     _log_hook_event,
     _get_log_dir,
@@ -405,6 +406,110 @@ class TestLogHookEventFilePathAndTimestamp:
         rest = line[20:]
         expected_rest = f" {'role-guard':<16} 2 {'no-path':<12.12} "
         assert rest == expected_rest
+
+
+# ---------------------------------------------------------------------------
+# HookPayload.from_dict (ticket 029-008)
+# ---------------------------------------------------------------------------
+
+
+class TestHookPayloadFromDict:
+    """Unit coverage for the typed payload ingress itself, independent of
+    any handler — the nested-then-flat resolution and missing tracking
+    that used to be duplicated (and drifted) across handle_role_guard and
+    _log_hook_event now lives in exactly one place."""
+
+    def test_nested_file_path_resolved(self):
+        hp = HookPayload.from_dict(
+            {"tool_name": "Write", "tool_input": {"file_path": "src/clasi/foo.py"}}
+        )
+        assert hp.file_path == "src/clasi/foo.py"
+        assert hp.tool_name == "Write"
+
+    def test_path_and_new_path_also_resolve(self):
+        hp = HookPayload.from_dict({"tool_input": {"path": "a.md"}})
+        assert hp.file_path == "a.md"
+        hp2 = HookPayload.from_dict({"tool_input": {"new_path": "b.md"}})
+        assert hp2.file_path == "b.md"
+
+    def test_flat_top_level_fallback_when_no_tool_input_key(self):
+        """No 'tool_input' key at all -> falls back to the payload itself,
+        matching handle_role_guard's pre-existing idiom exactly."""
+        hp = HookPayload.from_dict({"file_path": "clasi/issues/x.md"})
+        assert hp.file_path == "clasi/issues/x.md"
+
+    def test_empty_tool_input_key_is_authoritative(self):
+        """A present-but-empty 'tool_input' is NOT the same as an absent
+        one — the top-level file_path must not be consulted."""
+        hp = HookPayload.from_dict({"tool_input": {}, "file_path": "clasi/issues/x.md"})
+        assert hp.file_path == ""
+
+    def test_non_dict_tool_input_does_not_raise(self):
+        """Hardening this dataclass adds over the pre-ticket per-site code
+        (see its docstring): a 'tool_input' value that is present but not
+        a dict resolves to an empty tool_input instead of raising. No real
+        Claude Code payload has ever sent this shape."""
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": "not-a-dict"})
+        assert hp.file_path == ""
+        assert hp.tool_input == {}
+
+    def test_missing_tracks_absent_file_path_for_file_tools(self):
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": {}})
+        assert hp.missing == ["file_path"]
+
+    def test_missing_empty_when_file_path_present(self):
+        hp = HookPayload.from_dict(
+            {"tool_name": "Edit", "tool_input": {"file_path": "x.py"}}
+        )
+        assert hp.missing == []
+
+    def test_missing_not_flagged_for_non_file_tools(self):
+        """mcp-guard / subagent events never carry a file_path — missing
+        must not spuriously flag it for tool names outside role-guard's
+        own Edit/Write/MultiEdit domain."""
+        hp = HookPayload.from_dict({"tool_name": "create_ticket"})
+        assert hp.missing == []
+        hp2 = HookPayload.from_dict({"agent_type": "programmer"})
+        assert hp2.missing == []
+
+    def test_caller_id_prefers_agent_id_over_session_id(self):
+        hp = HookPayload.from_dict({"agent_id": "a1", "session_id": "s1"})
+        assert hp.caller_id == "a1"
+        assert hp.caller_id_source == "agent_id"
+        assert hp.agent_id == "a1"
+        assert hp.session_id == "s1"
+
+    def test_caller_id_falls_back_to_session_id(self):
+        hp = HookPayload.from_dict({"session_id": "s1"})
+        assert hp.caller_id == "s1"
+        assert hp.caller_id_source == "session_id"
+
+    def test_caller_id_empty_when_neither_present(self):
+        hp = HookPayload.from_dict({})
+        assert hp.caller_id == ""
+        assert hp.caller_id_source == ""
+
+    def test_plan_file_path_uses_its_own_distinct_fallback(self):
+        """handle_plan_to_issue's pre-existing resolution defaults to {}
+        (not the whole payload) when 'tool_input' is absent — deliberately
+        different from the nested-then-flat file_path rule above, and
+        preserved as its own independent resolution."""
+        hp = HookPayload.from_dict({"planFilePath": "/tmp/x.md"})
+        assert hp.plan_file_path == ""  # no tool_input key -> {} default
+
+        hp2 = HookPayload.from_dict({"tool_input": {"planFilePath": "/tmp/y.md"}})
+        assert hp2.plan_file_path == "/tmp/y.md"
+
+    def test_none_payload_does_not_raise(self):
+        hp = HookPayload.from_dict(None)
+        assert hp.file_path == ""
+        assert hp.caller_id == ""
+        assert hp.missing == []
+
+    def test_is_frozen(self):
+        hp = HookPayload.from_dict({})
+        with pytest.raises(Exception):
+            hp.file_path = "mutated"
 
 
 # ---------------------------------------------------------------------------
@@ -4129,6 +4234,35 @@ class TestLogHookEventDecisionsParam:
         )
         line = _last_hooks_log_line(tmp_path, "role-guard")
         assert "tool_name=Write file_path=x.py tier=2(db) match=clasi/issues/" in line
+
+
+class TestHookPayloadMissingSurfacesInHooksLog:
+    """HookPayload.missing (ticket 029-008) is surfaced into the SAME
+    decisions-list mechanism TestLogHookEventDecisionsParam covers above,
+    not a second parallel logging channel — see handle_role_guard's own
+    comment at the point it extends `decisions` from `hp.missing`."""
+
+    def test_missing_file_path_appears_in_hooks_log_line(self, tmp_path):
+        """An Edit/Write/MultiEdit call with no resolvable path — the
+        exact shape of the 876-event fail-open incident — carries
+        'missing=file_path' in the resulting hooks.log line, driven
+        through the real handler end to end (not _log_hook_event
+        called directly)."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": {}}
+        assert _run_role_guard_payload(tmp_path, payload, "0") == 2
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "missing=file_path" in line
+
+    def test_missing_absent_when_file_path_present(self, tmp_path):
+        """The negative case: a resolvable file_path never adds the
+        missing= token."""
+        _write_fresh_config(tmp_path)
+        assert _run_role_guard(tmp_path, "clasi/issues/x.md", "0") == 0
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "missing=" not in line
 
 
 class TestLogHookEventDeniedPayloadDump:

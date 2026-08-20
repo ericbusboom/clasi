@@ -13,6 +13,7 @@ import logging
 import os
 import sqlite3
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -90,6 +91,173 @@ def read_payload() -> dict:
         return json.loads(data)
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Typed hook payload ingress (ticket 029-008)
+# ---------------------------------------------------------------------------
+
+# Tool names role-guard is registered for (Edit/Write/MultiEdit in the
+# PreToolUse matcher — see this module's own header docstring). Scopes
+# HookPayload.missing's file_path tracking to the one shape where an
+# absent path is actually a meaningful signal, rather than every hook
+# event (subagent-start/stop, mcp-guard, ...) accumulating a spurious
+# "missing=file_path" token for a field that was never relevant to them.
+_FILE_TOOL_NAMES = frozenset({"Edit", "Write", "MultiEdit"})
+
+
+@dataclass(frozen=True)
+class HookPayload:
+    """Typed view over a hook's raw stdin JSON payload.
+
+    Built once per invocation (:meth:`from_dict`) and consumed by every
+    handler instead of each one hand-rolling its own ``payload.get(...)``
+    extraction. This exists because the nested-then-flat file_path rule —
+    Claude Code nests ``file_path``/``path``/``new_path`` under
+    ``payload["tool_input"]`` for PreToolUse/PostToolUse events, not at
+    the payload top level — had drifted between two independent
+    implementations of the identical rule (``handle_role_guard`` and
+    ``_log_hook_event``): the 876-event fail-open incident this ticket
+    exists to make structurally impossible to repeat.
+
+    Fields:
+      tool_name: ``payload["tool_name"]``, or ``""``.
+      tool_input: ``payload["tool_input"]`` when present and a dict;
+        when the ``"tool_input"`` key is entirely absent, falls back to
+        the payload itself (mirrors ``handle_role_guard``'s pre-existing
+        idiom, so a flat/synthetic payload with a top-level file_path
+        still resolves); ``{}`` for a missing/empty payload, or for a
+        ``"tool_input"`` value that is present but not a dict — this
+        last case is the one deliberate hardening this dataclass adds
+        over the pre-ticket per-site code (which would raise): no real
+        Claude Code payload has ever sent a non-dict ``tool_input``, and
+        the isinstance-guarded fallback removes a crash surface without
+        changing any behavior the existing test suite exercises.
+      file_path: the single nested-then-flat resolution —
+        ``tool_input.get("file_path") or .get("path") or
+        .get("new_path") or ""`` — matching ``handle_role_guard``'s
+        pre-existing pattern exactly.
+      caller_id / caller_id_source: ``payload["agent_id"] or
+        payload["session_id"] or ""``, with ``caller_id_source``
+        recording which one supplied it (``"agent_id"``,
+        ``"session_id"``, or ``""`` if neither was present).
+      agent_id / session_id: the raw, individual top-level values (not
+        collapsed) — kept distinct from ``caller_id`` because at least
+        one call site (``handle_subagent_start``'s log-file frontmatter)
+        needs the un-combined ``agent_id`` specifically, without
+        ``caller_id``'s session_id fallback.
+      agent_type: ``payload["agent_type"]``, or ``""`` (handlers apply
+        their own "unknown"-style default, matching pre-existing
+        per-site behavior — not baked in here since it is only one
+        handler's convention).
+      transcript_path: ``payload["agent_transcript_path"]``, or ``""``.
+      last_assistant_message: ``payload["last_assistant_message"]``, or
+        ``""``.
+      plan_file_path: ``payload["tool_input"]["planFilePath"]`` —
+        resolved via ``handle_plan_to_issue``'s own pre-existing (and
+        deliberately different) fallback: ``payload.get("tool_input",
+        {})``, defaulting to ``{}`` rather than the whole payload when
+        ``"tool_input"`` is absent. Kept as its own independent
+        resolution rather than reusing the ``tool_input`` field above,
+        since the two fallbacks genuinely differ and this ticket must
+        not change either one's existing behavior.
+      task_id / task_subject: ``payload["task_id"]`` /
+        ``payload["task_subject"]``, or ``""`` — vestigial fields from a
+        lifecycle retired in sprint 026, kept only because
+        ``_log_hook_event`` still logs them when present.
+      missing: expected-but-absent fields, currently just ``"file_path"``
+        for an Edit/Write/MultiEdit tool call that resolved to no path
+        at all — the exact shape of the 876-event incident. A handler
+        that cares surfaces this into its own ``decisions`` list (see
+        ``handle_role_guard``), which ``_exit_hook`` already appends to
+        the hooks.log line — reusing that existing mechanism rather than
+        adding a second one.
+    """
+
+    tool_name: str = ""
+    tool_input: dict = field(default_factory=dict)
+    file_path: str = ""
+    caller_id: str = ""
+    caller_id_source: str = ""
+    agent_id: str = ""
+    session_id: str = ""
+    agent_type: str = ""
+    transcript_path: str = ""
+    last_assistant_message: str = ""
+    plan_file_path: str = ""
+    task_id: str = ""
+    task_subject: str = ""
+    missing: list = field(default_factory=list)
+
+    @staticmethod
+    def from_dict(payload: Optional[dict]) -> "HookPayload":
+        """Build a HookPayload from a raw hook payload dict.
+
+        Named ``from_dict`` rather than the issue's suggested
+        ``from_stdin(raw: str)`` — the issue's own text allows either,
+        "whichever composes better with the existing read_payload()".
+        ``read_payload()`` already does the stdin read, JSON parse, and
+        error handling and returns a ``dict``, so a caller composes this
+        as ``HookPayload.from_dict(read_payload())`` with no duplicated
+        parsing logic.
+        """
+        payload = payload or {}
+
+        tool_name = payload.get("tool_name") or ""
+
+        # Nested-then-flat resolution (role-guard / _log_hook_event's
+        # shared, previously-duplicated rule): falls back to the payload
+        # itself when no "tool_input" key exists at all, so a flat
+        # synthetic payload with a top-level file_path still resolves.
+        # A "tool_input" key that IS present (even {}) is authoritative
+        # — a top-level file_path is never consulted in that case.
+        tool_input = payload.get("tool_input", payload) if payload else {}
+        if not isinstance(tool_input, dict):
+            tool_input = {}
+
+        file_path = (
+            tool_input.get("file_path")
+            or tool_input.get("path")
+            or tool_input.get("new_path")
+            or ""
+        )
+
+        agent_id = payload.get("agent_id") or ""
+        session_id = payload.get("session_id") or ""
+        if agent_id:
+            caller_id, caller_id_source = agent_id, "agent_id"
+        elif session_id:
+            caller_id, caller_id_source = session_id, "session_id"
+        else:
+            caller_id, caller_id_source = "", ""
+
+        # handle_plan_to_issue's own, deliberately different fallback:
+        # {} (NOT the whole payload) when "tool_input" is absent.
+        _plan_input = payload.get("tool_input", {})
+        if not isinstance(_plan_input, dict):
+            _plan_input = {}
+        plan_file_path = _plan_input.get("planFilePath") or ""
+
+        missing: list = []
+        if tool_name in _FILE_TOOL_NAMES and not file_path:
+            missing.append("file_path")
+
+        return HookPayload(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            file_path=file_path,
+            caller_id=caller_id,
+            caller_id_source=caller_id_source,
+            agent_id=agent_id,
+            session_id=session_id,
+            agent_type=payload.get("agent_type") or "",
+            transcript_path=payload.get("agent_transcript_path") or "",
+            last_assistant_message=payload.get("last_assistant_message") or "",
+            plan_file_path=plan_file_path,
+            task_id=payload.get("task_id") or "",
+            task_subject=payload.get("task_subject") or "",
+            missing=missing,
+        )
 
 
 def _find_project_root(start: Path) -> Path:
@@ -361,6 +529,18 @@ def _log_hook_event(
     timestamp as this line, for correlation) so a denial can be
     inspected/replayed in full — the hooks.log line itself only ever
     carries a handful of summarized key fields.
+
+    Payload ingress (ticket 029-008): the file_path/path/new_path and
+    top-level field extraction below now goes through one
+    ``HookPayload.from_dict(payload)`` call instead of this function's
+    own previously-independent copy of the nested-then-flat rule (the
+    exact duplication that had drifted from ``handle_role_guard``'s copy
+    and produced the 876-event fail-open incident this ticket exists to
+    prevent from recurring). The function's own ``payload: dict``
+    parameter is unchanged — many existing tests call this function
+    directly with a raw dict, and the deny-payload dump above needs the
+    verbatim raw payload regardless — only the internal field-extraction
+    logic changed.
     """
     try:
         _proj = get_project()
@@ -373,24 +553,24 @@ def _log_hook_event(
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         reason_fixed = f"{reason:<12.12}"
 
-        # Build a short summary of key payload fields. tool_name and the
-        # tail fields (task_id, ...) are always top-level in real Claude
-        # Code payloads; file_path/path/new_path are nested under
-        # tool_input — see the docstring above.
-        tool_input = payload.get("tool_input", payload) if payload else {}
+        hp = HookPayload.from_dict(payload)
         key_fields: list[str] = []
 
-        tool_name = payload.get("tool_name")
-        if tool_name:
-            key_fields.append(f"tool_name={tool_name}")
+        if hp.tool_name:
+            key_fields.append(f"tool_name={hp.tool_name}")
 
         for key in ("file_path", "path", "new_path"):
-            value = tool_input.get(key) if isinstance(tool_input, dict) else None
+            value = hp.tool_input.get(key)
             if value:
                 key_fields.append(f"{key}={value}")
 
-        for key in ("task_id", "task_subject", "agent_type", "agent_id", "session_id"):
-            value = payload.get(key)
+        for key, value in (
+            ("task_id", hp.task_id),
+            ("task_subject", hp.task_subject),
+            ("agent_type", hp.agent_type),
+            ("agent_id", hp.agent_id),
+            ("session_id", hp.session_id),
+        ):
             if value:
                 key_fields.append(f"{key}={value}")
 
@@ -618,14 +798,17 @@ def handle_role_guard(payload: dict) -> None:
 
     Exits with code 0 (allow) or 2 (block).  Code 1 is reserved for
     unknown event names in the dispatcher.
+
+    Payload ingress (ticket 029-008): reads via one ``HookPayload.from_dict``
+    call instead of hand-rolling the nested-then-flat file_path resolution
+    itself — this is the exact rule that had drifted between this
+    function and ``_log_hook_event`` and produced the 876-event fail-open
+    incident. ``file_path`` below is reassigned by several later steps
+    (root-relative normalization, etc.) — it starts as a local variable
+    copy of ``hp.file_path``, not the frozen dataclass field itself.
     """
-    tool_input = payload.get("tool_input", payload) if payload else {}
-    file_path = (
-        tool_input.get("file_path")
-        or tool_input.get("path")
-        or tool_input.get("new_path")
-        or ""
-    )
+    hp = HookPayload.from_dict(payload)
+    file_path = hp.file_path
 
     # Per-invocation cache: one Project instance, its parsed config, and
     # (lazily, on first need) one sqlite3 connection, reused by every
@@ -656,7 +839,15 @@ def handle_role_guard(payload: dict) -> None:
     # each check as it evaluates, so a hooks.log line records *why* a
     # decision was reached, not just *what* it was. Read (not reassigned)
     # by the _exit closure below, so no `nonlocal` is needed there.
+    #
+    # HookPayload.missing (ticket 029-008) is surfaced into this SAME
+    # mechanism rather than a second parallel logging channel — any
+    # expected-but-absent field it found (currently just file_path for
+    # an Edit/Write/MultiEdit call) appears in every hooks.log line this
+    # invocation produces, not only the no-path block below.
     decisions: list[str] = []
+    if hp.missing:
+        decisions.extend(f"missing={m}" for m in hp.missing)
 
     def _conn() -> Optional[sqlite3.Connection]:
         nonlocal _db_conn
@@ -708,7 +899,7 @@ def handle_role_guard(payload: dict) -> None:
     if file_path:
         file_path = _normalize_to_root_relative(file_path, project=_proj)
 
-    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
+    caller_id = hp.caller_id
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
@@ -740,13 +931,22 @@ def handle_role_guard(payload: dict) -> None:
     # so the ticket-state gate (which applies to tier 2) still runs for
     # tier 2 regardless of whether a path was resolved.
     if not file_path and agent_tier != "2":
+        # payload.keys() here is a diagnostic-only listing (never used
+        # for a decision) — it stays a direct read of the raw payload
+        # this function still legitimately owns as its own parameter,
+        # rather than adding a `raw_keys` field to HookPayload just for
+        # one warning line's sake.
         present_keys = sorted(payload.keys()) if payload else []
         logger.warning(
             "role-guard: no file_path resolved from payload "
             "(tier=%s, payload keys=%s) — failing closed",
             agent_tier or "0", present_keys,
         )
-        decisions.append("missing=file_path")
+        # decisions already carries "missing=file_path" from hp.missing
+        # above when tool_name was Edit/Write/MultiEdit; a payload with
+        # an unrecognized/absent tool_name still fails closed here (the
+        # exit code and reason are unaffected either way), it just won't
+        # carry that specific decision token.
         _exit(2, "no-path")
 
     # Outside-root writes are ALLOWED for every tier. CLASI's role-guard
@@ -1007,7 +1207,12 @@ def handle_mcp_guard(payload: dict) -> None:
 
     The sprint-planner (Tier 1) and programmer (Tier 2) are allowed.
     OOP bypass: if .clasi/oop (or legacy .clasi-oop) exists, allow all tiers.
+
+    Payload ingress (ticket 029-008): reads tool_name/caller_id via one
+    HookPayload.from_dict call — see handle_role_guard's matching note.
     """
+    hp = HookPayload.from_dict(payload)
+
     # Decision trail (ticket 028-005): see handle_role_guard's matching
     # comment — short, informal tokens appended as each check evaluates.
     decisions: list[str] = []
@@ -1042,7 +1247,7 @@ def handle_mcp_guard(payload: dict) -> None:
         decisions.append("gate=stale-guard")
         _exit_hook("mcp-guard", payload, 2, "stale-guard", decisions=decisions)
 
-    caller_id = (payload or {}).get("agent_id") or (payload or {}).get("session_id") or ""
+    caller_id = hp.caller_id
 
     agent_tier = os.environ.get("CLASI_AGENT_TIER", "")
 
@@ -1067,7 +1272,7 @@ def handle_mcp_guard(payload: dict) -> None:
     if agent_tier not in ("", "0"):
         _exit_hook("mcp-guard", payload, 0, "tier-allowed", decisions=decisions)
 
-    tool_name = payload.get("tool_name", "")
+    tool_name = hp.tool_name
     print(
         f"CLASI ROLE VIOLATION: team-lead cannot call {tool_name} directly.\n"
         "Dispatch to sprint-planner agent to create planning artifacts.",
@@ -1416,14 +1621,21 @@ def handle_subagent_start(payload: dict) -> None:
     Also emits a ``## CLASI status`` block to stdout (unless the project
     is not CLASI-initialized or ``.clasi/oop`` exists), scoped to the
     subagent's role as inferred from ``agent_type`` in the payload.
+
+    Payload ingress (ticket 029-008): reads via one HookPayload.from_dict
+    call. ``agent_id`` below stays the RAW, un-combined value (written
+    verbatim into the log file's frontmatter) — deliberately distinct
+    from ``marker_id`` a few lines down, which uses the combined
+    ``caller_id`` (agent_id falling back to session_id) for DB
+    registration, matching this function's pre-existing behavior exactly.
     """
+    hp = HookPayload.from_dict(payload)
     log_dir, sprint_id = _get_sprint_context()
     if log_dir is None:
         _exit_hook("sub-start", payload, 0, "no-log-dir")
 
-    agent_type = payload.get("agent_type", "unknown")
-    agent_id = payload.get("agent_id", "")
-    session_id = payload.get("session_id", "")
+    agent_type = hp.agent_type or "unknown"
+    agent_id = hp.agent_id
     timestamp = datetime.now(timezone.utc).isoformat()
 
     active_tickets = _get_active_tickets(sprint_id)
@@ -1452,7 +1664,7 @@ def handle_subagent_start(payload: dict) -> None:
     log_file.write_text("\n".join(lines))
 
     # Register in DB so stop hook can find the log file and tier guard can check tier
-    marker_id = agent_id or session_id or "unknown"
+    marker_id = hp.caller_id or "unknown"
     try:
         db_path = get_project().db_path
         if db_path.exists() or (db_path.parent.exists()):
@@ -1484,19 +1696,22 @@ def handle_subagent_start(payload: dict) -> None:
 
 
 def handle_subagent_stop(payload: dict) -> None:
-    """Append transcript to the log file created by subagent-start."""
+    """Append transcript to the log file created by subagent-start.
+
+    Payload ingress (ticket 029-008): reads via one HookPayload.from_dict
+    call — see handle_role_guard's matching note.
+    """
+    hp = HookPayload.from_dict(payload)
     log_dir = _get_log_dir()
     if log_dir is None:
         _exit_hook("sub-stop", payload, 0, "no-log-dir")
 
-    agent_id = payload.get("agent_id", "")
-    session_id = payload.get("session_id", "")
-    last_message = payload.get("last_assistant_message", "")
-    transcript_path = payload.get("agent_transcript_path", "")
+    last_message = hp.last_assistant_message
+    transcript_path = hp.transcript_path
     stop_time = datetime.now(timezone.utc)
 
     # Find the log file from the DB record written by subagent-start
-    marker_id = agent_id or session_id or "unknown"
+    marker_id = hp.caller_id or "unknown"
     log_file = None
     started_at = None
     try:
@@ -1820,11 +2035,16 @@ def handle_plan_to_issue(payload: dict) -> None:
     Routed through ``_exit_hook`` (ticket 028-005) instead of raw
     ``sys.exit`` so ``plan-to-issue`` events finally appear in
     ``hooks.log`` — previously zero ever did.
+
+    Payload ingress (ticket 029-008): reads via one HookPayload.from_dict
+    call — ``plan_file_path`` uses its own distinct fallback (``{}`` when
+    ``tool_input`` is absent, not the whole payload) — see
+    ``HookPayload.from_dict``'s docstring.
     """
     from clasi.plan_to_issue import plan_to_issue
 
-    plan_file_str = payload.get("tool_input", {}).get("planFilePath")
-    plan_file = Path(plan_file_str) if plan_file_str else None
+    hp = HookPayload.from_dict(payload)
+    plan_file = Path(hp.plan_file_path) if hp.plan_file_path else None
 
     result = plan_to_issue(
         Path.home() / ".claude" / "plans",
