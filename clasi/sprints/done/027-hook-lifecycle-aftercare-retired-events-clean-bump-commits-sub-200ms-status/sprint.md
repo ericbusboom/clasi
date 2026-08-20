@@ -1,7 +1,7 @@
 ---
 id: '027'
 title: 'Hook lifecycle aftercare: retired events, clean bump commits, sub-200ms status'
-status: planning-docs
+status: closed
 branch: sprint/027-hook-lifecycle-aftercare-retired-events-clean-bump-commits-sub-200ms-status
 worktree: false
 use-cases: []

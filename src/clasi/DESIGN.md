@@ -65,7 +65,28 @@ The package divides into subsystem directories (each with its own
   call at import time — see this doc set's `status-DESIGN.md`/
   `state_machine-DESIGN.md` overlay entries for the matching per-prompt
   status-path caching, and `plugin-DESIGN.md` for the corresponding
-  `hooks.json` cleanup.
+  `hooks.json` cleanup. As of sprint 027, `handle_hook`'s dispatcher
+  (`cli.py`'s `hook` command, routed to `hook_handlers.handle_hook`)
+  adds a small **retired-event allowlist** alongside its existing
+  live-event routing table: a name in the allowlist (`commit-check`,
+  `task-created`, `task-completed`, and documented alias forms — sprint
+  026's own removed registrations) no-ops with exit 0, a single stderr
+  deprecation line, and a `hooks.log` `retired-event` entry, instead of
+  the hard `exit 1` every unrecognized name previously got. A name in
+  neither the routing table nor the allowlist still hard-errors,
+  unchanged — this is a narrow bridge for registrations that upgrade on
+  a different schedule than the CLI (a session's hooks are snapshotted
+  at start; a consumer project's `.claude/settings.json` only updates
+  on its own `clasi init` re-run), not a general tolerance for unknown
+  event names. `cli.py`'s `hook` command argument, previously a
+  `click.Choice` enumerating only live event names (which rejected a
+  retired name before it ever reached `handle_hook`), widens
+  accordingly so a retired name can reach the dispatcher's allowlist
+  check at all. Separately, `clasi hook`'s process-startup import cost
+  (the `click` CLI import chain `cli.py` pays on every invocation) is a
+  contributing factor in the residual status-inject latency gap — see
+  `status-DESIGN.md`'s sprint-027 entry for the git-subprocess-spawn
+  half of that same latency work.
 - `init_command.py`, `migrate_command.py`, `uninstall_command.py`,
   `versioning.py`, `worktree.py`, `contracts.py`, `agent.py`,
   `dispatch_log.py` — installation, migration, versioning, worktree, and
