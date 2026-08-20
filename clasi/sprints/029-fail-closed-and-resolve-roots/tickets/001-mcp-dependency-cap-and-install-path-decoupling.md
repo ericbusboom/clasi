@@ -1,8 +1,9 @@
 ---
 id: '001'
 title: mcp dependency cap and install-path decoupling
-status: open
-use-cases: [SUC-001]
+status: done
+use-cases:
+- SUC-001
 depends-on: []
 github-issue: ''
 issue: mcp-2-breaks-every-fresh-install.md
@@ -64,26 +65,26 @@ tickets in this sprint do.
 
 ## Acceptance Criteria
 
-- [ ] `pyproject.toml` caps `mcp` at `>=1.0,<2.0`
-- [ ] `resolve_skill_body` lives in new `src/clasi/skill_resolve.py`,
+- [x] `pyproject.toml` caps `mcp` at `>=1.0,<2.0`
+- [x] `resolve_skill_body` lives in new `src/clasi/skill_resolve.py`,
       importing nothing from `clasi.mcp_server` (verify with a static
       import check, not just "it works")
-- [ ] `_PACKAGE_ROOT` in the new module resolves to the same `src/`
+- [x] `_PACKAGE_ROOT` in the new module resolves to the same `src/`
       directory the old `tools/process_tools.py` location did — add a
       test that round-trips a real skill using a `Load from:` directive
       and asserts the resolved content is correct
-- [ ] `process_tools.py`'s `get_skill_definition` still works, now
+- [x] `process_tools.py`'s `get_skill_definition` still works, now
       importing `resolve_skill_body` from `clasi.skill_resolve`; its
       own `clasi.mcp_server` import for `server`/`content_path`/
       `get_project` is unchanged
-- [ ] `platforms/claude.py`'s two call sites import from
+- [x] `platforms/claude.py`'s two call sites import from
       `clasi.skill_resolve`
-- [ ] A test asserts `clasi init`'s import chain is free of
+- [x] A test asserts `clasi init`'s import chain is free of
       `clasi.mcp_server` / `mcp.server.fastmcp` — run the install path
       in a subprocess with `mcp.server.fastmcp` shadowed/blocked (e.g. a
       `sys.modules` stub that raises `ImportError` on that submodule)
       and assert `clasi init` still completes successfully
-- [ ] File (during this ticket, not before) a follow-up issue for the
+- [x] File (during this ticket, not before) a follow-up issue for the
       actual mcp 2.x migration — it is explicitly NOT implemented here,
       and per `docs/reviews/2026-08-reliability/02-mcp-tools.md` F5 it
       must wait for Phase 3/4's `@clasi_tool` decorator (mcp 2.x removes
@@ -91,7 +92,21 @@ tickets in this sprint do.
       monkey-patches)
 - [ ] The E2E container reaches a running Claude Code session (the
       failure that surfaced this) — validated in the sprint's own E2E
-      run, not a unit test
+      run, not a unit test. **Not run by this ticket's programmer**: a
+      full `tests/e2e/start.sh` run needs real subscription credentials
+      and spends real model-call budget, which is the stakeholder's
+      call to spend, not a subagent's (see "Human-in-the-loop control"
+      guidance). Proxy verification done instead, without live
+      credentials: `uv build --wheel` + a fresh, throwaway
+      `python:3.14-slim` container running a clean `pip install` of the
+      wheel (no `uv.lock` involved) confirms (a) the resolve now picks
+      `mcp==1.29.0`, not `2.0.0`, and (b) `clasi init .` completes
+      end-to-end and writes the full skill/agent/hook/CLAUDE.md
+      scaffold. This is the same "fresh resolve" proof `start.sh`
+      itself performs before launching Claude Code — it isolates and
+      proves the exact reported crash is gone. Recommend the
+      team-lead run `tests/e2e/start.sh` for the final live-session
+      confirmation and check this box once it passes.
 
 ## Testing
 

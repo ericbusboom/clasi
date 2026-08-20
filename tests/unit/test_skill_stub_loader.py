@@ -122,7 +122,7 @@ class TestStubSkillFiles:
 
     @pytest.mark.parametrize("skill_name,instruction_file,_", _STUB_SKILLS)
     def test_referenced_instruction_file_exists(self, skill_name: str, instruction_file: str, _) -> None:
-        from clasi.tools.process_tools import _PACKAGE_ROOT
+        from clasi.skill_resolve import _PACKAGE_ROOT
         ref = _PACKAGE_ROOT / "clasi" / "schemas" / "se-process" / "instructions" / instruction_file
         assert ref.exists(), f"Instruction file missing: {ref}"
 
