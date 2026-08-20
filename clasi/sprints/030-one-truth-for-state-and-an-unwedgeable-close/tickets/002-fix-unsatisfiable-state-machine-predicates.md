@@ -1,8 +1,9 @@
 ---
 id: '002'
 title: Fix unsatisfiable state-machine predicates
-status: open
-use-cases: [SUC-003]
+status: done
+use-cases:
+- SUC-003
 depends-on: []
 github-issue: ''
 issue: fix-unsatisfiable-state-machine-predicates.md
@@ -69,20 +70,20 @@ planning, not assumed):
 
 ## Acceptance Criteria
 
-- [ ] `is_any_sprint_ticketed` (`state_machine/predicates/project.py`)
+- [x] `is_any_sprint_ticketed` (`state_machine/predicates/project.py`)
       queries DB phase `"ticketing"`, not `"ticketed"`.
-- [ ] The reader method it calls, `any_sprint_in_phase`
+- [x] The reader method it calls, `any_sprint_in_phase`
       (`status/reader.py:445-460`), is scoped to active (non-archived)
       sprints only — do not count a sprint under `sprints/done/` toward
       `any_sprint_in_phase`. (This also resolves the sprint-012 false
       positive described in ticket 001 as a side effect of the correct
       semantic, not as a special case — do not add sprint-012-specific
       logic.)
-- [ ] `is_architecture_review_recorded`/`is_pre_flight_satisfied`
+- [x] `is_architecture_review_recorded`/`is_pre_flight_satisfied`
       (`state_machine/predicates/sprint.py`) check
       `result in {"passed", "skipped"}`, matching
       `StateDB.advance_phase`'s own semantics, instead of `is not None`.
-- [ ] `sprint_review`, `is_review_satisfied`, `is_close_report_present`,
+- [x] `sprint_review`, `is_review_satisfied`, `is_close_report_present`,
       the `pre_flight_review`/`post_review` skip-flag predicates,
       `is_tests_passing` (ticket machine), and `is_reopen_requested`
       (ticket machine) are removed — not made recordable — from both
@@ -93,24 +94,24 @@ planning, not assumed):
       transition's conditions become `[is_acceptance_criteria_met]`
       only; the `reopen` transition drops `is_reopen_requested` from its
       conditions.
-- [ ] `evaluate_state` (`state_machine/evaluator.py`) defines
+- [x] `evaluate_state` (`state_machine/evaluator.py`) defines
       most-advanced-match-wins: when more than one state's invariants
       hold, return the last-declared match (declaration order in the
       YAML is significant) instead of raising `AmbiguousStateError`.
       Zero matches still raises `NoMatchingStateError`, unchanged.
-- [ ] `_last_matching_state_from_error` and its three call sites in
+- [x] `_last_matching_state_from_error` and its three call sites in
       `status/reporter.py` (lines 198, 238, 319) are deleted — no
       remaining caller of the function, and no remaining
       `except AmbiguousStateError` block anywhere in `reporter.py`.
-- [ ] A test asserts every phase string referenced by any predicate
+- [x] A test asserts every phase string referenced by any predicate
       exists in `ArtifactGraph.phases()` (closes the class of bug that
       shipped this defect the first time — the existing unit test at
       `tests/unit/test_state_machine/test_predicates.py:261` stubs the
       reader to agree with the predicate, which cannot catch this).
-- [ ] `evaluate_state` is exercised against a context matching both
+- [x] `evaluate_state` is exercised against a context matching both
       `open` and `planned` simultaneously and returns a determinate
       state, not an exception.
-- [ ] This repo's own status block no longer reports `enter-sprint`
+- [x] This repo's own status block no longer reports `enter-sprint`
       blocked by a predicate that cannot be true (verify via `clasi
       status` or `get_status` against this repo after the fix — but see
       the stale-server note below).

@@ -43,7 +43,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from clasi.state_machine import (
-    AmbiguousStateError,
     NoMatchingStateError,
     ProjectContext,
     SprintContext,
@@ -195,18 +194,6 @@ class StatusReporter:
             transitions = self._transition_results_to_dicts(
                 inspect_transitions(machine, state_name, ctx)
             )
-        except AmbiguousStateError as exc:
-            # More than one state matched: pick the last (most advanced) and
-            # note the ambiguity.  This can happen when state machine invariants
-            # are not yet mutually exclusive in the active configuration.
-            state_name = _last_matching_state_from_error(str(exc))
-            transitions = (
-                self._transition_results_to_dicts(
-                    inspect_transitions(machine, state_name, ctx)
-                )
-                if state_name and state_name in machine.states
-                else []
-            )
         except NoMatchingStateError:
             state_name = "unknown"
             transitions = []
@@ -234,15 +221,6 @@ class StatusReporter:
             state_name = state.name
             transitions = self._transition_results_to_dicts(
                 inspect_transitions(machine, state_name, sprint_ctx)
-            )
-        except AmbiguousStateError as exc:
-            state_name = _last_matching_state_from_error(str(exc))
-            transitions = (
-                self._transition_results_to_dicts(
-                    inspect_transitions(machine, state_name, sprint_ctx)
-                )
-                if state_name and state_name in machine.states
-                else []
             )
         except NoMatchingStateError:
             state_name = "unknown"
@@ -315,15 +293,6 @@ class StatusReporter:
                 t_state_name = t_state.name
                 t_transitions = self._transition_results_to_dicts(
                     inspect_transitions(machine, t_state_name, ticket_ctx)
-                )
-            except AmbiguousStateError as exc:
-                t_state_name = _last_matching_state_from_error(str(exc))
-                t_transitions = (
-                    self._transition_results_to_dicts(
-                        inspect_transitions(machine, t_state_name, ticket_ctx)
-                    )
-                    if t_state_name and t_state_name in machine.states
-                    else []
                 )
             except NoMatchingStateError:
                 t_state_name = "unknown"
@@ -511,32 +480,6 @@ def _is_terminal_sprint(sprint) -> bool:
     except Exception:
         pass
     return False
-
-
-def _last_matching_state_from_error(error_message: str) -> str:
-    """Extract the last state name from an AmbiguousStateError message.
-
-    The error message format is:
-        "Multiple states in machine 'sprint' match ... simultaneously: ['executing', 'review']..."
-
-    We take the last name in the list because state machine states are
-    ordered from least to most advanced; when invariants overlap, the most
-    advanced state is the correct classification.
-
-    Returns ``"unknown"`` if parsing fails.
-    """
-    import ast
-    import re
-
-    match = re.search(r"simultaneously:\s*(\[[^\]]+\])", error_message)
-    if match:
-        try:
-            names: list[str] = ast.literal_eval(match.group(1))
-            if names:
-                return names[-1]
-        except Exception:
-            pass
-    return "unknown"
 
 
 def _derive_focus(project_block: dict, sprints_block: list[dict]) -> str:

@@ -443,17 +443,28 @@ class ClasiStateReader:
             return None
 
     def any_sprint_in_phase(self, phase: str) -> bool:
-        """Return True if any sprint is currently in *phase*.
+        """Return True if any *active* (non-archived) sprint is currently in *phase*.
 
-        Source: iterates all sprint directories and calls
-        ``StateDB.get_sprint_state()`` for each registered sprint.
-        Returns False on any error.
+        Source: iterates sprint directories and calls
+        ``StateDB.get_sprint_state()`` for each registered sprint. A sprint
+        whose directory lives under ``sprints/done/`` is archived and is
+        excluded regardless of its recorded DB phase — an archived sprint
+        can be permanently stuck at an earlier phase (e.g. its DB phase
+        never advanced past ``ticketing`` even though its frontmatter
+        status is ``done``), and counting it would produce a false
+        positive that a real writer can never clear. Returns False on any
+        error.
         """
         try:
             for sprint in self._project.list_sprints():
                 sid = sprint.id
                 if not sid:
                     continue
+                try:
+                    if sprint.path.parent.name == "done":
+                        continue
+                except Exception:
+                    pass
                 try:
                     state = self._project.db.get_sprint_state(sid)
                     if state.get("phase") == phase:

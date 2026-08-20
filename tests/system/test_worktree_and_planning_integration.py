@@ -18,9 +18,10 @@ cumulative unit/system suites from tickets 001-015 do not reach:
   `detail_sprint` -> ticket lifecycle -> `record_gate_result` (skipped)
   -> phase advances -> close, asserting only `sprint.md` + `tickets/`
   ever exist and `docs/architecture/` never reappears. Also confirms the
-  known `AmbiguousStateError` overlap between the `open` and `planned`
-  sprint states (ticket 004's finding) resolves to a sensible state via
-  the normal status/reporter fallback rather than surfacing an error.
+  known invariant overlap between the `open` and `planned` sprint states
+  (ticket 004's finding) resolves determinately to a sensible state
+  (`evaluate_state`'s most-advanced-match-wins contract, 030/002) rather
+  than surfacing an error.
 - **Cross-issue**: a single sprint using both `worktree: true` and the
   single-doc model end-to-end, confirming the two features (which touch
   overlapping files but not overlapping runtime behavior) don't
@@ -479,15 +480,20 @@ class TestIssueBSingleDocSprintLifecycleEndToEnd:
         """Ticket 004's known finding: removing is_architecture_present /
         is_usecases_present made the `open` and `planned` sprint states
         share an identical invariant set (`is_sprint_doc_present` only), so
-        `evaluate_state` raises AmbiguousStateError for a fresh
-        sprint.md-only sprint. Confirm the status/reporter fallback
-        (`_last_matching_state_from_error`) resolves this to a sensible
-        state ("planned", the more-advanced of the two ambiguous states)
-        via the normal get_status/reporter path, without ever surfacing an
-        error to the caller.
+        a fresh sprint.md-only sprint's context satisfies both states'
+        invariants simultaneously.
+
+        As of 030/002, `evaluate_state` no longer treats this as an error:
+        it defines most-advanced-match-wins (returns the last-declared
+        matching state) instead of raising `AmbiguousStateError`, and the
+        `status/reporter.py` exception-message-parsing workaround
+        (`_last_matching_state_from_error`) this ambiguity used to force
+        was deleted along with the exception path. Confirm both the direct
+        `evaluate_state` call and the normal get_status/reporter path
+        resolve determinately to "planned" (the more-advanced of the two
+        ambiguous states) without any exception ever being raised.
         """
         from clasi.state_machine import (
-            AmbiguousStateError,
             ProjectContext,
             SprintContext,
             evaluate_state,
@@ -508,14 +514,14 @@ class TestIssueBSingleDocSprintLifecycleEndToEnd:
 
         # Directly confirm the ambiguity exists (this is the documented
         # known finding, not itself a bug) -- a fresh sprint.md-only sprint
-        # matches both `open` and `planned` invariant sets.
-        with pytest.raises(AmbiguousStateError) as excinfo:
-            evaluate_state(machine, sprint_ctx)
-        assert "open" in str(excinfo.value)
-        assert "planned" in str(excinfo.value)
+        # matches both `open` and `planned` invariant sets -- and that
+        # evaluate_state resolves it determinately rather than raising.
+        result = evaluate_state(machine, sprint_ctx)
+        assert result.name == "planned"
 
-        # Now confirm the normal get_status/reporter path resolves this
-        # without raising, via the pre-existing fallback.
+        # Now confirm the normal get_status/reporter path agrees, via the
+        # same evaluate_state call reporter.py makes internally (no
+        # exception-message-parsing fallback involved anymore).
         from clasi.tools.process_tools import get_status
 
         status = json.loads(get_status())

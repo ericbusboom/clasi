@@ -33,7 +33,6 @@ states:
         to: done
         conditions:
           - is_acceptance_criteria_met
-          - is_tests_passing
         action: move_ticket_to_done
       throw:
         to: exception
@@ -58,8 +57,8 @@ states:
 
   done:
     description: |
-      Ticket has been moved to tickets/done/. Acceptance criteria met
-      and tests passed at finish time.
+      Ticket has been moved to tickets/done/. Acceptance criteria were
+      met at finish time.
     invariants:
       - is_ticket_file_present
       - is_ticket_in_done_dir
@@ -67,8 +66,7 @@ states:
     transitions:
       reopen:
         to: open
-        conditions:
-          - is_reopen_requested
+        conditions: []
         action: move_ticket_out_of_done
 
 predicates:
@@ -90,8 +88,6 @@ predicates:
     description: Returns True iff every ticket listed in this ticket's `depends-on` frontmatter is in the `done` state.
   is_acceptance_criteria_met:
     description: Returns True iff every acceptance-criteria checkbox in the ticket body is checked.
-  is_tests_passing:
-    description: Returns True iff the project's test suite passes on the current branch.
   is_blocker_identified:
     description: |
       Returns True iff the dispatched programmer agent has declared
@@ -102,8 +98,6 @@ predicates:
       Returns True iff the blocker recorded in the ticket's exception
       block has been addressed (architecture updated, dependency
       ticket completed, stakeholder clarification received, etc.).
-  is_reopen_requested:
-    description: Returns True iff a `reopen_ticket` MCP call has been made for this ticket.
 
 actions:
   dispatch_programmer:

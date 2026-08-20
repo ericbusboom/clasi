@@ -75,8 +75,13 @@ def is_execution_lock_released(ctx: ProjectContext) -> bool:
 
 @predicate("is_any_sprint_ticketed")
 def is_any_sprint_ticketed(ctx: ProjectContext) -> bool:
-    """Return True iff at least one sprint is in the ``ticketed`` phase, ready to execute."""
-    return ctx.reader.any_sprint_in_phase("ticketed")
+    """Return True iff at least one sprint is in the ``ticketing`` phase, ready to execute.
+
+    ``"ticketing"`` is the DB phase vocabulary's actual name for this
+    stage (see ``schemas/se-process/schema.yaml``'s ``ticketing`` artifact
+    ID) — there is no ``"ticketed"`` phase; no writer ever produces it.
+    """
+    return ctx.reader.any_sprint_in_phase("ticketing")
 
 
 @predicate("is_any_sprint_executing")

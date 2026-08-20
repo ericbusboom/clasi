@@ -1,9 +1,9 @@
 """Unit tests for clasi.state_machine.predicates.
 
-Covers True and False cases for all 32 predicates:
-- 8 project predicates
-- 11 sprint predicates  (is_on_sprint_branch shared with project)
-- 13 ticket predicates
+Covers True and False cases for all 27 unique predicates:
+- 8 project predicates (includes is_on_sprint_branch)
+- 8 sprint-only predicates (is_on_sprint_branch shared with project)
+- 11 ticket predicates
 
 Uses ``unittest.mock.MagicMock`` or stub readers to keep tests isolated
 from the filesystem, git, and the database.
@@ -264,7 +264,9 @@ class TestIsAnySprintTicketed:
         ctx = _project_ctx(reader)
         from clasi.state_machine.predicates.project import is_any_sprint_ticketed
         assert is_any_sprint_ticketed(ctx) is True
-        reader.any_sprint_in_phase.assert_called_once_with("ticketed")
+        # "ticketing" is the DB phase vocabulary's real name for this stage
+        # (schemas/se-process/schema.yaml) -- there is no "ticketed" phase.
+        reader.any_sprint_in_phase.assert_called_once_with("ticketing")
 
     def test_false_when_no_sprint_ticketed(self):
         ctx = _project_ctx()  # NullStateReader returns False
@@ -313,7 +315,7 @@ class TestIsSprintDocPresent:
 
 
 class TestIsArchitectureReviewRecorded:
-    def test_true_when_gate_present(self):
+    def test_true_when_gate_result_is_passed(self):
         reader = _mock_reader()
         reader.sprint_gate.return_value = {"result": "passed"}
         ctx = _sprint_ctx(reader=reader)
@@ -327,9 +329,10 @@ class TestIsArchitectureReviewRecorded:
         assert is_architecture_review_recorded(ctx) is False
 
     def test_true_when_gate_result_is_skipped(self):
-        """A 'skipped' architecture_review gate record still satisfies
+        """A 'skipped' architecture_review gate record satisfies this
 
-        this predicate — it checks presence only, not the result value.
+        predicate, matching StateDB.advance_phase's own
+        `result in {"passed", "skipped"}` semantics.
         """
         reader = _mock_reader()
         reader.sprint_gate.return_value = {"result": "skipped"}
@@ -337,35 +340,65 @@ class TestIsArchitectureReviewRecorded:
         from clasi.state_machine.predicates.sprint import is_architecture_review_recorded
         assert is_architecture_review_recorded(ctx) is True
 
+    def test_false_when_gate_result_is_failed(self):
+        """A FAILED gate record must NOT satisfy this predicate.
+
+        Regression test: the predicate used to check `is not None` only,
+        so a failed review satisfied it just like a passed one.
+        """
+        reader = _mock_reader()
+        reader.sprint_gate.return_value = {"result": "failed"}
+        ctx = _sprint_ctx(reader=reader)
+        from clasi.state_machine.predicates.sprint import is_architecture_review_recorded
+        assert is_architecture_review_recorded(ctx) is False
+
 
 class TestIsPreFlightSatisfied:
-    def test_true_when_stakeholder_approval_gate_present(self):
+    def test_true_when_stakeholder_approval_gate_result_is_passed(self):
         reader = _mock_reader()
-        reader.sprint_gate.return_value = {"result": "approved"}
+        reader.sprint_gate.return_value = {"result": "passed"}
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
         assert is_pre_flight_satisfied(ctx) is True
 
-    def test_true_when_pre_flight_review_flag_is_skip(self):
+    def test_true_when_stakeholder_approval_gate_result_is_skipped(self):
         reader = _mock_reader()
-        reader.sprint_gate.return_value = None  # no gate recorded
+        reader.sprint_gate.return_value = {"result": "skipped"}
+        ctx = _sprint_ctx(reader=reader)
+        from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
+        assert is_pre_flight_satisfied(ctx) is True
+
+    def test_false_when_gate_result_is_failed(self):
+        """A FAILED gate record must NOT satisfy this predicate.
+
+        Regression test: the predicate used to check `is not None` only,
+        so a failed review satisfied it just like a passed one.
+        """
+        reader = _mock_reader()
+        reader.sprint_gate.return_value = {"result": "failed"}
+        ctx = _sprint_ctx(reader=reader)
+        from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
+        assert is_pre_flight_satisfied(ctx) is False
+
+    def test_false_when_no_gate(self):
+        ctx = _sprint_ctx()  # NullStateReader: no gate recorded
+        from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
+        assert is_pre_flight_satisfied(ctx) is False
+
+    def test_pre_flight_review_flag_no_longer_consulted(self):
+        """The `pre_flight_review` frontmatter flag has zero writers, so
+
+        the predicate no longer falls back to it -- only the
+        stakeholder_approval gate result matters, regardless of what the
+        flag is set to.
+        """
+        reader = _mock_reader()
+        reader.sprint_gate.return_value = None
         reader.sprint_flag.return_value = "skip"
         ctx = _sprint_ctx(reader=reader)
         from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
-        assert is_pre_flight_satisfied(ctx) is True
-
-    def test_false_when_no_gate_and_no_skip_flag(self):
-        ctx = _sprint_ctx()  # NullStateReader: no gate, flag returns ""
-        from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
         assert is_pre_flight_satisfied(ctx) is False
-
-    def test_false_when_flag_is_pause(self):
-        reader = _mock_reader()
-        reader.sprint_gate.return_value = None
-        reader.sprint_flag.return_value = "pause"
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_pre_flight_satisfied
-        assert is_pre_flight_satisfied(ctx) is False
+        reader.sprint_flag.assert_not_called()
 
 
 class TestIsAtLeastOneTicket:
@@ -444,58 +477,6 @@ class TestIsAllTicketsDone:
         ctx = _sprint_ctx()  # NullStateReader returns False
         from clasi.state_machine.predicates.sprint import is_all_tickets_done
         assert is_all_tickets_done(ctx) is False
-
-
-class TestIsReviewSatisfied:
-    def test_true_when_sprint_review_gate_present(self):
-        reader = _mock_reader()
-        reader.sprint_gate.return_value = {"result": "passed"}
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_review_satisfied
-        assert is_review_satisfied(ctx) is True
-
-    def test_true_when_post_review_flag_is_skip(self):
-        reader = _mock_reader()
-        reader.sprint_gate.return_value = None
-        reader.sprint_flag.return_value = "skip"
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_review_satisfied
-        assert is_review_satisfied(ctx) is True
-
-    def test_false_when_no_gate_and_no_skip_flag(self):
-        ctx = _sprint_ctx()  # NullStateReader: no gate, flag returns ""
-        from clasi.state_machine.predicates.sprint import is_review_satisfied
-        assert is_review_satisfied(ctx) is False
-
-    def test_false_when_flag_is_pause(self):
-        reader = _mock_reader()
-        reader.sprint_gate.return_value = None
-        reader.sprint_flag.return_value = "pause"
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_review_satisfied
-        assert is_review_satisfied(ctx) is False
-
-
-class TestIsCloseReportPresent:
-    def test_true_when_file_exists(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_close_report_present
-        assert is_close_report_present(ctx) is True
-
-    def test_false_when_file_missing(self):
-        ctx = _sprint_ctx()
-        from clasi.state_machine.predicates.sprint import is_close_report_present
-        assert is_close_report_present(ctx) is False
-
-    def test_uses_sprint_id_and_artifact_name(self):
-        reader = _mock_reader(sprint_artifact_exists=True)
-        ctx = _sprint_ctx(sprint_id="009", reader=reader)
-        from clasi.state_machine.predicates.sprint import is_close_report_present
-        is_close_report_present(ctx)
-        reader.sprint_artifact_exists.assert_called_once_with(
-            "009", "close-report.md"
-        )
 
 
 class TestIsBranchMerged:
@@ -665,21 +646,6 @@ class TestIsAcceptanceCriteriaMet:
         assert is_acceptance_criteria_met(ctx) is False
 
 
-class TestIsTestsPassing:
-    def test_true_when_tests_pass(self):
-        reader = _mock_reader()
-        reader.tests_passing.return_value = True
-        ctx = _ticket_ctx(reader=reader)
-        from clasi.state_machine.predicates.ticket import is_tests_passing
-        assert is_tests_passing(ctx) is True
-        reader.tests_passing.assert_called_once()
-
-    def test_false_when_tests_fail(self):
-        ctx = _ticket_ctx()  # NullStateReader returns False
-        from clasi.state_machine.predicates.ticket import is_tests_passing
-        assert is_tests_passing(ctx) is False
-
-
 class TestIsBlockerIdentified:
     def test_true_when_blocker_identified(self):
         reader = _mock_reader()
@@ -710,19 +676,132 @@ class TestIsBlockerResolved:
         assert is_blocker_resolved(ctx) is False
 
 
-class TestIsReopenRequested:
-    def test_true_when_reopen_requested(self):
-        reader = _mock_reader()
-        reader.reopen_requested.return_value = True
-        ctx = _ticket_ctx(reader=reader)
-        from clasi.state_machine.predicates.ticket import is_reopen_requested
-        assert is_reopen_requested(ctx) is True
-        reader.reopen_requested.assert_called_once_with("005", "005-001")
+# ---------------------------------------------------------------------------
+# Phase-string agreement (030/002 regression class)
+# ---------------------------------------------------------------------------
+#
+# `is_any_sprint_ticketed` queried DB phase "ticketed" -- a string that
+# never existed in the DB phase vocabulary (only "ticketing" does,
+# per `schemas/se-process/schema.yaml`) -- which permanently blocked the
+# project machine's `enter-sprint` transition. None of the per-predicate
+# unit tests above caught it, because they stub the reader to *echo back*
+# whatever phase string the predicate under test happens to pass in
+# (`reader.any_sprint_in_phase.return_value = True` unconditionally) --
+# which "agrees" with any string, correct or not.
+#
+# These tests instead check each phase-referencing predicate's real
+# behavior against every phase in ArtifactGraph.phases() -- the actual DB
+# phase vocabulary -- so a typo'd or renamed phase string fails loudly
+# regardless of what a hand-stubbed reader is told to return.
 
-    def test_false_when_no_reopen_requested(self):
-        ctx = _ticket_ctx()  # NullStateReader returns False
-        from clasi.state_machine.predicates.ticket import is_reopen_requested
-        assert is_reopen_requested(ctx) is False
+
+class TestPhaseStringAgreement:
+    def _artifact_graph_phases(self) -> list[str]:
+        from clasi.state_db_class import PHASES
+        return PHASES
+
+    def test_artifact_graph_phases_sanity(self):
+        """Guard the guard: confirm the real phase vocabulary is what this
+
+        test class assumes, so a schema.yaml change doesn't silently make
+        the tests below vacuous.
+        """
+        phases = self._artifact_graph_phases()
+        assert "ticketing" in phases
+        assert "executing" in phases
+        assert "ticketed" not in phases
+
+    def test_is_any_sprint_ticketed_call_argument_is_a_real_phase(self):
+        """Captures the literal phase string is_any_sprint_ticketed passes
+
+        to `any_sprint_in_phase` and checks it against the real phase
+        vocabulary -- independent of what the mock is told to return.
+        """
+        reader = _mock_reader()
+        ctx = _project_ctx(reader)
+        from clasi.state_machine.predicates.project import is_any_sprint_ticketed
+        is_any_sprint_ticketed(ctx)
+        reader.any_sprint_in_phase.assert_called_once()
+        queried_phase = reader.any_sprint_in_phase.call_args.args[0]
+        assert queried_phase in self._artifact_graph_phases(), (
+            f"is_any_sprint_ticketed queried phase {queried_phase!r}, which "
+            f"does not exist in ArtifactGraph.phases(): "
+            f"{self._artifact_graph_phases()}"
+        )
+        assert queried_phase == "ticketing"
+
+    def test_is_any_sprint_executing_call_argument_is_a_real_phase(self):
+        reader = _mock_reader()
+        ctx = _project_ctx(reader)
+        from clasi.state_machine.predicates.project import is_any_sprint_executing
+        is_any_sprint_executing(ctx)
+        reader.any_sprint_in_phase.assert_called_once()
+        queried_phase = reader.any_sprint_in_phase.call_args.args[0]
+        assert queried_phase in self._artifact_graph_phases(), (
+            f"is_any_sprint_executing queried phase {queried_phase!r}, which "
+            f"does not exist in ArtifactGraph.phases(): "
+            f"{self._artifact_graph_phases()}"
+        )
+        assert queried_phase == "executing"
+
+    def test_is_any_sprint_ticketed_matches_exactly_one_real_phase(self):
+        """Behavioral cross-check: feed every real phase through the
+
+        reader, one at a time, and confirm the predicate is satisfied by
+        exactly the phase it is documented to mean. If the predicate's
+        hardcoded query string were invalid (e.g. "ticketed"), no real
+        phase would ever satisfy it and `matched` would be empty.
+        """
+        from clasi.state_machine.predicates.project import is_any_sprint_ticketed
+
+        matched = []
+        for phase in self._artifact_graph_phases():
+            reader = MagicMock()
+            reader.any_sprint_in_phase.side_effect = lambda p, _phase=phase: p == _phase
+            ctx = _project_ctx(reader)
+            if is_any_sprint_ticketed(ctx):
+                matched.append(phase)
+        assert matched == ["ticketing"], (
+            f"is_any_sprint_ticketed should be satisfiable by exactly the "
+            f"real 'ticketing' phase; matched {matched!r} instead"
+        )
+
+    def test_is_any_sprint_executing_matches_exactly_one_real_phase(self):
+        from clasi.state_machine.predicates.project import is_any_sprint_executing
+
+        matched = []
+        for phase in self._artifact_graph_phases():
+            reader = MagicMock()
+            reader.any_sprint_in_phase.side_effect = lambda p, _phase=phase: p == _phase
+            ctx = _project_ctx(reader)
+            if is_any_sprint_executing(ctx):
+                matched.append(phase)
+        assert matched == ["executing"], (
+            f"is_any_sprint_executing should be satisfiable by exactly the "
+            f"real 'executing' phase; matched {matched!r} instead"
+        )
+
+    def test_is_sprint_executing_ticket_predicate_matches_exactly_one_real_phase(self):
+        """`is_sprint_executing` (ticket machine) compares
+
+        `reader.sprint_phase(...)` against a hardcoded literal rather than
+        passing a phase string as a call argument, so its phase string
+        can't be captured via call_args -- this behavioral cross-check
+        covers it the same way as the call-argument predicates above.
+        """
+        from clasi.state_machine.predicates.ticket import is_sprint_executing
+
+        matched = []
+        for phase in self._artifact_graph_phases():
+            reader = _mock_reader()
+            reader.sprint_phase.return_value = phase
+            ctx = _ticket_ctx(reader=reader)
+            if is_sprint_executing(ctx):
+                matched.append(phase)
+        assert matched == ["executing"], (
+            f"is_sprint_executing should be satisfiable by exactly the "
+            f"real 'executing' phase; matched {matched!r} instead"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -760,8 +839,6 @@ class TestPredicateRegistration:
             "is_no_other_sprint_executing",
             "is_execution_lock_held_by_this_sprint",
             "is_all_tickets_done",
-            "is_review_satisfied",
-            "is_close_report_present",
             "is_branch_merged",
         ]
         for name in sprint_predicates:
@@ -779,6 +856,26 @@ class TestPredicateRegistration:
         assert "is_architecture_present" not in names
         assert "is_usecases_present" not in names
 
+    def test_unsatisfiable_predicates_removed_not_registered(self):
+        """030/002: these predicates referenced gates/flags/markers the
+
+        shipped toolchain never writes (`sprint_review` gate rejected by
+        `record_gate`'s VALID_GATE_NAMES; the `pre_flight_review`/
+        `post_review` frontmatter flags; the `.clasi/test-cache` marker;
+        the `reopen_requested` MCP call). They were removed rather than
+        made recordable.
+        """
+        from clasi.state_machine.registry import list_predicates
+
+        names = list_predicates()
+        for removed in (
+            "is_review_satisfied",
+            "is_close_report_present",
+            "is_tests_passing",
+            "is_reopen_requested",
+        ):
+            assert removed not in names, f"{removed} should have been removed"
+
     def test_all_ticket_predicates_registered(self):
         from clasi.state_machine.registry import list_predicates
 
@@ -793,23 +890,23 @@ class TestPredicateRegistration:
             "is_sprint_executing",
             "is_dependencies_done",
             "is_acceptance_criteria_met",
-            "is_tests_passing",
             "is_blocker_identified",
             "is_blocker_resolved",
-            "is_reopen_requested",
         ]
         for name in ticket_predicates:
             assert name in names, f"Missing ticket predicate: {name}"
 
     def test_total_predicate_count(self):
-        """8 project + 10 sprint (shared is_on_sprint_branch) + 13 ticket = 31."""
+        """8 project + 8 sprint (shared is_on_sprint_branch) + 11 ticket = 27."""
         from clasi.state_machine.registry import list_predicates
 
         # is_on_sprint_branch is shared (registered once in project.py)
-        # Project: 8, Sprint: 10 new (is_architecture_present/is_usecases_present
-        # removed; is_on_sprint_branch already counted), Ticket: 13
-        # Total unique: 8 + 10 + 13 = 31
+        # Project: 8, Sprint: 8 new (is_architecture_present/is_usecases_present,
+        # is_review_satisfied, is_close_report_present removed;
+        # is_on_sprint_branch already counted), Ticket: 11
+        # (is_tests_passing, is_reopen_requested removed)
+        # Total unique: 8 + 8 + 11 = 27
         names = list_predicates()
-        assert len(names) == 31, (
-            f"Expected 31 predicates, got {len(names)}: {names}"
+        assert len(names) == 27, (
+            f"Expected 27 predicates, got {len(names)}: {names}"
         )

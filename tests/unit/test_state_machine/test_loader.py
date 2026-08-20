@@ -257,7 +257,10 @@ class TestLoadTicketMachine:
         t = m.states["in-progress"].transitions["finish"]
         assert t.to == "done"
         assert "is_acceptance_criteria_met" in t.conditions
-        assert "is_tests_passing" in t.conditions
+        # is_tests_passing was removed (030/002): its backing marker file
+        # (.clasi/test-cache) has no writer, so the condition could never
+        # be satisfied by anything real.
+        assert "is_tests_passing" not in t.conditions
         assert t.action == "move_ticket_to_done"
 
     def test_in_progress_throw_transition(self):
@@ -278,7 +281,10 @@ class TestLoadTicketMachine:
         m = load_machine("ticket")
         t = m.states["done"].transitions["reopen"]
         assert t.to == "open"
-        assert "is_reopen_requested" in t.conditions
+        # is_reopen_requested was removed (030/002): no writer ever sets
+        # it, so the transition's conditions are now empty.
+        assert "is_reopen_requested" not in t.conditions
+        assert t.conditions == ()
         assert t.action == "move_ticket_out_of_done"
 
     def test_open_invariants(self):

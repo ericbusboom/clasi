@@ -22,7 +22,6 @@ documented in ``docs/design/state-machines.md`` and enforced here in
 from __future__ import annotations
 
 from clasi.state_machine.models import (
-    AmbiguousStateError,
     Machine,
     NoMatchingStateError,
     State,
@@ -38,10 +37,22 @@ from clasi.state_machine.registry import get_predicate
 
 
 def evaluate_state(machine: Machine, context: object) -> State:
-    """Return the single state whose invariants are all satisfied by *context*.
+    """Return the state whose invariants are satisfied by *context*.
 
-    Iterates every state in *machine*, evaluates each state's invariant
-    predicates against *context*, and returns the unique match.
+    Iterates every state in *machine*, in declaration order (the order
+    states appear under ``states:`` in the machine's YAML definition), and
+    evaluates each state's invariant predicates against *context*.
+
+    Design rule: "most-advanced-match-wins"
+    ----------------------------------------
+    A machine's states are not guaranteed to have mutually exclusive
+    invariants — a later (more advanced) state's invariants may be a
+    superset of an earlier state's, so both match simultaneously once the
+    later state's additional conditions are also met. When more than one
+    state matches, this is not an error: the **last-declared** match (i.e.
+    the most advanced one reachable from the matches) is returned. This
+    keeps evaluation deterministic without requiring every machine
+    definition to hand-craft mutually exclusive invariant sets.
 
     Args:
         machine: The :class:`~clasi.state_machine.models.Machine` to evaluate.
@@ -49,14 +60,11 @@ def evaluate_state(machine: Machine, context: object) -> State:
             for this machine (e.g. :class:`~clasi.state_machine.context.TicketContext`).
 
     Returns:
-        The :class:`~clasi.state_machine.models.State` whose invariants all
-        return ``True`` for *context*.
+        The last-declared :class:`~clasi.state_machine.models.State` among
+        those whose invariants all return ``True`` for *context*.
 
     Raises:
         NoMatchingStateError: If no state's invariants are all satisfied.
-        AmbiguousStateError: If more than one state's invariants are all
-            satisfied simultaneously (includes both matching state names in
-            the error message).
         UnknownPredicateError: If any invariant predicate name is not
             registered in the global registry.
     """
@@ -71,15 +79,8 @@ def evaluate_state(machine: Machine, context: object) -> State:
             f"No state in machine {machine.name!r} matches the current context. "
             f"States checked: {list(machine.states.keys())}"
         )
-    if len(matches) > 1:
-        matching_names = [s.name for s in matches]
-        raise AmbiguousStateError(
-            f"Multiple states in machine {machine.name!r} match the current "
-            f"context simultaneously: {matching_names}. "
-            "State invariants must be mutually exclusive."
-        )
 
-    return matches[0]
+    return matches[-1]
 
 
 def inspect_transitions(
