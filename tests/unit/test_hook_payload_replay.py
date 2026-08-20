@@ -37,6 +37,28 @@ methodology):
   the fixture file) — sprint 028's automatic deny-payload dump only
   fires for ``exit_code == 2``, so there is no equivalent built-in
   capture mechanism for the allow path.
+- ``role-guard-deny-no-ticket.json`` / ``role-guard-allow-ticket-done-edit.json``
+  (ticket 029-010): captured the same tee-against-a-scratch-project way,
+  tier 2, against a scratch project with a real execution lock held for
+  sprint "029" (``clasi.state_db.init_db`` / ``register_sprint`` /
+  ``acquire_lock``) and zero tickets ``status: in-progress`` anywhere in
+  that sprint. The deny fixture's ``file_path`` targets an ordinary
+  source path (``src/app/other.py``) — the ticket-state gate's
+  ``no-ticket`` case, proving the gate still fails closed for the write
+  it exists to police. The allow fixture's ``file_path`` targets a
+  ticket file already relocated to that sprint's own
+  ``tickets/done/001-done-ticket.md`` — the reported bug this ticket
+  fixes: a completed ticket's own file must be editable (e.g. to record
+  after-the-fact evidence) even though no ticket anywhere in the sprint
+  is in-progress. Both captures were verified against the real,
+  unmodified ``clasi hook role-guard`` entrypoint before being copied
+  into the corpus (exit 2 / ``gate=ticket-state:no-ticket`` and exit 0 /
+  ``gate=ticket-state:tickets-exempt`` respectively, per the scratch
+  project's own ``.clasi/log/hooks.log``). Unlike every other fixture
+  above, replaying these two also requires reconstructing the captured
+  project's DB-backed lock/tickets state (not just its ``file_path``) —
+  see ``_setup_ticket_gate_lock_state`` and the ``pre_setup`` field on
+  ``_Fixture`` below.
 
 No temporary code was added to ``hook_handlers.py`` itself to capture
 these — the tee happened entirely at the shell level, piping into the
@@ -61,11 +83,12 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import pytest
 
 from clasi.hook_handlers import handle_hook
+from clasi.state_db import acquire_lock, init_db, register_sprint
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "hook_payloads"
 
@@ -76,6 +99,33 @@ def _write_fresh_config(root: Path) -> None:
     clasi_dir = root / ".clasi"
     clasi_dir.mkdir(parents=True, exist_ok=True)
     (clasi_dir / "config.yaml").write_text(_FRESH_LAYOUT_CONFIG, encoding="utf-8")
+
+
+def _setup_ticket_gate_lock_state(tmp_path: Path) -> None:
+    """Reconstruct the DB-backed execution lock + tickets/done/ state the
+    two ticket-state-gate fixtures (ticket 029-010) were captured
+    against: sprint "029"'s lock held, zero tickets status: in-progress
+    anywhere in the sprint, and one ticket already relocated to
+    ``clasi/sprints/029-fixture-sprint/tickets/done/001-done-ticket.md``.
+
+    Every other fixture's replay only needs ``_write_fresh_config`` plus
+    (for some) a rewritten ``file_path`` — see the module docstring.
+    These two are the first fixtures whose captured decision also
+    depended on project DB/filesystem state beyond the payload itself,
+    so replay must reconstruct that state explicitly rather than relying
+    on ``_write_fresh_config`` alone.
+    """
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, "029", "sprint-029-fixture")
+    acquire_lock(db_path, "029")
+
+    done_dir = tmp_path / "clasi" / "sprints" / "029-fixture-sprint" / "tickets" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    (done_dir / "001-done-ticket.md").write_text(
+        "---\nid: '001'\ntitle: Done ticket\nstatus: done\n---\n# Done ticket\n",
+        encoding="utf-8",
+    )
 
 
 def _last_hooks_log_line(tmp_path: Path, event_type: str) -> str:
@@ -101,6 +151,13 @@ class _Fixture:
     # own _exit_hook calls. None (the default) means the log event_type
     # is identical to `event`.
     log_event: Optional[str] = None
+    # Called with tmp_path, after _write_fresh_config and before the
+    # replay itself, for a fixture whose captured decision depended on
+    # DB/filesystem project state beyond file_path (ticket 029-010's two
+    # ticket-state-gate fixtures — see _setup_ticket_gate_lock_state).
+    # None (the default, every pre-existing fixture) means no extra
+    # setup is needed.
+    pre_setup: Optional[Callable[[Path], None]] = None
 
 
 # One row per captured fixture. expected_reason is asserted only where the
@@ -126,6 +183,29 @@ _FIXTURES = [
         "role-guard-allow-tier2.json", "role-guard", "2",
         expected_exit=0, expected_reason="tier-2",
         path_rewrite_suffix="src/app/new_module.py",
+    ),
+    _Fixture(
+        # Ticket 029-010, AC2/AC3: tier 2, execution lock held, zero
+        # tickets in-progress, file_path an ordinary source path -> the
+        # ticket-state gate must still fail closed for the write it
+        # exists to police, even after adding the tickets/ exemption
+        # below. See _setup_ticket_gate_lock_state.
+        "role-guard-deny-no-ticket.json", "role-guard", "2",
+        expected_exit=2, expected_reason="no-ticket",
+        path_rewrite_suffix="src/app/other.py",
+        pre_setup=_setup_ticket_gate_lock_state,
+    ),
+    _Fixture(
+        # Ticket 029-010, AC1/AC3: same lock-held/zero-in-progress state
+        # as the deny fixture above, but file_path targets a ticket
+        # already relocated to tickets/done/ — the reported bug. Must
+        # re-root under the SAME "029-fixture-sprint" tickets/done/ tree
+        # _setup_ticket_gate_lock_state creates, or the gate's tickets/
+        # prefix match would never fire.
+        "role-guard-allow-ticket-done-edit.json", "role-guard", "2",
+        expected_exit=0, expected_reason="tier-2",
+        path_rewrite_suffix="clasi/sprints/029-fixture-sprint/tickets/done/001-done-ticket.md",
+        pre_setup=_setup_ticket_gate_lock_state,
     ),
     _Fixture(
         "mcp-guard-deny-tier0.json", "mcp-guard", "0",
@@ -193,6 +273,9 @@ def test_replay_fixture_reproduces_decision(fx: _Fixture, tmp_path: Path, monkey
     read_payload() -> handle_hook(event) exactly as production does, and
     assert it reproduces the originally observed allow/deny decision."""
     _write_fresh_config(tmp_path)
+
+    if fx.pre_setup is not None:
+        fx.pre_setup(tmp_path)
 
     raw = (_FIXTURES_DIR / fx.filename).read_text(encoding="utf-8")
     payload = json.loads(raw)

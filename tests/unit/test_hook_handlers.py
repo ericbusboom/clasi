@@ -172,6 +172,24 @@ def _make_done_ticket(sprint_dir: Path, ticket_id: str, title: str = "Done ticke
     (tickets_dir / f"{ticket_id}-{title.lower().replace(' ', '-')}.md").write_text(content)
 
 
+def _make_done_ticket_in_done_dir(
+    sprint_dir: Path, ticket_id: str, title: str = "Done ticket"
+) -> Path:
+    """Write a minimal done ticket file to sprint_dir/tickets/done/.
+
+    Unlike ``_make_done_ticket`` (which writes into ``tickets/`` directly),
+    this reproduces the actual reported-bug scenario (ticket 029-010): a
+    ticket already relocated to its sprint's ``tickets/done/`` subdirectory
+    after `move_ticket_to_done`. Returns the path to the written file.
+    """
+    done_dir = sprint_dir / "tickets" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    content = f"---\nid: '{ticket_id}'\ntitle: {title}\nstatus: done\n---\n"
+    path = done_dir / f"{ticket_id}-{title.lower().replace(' ', '-')}.md"
+    path.write_text(content)
+    return path
+
+
 class TestGetActiveTickets:
     def test_returns_empty_for_empty_sprint_id(self, tmp_path):
         """_get_active_tickets returns empty list when sprint_id is empty string."""
@@ -3344,6 +3362,116 @@ class TestRoleGuardTicketStateGateRescoping:
         assert sprint_id == "019"
         assert active == []
         assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+
+class TestRoleGuardTicketStateGateTicketsExemption:
+    """Ticket 029-010: the ticket-state gate's only exemptions were
+    issues_dir/reflections_dir (see TestRoleGuardTicketStateGateRescoping
+    above). That left a tier-2 edit to a ticket file already relocated to
+    a sprint's tickets/done/ directory permanently unsatisfiable —
+    _get_active_tickets only ever recognizes tickets still sitting in
+    tickets/ with status: in-progress in their frontmatter, so a done
+    ticket can never make the gate pass by "starting or resuming" it (the
+    gate's own suggested remedy). This class covers the new tickets/
+    exemption (both the reported tickets/done/ bug and the related
+    ordering trap: a ticket file still in tickets/, not yet moved, whose
+    own status was just flipped to done), and proves the exemption is
+    scoped precisely — not a blanket tier-2 allow — the same way
+    TestRoleGuardTicketStateGateRescoping proves the issues_dir/
+    reflections_dir exemption is scoped.
+    """
+
+    def test_tier2_edit_to_ticket_in_done_dir_allowed_with_zero_in_progress(
+        self, tmp_path
+    ):
+        """AC1: a tier-2 edit to a ticket file already under
+        tickets/done/ is allowed even though zero tickets in the sprint
+        are in-progress — the exact reported-bug scenario (e.g. checking
+        off an acceptance criterion on a completed ticket after the
+        fact)."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        ticket_path = _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        rel_path = str(ticket_path.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_edit_to_ticket_in_done_dir_allowed_with_other_ticket_in_progress(
+        self, tmp_path
+    ):
+        """AC1 explicitly requires this hold "regardless of whether some
+        other ticket in the sprint happens to be in-progress at the
+        time" — covered separately from the zero-in-progress case above
+        since that wording calls it out as its own condition."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        ticket_path = _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+        _make_in_progress_ticket(sprint_dir, "002", "Other active ticket")
+
+        rel_path = str(ticket_path.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_edit_to_own_ticket_still_in_tickets_dir_after_status_done_allowed(
+        self, tmp_path
+    ):
+        """The guard-ordering trap: a ticket's status is flipped to
+        `done` in place (file still in tickets/, not yet moved to
+        tickets/done/) — the very next tier-2 write, including finishing
+        that same ticket's own checkboxes, must not be blocked just
+        because no ticket is (any longer) status: in-progress anywhere
+        in the sprint. Uses _make_done_ticket (writes into tickets/
+        directly, not tickets/done/) per the Implementation Plan's step 5
+        — this is deliberately the ordering-trap scenario, not the
+        tickets/done/ scenario covered above."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket(sprint_dir, "010", "This very ticket")
+
+        rel_path = str(
+            (sprint_dir / "tickets" / "010-this-very-ticket.md").relative_to(tmp_path)
+        )
+        assert _run_role_guard(tmp_path, rel_path, "2") == 0
+
+    def test_tier2_source_write_zero_in_progress_still_blocked_alongside_tickets_dir(
+        self, tmp_path
+    ):
+        """CRITICAL CONSTRAINT: the new exemption must not become a
+        blanket tier-2 allow. An ordinary source-path write, in the same
+        sprint state that now allows a tickets/done/ edit (lock held,
+        zero in-progress, a tickets/done/ ticket present), is still
+        blocked with gate=ticket-state:no-ticket."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        assert _run_role_guard(tmp_path, "src/clasi/foo.py", "2") == 2
+
+    def test_tier2_non_markdown_file_under_tickets_dir_not_exempt(self, tmp_path):
+        """A non-.md file living under the sprint's tickets/ tree (not a
+        real scenario today, but proves the exemption is scoped to
+        ticket .md files specifically, per the ticket's exact wording,
+        not "anything under tickets/") is still blocked."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+        stray = sprint_dir / "tickets" / "done" / "notes.txt"
+        stray.write_text("not a ticket file", encoding="utf-8")
+
+        rel_path = str(stray.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 2
+
+    def test_tier2_ticket_shaped_path_under_different_sprint_not_exempt(
+        self, tmp_path
+    ):
+        """A ticket-shaped .md path under a DIFFERENT sprint's tickets/
+        tree (not the sprint whose execution lock is currently held) is
+        still blocked — the exemption is scoped to the current sprint's
+        own tickets/ tree, resolved from the held lock, not any
+        tickets/ directory anywhere in the project."""
+        sprint_dir = _setup_sprint_with_lock(tmp_path, sprint_id="029")
+        _make_done_ticket_in_done_dir(sprint_dir, "001", "Some done ticket")
+
+        # A tickets/done/ ticket file for an unrelated, unlocked sprint.
+        other_sprint_dir = tmp_path / "clasi" / "sprints" / "099-other-sprint"
+        other_ticket = _make_done_ticket_in_done_dir(other_sprint_dir, "001", "Other ticket")
+
+        rel_path = str(other_ticket.relative_to(tmp_path))
+        assert _run_role_guard(tmp_path, rel_path, "2") == 2
 
 
 # ---------------------------------------------------------------------------

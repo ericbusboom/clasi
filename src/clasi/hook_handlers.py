@@ -1072,11 +1072,37 @@ def handle_role_guard(payload: dict) -> None:
     # exempt for issues_dir/reflections_dir writes even for tier 2 — see
     # the docstring above for the full rationale (exception-routing
     # deadlock).
+    #
+    # Ticket 029-010: also exempt for a tier-2 write to a ticket's OWN
+    # .md file under this sprint's own tickets/ tree — both tickets/*.md
+    # (the still-mid-transition case, e.g. an agent flips its own ticket
+    # to status: done and then needs to check off its acceptance
+    # criteria in the same file before it is moved) and tickets/done/*.md
+    # (the reported bug: recording after-the-fact evidence, like a
+    # benchmark citation, on a ticket already relocated to done/).
+    # _get_active_tickets only ever recognizes "status: in-progress"
+    # tickets still sitting directly in tickets/ (see its docstring), so
+    # neither case can ever be satisfied by starting/resuming a ticket —
+    # this gate would otherwise be permanently unsatisfiable for them.
+    # A ticket file is process bookkeeping, not the production
+    # source/tests this gate exists to police — the same reasoning that
+    # already justifies the issues_dir/reflections_dir exemption above.
     if agent_tier == "2" and not (
         file_path.startswith(_issues_prefix) or file_path.startswith(_reflections_prefix)
     ):
         _sprint_log_dir, _sprint_id = _get_sprint_context(project=_proj, conn=_conn())
+        _tickets_prefix = None
         if _sprint_id:
+            _sprint_dir = _resolve_sprint_dir(_sprint_id, project=_proj)
+            if _sprint_dir is not None:
+                _tickets_prefix = _prefix(_sprint_dir / "tickets")
+        if (
+            _tickets_prefix is not None
+            and file_path.startswith(_tickets_prefix)
+            and file_path.endswith(".md")
+        ):
+            decisions.append("gate=ticket-state:tickets-exempt")
+        elif _sprint_id:
             active_tickets = _get_active_tickets(_sprint_id, project=_proj)
             if not active_tickets:
                 print(
@@ -1341,6 +1367,33 @@ def _get_log_dir() -> Optional[Path]:
     return log_dir
 
 
+def _resolve_sprint_dir(sprint_id: str, project: Optional[Project] = None) -> Optional[Path]:
+    """Return the sprint directory matching *sprint_id*, or None if not found.
+
+    Scans ``sprints_dir`` for a directory whose name starts with
+    ``"{sprint_id}-"`` (the standard ``NNN-slug`` sprint directory naming
+    convention). Factored out of :func:`_get_active_tickets` (ticket
+    029-010) so the role-guard ticket-state gate's ``tickets/`` exemption
+    can resolve the same sprint directory without duplicating this
+    ``iterdir()`` scan.
+
+    *project*, when given, is used instead of calling ``get_project()`` —
+    same convention as :func:`_get_active_tickets`.
+    """
+    if not sprint_id:
+        return None
+    try:
+        sprints_base = (project if project is not None else get_project()).sprints_dir
+        if not sprints_base.exists():
+            return None
+        for candidate in sprints_base.iterdir():
+            if candidate.is_dir() and candidate.name.startswith(f"{sprint_id}-"):
+                return candidate
+    except Exception:
+        return None
+    return None
+
+
 def _get_active_tickets(sprint_id: str, project: Optional[Project] = None) -> list[str]:
     """Return a list of in-progress ticket IDs for the given sprint.
 
@@ -1357,16 +1410,7 @@ def _get_active_tickets(sprint_id: str, project: Optional[Project] = None) -> li
     if not sprint_id:
         return []
     try:
-        sprints_base = (project if project is not None else get_project()).sprints_dir
-        if not sprints_base.exists():
-            return []
-
-        # Find the sprint directory matching this sprint_id
-        sprint_dir = None
-        for candidate in sprints_base.iterdir():
-            if candidate.is_dir() and candidate.name.startswith(f"{sprint_id}-"):
-                sprint_dir = candidate
-                break
+        sprint_dir = _resolve_sprint_dir(sprint_id, project=project)
         if sprint_dir is None:
             return []
 
