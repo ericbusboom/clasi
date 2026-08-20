@@ -51,3 +51,63 @@ class TestResolveArtifactPath:
         missing = tmp_path / "tickets" / "nonexistent.md"
         with pytest.raises(FileNotFoundError, match="nonexistent.md"):
             resolve_artifact_path(str(missing))
+
+
+class TestResolveArtifactPathRootAnchoring:
+    """Ticket 029/005: a relative path anchors to project.root, not the
+    process's own cwd. Proven by setting the process cwd to a directory
+    that is not the project root and confirming a root-relative path
+    still resolves.
+    """
+
+    def test_relative_path_anchors_to_project_root_not_process_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        from clasi.mcp_server import set_project
+
+        project_root = tmp_path / "project"
+        elsewhere = tmp_path / "elsewhere"
+        project_root.mkdir()
+        elsewhere.mkdir()
+
+        ticket = project_root / "clasi" / "sprints" / "001-foo" / "tickets" / "001-bar.md"
+        ticket.parent.mkdir(parents=True)
+        ticket.write_text("hello", encoding="utf-8")
+
+        set_project(project_root)
+        monkeypatch.chdir(elsewhere)
+
+        relative = "clasi/sprints/001-foo/tickets/001-bar.md"
+        resolved = resolve_artifact_path(relative)
+        assert resolved == ticket
+
+    def test_relative_path_done_variant_anchors_to_project_root(
+        self, tmp_path, monkeypatch
+    ):
+        from clasi.mcp_server import set_project
+
+        project_root = tmp_path / "project"
+        elsewhere = tmp_path / "elsewhere"
+        project_root.mkdir()
+        elsewhere.mkdir()
+
+        done_ticket = (
+            project_root
+            / "clasi"
+            / "sprints"
+            / "001-foo"
+            / "tickets"
+            / "done"
+            / "001-bar.md"
+        )
+        done_ticket.parent.mkdir(parents=True)
+        done_ticket.write_text("hello", encoding="utf-8")
+
+        set_project(project_root)
+        monkeypatch.chdir(elsewhere)
+
+        # Ask for the non-done path -- should still find the done/ variant,
+        # resolved against project_root rather than the process cwd.
+        relative = "clasi/sprints/001-foo/tickets/001-bar.md"
+        resolved = resolve_artifact_path(relative)
+        assert resolved == done_ticket

@@ -70,10 +70,10 @@ This is the only module in ``clasi.design`` that shells out to git for
 design-doc purposes; it composes ``clasi.design.paths``,
 ``clasi.design.store``, and ``clasi.design.validator`` but does not
 decide *when* in the sprint lifecycle these steps run (that wiring is
-ticket 006). Git calls use the existing inline
-``subprocess.run(["git", ...], cwd=..., capture_output=True, text=True)``
-idiom already established in ``clasi.sprint``/``clasi.tools.artifact_tools``
-— no new git abstraction layer is introduced here.
+ticket 006). Git calls go through the shared ``clasi.gitutil.run_git``
+helper (an explicit ``cwd`` on every invocation, no bare
+``subprocess.run(["git", ...])``) — the same helper ``clasi.sprint`` and
+``clasi.tools.artifact_tools`` use.
 """
 
 from __future__ import annotations
@@ -81,9 +81,10 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from clasi.gitutil import run_git
 
 _SOURCES_MANIFEST_NAME = "_sources.json"
 """Filename of the seed-time overlay-file -> canonical-path manifest.
@@ -108,15 +109,6 @@ class OverlayApplyError(OverlayError):
     Raised *before* any canonical file is modified — apply either fully
     succeeds or leaves the canonical doc set untouched.
     """
-
-
-def _run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-    )
 
 
 def _content_hash(text: str) -> str:
@@ -244,7 +236,7 @@ def seed_and_commit(
 
     manifest_path = _write_sources_manifest(sprint_design_dir, manifest_update)
 
-    add_result = _run_git(
+    add_result = run_git(
         ["add", *[str(p) for p in seeded], str(manifest_path)], repo_root
     )
     if add_result.returncode != 0:
@@ -252,7 +244,7 @@ def seed_and_commit(
             f"Failed to stage seeded overlay files: {add_result.stderr.strip()}"
         )
 
-    commit_result = _run_git(["commit", "-m", commit_message], repo_root)
+    commit_result = run_git(["commit", "-m", commit_message], repo_root)
     if commit_result.returncode != 0:
         raise OverlayGitError(
             f"Failed to commit seeded overlay files: {commit_result.stderr.strip()}"
@@ -282,7 +274,7 @@ def _pristine_content(overlay_file: Path, repo_root: Path) -> str | None:
     # git history. --follow's rename/copy detection would otherwise walk
     # past the seed commit into the *canonical* doc's own history and
     # return its original content instead of the sprint's seed content.
-    log_result = _run_git(
+    log_result = run_git(
         ["log", "--format=%H", "--", str(rel_path)],
         repo_root,
     )
@@ -293,7 +285,7 @@ def _pristine_content(overlay_file: Path, repo_root: Path) -> str | None:
         return None
     earliest = commits[-1]
 
-    show_result = _run_git(["show", f"{earliest}:{rel_path}"], repo_root)
+    show_result = run_git(["show", f"{earliest}:{rel_path}"], repo_root)
     if show_result.returncode != 0:
         return None
     return show_result.stdout
@@ -412,20 +404,20 @@ def commit_edits(
         OverlayGitError: If staging or committing fails for a reason
             other than "nothing to commit".
     """
-    add_result = _run_git(["add", str(sprint_design_dir)], repo_root)
+    add_result = run_git(["add", str(sprint_design_dir)], repo_root)
     if add_result.returncode != 0:
         raise OverlayGitError(
             f"Failed to stage sprint design overlay changes: "
             f"{add_result.stderr.strip()}"
         )
 
-    status_result = _run_git(
+    status_result = run_git(
         ["status", "--porcelain", "--", str(sprint_design_dir)], repo_root
     )
     if not status_result.stdout.strip():
         return False
 
-    commit_result = _run_git(["commit", "-m", commit_message], repo_root)
+    commit_result = run_git(["commit", "-m", commit_message], repo_root)
     if commit_result.returncode != 0:
         raise OverlayGitError(
             f"Failed to commit sprint design overlay changes: "

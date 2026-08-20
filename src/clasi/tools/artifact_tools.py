@@ -18,6 +18,7 @@ from typing import Optional
 
 from clasi.artifact import Artifact
 from clasi.frontmatter import read_document, read_frontmatter
+from clasi.gitutil import run_git
 from clasi.mcp_server import server, get_project
 from clasi.project import (
     Project,
@@ -53,6 +54,12 @@ logger = logging.getLogger("clasi.artifact")
 def resolve_artifact_path(path: str) -> Path:
     """Find a file whether it's in its original location or a done/ subdirectory.
 
+    A relative *path* is anchored to ``project.root`` (not the process's
+    own cwd) before any existence check runs, so a natural root-relative
+    artifact path (e.g. a ticket path returned by another tool) resolves
+    correctly regardless of what directory the MCP server process happens
+    to be sitting in. Absolute paths are used as-is.
+
     Resolution order:
     1. Given path as-is
     2. Insert done/ before the filename (e.g., tickets/001.md -> tickets/done/001.md)
@@ -62,6 +69,7 @@ def resolve_artifact_path(path: str) -> Path:
     Raises FileNotFoundError if none of the candidates exist.
     """
     p = Path(path)
+    p = p if p.is_absolute() else get_project().root / p
     if p.exists():
         return p
 
@@ -1108,11 +1116,7 @@ def _detect_sprint_from_branch() -> tuple[str, str] | None:
     Returns (sprint_id, branch_name) if the current branch matches
     sprint/NNN-*, or None if not on a sprint branch (including detached HEAD).
     """
-    result = subprocess.run(
-        ["git", "branch", "--show-current"],
-        capture_output=True,
-        text=True,
-    )
+    result = run_git(["branch", "--show-current"], cwd=get_project().root)
     branch = result.stdout.strip()
     if not branch:
         return None
@@ -1171,10 +1175,8 @@ def close_sprint(
     if not sprint_id:
         detected = _detect_sprint_from_branch()
         if detected is None:
-            current = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True,
-                text=True,
+            current = run_git(
+                ["branch", "--show-current"], cwd=get_project().root
             ).stdout.strip() or "(detached HEAD)"
             return json.dumps({
                 "status": "error",
@@ -1268,7 +1270,7 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     try:
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
-            version = compute_next_version()
+            version = compute_next_version(project_root=project.root)
             detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
@@ -1338,11 +1340,12 @@ def _prune_sprint_worktrees(
       audit state was ``failed``/``conflict``. Each dict has
       ``ticket_id``, ``path``, ``branch``, and ``reason`` keys.
     """
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"],
-        capture_output=True,
-        text=True,
-    )
+    # Anchor every git call to an explicit root: repo_root when the caller
+    # supplied one (the production call site always does), else fall back
+    # to the active project's root rather than the process's own cwd.
+    effective_root = repo_root if repo_root is not None else get_project().root
+
+    result = run_git(["worktree", "list", "--porcelain"], cwd=effective_root)
 
     target_ref = f"refs/heads/{branch_name}"
     pruned: list[str] = []
@@ -1370,10 +1373,9 @@ def _prune_sprint_worktrees(
             ref = line[len("branch "):]
             if ref == target_ref:
                 # Remove this worktree.
-                rm_result = subprocess.run(
-                    ["git", "worktree", "remove", "--force", current_path],
-                    capture_output=True,
-                    text=True,
+                rm_result = run_git(
+                    ["worktree", "remove", "--force", current_path],
+                    cwd=effective_root,
                 )
                 if rm_result.returncode == 0:
                     pruned.append(current_path)
@@ -1859,7 +1861,7 @@ def _close_sprint_full(
     try:
         trigger = load_version_trigger()
         if should_version(trigger, "sprint_close"):
-            version = compute_next_version()
+            version = compute_next_version(project_root=project.root)
             detected = detect_version_file(project.root)
             if detected:
                 update_version_file(detected[0], detected[1], version)
@@ -1887,17 +1889,18 @@ def _close_sprint_full(
             # makes git stash that leftover state before rebasing and pop
             # it back after, so Step 6's own code (out of scope for this
             # ticket) never has to change to tolerate it.
-            subprocess.run(
-                ["git", "config", "rebase.autoStash", "true"],
-                cwd=str(project.root), capture_output=True, text=True,
-            )
-            subprocess.run(
-                ["git", "add", *bump_paths],
-                cwd=str(project.root), capture_output=True, text=True,
-            )
-            subprocess.run(
-                ["git", "commit", "-m", f"chore: bump version to {version}"],
-                cwd=str(project.root), capture_output=True, text=True,
+            run_git(["config", "rebase.autoStash", "true"], cwd=project.root)
+            run_git(["add", *bump_paths], cwd=project.root)
+            # Explicit pathspec (`-- <paths>`): commit only the paths this
+            # step just staged, never whatever else happens to already sit
+            # in the index -- a stakeholder's own pre-staged, unrelated
+            # work would otherwise be swept into this chore commit (029/005).
+            run_git(
+                [
+                    "commit", "-m", f"chore: bump version to {version}",
+                    "--", *bump_paths,
+                ],
+                cwd=project.root,
             )
             create_version_tag(version)
     except Exception as exc:
@@ -1909,25 +1912,21 @@ def _close_sprint_full(
     # ── Step 5b: Commit .clasi.db if still dirty after version_bump ──
     db_file = project.db_path
     if db_file.exists():
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain", str(db_file)],
-            capture_output=True, text=True, cwd=str(project.root),
+        status_result = run_git(
+            ["status", "--porcelain", str(db_file)], cwd=project.root
         )
         if status_result.stdout.strip():  # non-empty means dirty/staged
             # Verify we're on the sprint branch before committing
-            head_result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, cwd=str(project.root),
+            head_result = run_git(
+                ["rev-parse", "--abbrev-ref", "HEAD"], cwd=project.root
             )
             head_branch = head_result.stdout.strip()
             if head_branch == branch_name:
-                subprocess.run(
-                    ["git", "add", str(db_file)],
-                    cwd=str(project.root), capture_output=True, text=True,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "chore: update .clasi.db"],
-                    cwd=str(project.root), capture_output=True, text=True,
+                run_git(["add", str(db_file)], cwd=project.root)
+                # Explicit pathspec here too -- see Step 5's note.
+                run_git(
+                    ["commit", "-m", "chore: update .clasi.db", "--", str(db_file)],
+                    cwd=project.root,
                 )
 
     # ── Step 6: Git merge ──
@@ -1978,10 +1977,7 @@ def _close_sprint_full(
     tags_pushed = False
     if push_tags_flag and version:
         tag_name = f"v{version}"
-        push_result = subprocess.run(
-            ["git", "push", "--tags"],
-            capture_output=True, text=True,
-        )
+        push_result = run_git(["push", "--tags"], cwd=project.root)
         tags_pushed = push_result.returncode == 0
 
     completed_steps.append("push_tags")
@@ -2727,8 +2723,9 @@ def tag_version(major: int = 0) -> str:
     Returns JSON with {version, tag}.
     """
 
-    version = compute_next_version(major)
-    detected = detect_version_file(get_project().root)
+    project = get_project()
+    version = compute_next_version(major, project_root=project.root)
+    detected = detect_version_file(project.root)
     if detected:
         update_version_file(detected[0], detected[1], version)
     create_version_tag(version)

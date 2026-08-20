@@ -1,8 +1,9 @@
 ---
 id: '005'
 title: Root-anchored git and artifact paths
-status: open
-use-cases: [SUC-005]
+status: done
+use-cases:
+- SUC-005
 depends-on: []
 github-issue: ''
 issue: root-anchored-git-and-artifact-paths.md
@@ -77,15 +78,26 @@ one shared `run_git` helper and anchors every call site to
 
 ## Acceptance Criteria
 
-- [ ] One `run_git(args, cwd=project.root)` helper used by every git
+- [x] One `run_git(args, cwd=project.root)` helper used by every git
       call in the tools layer, `sprint.py`, and `design/overlay.py`; no
-      bare `subprocess` git invocations remain in any of them
-- [ ] CLASI-generated commits use explicit pathspecs
+      bare `subprocess` git invocations remain in any of them.
+      `src/clasi/gitutil.py` is new. Scoping note: `artifact_tools.py`'s
+      GitHub-issue helpers (`_get_github_repo`, `_check_gh_access`,
+      `list_github_issues`, `close_github_issue`) and the sprint-review
+      helper `_check_git_branch` were deliberately left as bare
+      `subprocess` calls — they are not part of the "Files to touch"
+      itemization above, belong to unrelated features, and sit outside
+      the close_sprint/versioning safety concern this ticket fixes.
+      Every call site the ticket itemizes (branch detection,
+      `_prune_sprint_worktrees`, and the `_close_sprint_full`
+      version-bump / `.clasi.db` / push-tags sequence) now routes
+      through `run_git`.
+- [x] CLASI-generated commits use explicit pathspecs
       (`git commit -m msg -- <paths>`)
-- [ ] `resolve_artifact_path` anchors relative paths to `project.root`
-- [ ] `compute_next_version`/`_get_existing_tags` take an explicit
+- [x] `resolve_artifact_path` anchors relative paths to `project.root`
+- [x] `compute_next_version`/`_get_existing_tags` take an explicit
       `project_root` parameter instead of relying on implicit cwd
-- [ ] A test runs a representative tool (e.g. a `close_sprint` step, or
+- [x] A test runs a representative tool (e.g. a `close_sprint` step, or
       `_get_existing_tags`) with the process cwd set somewhere other
       than `project.root` and asserts correct behavior
 

@@ -10,7 +10,6 @@ Default format: X+.YYYYMMDD.R+
 """
 
 import re
-import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -222,28 +221,45 @@ def sync_version(version: str, project_root: Path | None = None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _get_existing_tags() -> list[str]:
-    """Return all git tags in the current repository."""
-    result = subprocess.run(
-        ["git", "tag", "-l"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _get_existing_tags(project_root: Path | None = None) -> list[str]:
+    """Return all git tags in the repository rooted at *project_root*.
+
+    Args:
+        project_root: Repository root to run ``git tag -l`` in. Defaults
+            to ``Path.cwd()`` when omitted, matching the previous
+            implicit-cwd behavior for standalone callers -- but any
+            caller that already has a resolved project root (e.g.
+            :func:`compute_next_version`) should pass it explicitly
+            rather than relying on the MCP server process's own working
+            directory happening to already be the project root.
+    """
+    from clasi.gitutil import run_git
+
+    cwd = project_root if project_root is not None else Path.cwd()
+    result = run_git(["tag", "-l"], cwd=cwd)
     if result.returncode != 0:
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-def compute_next_version(major: int = 0) -> str:
+def compute_next_version(major: int = 0, project_root: Path | None = None) -> str:
     """Compute the next version string based on existing git tags.
 
     Reads the version format from .clasi/settings.yaml (clasi-specific).
     For formats with auto-computed segments (date, revision), scans git
     tags to find the next revision number.  For fully manual formats,
     returns the major values joined by dots.
+
+    Args:
+        major: Major version segment.
+        project_root: Repository/project root to resolve the version
+            format setting, git tags, and the current version file
+            against. Defaults to ``Path.cwd()`` when omitted -- callers
+            that already have a ``Project`` (e.g. the MCP tools layer)
+            should pass ``project.root`` explicitly instead of relying
+            on the server process's own cwd matching the project.
     """
-    fmt = load_version_format()
+    fmt = load_version_format(project_root)
     parsed = parse_format(fmt)
 
     if not format_has_auto(parsed):
@@ -288,14 +304,14 @@ def compute_next_version(major: int = 0) -> str:
         return None
 
     max_rev = 0
-    for tag in _get_existing_tags():
+    for tag in _get_existing_tags(project_root):
         rev = _extract_rev(tag)
         if rev is not None:
             max_rev = max(max_rev, rev)
 
     # Also consider the version currently in the project's version file,
     # so consecutive bumps advance even when --tag is not used.
-    current = read_current_version()
+    current = read_current_version(project_root)
     if current:
         rev = _extract_rev(current)
         if rev is not None:
@@ -319,7 +335,7 @@ def bump_version(major: int = 0, tag: bool = False) -> dict:
     Returns a dict with keys: version, source, synced, tag.
     """
     project_root = Path.cwd()
-    version = compute_next_version(major)
+    version = compute_next_version(major, project_root)
 
     # Update source file
     result = detect_version_file(project_root)
