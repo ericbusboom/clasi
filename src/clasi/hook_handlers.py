@@ -80,8 +80,25 @@ def _normalize_to_root_relative(file_path: str, project: Optional[Project] = Non
         return file_path
 
 
+# Internal marker key (ticket 029-009): read_payload() sets this on its
+# returned {} fallback when stdin carried non-empty content that failed to
+# parse as JSON, so that case can be told apart from a legitimately
+# empty/absent payload (a tty with no piped stdin, or genuinely empty piped
+# input) — both of which also fall through to a bare {} with no marker.
+# HookPayload.from_dict / _log_hook_event surface this as a "bad-payload"
+# hooks.log token. Never a real payload field — no handler reads it as one.
+_BAD_PAYLOAD_KEY = "_bad_payload"
+
+
 def read_payload() -> dict:
-    """Read JSON payload from stdin."""
+    """Read JSON payload from stdin.
+
+    Ticket 029-009: when stdin held non-empty content that is not valid
+    JSON, returns ``{_BAD_PAYLOAD_KEY: True}`` instead of a bare ``{}`` —
+    see that constant's module comment. A genuinely empty/absent payload
+    (isatty, or whitespace-only piped input) is unaffected and still
+    returns plain ``{}``, so the two cases stay distinguishable downstream.
+    """
     try:
         if sys.stdin.isatty():
             return {}
@@ -89,7 +106,9 @@ def read_payload() -> dict:
         if not data.strip():
             return {}
         return json.loads(data)
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError:
+        return {_BAD_PAYLOAD_KEY: True}
+    except OSError:
         return {}
 
 
@@ -172,6 +191,13 @@ class HookPayload:
         ``handle_role_guard``), which ``_exit_hook`` already appends to
         the hooks.log line — reusing that existing mechanism rather than
         adding a second one.
+      bad_payload: ``True`` when the raw payload carries
+        ``_BAD_PAYLOAD_KEY`` (ticket 029-009) — set by ``read_payload()``
+        when stdin held non-empty content that failed to parse as JSON.
+        ``_log_hook_event`` surfaces this as a "bad-payload" hooks.log
+        token unconditionally (every handler's exit line), so a
+        malformed-JSON case is distinguishable from a legitimately empty
+        payload without every handler having to check for it itself.
     """
 
     tool_name: str = ""
@@ -188,6 +214,7 @@ class HookPayload:
     task_id: str = ""
     task_subject: str = ""
     missing: list = field(default_factory=list)
+    bad_payload: bool = False
 
     @staticmethod
     def from_dict(payload: Optional[dict]) -> "HookPayload":
@@ -257,6 +284,7 @@ class HookPayload:
             task_id=payload.get("task_id") or "",
             task_subject=payload.get("task_subject") or "",
             missing=missing,
+            bad_payload=bool(payload.get(_BAD_PAYLOAD_KEY)),
         )
 
 
@@ -541,6 +569,15 @@ def _log_hook_event(
     directly with a raw dict, and the deny-payload dump above needs the
     verbatim raw payload regardless — only the internal field-extraction
     logic changed.
+
+    ``bad-payload`` token (ticket 029-009): when ``hp.bad_payload`` is
+    True (the raw payload carries ``_BAD_PAYLOAD_KEY``, set by
+    ``read_payload()`` for a non-empty, unparseable-as-JSON stdin body),
+    ``"bad-payload"`` is unconditionally prepended to ``key_fields`` here
+    — every handler's hooks.log line for that invocation carries it, not
+    only role-guard/mcp-guard's own ``decisions`` list, so a malformed
+    payload is distinguishable from a legitimately empty one regardless
+    of which handler processed it.
     """
     try:
         _proj = get_project()
@@ -555,6 +592,9 @@ def _log_hook_event(
 
         hp = HookPayload.from_dict(payload)
         key_fields: list[str] = []
+
+        if hp.bad_payload:
+            key_fields.append("bad-payload")
 
         if hp.tool_name:
             key_fields.append(f"tool_name={hp.tool_name}")
@@ -1294,8 +1334,16 @@ def handle_mcp_guard(payload: dict) -> None:
 
     decisions.append(f"tier={agent_tier or '0'}{'(db)' if _tier_source_db else ''}")
 
-    # Only block Tier 0 (team-lead / interactive session)
-    if agent_tier not in ("", "0"):
+    # Only tiers 1 (sprint-planner) and 2 (programmer) are allowed to call
+    # artifact-creation MCP tools directly — an explicit ALLOWLIST (ticket
+    # 029-009). Before this it was a denylist (`agent_tier not in ("",
+    # "0")`): any UNRECOGNIZED tier string ("3", "junk", a future tier
+    # that doesn't exist yet, or a corrupted/garbage DB value) fell
+    # through to ALLOW by default — the same "unanticipated input
+    # defaults to the unsafe action" shape as the crash class this ticket
+    # closes elsewhere. Tier 0 (team-lead) and any unrecognized value now
+    # both fall through to the block below.
+    if agent_tier in ("1", "2"):
         _exit_hook("mcp-guard", payload, 0, "tier-allowed", decisions=decisions)
 
     tool_name = hp.tool_name
@@ -2198,22 +2246,43 @@ def handle_hook(event: str) -> None:
         sys.exit(1)
 
     if event in ("role-guard", "mcp-guard"):
-        # Guard-internal exception observability (ticket 028-005): catch,
-        # log a crash-class hooks.log line (with a payload dump — same
-        # treatment as any other denial), then re-raise the ORIGINAL
-        # exception UNCHANGED so the program's eventual exit code and
-        # stderr traceback are identical to pre-ticket behavior. This is
-        # deliberately NOT a fail-closed fix (no new sys.exit(2) /
-        # _exit_hook(..., 2, ...) is added on this path) — installing
-        # that belongs to sprint 029's fail-closed exception boundary,
-        # not this observability-only ticket. SystemExit — the guard's
-        # own normal allow/deny exit via _exit_hook — is a BaseException,
-        # not an Exception, so it is never intercepted here; only a
-        # genuine internal crash is.
+        # Guard fail-closed exception boundary (ticket 029-009): any
+        # exception raised inside role-guard/mcp-guard's dispatch — a
+        # genuine crash, never the guard's own normal allow/deny exit
+        # (see the SystemExit note below) — is caught, logged, and
+        # converted into a hard block: _exit_hook(event, payload, 2,
+        # "guard-crash"). That call already performs both the hooks.log
+        # "guard-crash" line (with the same payload dump every other
+        # exit-2 decision gets — see _log_hook_event's deny-payload-dump
+        # docstring) AND sys.exit(2), so it supersedes the separate
+        # _log_hook_event(...) + bare `raise` pair this block used to be.
+        # A full traceback is captured via logger.exception BEFORE that
+        # exit, so the crash's actual cause remains recoverable from
+        # ordinary log output even though the single-line hooks.log
+        # record itself only ever carries the fixed "guard-crash" reason
+        # token, not the traceback text.
+        #
+        # This converts sprint 028 ticket 005's deliberate catch/log/
+        # re-raise-UNCHANGED contract (git show 5b3079b) into the
+        # fail-closed one that ticket explicitly reserved for this
+        # sprint: previously ANY unanticipated bug inside a guard was a
+        # silent, unlogged ALLOW once the exception propagated past this
+        # dispatcher — this repo's own hooks.log holds 876 historical
+        # `role-guard 0 no-path` events from exactly that failure class.
+        # After this change, the identical bug is a loud, logged BLOCK
+        # instead. `.clasi/oop` (file-checked first, unconditional, and
+        # itself unaffected by anything in this guard chain) remains the
+        # escape hatch for a project that hits an unexpected block.
+        #
+        # SystemExit — the guard's own normal allow/deny exit via
+        # _exit_hook — is a BaseException, not an Exception, so it is
+        # never intercepted here; only a genuine internal crash is.
         try:
             handler(payload)
         except Exception:
-            _log_hook_event(event, payload, 2, "guard-crash")
-            raise
+            logger.exception(
+                "%s: guard-internal exception — failing closed", event,
+            )
+            _exit_hook(event, payload, 2, "guard-crash")
     else:
         handler(payload)

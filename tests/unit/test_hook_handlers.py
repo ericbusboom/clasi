@@ -9,7 +9,9 @@ convenient way to exercise shared log-directory machinery were rewritten
 against handle_subagent_start instead.
 """
 
+import io
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +30,8 @@ from clasi.hook_handlers import (
     handle_role_guard,
     handle_mcp_guard,
     HookPayload,
+    read_payload,
+    _BAD_PAYLOAD_KEY,
     _ensure_log_gitignore,
     _log_hook_event,
     _get_log_dir,
@@ -470,6 +474,30 @@ class TestHookPayloadFromDict:
         hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": "not-a-dict"})
         assert hp.file_path == ""
         assert hp.tool_input == {}
+
+    def test_null_tool_input_does_not_raise(self):
+        """Ticket 029-009's own explicit example: a JSON `null` tool_input
+        (Python None once parsed) must not raise AttributeError on
+        `.get()` — it resolves to an empty tool_input, same as any other
+        non-dict tool_input value, and `missing` still flags file_path for
+        a file tool so the caller fails closed rather than crashing."""
+        hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": None})
+        assert hp.file_path == ""
+        assert hp.tool_input == {}
+        assert hp.missing == ["file_path"]
+
+    def test_bad_payload_flag_set_from_marker_key(self):
+        """read_payload() marks its {} fallback with _BAD_PAYLOAD_KEY when
+        stdin held non-empty, unparseable JSON (ticket 029-009) —
+        HookPayload surfaces that as bad_payload."""
+        hp = HookPayload.from_dict({_BAD_PAYLOAD_KEY: True})
+        assert hp.bad_payload is True
+
+    def test_bad_payload_flag_false_for_ordinary_payload(self):
+        hp = HookPayload.from_dict({"tool_name": "Write"})
+        assert hp.bad_payload is False
+        assert HookPayload.from_dict({}).bad_payload is False
+        assert HookPayload.from_dict(None).bad_payload is False
 
     def test_missing_tracks_absent_file_path_for_file_tools(self):
         hp = HookPayload.from_dict({"tool_name": "Write", "tool_input": {}})
@@ -1474,6 +1502,20 @@ class TestRoleGuardNestedPayloadShape:
         closed for tier 0, and the WARN log must not raise."""
         _write_fresh_config(tmp_path)
         assert _run_role_guard_payload(tmp_path, {}, "") == 2
+
+    def test_null_tool_input_denies_instead_of_crashing(self, tmp_path):
+        """Ticket 029-009 acceptance criterion: a null tool_input (e.g. a
+        real PreToolUse payload shape Claude Code could send) denies with
+        a clear reason instead of raising AttributeError on `.get()`.
+        Handler-level counterpart to
+        TestHookPayloadFromDict.test_null_tool_input_does_not_raise."""
+        _write_fresh_config(tmp_path)
+        payload = {"tool_name": "Write", "tool_input": None, "session_id": "null-ti"}
+        assert _run_role_guard_payload(tmp_path, payload, "") == 2
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert " 2 " in line
+        assert "no-path" in line
+        assert "missing=file_path" in line
 
     # --- Non-regression: artifact-dir allow-list still works live ---
 
@@ -2957,6 +2999,38 @@ class TestMcpGuardBlocksCreateSprintAtTierZero:
         assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "1") == 0
 
 
+class TestMcpGuardTierAllowlist:
+    """Ticket 029-009: mcp-guard's tier check became an explicit allowlist
+    (`agent_tier in ("1", "2")`) instead of a denylist
+    (`agent_tier not in ("", "0")`). Before this change, ANY unrecognized
+    tier string fell through to ALLOW by default — the same
+    "unanticipated input defaults to the unsafe action" shape as the
+    guard-crash class this ticket exists to close elsewhere. These tests
+    pin the new behavior: an unrecognized tier value now denies."""
+
+    def test_unrecognized_tier_string_denies(self, tmp_path):
+        """A tier value that is neither a known tier nor empty/'0' (e.g. a
+        future tier that doesn't exist yet, or a corrupted DB value) must
+        not silently allow."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "3") == 2
+        assert _run_mcp_guard(tmp_path, "create_ticket", "junk") == 2
+
+    def test_known_tiers_still_allowed(self, tmp_path):
+        """Non-regression: the two real tiers are unaffected by switching
+        from a denylist to an allowlist."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "1") == 0
+        assert _run_mcp_guard(tmp_path, "create_ticket", "2") == 0
+
+    def test_tier_zero_and_unset_still_blocked(self, tmp_path):
+        """Non-regression: tier 0 / unset are still blocked, exactly as
+        before this ticket."""
+        _write_fresh_config(tmp_path)
+        assert _run_mcp_guard(tmp_path, "create_ticket", "0") == 2
+        assert _run_mcp_guard(tmp_path, "create_ticket", "") == 2
+
+
 # ---------------------------------------------------------------------------
 # Dual-mechanism stale-agent purge (ticket 019-003)
 # ---------------------------------------------------------------------------
@@ -4393,6 +4467,58 @@ class TestHookPayloadMissingSurfacesInHooksLog:
         assert "missing=" not in line
 
 
+class TestReadPayloadBadPayloadToken:
+    """Ticket 029-009 acceptance criterion: a non-empty, unparseable stdin
+    payload logs a 'bad-payload' token, distinguishing that case from a
+    legitimately empty/absent payload in hooks.log."""
+
+    def test_nonempty_unparseable_stdin_marks_bad_payload(self, monkeypatch):
+        """Unit-level: read_payload()'s own returned dict carries the
+        internal marker key when stdin held invalid JSON."""
+        monkeypatch.setattr(sys, "stdin", io.StringIO("{not valid json"))
+        result = read_payload()
+        assert result == {_BAD_PAYLOAD_KEY: True}
+
+    def test_tty_stdin_does_not_mark_bad_payload(self, monkeypatch):
+        """Negative control: no piped stdin at all (isatty) is a
+        legitimately empty payload, not a malformed one."""
+        class _FakeTtyStdin:
+            def isatty(self):
+                return True
+
+        monkeypatch.setattr(sys, "stdin", _FakeTtyStdin())
+        assert read_payload() == {}
+
+    def test_empty_piped_stdin_does_not_mark_bad_payload(self, monkeypatch):
+        """Negative control: whitespace-only piped stdin is also
+        legitimately empty, not malformed."""
+        monkeypatch.setattr(sys, "stdin", io.StringIO("   \n"))
+        assert read_payload() == {}
+
+    def test_bad_payload_token_appears_in_hooks_log_end_to_end(self, tmp_path, monkeypatch):
+        """Driven through the real handler end to end (not read_payload()
+        or _log_hook_event called directly): malformed stdin still fails
+        closed (no-path, tier 0) AND the resulting hooks.log line carries
+        the 'bad-payload' token distinguishing it from an ordinary
+        no-path denial."""
+        _write_fresh_config(tmp_path)
+        monkeypatch.setattr(sys, "stdin", io.StringIO("not valid json{{{"))
+
+        import os
+        old_tier = os.environ.pop("CLASI_AGENT_TIER", None)
+        try:
+            with pytest.raises(SystemExit) as exc:
+                _run_with_cwd(tmp_path, handle_hook, "role-guard")
+            assert exc.value.code == 2
+        finally:
+            if old_tier is not None:
+                os.environ["CLASI_AGENT_TIER"] = old_tier
+
+        line = _last_hooks_log_line(tmp_path, "role-guard")
+        assert "bad-payload" in line
+        assert "no-path" in line
+
+
 class TestLogHookEventDeniedPayloadDump:
     """Every denial (exit_code == 2) dumps the full payload to
     .clasi/log/denied/<ts>-<hook>.json, gitignored the same way log_dir
@@ -4509,19 +4635,26 @@ class TestMcpGuardDecisionTokensEndToEnd:
         assert "tier=1" in line
 
 
-class TestGuardInternalExceptionObservability:
-    """Hard scope boundary (ticket 028-005): a guard-internal exception is
-    caught, logged with a payload dump (same treatment as any other
-    denial-class event), and the ORIGINAL exception is re-raised
-    UNCHANGED — no new sys.exit(2) / _exit_hook(..., 2, ...) is added on
-    this path. That fail-closed behavior is sprint 029's job, not this
-    one's. These tests assert the exception type/message propagate
-    unchanged (pytest.raises(RuntimeError), not SystemExit) — if the
-    dispatcher wrapping had wrongly converted the crash into an exit, the
-    raises-type assertion below would fail.
+class TestGuardFailClosedExceptionBoundary:
+    """Fail-closed exception boundary (ticket 029-009).
+
+    Supersedes the old ``TestGuardInternalExceptionObservability`` class
+    (sprint 028 ticket 005): that class asserted a guard-internal
+    exception was caught, logged with a payload dump, and the ORIGINAL
+    exception RE-RAISED UNCHANGED (``pytest.raises(RuntimeError)`` /
+    ``pytest.raises(ValueError)`` propagating through ``handle_hook``) —
+    028-005's own docstring called that scope boundary out explicitly:
+    "no new sys.exit(2) ... that fail-closed behavior is sprint 029's job,
+    not this one's" (see ``git show 5b3079b``). This ticket IS that job:
+    the two tests below are deliberately rewritten to assert the NEW
+    contract — ``SystemExit(2)``, not the original exception type — which
+    is the intended, expected change this ticket makes, not a silent
+    behavior drift being smuggled past a stale assertion.
     """
 
-    def test_role_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+    def test_role_guard_crash_fails_closed_with_traceback(self, tmp_path, caplog):
+        """Acceptance criterion: a guard handler that raises produces
+        exit 2 AND a guard-crash log line with traceback."""
         _make_log_dir(tmp_path)
         payload = {
             "tool_name": "Write",
@@ -4531,13 +4664,25 @@ class TestGuardInternalExceptionObservability:
         with patch(
             "clasi.hook_handlers.handle_role_guard",
             side_effect=RuntimeError("boom-role-guard"),
-        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
-            with pytest.raises(RuntimeError, match="boom-role-guard"):
+        ), patch(
+            "clasi.hook_handlers.read_payload", return_value=payload,
+        ), caplog.at_level(logging.ERROR):
+            with pytest.raises(SystemExit) as exc:
                 _run_with_cwd(tmp_path, handle_hook, "role-guard")
+        assert exc.value.code == 2
 
         line = _last_hooks_log_line(tmp_path, "role-guard")
         assert " 2 " in line
         assert "guard-crash" in line
+
+        # A real traceback was captured via logger.exception, not just a
+        # bare message — exc_info is populated and the original
+        # exception's message is recoverable from the formatted record.
+        crash_records = [r for r in caplog.records if r.exc_info is not None]
+        assert crash_records, "expected a logged record with exc_info set"
+        assert any("boom-role-guard" in r.getMessage() for r in caplog.records) or any(
+            "boom-role-guard" in (r.exc_text or "") for r in crash_records
+        )
 
         denied_dir = tmp_path / ".clasi" / "log" / "denied"
         denied_files = list(denied_dir.glob("*-role-guard.json"))
@@ -4545,19 +4690,30 @@ class TestGuardInternalExceptionObservability:
         dumped = json.loads(denied_files[0].read_text(encoding="utf-8"))
         assert dumped == payload
 
-    def test_mcp_guard_crash_is_logged_dumped_and_reraised(self, tmp_path):
+    def test_mcp_guard_crash_fails_closed_with_traceback(self, tmp_path, caplog):
+        """Acceptance criterion: a guard handler that raises produces
+        exit 2 AND a guard-crash log line with traceback."""
         _make_log_dir(tmp_path)
         payload = {"tool_name": "create_ticket", "session_id": "crash-test-mcp-guard"}
         with patch(
             "clasi.hook_handlers.handle_mcp_guard",
             side_effect=ValueError("boom-mcp-guard"),
-        ), patch("clasi.hook_handlers.read_payload", return_value=payload):
-            with pytest.raises(ValueError, match="boom-mcp-guard"):
+        ), patch(
+            "clasi.hook_handlers.read_payload", return_value=payload,
+        ), caplog.at_level(logging.ERROR):
+            with pytest.raises(SystemExit) as exc:
                 _run_with_cwd(tmp_path, handle_hook, "mcp-guard")
+        assert exc.value.code == 2
 
         line = _last_hooks_log_line(tmp_path, "mcp-guard")
         assert " 2 " in line
         assert "guard-crash" in line
+
+        crash_records = [r for r in caplog.records if r.exc_info is not None]
+        assert crash_records, "expected a logged record with exc_info set"
+        assert any("boom-mcp-guard" in r.getMessage() for r in caplog.records) or any(
+            "boom-mcp-guard" in (r.exc_text or "") for r in crash_records
+        )
 
         denied_dir = tmp_path / ".clasi" / "log" / "denied"
         denied_files = list(denied_dir.glob("*-mcp-guard.json"))
@@ -4568,7 +4724,10 @@ class TestGuardInternalExceptionObservability:
     def test_non_guard_handler_crash_is_not_wrapped(self, tmp_path):
         """The exception-capture wrapping is scoped to role-guard/mcp-guard
         only (per the ticket's explicit scope) — a crash in some other
-        handler is neither caught nor given a guard-crash hooks.log line."""
+        handler is neither caught nor given a guard-crash hooks.log line,
+        and still propagates as its ORIGINAL exception type (unchanged by
+        this ticket — only role-guard/mcp-guard's own crash path is
+        converted to fail-closed)."""
         _make_log_dir(tmp_path)
         with patch(
             "clasi.hook_handlers.handle_status_inject",

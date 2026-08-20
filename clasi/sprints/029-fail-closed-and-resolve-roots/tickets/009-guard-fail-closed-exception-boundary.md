@@ -1,9 +1,13 @@
 ---
 id: 009
 title: Guard fail-closed exception boundary
-status: open
-use-cases: [SUC-009]
-depends-on: ["003", "007", "008"]
+status: done
+use-cases:
+- SUC-009
+depends-on:
+- '003'
+- '007'
+- 008
 github-issue: ''
 issue: guard-fail-closed-exception-boundary.md
 completes_issue: true
@@ -114,19 +118,19 @@ sprint 028 ticket 005 left in place, confirmed via `git show
 
 ## Acceptance Criteria
 
-- [ ] A guard handler that raises produces exit 2 and a `guard-crash`
+- [x] A guard handler that raises produces exit 2 and a `guard-crash`
       log line with traceback — verified by a test that injects a
       fault (e.g. monkeypatch a handler internal to raise, assert
       `sys.exit(2)` and the log line)
-- [ ] Malformed payload shapes (null `tool_input`, missing keys) deny
+- [x] Malformed payload shapes (null `tool_input`, missing keys) deny
       rather than crash-allow, with distinct logged reasons
-- [ ] Unknown tier strings do not allow (mcp-guard's allowlist change)
-- [ ] A non-empty, unparseable stdin payload logs a `bad-payload` token
-- [ ] No existing guard's allow/deny outcome changes for any payload
+- [x] Unknown tier strings do not allow (mcp-guard's allowlist change)
+- [x] A non-empty, unparseable stdin payload logs a `bad-payload` token
+- [x] No existing guard's allow/deny outcome changes for any payload
       that isn't one of the above new-denial cases — run the full
       existing `test_hook_handlers.py` file and confirm every
       previously-passing allow/deny assertion still passes
-- [ ] The stale explanatory comment above `handle_hook`'s try/except
+- [x] The stale explanatory comment above `handle_hook`'s try/except
       (describing sprint 028 ticket 005's deliberate non-fail-closed
       scope) is updated to describe this ticket's actual behavior
 
