@@ -10,6 +10,7 @@ issues:
 - guard-dead-ends-no-ticket-gate-scope-and-close-sprint-recovery.md
 - role-guard-tier1-design-dir-and-initiation-skill-hardcoded-path.md
 - programmer-agents-stall-on-background-pytest.md
+- status-exclude-done-filter-misses-closed-sprints.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -54,6 +55,14 @@ and file:line references (see each issue file for full evidence):
 - `role-guard-tier1-design-dir-and-initiation-skill-hardcoded-path.md`
 - `programmer-agents-stall-on-background-pytest.md`
 
+**Mid-execution addition**: a fifth issue,
+`status-exclude-done-filter-misses-closed-sprints.md`, was filed and
+linked to this sprint (`sprint: '026'`) after ticket 003 landed and
+measured against the real hooks.log/fixture data — see ticket 007 below.
+It is a direct consequence of the same status-inject investigation, not
+a scope drift: ticket 003's own before/after measurement is what
+surfaced it.
+
 Left unaddressed, the performance cost compounds on every prompt and every
 Bash call in every session, and the guard dead ends mean an agent that
 hits one of these conditions (an execution-lock sprint with no ticket
@@ -78,7 +87,17 @@ success, the scoped ticket-gate) is exercised in a later ticket's tests.
 - `time clasi hook status-inject < captured-payload.json` drops from
   about 1.05-1.15s to under 200ms, with unchanged status content (beyond
   the intentionally trimmed noise) for a project with active ticketed
-  sprints.
+  sprints. **Completed by ticket 007, not ticket 003 alone**: 003
+  delivered its four planned caching/trimming changes but landed at
+  median about 0.78s in this repo, because of a pre-existing gap outside
+  003's scope — `_build_sprints_block`'s `exclude_done` filter matches
+  only `status: done`, so the six archived sprints under
+  `clasi/sprints/done/` (020-025), which declare `status: closed`, leak
+  past the filter and get fully re-evaluated every invocation (137
+  `get_sprint()` calls, 1,816 `read_frontmatter()` calls per prompt; 7
+  sprints evaluated instead of 1). Ticket 007 widens the terminal-state
+  exclusion to close this criterion. See ticket 003's Measurement Notes
+  (`tickets/done/003-...md`) for full detail.
 - `commit-check`, `TaskCreated`, `TaskCompleted` are absent from a fresh
   `clasi init` fixture's installed hook settings.
 - `hooks.log` lines carry dated timestamps and a real `file_path` on
@@ -594,15 +613,18 @@ Before tickets can be created, all of the following must be true:
 
 ## Tickets
 
-Materialized as tickets 001-006 in `tickets/`. Ticket 007 (the stretch
-enforcement-hook item) was **deferred by stakeholder decision** during
-approval and was not created — issue 4
+Materialized as tickets 001-007 in `tickets/` (001-003 done and
+committed; see below for mid-execution ticket 007). The **original**
+stretch ticket 007 (a CLASI-level guard hook denying `run_in_background`
+from tier-2 dispatches) was **deferred by stakeholder decision** during
+approval and was never created — issue 4
 (`programmer-agents-stall-on-background-pytest.md`) is fully addressed
 within this sprint's scope by ticket 006 alone (the source issue's
-required proposals #1/#2); its optional proposal #3 (a CLASI-level
-guard hook denying `run_in_background` from tier-2 dispatches) remains
-available to pick up in a future sprint if the prompt-level fix in
-ticket 006 proves insufficient in practice.
+required proposals #1/#2); that deferred item remains available to pick
+up in a future sprint if the prompt-level fix in ticket 006 proves
+insufficient in practice. The id `007` was free and has since been
+reused below for unrelated, mid-execution work — **it is not the
+deferred stretch item.**
 
 | # | Title | Depends On | Issue(s) |
 |---|-------|------------|----------|
@@ -612,11 +634,20 @@ ticket 006 proves insufficient in practice.
 | 004 | Remove dead hook registrations, lazy __version__, fix hooks.log file_path/timestamps, align settings.json | — | hook-overhead-status-inject-dead-hooks-and-logging.md |
 | 005 | project-initiation skill and sibling docs: resolve configured design_dir instead of hardcoded .clasi/design/ | 001 | role-guard-tier1-design-dir-and-initiation-skill-hardcoded-path.md |
 | 006 | Programmer agent definition: no-background test discipline, scoped tests, single full-suite gate ownership | — | programmer-agents-stall-on-background-pytest.md |
+| 007 | status sweep excludes terminal sprints: widen exclude_done to closed / archived | 003 | status-exclude-done-filter-misses-closed-sprints.md |
 
-**Deferred (not created):** 007 — Guard hook: deny `run_in_background`
-Bash calls from tier-2 dispatches. Stretch item from
-`programmer-agents-stall-on-background-pytest.md`'s ranked proposal #3;
-deferred out of sprint scope by stakeholder decision 2026-08-19.
+**Note on ticket 007**: this id was originally reserved for a stretch
+guard-hook ticket that the stakeholder deferred before any ticket file
+existed (see paragraph above), leaving `007` free. It was reused
+mid-execution for unrelated work: ticket 003 measured status-inject at
+median about 0.78s in this repo, above the sprint's `<200ms` success
+criterion, tracing to a pre-existing gap in `_build_sprints_block`'s
+`exclude_done` filter (matches `status: done` only, missing the
+`status: closed` archived sprints under `clasi/sprints/done/`). The
+stakeholder filed and linked the resulting issue
+(`status-exclude-done-filter-misses-closed-sprints.md`) and requested
+this ticket. It depends on 003 (already done) and closes the sprint's
+`<200ms` success criterion — see Success Criteria above.
 
 Tickets execute serially in the order listed. 005 depends on 001's
 tier-1 allow-list fix being in place for its end-to-end scenario test to
