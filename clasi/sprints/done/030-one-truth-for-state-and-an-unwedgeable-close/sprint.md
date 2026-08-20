@@ -1,7 +1,7 @@
 ---
 id: '030'
 title: One truth for state and an unwedgeable close
-status: planning-docs
+status: closed
 branch: sprint/030-one-truth-for-state-and-an-unwedgeable-close
 worktree: false
 use-cases:
