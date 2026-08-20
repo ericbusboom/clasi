@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '027'
+tickets:
+- 027-003
 ---
 
 # status-inject residual latency: git subprocess spawns and process startup keep it above 200 ms
