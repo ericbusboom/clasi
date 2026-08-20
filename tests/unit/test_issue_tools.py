@@ -875,11 +875,19 @@ class TestCloseSprintIssueHandling:
         ticket to reference it (so it is NOT deferred). The full path should
         collect it in unresolved_issues and continue to a success result.
 
-        We use branch_name to trigger the full path, but close returns before
-        any subprocess calls (tests step runs but git is mocked by the tmp env).
+        We use branch_name to trigger the full path; version_trigger is
+        pinned to "manual" so the version-bump step's git calls (which
+        this test's temp work_dir, not a real git repo, cannot satisfy)
+        never run -- this test is about issue handling, not versioning.
+        As of sprint 030 ticket 004, a version-bump git failure fails the
+        step loudly instead of being silently swallowed, so a temp dir
+        with no .git can no longer coast through that step unnoticed.
         """
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
+        (work_dir / ".clasi" / "settings.yaml").write_text(
+            "version_trigger: manual\n", encoding="utf-8"
+        )
 
         sprints_dir = work_dir / ".clasi" / "sprints"
         sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))

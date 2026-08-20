@@ -1,9 +1,11 @@
 ---
 id: '004'
 title: Resumable, transactional close_sprint
-status: open
-use-cases: [SUC-002]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-002
+depends-on:
+- '001'
 github-issue: ''
 issue: resumable-transactional-close-sprint.md
 completes_issue: true
@@ -81,18 +83,18 @@ not patched in place").
 
 ## Acceptance Criteria
 
-- [ ] `StateDB.force_close(sprint_id)` (new method, `state_db_class.py`)
+- [x] `StateDB.force_close(sprint_id)` (new method, `state_db_class.py`)
       sets `sprints.phase` to `"done"` and deletes the `execution_locks`
       row (if held by this sprint) in one transaction. It is idempotent:
       calling it against a sprint already at phase `"done"` with no lock
       held is a cheap no-op, not an error. Any failure is returned to the
       caller — no bare `except: pass`.
-- [ ] `close.py` (new top-level module) holds `SprintCloser`, the
+- [x] `close.py` (new top-level module) holds `SprintCloser`, the
       orchestration for: precondition check (read-only — see next
       bullet), tests, archive, DB update (`force_close`), design-overlay
       apply, version bump, git merge, tag push, branch delete, worktree
       prune.
-- [ ] **Precondition checking is read-only.** It reports what would need
+- [x] **Precondition checking is read-only.** It reports what would need
       repair (a ticket not `done`, an issue not relocated, DB phase
       behind) without mutating anything. Self-repair mutations (moving a
       ticket/issue that is *already effectively done* but not yet
@@ -105,20 +107,20 @@ not patched in place").
       than the current code's Step 1. It is still needed as a safety net
       (a ticket moved by a legacy call path, or hand-edited), not
       removable.
-- [ ] The version-bump step checks whether the computed tag already
+- [x] The version-bump step checks whether the computed tag already
       exists in git (via the existing `_get_existing_tags`/
       `compute_next_version` machinery) before bumping — a retry after a
       later step's failure does not mint a second tag for an unchanged
       HEAD.
-- [ ] Every `run_git` call in the close sequence has its return code
+- [x] Every `run_git` call in the close sequence has its return code
       checked; a git failure fails the step loudly with the git output
       included in the error, not silently continuing.
-- [ ] The tag-push step pushes the sprint's own tag by name
+- [x] The tag-push step pushes the sprint's own tag by name
       (`git push origin v{version}`), not `git push --tags`.
-- [ ] `tools/artifact_tools.py`'s `close_sprint` tool function becomes a
+- [x] `tools/artifact_tools.py`'s `close_sprint` tool function becomes a
       thin wrapper delegating to `close.SprintCloser` — the ~950-line
       `_close_sprint_full` body moves to `close.py`, not duplicated.
-- [ ] A test simulates a failed close (kill the test step mid-close),
+- [x] A test simulates a failed close (kill the test step mid-close),
       then retries, and asserts: a single version tag exists (not two),
       the execution lock is released (not held by the archived sprint),
       and steps already completed on the first attempt are not

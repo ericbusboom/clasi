@@ -268,12 +268,20 @@ class TestReviewSprintPreClose:
         """Tickets not moved to done/ directory are flagged."""
         sprint_dir = _make_sprint_ready_for_execution(work_dir)
 
-        # Set status to done but don't move files
+        # Set status to done but don't move files. As of sprint 030 ticket
+        # 003, update_ticket_status(path, "done") performs the
+        # tickets/done/ move in the same call, so this drifted state
+        # (status: done, still in tickets/) can no longer be produced
+        # through that tool -- write frontmatter directly (e.g. as if
+        # hand-edited) to keep exercising detection of a ticket that
+        # drifted some other way, mirroring how ticket 003 fixed its
+        # sibling test (test_self_repair_moves_done_ticket).
         tickets_dir = sprint_dir / "tickets"
         for f in sorted(tickets_dir.glob("*.md")):
             fm = read_frontmatter(f)
             if fm.get("id"):
-                update_ticket_status(str(f), "done")
+                fm["status"] = "done"
+                write_frontmatter(f, fm)
 
         result = json.loads(review_sprint_pre_close("001"))
         assert result["passed"] is False

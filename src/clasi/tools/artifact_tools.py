@@ -17,17 +17,17 @@ from pathlib import Path
 from typing import Optional
 
 from clasi.artifact import Artifact
+from clasi.close import (
+    SprintCloser,
+    _issue_is_deferred,
+    _prune_sprint_worktrees,
+    _sweep_done_issues,
+)
 from clasi.frontmatter import read_document, read_frontmatter
 from clasi.gitutil import run_git
 from clasi.mcp_server import server, get_project
-from clasi.project import (
-    Project,
-    SprintNotFoundError,
-    SprintFrontmatterError,
-    SprintIdMismatchError,
-    _load_config,
-)
-from clasi.sprint import MergeConflictError, Sprint
+from clasi.project import Project
+from clasi.sprint import Sprint
 from clasi.state_db import (
     PHASES as _PHASES,
     rename_sprint as _rename_sprint,
@@ -91,151 +91,17 @@ def resolve_artifact_path(path: str) -> Path:
 
 
 
-def _is_ticket_done(ticket_ref: str) -> bool:
-    """Check if a ticket (referenced as 'sprint_id-ticket_id') has status done.
-
-    Searches both active and done ticket directories across all sprints.
-    Returns True if the ticket is found with status 'done', False otherwise.
-    """
-    parts = ticket_ref.split("-", 1)
-    if len(parts) != 2:
-        return False
-    sprint_id, ticket_id = parts
-    try:
-        sprint = get_project().get_sprint(sprint_id)
-        ticket = sprint.get_ticket(ticket_id)
-        return ticket.status == "done"
-    except ValueError:
-        return False
-
-
-def _any_ticket_suppresses_issue(ticket_refs: list[str], issue_filename: str) -> bool:
-    """Return True if any referencing ticket has completes_issue: false for the given issue.
-
-    Iterates over all ticket references (as 'sprint_id-ticket_id' strings) and
-    calls ``Ticket.completes_issue_for(issue_filename)`` on each one that can be
-    loaded.  If any ticket returns ``False``, archival should be suppressed.
-
-    Returns False (do not suppress) if no tickets can be loaded or all return True.
-    """
-    for ticket_ref in ticket_refs:
-        parts = ticket_ref.split("-", 1)
-        if len(parts) != 2:
-            continue
-        sprint_id, ticket_id = parts
-        try:
-            sprint = get_project().get_sprint(sprint_id)
-            ticket = sprint.get_ticket(ticket_id)
-        except ValueError:
-            continue
-        if not ticket.completes_issue_for(issue_filename):
-            return True
-    return False
-
-
-def _issue_is_deferred(sprint: Sprint, issue_filename: str) -> bool:
-    """Return True if an issue is intentionally deferred by a ticket in this sprint.
-
-    An issue is considered deferred when at least one ticket in ``sprint`` that
-    lists ``issue_filename`` in its ``issue`` frontmatter field has
-    ``completes_issue: false`` for that filename.
-
-    This is used by the close_sprint precondition check: if every ticket that
-    references the issue has ``completes_issue: true`` (or absent), the issue
-    should have been archived and its in-progress state is an error.  But if
-    any ticket deliberately set ``completes_issue: false``, the issue is expected
-    to remain in-progress for future sprints, and the precondition should allow
-    the sprint to close.
-
-    Returns False (not deferred) if no tickets in the sprint reference the issue,
-    or if all referencing tickets have ``completes_issue: true`` (default).
-    """
-    for location in [sprint.tickets_dir, sprint.tickets_done_dir]:
-        if not location.exists():
-            continue
-        for ticket_file in sorted(location.glob("*.md")):
-            ticket = Ticket(ticket_file, sprint)
-            issue_ref = ticket.issue_ref
-            if issue_ref is None:
-                continue
-            linked = [issue_ref] if isinstance(issue_ref, str) else list(issue_ref)
-            if issue_filename not in linked:
-                continue
-            if not ticket.completes_issue_for(issue_filename):
-                return True
-    return False
-
-
-def _sweep_done_issues(sprint: Sprint) -> list[str]:
-    """Sweep sprint issues and complete any whose tickets are all done.
-
-    Scans two sources for in-progress issues assigned to this sprint:
-    1. Sprint-scoped issues in ``<sprint>/issues/*.md``.
-    2. Pending-pool issues in ``project.issues_dir/*.md`` with
-       ``issue.sprint == sprint.id``.
-
-    For each in-progress issue, if all entries in ``issue.tickets`` are done
-    (via ``_is_ticket_done``) and the list is non-empty, and no ticket
-    suppresses completion (via ``_any_ticket_suppresses_todo``), the issue
-    is moved to done.
-
-    Pending-pool issues are physically relocated to
-    ``<sprint>/issues/done/<filename>`` before ``move_to_done()`` is called,
-    so they end up in the sprint directory rather than the pool's done/.
-
-    Returns the list of issue filenames that were completed.
-    """
-    project = get_project()
-    completed: list[str] = []
-
-    def _try_complete(issue, filename: str) -> bool:
-        """Return True if issue was completed."""
-        if issue.status != "in-progress":
-            return False
-        ref_tickets = issue.tickets
-        if not ref_tickets:
-            return False
-        all_done = all(_is_ticket_done(t) for t in ref_tickets)
-        if not all_done:
-            return False
-        if _any_ticket_suppresses_issue(ref_tickets, filename):
-            return False
-        return True
-
-    # Source 1: sprint-scoped issues in <sprint>/issues/*.md
-    sprint_issues_dir = sprint.path / "issues"
-    if sprint_issues_dir.exists():
-        for issue_file in sorted(sprint_issues_dir.glob("*.md")):
-            from clasi.issue import Issue as _Issue
-            issue = _Issue(issue_file, project)
-            if issue.sprint != sprint.id:
-                continue
-            if _try_complete(issue, issue_file.name):
-                issue.move_to_done()
-                completed.append(issue_file.name)
-
-    # Source 2: pending-pool issues tagged with this sprint
-    pending_pool = project.issues_dir
-    if pending_pool.exists():
-        for issue_file in sorted(pending_pool.glob("*.md")):
-            from clasi.issue import Issue as _Issue
-            issue = _Issue(issue_file, project)
-            if issue.sprint != sprint.id:
-                continue
-            if _try_complete(issue, issue_file.name):
-                # Relocate to <sprint>/issues/done/ before calling move_to_done
-                target_dir = sprint.path / "issues" / "done"
-                target_dir.mkdir(parents=True, exist_ok=True)
-                target_path = target_dir / issue_file.name
-                issue_file.rename(target_path)
-                from clasi.artifact import Artifact as _Artifact
-                issue._artifact = _Artifact(target_path)
-                # File is already in done/; move_to_done() just updates frontmatter
-                issue.move_to_done()
-                completed.append(issue_file.name)
-
-    return completed
-
+# _is_ticket_done, _any_ticket_suppresses_issue, _issue_is_deferred, and
+# _sweep_done_issues moved to clasi.close (030/004) -- they are
+# close-sprint domain logic (Ticket/Issue/Sprint objects only, no
+# MCP/JSON concern), and close.py, a core module, cannot import back
+# from this tools-layer module without inverting the tools->core
+# dependency direction. _issue_is_deferred and _sweep_done_issues are
+# re-imported below (see the top-of-file import block): the former is
+# still used by _close_sprint_legacy (unchanged, out of this ticket's
+# scope), the latter by both _close_sprint_legacy and _mark_ticket_done
+# (the update_ticket_status/move_ticket_to_done primitive, unrelated to
+# close_sprint).
 
 # --- Create tools (ticket 008) ---
 
@@ -1337,127 +1203,6 @@ def _close_sprint_legacy(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
-def _prune_sprint_worktrees(
-    branch_name: str,
-    repo_root: Optional[Path] = None,
-    sprint_dir: Optional[Path] = None,
-) -> tuple[list[str], list[str], list[dict]]:
-    """Prune git worktrees associated with the closing sprint.
-
-    Two independent sweeps are performed:
-
-    1. **Sprint branch's own worktree** (pre-existing behavior, unchanged):
-       parses ``git worktree list --porcelain`` output and removes any
-       worktree whose ``branch`` field matches ``refs/heads/<branch_name>``.
-       This sweep always runs and never touches the main worktree (the first
-       entry in the porcelain output, which has no ``branch`` field when in
-       detached-HEAD state, or whose path matches the repo root).
-
-    2. **Orphaned ticket worktrees** (``ticket/<sprint-id>-*`` branches left
-       behind by parallel ticket execution): only runs when both
-       ``repo_root`` and ``sprint_dir`` are provided. Delegates
-       classification to ``worktree.reconcile_worktrees`` so there is one
-       code path for ticket-worktree classification. Cleanup policy at
-       sprint close is conservative:
-
-       - ``merged``/``cleaned_up`` (reconcile's ``cleaned`` list): both the
-         worktree directory and the branch are already removed by
-         ``reconcile_worktrees`` itself.
-       - ``failed``/``conflict`` (a subset of reconcile's ``escalated``
-         list): the worktree *directory* is force-removed here, but the
-         branch is retained so a human can inspect the partial work. These
-         are reported back distinctly (see the third return element) rather
-         than silently dropped.
-       - Any other ambiguous case reconcile reports (dirty tree, "merged"
-         audit state not yet an actual ancestor, rogue worktrees, etc.) is
-         left untouched, matching reconcile's own safety contract.
-
-    Returns a 3-tuple ``(pruned_paths, failed_paths, retained)``:
-
-    - ``pruned_paths``: absolute worktree paths that were fully removed
-      (both sweeps contribute).
-    - ``failed_paths``: absolute worktree paths whose removal command
-      failed (sprint-branch sweep only; unchanged from prior behavior).
-    - ``retained``: list of dicts describing ticket worktrees whose
-      directory was removed but whose branch was retained because the
-      audit state was ``failed``/``conflict``. Each dict has
-      ``ticket_id``, ``path``, ``branch``, and ``reason`` keys.
-    """
-    # Anchor every git call to an explicit root: repo_root when the caller
-    # supplied one (the production call site always does), else fall back
-    # to the active project's root rather than the process's own cwd.
-    effective_root = repo_root if repo_root is not None else get_project().root
-
-    result = run_git(["worktree", "list", "--porcelain"], cwd=effective_root)
-
-    target_ref = f"refs/heads/{branch_name}"
-    pruned: list[str] = []
-    failed: list[str] = []
-    retained: list[dict] = []
-
-    # Parse porcelain blocks separated by blank lines.
-    # Each block looks like:
-    #   worktree /path/to/wt
-    #   HEAD <sha>
-    #   branch refs/heads/sprint/NNN-slug
-    current_path: Optional[str] = None
-    is_main: bool = True  # first block is always the main worktree
-
-    for line in result.stdout.splitlines():
-        line = line.rstrip()
-        if line.startswith("worktree "):
-            current_path = line[len("worktree "):]
-        elif line == "":
-            # Blank line separates blocks; reset is_main after first block.
-            if is_main:
-                is_main = False
-            current_path = None
-        elif line.startswith("branch ") and not is_main and current_path is not None:
-            ref = line[len("branch "):]
-            if ref == target_ref:
-                # Remove this worktree.
-                rm_result = run_git(
-                    ["worktree", "remove", "--force", current_path],
-                    cwd=effective_root,
-                )
-                if rm_result.returncode == 0:
-                    pruned.append(current_path)
-                else:
-                    failed.append(current_path)
-
-    # Sweep 2: orphaned ticket/<sprint-id>-* worktrees, via reconcile_worktrees.
-    if repo_root is not None and sprint_dir is not None:
-        from clasi import worktree as worktree_module
-
-        reconciliation = worktree_module.reconcile_worktrees(repo_root, sprint_dir)
-
-        for entry in reconciliation.get("cleaned", []):
-            path = entry.get("path")
-            if path:
-                pruned.append(path)
-
-        for entry in reconciliation.get("escalated", []):
-            reason = entry.get("reason", "")
-            if reason.startswith("ambiguous audit state: failed") or reason.startswith(
-                "ambiguous audit state: conflict"
-            ):
-                path = entry.get("path")
-                branch = entry.get("branch")
-                if path:
-                    worktree_module.cleanup_worktree(
-                        repo_root, Path(path), branch, keep_branch=True
-                    )
-                retained.append(
-                    {
-                        "ticket_id": entry.get("ticket_id"),
-                        "path": path,
-                        "branch": branch,
-                        "reason": reason,
-                    }
-                )
-
-    return pruned, failed, retained
-
 
 @server.tool()
 def reconcile_worktrees(sprint_id: str) -> str:
@@ -1488,35 +1233,6 @@ def reconcile_worktrees(sprint_id: str) -> str:
     return json.dumps(result, indent=2)
 
 
-def _find_sprint_frontmatter_path(project: Project, sprint_id: str) -> Optional[Path]:
-    """Locate the sprint.md path for the candidate sprint directory matching
-    *sprint_id*, without parsing its frontmatter.
-
-    Mirrors ``Project.get_sprint``'s own candidate-selection logic (a
-    directory whose name equals *sprint_id* or starts with
-    ``"{sprint_id}-"``) so it finds the exact same file that caused
-    ``get_sprint`` to raise ``SprintFrontmatterError`` or
-    ``SprintIdMismatchError`` — those errors are raised precisely because
-    the frontmatter of this candidate is malformed or mismatched, so it
-    cannot be relied on to recover the path. Returns None only if no
-    candidate directory with an existing sprint.md can be found (should not
-    happen when called right after one of those errors was raised).
-    """
-    for location in [project.sprints_dir, project.sprints_dir / "done"]:
-        if not location.exists():
-            continue
-        for d in sorted(location.iterdir()):
-            if not d.is_dir():
-                continue
-            sprint_file = d / "sprint.md"
-            if not sprint_file.exists():
-                continue
-            dir_name = d.name
-            if dir_name == sprint_id or dir_name.startswith(f"{sprint_id}-"):
-                return sprint_file
-    return None
-
-
 def _close_sprint_full(
     sprint_id: str,
     branch_name: str,
@@ -1526,571 +1242,46 @@ def _close_sprint_full(
     test_command: Optional[str] = None,
     test_timeout: Optional[float] = None,
 ) -> str:
-    """Full lifecycle close: preconditions, tests, archive, git ops."""
+    """Full lifecycle close: preconditions, tests, archive, git ops.
+
+    Thin wrapper (030/004) delegating to close.SprintCloser -- the
+    ~950-line body that used to live directly in this function moved to
+    close.py step-by-step (see that module's docstring), reordering
+    self-repair to run only after the test gate and fixing the
+    transactional-DB-update, version-bump-idempotency,
+    checked-git-call, and tag-push-by-name defects the reliability
+    review named (C3-C5 / F1, F2, F9). Kept as a named module-level
+    function here, not inlined into the close_sprint tool below,
+    because existing tests patch it directly at this module path
+    (clasi.tools.artifact_tools._close_sprint_full) to intercept the
+    full lifecycle without exercising SprintCloser itself.
+
+    The versioning-function names below (``compute_next_version`` etc.)
+    are passed through explicitly rather than left for SprintCloser to
+    import on its own: many existing tests patch them at
+    ``clasi.tools.artifact_tools.<name>``, which only replaces the name
+    binding in *this* module's globals. Referencing the bare names here
+    resolves them through this module's own (patchable) namespace at
+    call time and threads whatever is currently bound -- real or mocked
+    -- into SprintCloser, exactly as when this logic lived inline here.
+    """
     project = get_project()
-    db = project.db
-    completed_steps: list[str] = []
-    repairs: list[str] = []
-
-    # ── Step 1: Pre-condition verification with self-repair ──
-
-    # 1a. Check tickets — all should be in tickets/done/ with status done
-    try:
-        sprint = project.get_sprint(sprint_id)
-        sprint_dir = sprint.path
-    except SprintFrontmatterError as e:
-        sprint_file_path = _find_sprint_frontmatter_path(project, sprint_id)
-        allowed_paths = [str(sprint_file_path)] if sprint_file_path else []
-        recorded = False
-        if allowed_paths and db.path.exists():
-            db.write_recovery_state(
-                sprint_id, "precondition", allowed_paths, str(e),
-            )
-            recorded = True
-        return json.dumps({
-            "status": "error",
-            "error": {
-                "step": "precondition",
-                "message": str(e),
-                "recovery": {
-                    "recorded": recorded,
-                    "allowed_paths": allowed_paths,
-                    "instruction": (
-                        "The sprint.md file has malformed frontmatter. "
-                        "Fix the opening '---' fence in the file named in "
-                        "the message, then call close_sprint again."
-                    ),
-                },
-            },
-            "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
-        }, indent=2)
-    except SprintIdMismatchError as e:
-        sprint_file_path = _find_sprint_frontmatter_path(project, sprint_id)
-        allowed_paths = [str(sprint_file_path)] if sprint_file_path else []
-        recorded = False
-        if allowed_paths and db.path.exists():
-            db.write_recovery_state(
-                sprint_id, "precondition", allowed_paths, str(e),
-            )
-            recorded = True
-        return json.dumps({
-            "status": "error",
-            "error": {
-                "step": "precondition",
-                "message": str(e),
-                "recovery": {
-                    "recorded": recorded,
-                    "allowed_paths": allowed_paths,
-                    "instruction": (
-                        "The sprint.md file has a missing or incorrect 'id:' field. "
-                        "Correct the id field in the file named in the message, "
-                        "then call close_sprint again."
-                    ),
-                },
-            },
-            "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
-        }, indent=2)
-    except (SprintNotFoundError, ValueError):
-        # Sprint dir might already be archived (idempotent retry), or an
-        # unanticipated ValueError sub-class.
-        return json.dumps({
-            "status": "error",
-            "error": {
-                "step": "precondition",
-                "message": f"Sprint '{sprint_id}' not found in active or done",
-                "recovery": {"recorded": False, "allowed_paths": [], "instruction": "Create or restore the sprint directory."},
-            },
-            "completed_steps": [],
-            "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
-        }, indent=2)
-
-    if sprint.tickets_dir.exists():
-        for ticket_file in sorted(sprint.tickets_dir.glob("*.md")):
-            if ticket_file.name == "done":
-                continue
-            ticket = Ticket(ticket_file, sprint)
-            if ticket.status == "done":
-                # Self-repair: move to done/
-                ticket.move_to_done()
-                # Also move plan file if exists
-                plan_file = ticket_file.with_suffix("").with_name(ticket_file.stem + "-plan.md")
-                if plan_file.exists():
-                    sprint.tickets_done_dir.mkdir(parents=True, exist_ok=True)
-                    plan_file.rename(sprint.tickets_done_dir / plan_file.name)
-                repairs.append(f"moved ticket {ticket.id or ticket_file.stem} to done/")
-            else:
-                # Ticket not done — unrepairable
-                error_msg = f"Ticket {ticket.id or ticket_file.stem} has status '{ticket.status}', not 'done'"
-                if db.path.exists():
-                    db.write_recovery_state(
-                        sprint_id, "precondition",
-                        [str(ticket_file)], error_msg,
-                    )
-                return json.dumps({
-                    "status": "error",
-                    "error": {
-                        "step": "precondition",
-                        "message": error_msg,
-                        "recovery": {
-                            "recorded": db.path.exists(),
-                            "allowed_paths": [str(ticket_file)],
-                            "instruction": f"Complete ticket {ticket.id or ticket_file.stem} and set status to 'done', then call close_sprint again.",
-                        },
-                    },
-                    "completed_steps": [],
-                    "remaining_steps": ["precondition", "tests", "archive", "db_update", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"],
-                }, indent=2)
-
-    # 1b. Check TODOs — in-progress TODOs for this sprint must be resolved.
-    # Sprint-scoped issues live in <sprint>/issues/; status is stored in frontmatter.
-    unresolved_issues: list[str] = []
-
-    # Self-repair: sweep any issues whose tickets are all done before hard-fail check
-    _sweep_done_issues(sprint)
-
-    # Part 1: scan <sprint>/issues/ top-level
-    sprint_issues_dir_full = sprint.path / "issues"
-    if sprint_issues_dir_full.exists():
-        for issue_file in sorted(sprint_issues_dir_full.glob("*.md")):
-            issue = Issue(issue_file, project)
-            if issue.sprint == sprint_id:
-                if issue.status in ("done", "complete", "completed"):
-                    # Self-repair: move to done/ (physically relocates file)
-                    issue.move_to_done()
-                    repairs.append(f"moved issue {issue_file.name} to done/")
-                else:
-                    # Issue still in-progress — check if intentionally deferred
-                    if _issue_is_deferred(sprint, issue_file.name):
-                        # At least one ticket in this sprint has completes_issue: false
-                        # for this issue — it spans future sprints; allow close to proceed
-                        continue
-                    # Issue is unresolved and not deferred — collect, do not block
-                    unresolved_issues.append(issue_file.name)
-
-    # Part 2: scan <sprint>/issues/done/ — already relocated, pass cleanly
-    sprint_issues_done_dir_full = sprint.path / "issues" / "done"
-    if sprint_issues_done_dir_full.exists():
-        for _issue_file in sorted(sprint_issues_done_dir_full.glob("*.md")):
-            pass  # Already in done/ — no action needed
-
-    # Also check pending pool issues that are tagged with this sprint
-    pending_pool = project.issues_dir
-    if pending_pool.exists():
-        for issue_file in sorted(pending_pool.glob("*.md")):
-            issue = Issue(issue_file, project)
-            if issue.sprint == sprint_id:
-                if issue.status in ("done", "complete", "completed"):
-                    # Relocate directly to <sprint>/issues/done/ (not pool/done/)
-                    target_dir = sprint.path / "issues" / "done"
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    target_path = target_dir / issue_file.name
-                    issue_file.rename(target_path)
-                    from clasi.artifact import Artifact as _Artifact
-                    issue._artifact = _Artifact(target_path)
-                    # Update frontmatter only (file is now in done/ — idempotent move)
-                    issue.move_to_done(sprint_id=sprint_id)
-                    repairs.append(f"moved issue {issue_file.name} to done/")
-
-    # 1c. Check state DB phase — self-repair: advance if behind
-    if db.path.exists():
-        try:
-            state = db.get_sprint_state(sprint_id)
-            phase = state["phase"]
-            if phase != "done":
-                phase_idx = _PHASES.index(phase)
-                # We need to be at least in 'closing' before we proceed
-                closing_idx = _PHASES.index("closing")
-                while phase_idx < closing_idx:
-                    try:
-                        db.advance_phase(sprint_id)
-                        phase_idx += 1
-                        repairs.append(f"advanced DB phase to '{_PHASES[phase_idx]}'")
-                    except ValueError:
-                        # Can't advance further (missing gate, etc.) — skip
-                        break
-        except ValueError:
-            pass  # Sprint not in DB — skip DB checks
-
-    # 1d. Check execution lock — self-repair: re-acquire if not held
-    if db.path.exists():
-        try:
-            state = db.get_sprint_state(sprint_id)
-            if not state["lock"]:
-                try:
-                    db.acquire_lock(sprint_id)
-                    repairs.append("re-acquired execution lock")
-                except ValueError:
-                    pass  # Another sprint holds it — continue anyway
-        except ValueError:
-            pass
-
-    completed_steps.append("precondition_verification")
-
-    # ── Step 2: Run tests ──
-    all_steps = ["precondition_verification", "tests", "archive", "db_update", "design_overlay_apply", "version_bump", "merge", "push_tags", "delete_branch", "prune_worktrees"]
-
-    if test_command == "":
-        # Explicitly skip tests (non-Python projects, etc.)
-        repairs.append("skipped tests (test_command is empty)")
-    else:
-        # Determine the command to run
-        if test_command is not None:
-            test_cmd = test_command.split()
-        else:
-            test_cmd = ["uv", "run", "pytest"]
-
-        # Resolve the effective test timeout. Priority: explicit parameter,
-        # then .clasi/config.yaml's top-level `test_timeout:` key, then the
-        # 900s default (raised from the old 300s, which was too short for
-        # this project's own ~460-525s suite runtime). `0` means unlimited.
-        if test_timeout is not None:
-            effective_timeout = test_timeout
-        else:
-            config_timeout = _load_config(project.root).get("test_timeout")
-            if isinstance(config_timeout, (int, float)) and not isinstance(config_timeout, bool):
-                effective_timeout = config_timeout
-            else:
-                effective_timeout = 900
-
-        subprocess_timeout = None if effective_timeout == 0 else effective_timeout
-
-        try:
-            test_result = subprocess.run(
-                test_cmd,
-                capture_output=True,
-                text=True,
-                timeout=subprocess_timeout,
-            )
-            # Pytest exit codes: 0=all passed, 1=some failed, 2=interrupted,
-            # 3=internal error, 4=usage error, 5=no tests collected.
-            # Exit code 5 is not a failure — repos with no test suite are fine.
-            if test_result.returncode not in (0, 5):
-                error_msg = f"Tests failed (exit code {test_result.returncode})"
-                test_output = test_result.stdout[-2000:] if test_result.stdout else ""
-                if test_result.stderr:
-                    test_output += "\n" + test_result.stderr[-500:]
-                if db.path.exists():
-                    db.write_recovery_state(
-                        sprint_id, "tests", [], error_msg,
-                    )
-                return json.dumps({
-                    "status": "error",
-                    "error": {
-                        "step": "tests",
-                        "message": error_msg,
-                        "output": test_output.strip(),
-                        "recovery": {
-                            "recorded": db.path.exists(),
-                            "allowed_paths": [],
-                            "instruction": "Fix failing tests, then call close_sprint again.",
-                        },
-                    },
-                    "completed_steps": completed_steps,
-                    "remaining_steps": [s for s in all_steps if s not in completed_steps],
-                }, indent=2)
-        except FileNotFoundError:
-            # Test command not available — skip tests
-            repairs.append(f"skipped tests ({test_cmd[0]} not found)")
-        except subprocess.TimeoutExpired:
-            error_msg = f"Test suite timed out after {effective_timeout} seconds"
-            if db.path.exists():
-                db.write_recovery_state(sprint_id, "tests", [], error_msg)
-            return json.dumps({
-                "status": "error",
-                "error": {
-                    "step": "tests",
-                    "message": error_msg,
-                    "recovery": {
-                        "recorded": db.path.exists(),
-                        "allowed_paths": [],
-                        "instruction": "Investigate slow tests, then call close_sprint again.",
-                    },
-                },
-                "completed_steps": completed_steps,
-                "remaining_steps": [s for s in all_steps if s not in completed_steps],
-        }, indent=2)
-
-    completed_steps.append("tests")
-
-    # ── Step 3: Archive sprint directory ──
-    already_archived = sprint_dir.parent.name == "done"
-
-    if already_archived:
-        new_path = sprint_dir
-        old_path_str = str(new_path)
-    else:
-        # NOTE: TODOs are not bulk-moved at sprint close.
-        # They are moved individually by move_ticket_to_done when all
-        # referencing tickets are done. The precondition check (step 1b)
-        # already verified that no in-progress TODOs remain for this sprint.
-
-        # Archive sprint directory (updates status, copies architecture-update, moves dir)
-        archive_result = sprint.archive()
-        new_path = sprint.path  # Sprint.archive() updates self._path
-        old_path_str = archive_result["old_path"]
-
-    completed_steps.append("archive")
-
-    # ── Step 4: Update state DB ──
-    if db.path.exists():
-        try:
-            state = db.get_sprint_state(sprint_id)
-            if state["phase"] != "done":
-                phase_idx = _PHASES.index(state["phase"])
-                done_idx = _PHASES.index("done")
-                while phase_idx < done_idx:
-                    try:
-                        db.advance_phase(sprint_id)
-                    except ValueError:
-                        break
-                    phase_idx += 1
-            if state["lock"]:
-                try:
-                    db.release_lock(sprint_id)
-                except ValueError:
-                    pass
-        except (ValueError, Exception):
-            pass
-
-    completed_steps.append("db_update")
-
-    # ── Step 4b: Apply design overlay to canonical docs (sprint 021) ──
-    # Gated on opt-in; no-op (and no-op silently) when unset/off or the
-    # sprint carries no design/ dir (trivial/compact sprint, or opted-out
-    # project). Must run — and succeed — before the version-bump/tag step,
-    # per sprint.md's Migration Concerns: a failed apply blocks tag/merge
-    # exactly like a failed test run does today.
-    # `applied` is initialized here (not just inside the `if`) so Step 5
-    # can always reference it when building its explicit commit-staging
-    # list (027/002), regardless of whether the overlay actually ran.
-    applied: list = []
-    if project.design_docs_opt_in and sprint.design_dir.exists():
-        from clasi.design import DesignError, apply as apply_design_overlay, validate as validate_design_docs
-        from clasi.design.overlay import OverlayError
-
-        try:
-            applied = apply_design_overlay(sprint.design_dir)
-            validation = validate_design_docs(project)
-            if not validation.ok:
-                raise DesignError("\n".join(validation.messages))
-        except (OverlayError, DesignError) as e:
-            error_msg = f"Design overlay apply/validation failed: {e}"
-            if db.path.exists():
-                db.write_recovery_state(sprint_id, "design_overlay_apply", [], error_msg)
-            return json.dumps({
-                "status": "error",
-                "error": {
-                    "step": "design_overlay_apply",
-                    "message": error_msg,
-                    "recovery": {
-                        "recorded": db.path.exists(),
-                        "allowed_paths": [str(project.design_dir), str(sprint.design_dir)],
-                        "instruction": (
-                            "Fix the design overlay or canonical docs/design/ "
-                            "content, then call close_sprint again."
-                        ),
-                    },
-                },
-                "completed_steps": completed_steps,
-                "remaining_steps": [s for s in all_steps if s not in completed_steps],
-            }, indent=2)
-
-    completed_steps.append("design_overlay_apply")
-
-    # ── Step 5: Version bump ──
-    version = None
-    try:
-        trigger = load_version_trigger()
-        if should_version(trigger, "sprint_close"):
-            version = compute_next_version(project_root=project.root)
-            detected = detect_version_file(project.root)
-            if detected:
-                update_version_file(detected[0], detected[1], version)
-            # Commit the version bump together with the paths this run's
-            # own earlier steps already produced -- the archived sprint
-            # directory's old/new location (Step 3, always defined by this
-            # point) and any design-overlay output files (Step 4b) -- so
-            # the working tree is clean for Step 6's merge, which requires
-            # it and is out of scope for this ticket to change. Stage each
-            # path explicitly (plain `git add <path>...` stages deletions,
-            # renames, and new files under a given pathspec correctly, no
-            # `-A` needed); never a blanket `git add -A`, which would also
-            # sweep in unrelated untracked/modified files sitting in the
-            # working tree that belong to no ticket (sprint 026's
-            # config/devices.json incident, 027/002).
-            bump_paths = [old_path_str, str(new_path)]
-            bump_paths.extend(str(p) for p in applied)
-            if detected:
-                bump_paths.append(str(detected[0]))
-            # Excluding pre-existing files from this commit means they may
-            # still be dirty/untracked in the tree when Step 6 rebases the
-            # branch -- `git rebase` (unlike checkout/merge) refuses to
-            # start at all with ANY uncommitted tracked-file change present,
-            # even one nowhere near the paths it touches. `rebase.autoStash`
-            # makes git stash that leftover state before rebasing and pop
-            # it back after, so Step 6's own code (out of scope for this
-            # ticket) never has to change to tolerate it.
-            run_git(["config", "rebase.autoStash", "true"], cwd=project.root)
-            run_git(["add", *bump_paths], cwd=project.root)
-            # Explicit pathspec (`-- <paths>`): commit only the paths this
-            # step just staged, never whatever else happens to already sit
-            # in the index -- a stakeholder's own pre-staged, unrelated
-            # work would otherwise be swept into this chore commit (029/005).
-            run_git(
-                [
-                    "commit", "-m", f"chore: bump version to {version}",
-                    "--", *bump_paths,
-                ],
-                cwd=project.root,
-            )
-            create_version_tag(version)
-    except Exception as exc:
-        import sys
-        print(f"[CLASI] Versioning failed: {exc}", file=sys.stderr)
-
-    completed_steps.append("version_bump")
-
-    # ── Step 5b: Commit .clasi.db if still dirty after version_bump ──
-    db_file = project.db_path
-    if db_file.exists():
-        status_result = run_git(
-            ["status", "--porcelain", str(db_file)], cwd=project.root
-        )
-        if status_result.stdout.strip():  # non-empty means dirty/staged
-            # Verify we're on the sprint branch before committing
-            head_result = run_git(
-                ["rev-parse", "--abbrev-ref", "HEAD"], cwd=project.root
-            )
-            head_branch = head_result.stdout.strip()
-            if head_branch == branch_name:
-                run_git(["add", str(db_file)], cwd=project.root)
-                # Explicit pathspec here too -- see Step 5's note.
-                run_git(
-                    ["commit", "-m", "chore: update .clasi.db", "--", str(db_file)],
-                    cwd=project.root,
-                )
-
-    # ── Step 6: Git merge ──
-    merged = False
-    branch_exists = False
-    # Use a Sprint wrapper pointing to the archived location for git operations
-    archived_sprint = Sprint(new_path, project)
-    merge_error_result: Optional[str] = None
-    try:
-        merge_result = archived_sprint.merge_branch(main_branch)
-        branch_exists = merge_result["branch_exists"]
-        merged = merge_result["merged"]
-    except RuntimeError as e:
-        error_msg = str(e)
-        conflicted: list[str] = (
-            e.conflicted_files if isinstance(e, MergeConflictError) else []
-        )
-        if db.path.exists():
-            db.write_recovery_state(sprint_id, "merge", conflicted, error_msg)
-        merge_error_result = json.dumps({
-            "status": "error",
-            "error": {
-                "step": "merge",
-                "message": error_msg,
-                "recovery": {
-                    "recorded": db.path.exists(),
-                    "allowed_paths": conflicted,
-                    "instruction": "Resolve the merge conflicts in the listed files, then call close_sprint again.",
-                },
-            },
-            "completed_steps": completed_steps,
-            "remaining_steps": [s for s in all_steps if s not in completed_steps],
-        }, indent=2)
-    finally:
-        # Release lock regardless of merge outcome (idempotent: no-op if already released)
-        if db.path.exists():
-            try:
-                db.release_lock(sprint_id)
-            except ValueError:
-                pass  # Already released (success path releases in db_update)
-
-    if merge_error_result is not None:
-        return merge_error_result
-
-    completed_steps.append("merge")
-
-    # ── Step 7: Push tags ──
-    tags_pushed = False
-    if push_tags_flag and version:
-        tag_name = f"v{version}"
-        push_result = run_git(["push", "--tags"], cwd=project.root)
-        tags_pushed = push_result.returncode == 0
-
-    completed_steps.append("push_tags")
-
-    # ── Step 8: Delete branch ──
-    branch_deleted = False
-    if delete_branch_flag:
-        try:
-            branch_deleted = archived_sprint.delete_branch()
-        except RuntimeError:
-            branch_deleted = False
-
-    completed_steps.append("delete_branch")
-
-    # ── Step 9: Prune sprint worktrees ──
-    worktrees_pruned: list[str] = []
-    worktrees_failed: list[str] = []
-    worktrees_retained: list[dict] = []
-    pruned, failed, retained = _prune_sprint_worktrees(
-        branch_name, repo_root=project.root, sprint_dir=new_path
-    )
-    worktrees_pruned = pruned
-    worktrees_failed = failed
-    worktrees_retained = retained
-    if worktrees_failed:
-        for wt_path in worktrees_failed:
-            repairs.append(f"failed to remove worktree: {wt_path}")
-    if worktrees_retained:
-        for entry in worktrees_retained:
-            repairs.append(
-                f"retained branch '{entry.get('branch')}' for ticket "
-                f"{entry.get('ticket_id')} ({entry.get('reason')})"
-            )
-    if worktrees_pruned:
-        completed_steps.append("prune_worktrees")
-
-    # ── Step 10: Clear recovery state ──
-    if db.path.exists():
-        try:
-            db.clear_recovery_state()
-        except Exception:
-            pass
-
-    # ── Step 11: Return structured result ──
-    result: dict = {
-        "status": "success",
-        "old_path": old_path_str,
-        "new_path": str(new_path),
-        "repairs": repairs,
-        "worktrees_pruned": worktrees_pruned,
-    }
-    if worktrees_failed:
-        result["worktrees_failed"] = worktrees_failed
-    if worktrees_retained:
-        result["worktrees_retained"] = worktrees_retained
-    if unresolved_issues:
-        result["unresolved_issues"] = unresolved_issues
-    if version:
-        result["version"] = version
-        result["tag"] = f"v{version}"
-    result["git"] = {
-        "merged": merged,
-        "merge_strategy": "rebase + --no-ff",
-        "merge_target": main_branch,
-        "tags_pushed": tags_pushed,
-        "branch_deleted": branch_deleted,
-        "branch_name": branch_name,
-    }
-
-    return json.dumps(result, indent=2)
+    return SprintCloser(
+        project,
+        sprint_id,
+        branch_name,
+        main_branch,
+        push_tags_flag,
+        delete_branch_flag,
+        test_command=test_command,
+        test_timeout=test_timeout,
+        compute_next_version_fn=compute_next_version,
+        create_version_tag_fn=create_version_tag,
+        detect_version_file_fn=detect_version_file,
+        update_version_file_fn=update_version_file,
+        load_version_trigger_fn=load_version_trigger,
+        should_version_fn=should_version,
+    ).run()
 
 
 @server.tool()
