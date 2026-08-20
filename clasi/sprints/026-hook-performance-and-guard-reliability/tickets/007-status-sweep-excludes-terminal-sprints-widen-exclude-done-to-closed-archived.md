@@ -1,9 +1,11 @@
 ---
 id: '007'
 title: 'status sweep excludes terminal sprints: widen exclude_done to closed / archived'
-status: open
-use-cases: [SUC-001]
-depends-on: ['003']
+status: in-progress
+use-cases:
+- SUC-001
+depends-on:
+- '003'
 github-issue: ''
 issue: status-exclude-done-filter-misses-closed-sprints.md
 completes_issue: true
