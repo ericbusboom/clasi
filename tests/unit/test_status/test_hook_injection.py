@@ -233,6 +233,55 @@ def _build_fixture_no_active_ticket(tmp_path: Path) -> str:
     return active_sid
 
 
+def _build_fixture_with_closed_status_archived_sprints(tmp_path: Path) -> str:
+    """Mirrors this repo's actual on-disk shape (026/007): six archived
+    sprints under sprints/done/ declaring ``status: closed`` (the sprint
+    state machine's own terminal state name — NOT ``status: done``, which
+    is the *ticket* machine's terminal state name) plus one currently
+    executing sprint.
+
+    Ticket 003 measured that this exact status: closed / done/ mismatch
+    causes ``exclude_done`` to leak all 7 sprints through to full
+    evaluation instead of excluding the 6 archived ones — this fixture
+    reproduces that shape at the same 6-archived-plus-1-active scale so
+    the call-count assertion below is representative of the real repo,
+    not just a synthetic status: done case already covered elsewhere.
+
+    Returns the sprint_id of the executing sprint (the one under the
+    execution lock).
+    """
+    _write_fresh_config(tmp_path)
+    sprints_root = tmp_path / "clasi" / "sprints"
+
+    for n in range(20, 26):
+        sid = f"{n:03d}"
+        sprint_dir = sprints_root / "done" / f"{sid}-archived-sprint-{n}"
+        _write_sprint_md(sprint_dir, sid, f"Archived Sprint {n}", status="closed")
+        for t in range(1, 4):
+            tid = f"{t:03d}"
+            _write_ticket(
+                sprint_dir, tid, f"Archived ticket {n}-{t}",
+                status="done", done_dir=True,
+            )
+
+    active_sid = "026"
+    active_dir = sprints_root / f"{active_sid}-current-sprint"
+    _write_sprint_md(active_dir, active_sid, "Current Sprint", status="executing")
+    for t in range(1, 4):
+        tid = f"{t:03d}"
+        _write_ticket(
+            active_dir, tid, f"Finished ticket {t}", status="done", done_dir=True,
+        )
+    _write_ticket(active_dir, "007", "Widen exclude_done", status="in-progress")
+
+    db_path = str(tmp_path / ".clasi" / ".clasi.db")
+    init_db(db_path)
+    register_sprint(db_path, active_sid, "current-sprint")
+    acquire_lock(db_path, active_sid)
+
+    return active_sid
+
+
 def _run_status_inject(tmp_path: Path, agent: str = "team-lead") -> str:
     """Run the REAL, unmocked handle_status_inject against tmp_path (cwd
     switched there) and return the captured stdout output."""
@@ -393,6 +442,98 @@ class TestHookExcludesDone:
         # tickets (001, 002, 003) must be excluded.
         assert "019-006" in detail_ids or "006" in detail_ids
         assert not ({"019-001", "001"} & detail_ids)
+
+
+# ---------------------------------------------------------------------------
+# done/ exclusion widened to status: closed archived sprints (026/007) —
+# ticket 003's Measurement Notes: this repo's six archived sprints
+# (sprints/done/020-* .. 025-*) declare status: closed, not status: done,
+# so the original exclude_done check let all 7 sprints leak through to
+# full evaluation (137 get_sprint() / 1,816 read_frontmatter() calls per
+# status-inject invocation) instead of excluding the 6 archived ones.
+# ---------------------------------------------------------------------------
+
+
+class TestHookExcludesClosedStatusArchivedSprints:
+    def test_closed_status_sprints_absent_from_injected_block(self, tmp_path):
+        _build_fixture_with_closed_status_archived_sprints(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+        parsed = _extract_yaml(output)
+
+        sprint_ids = {s["id"] for s in parsed["sprints"]}
+        # The six status: closed archived sprints (020-025) must not
+        # appear; only the executing sprint 026 should be present.
+        assert sprint_ids == {"026"}
+
+    def test_get_sprint_and_read_frontmatter_call_counts_scale_with_one_sprint_not_seven(
+        self, tmp_path
+    ):
+        """Call-count assertion (not wall-clock variance): with
+        exclude_done active and this repo's real archived-sprint shape (7
+        sprints, 6 status: closed under done/), only the 1 non-terminal
+        sprint's tickets should ever be evaluated.
+
+        Patches Project.get_sprint (bound as a plain function, not a
+        MagicMock side_effect, so `self` binds correctly via the normal
+        descriptor protocol) and clasi.frontmatter.read_frontmatter to
+        count real invocations across a real, unmocked handle_status_inject
+        call. Before this ticket's fix, the same fixture evaluates all 7
+        sprints (empirically measured on this exact fixture: 71 get_sprint()
+        calls / 350 read_frontmatter() calls); after the fix, only sprint
+        026's 4 tickets are evaluated (empirically measured: 23 / 80).
+        Bounds below are set well above the post-fix measured values (for
+        stability against unrelated predicate-count changes) and well
+        below the pre-fix 7-sprint values, so a regression that lets any
+        archived sprint leak back through will fail this test.
+        """
+        _build_fixture_with_closed_status_archived_sprints(tmp_path)
+
+        import clasi.project as project_module
+        import clasi.frontmatter as fm_module
+
+        real_get_sprint = project_module.Project.get_sprint
+        get_sprint_calls: list[str] = []
+
+        def counting_get_sprint(self, sprint_id):
+            get_sprint_calls.append(sprint_id)
+            return real_get_sprint(self, sprint_id)
+
+        real_read_frontmatter = fm_module.read_frontmatter
+        read_frontmatter_calls: list[str] = []
+
+        def counting_read_frontmatter(path):
+            read_frontmatter_calls.append(str(path))
+            return real_read_frontmatter(path)
+
+        with patch.object(
+            project_module.Project, "get_sprint", counting_get_sprint
+        ), patch.object(
+            fm_module, "read_frontmatter", side_effect=counting_read_frontmatter
+        ):
+            output = _run_status_inject(tmp_path, agent="team-lead")
+
+        parsed = _extract_yaml(output)
+        assert {s["id"] for s in parsed["sprints"]} == {"026"}
+
+        # Every get_sprint() call, if any occurred, must be for the one
+        # active sprint — none of the 6 archived sprints should ever be
+        # resolved via get_sprint() during this sweep.
+        assert all(sid == "026" for sid in get_sprint_calls), (
+            f"expected only sprint 026 to be resolved via get_sprint(), "
+            f"got {get_sprint_calls}"
+        )
+        assert len(get_sprint_calls) <= 40, (
+            f"expected get_sprint() calls consistent with evaluating 1 "
+            f"sprint's tickets (measured 23 post-fix vs. 71 pre-fix on "
+            f"this exact fixture), got {len(get_sprint_calls)}"
+        )
+        assert len(read_frontmatter_calls) <= 150, (
+            f"expected read_frontmatter() calls consistent with "
+            f"evaluating 1 sprint's tickets (measured 80 post-fix vs. "
+            f"350 pre-fix on this exact fixture), got "
+            f"{len(read_frontmatter_calls)}"
+        )
 
 
 # ---------------------------------------------------------------------------
