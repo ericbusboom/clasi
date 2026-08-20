@@ -344,6 +344,19 @@ class TestSprintTickets:
         assert len(done_tickets) == 1
         assert done_tickets[0].status == "done"
 
+    def test_list_tickets_excludes_stray_plan_file(self, tmp_path):
+        """A stray <ticket>-plan.md companion left in tickets/ must not be
+        counted as a ticket (sprint 030 ticket 003: shared listing helper
+        excludes *-plan.md companions)."""
+        proj, sprint_dir = _make_sprint_dir(tmp_path)
+        _add_ticket(sprint_dir, "001", "First")
+        plan_path = sprint_dir / "tickets" / "001-first-plan.md"
+        plan_path.write_text("---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8")
+        s = Sprint(sprint_dir, proj)
+        tickets = s.list_tickets()
+        assert len(tickets) == 1
+        assert tickets[0].id == "001"
+
     def test_get_ticket(self, tmp_path):
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         _add_ticket(sprint_dir, "001", "Fix Bug")
@@ -707,6 +720,118 @@ class TestDetailPromote:
 
         result = s.detail_promote()
         assert result["phase"] == "planning-docs"
+
+
+class TestSetSprintStage:
+    """Tests for Sprint.set_sprint_stage() — the single writer (030/001).
+
+    Writes the DB sprints.phase value and frontmatter status: together;
+    raises loudly (never `except: pass`) if either half fails.
+    """
+
+    def test_writes_db_and_frontmatter_together(self, tmp_path):
+        """set_sprint_stage() advances DB phase and writes matching frontmatter."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.set_sprint_stage("planning-docs")
+
+        assert result == {"sprint_id": "001", "phase": "planning-docs"}
+        assert proj.db.get_sprint_state("001")["phase"] == "planning-docs"
+        assert s.status == "planning-docs"
+
+    def test_skips_db_write_when_already_at_target_phase(self, tmp_path):
+        """Calling set_sprint_stage() with the DB's current phase writes
+        only frontmatter -- safe to call after the DB has already been
+        advanced by the caller (e.g. Sprint.advance_phase())."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.set_sprint_stage("roadmap")
+
+        assert result == {"sprint_id": "001", "phase": "roadmap"}
+        state = proj.db.get_sprint_state("001")
+        assert state["phase"] == "roadmap"
+        assert state["phase_transitions"] == []
+        assert s.status == "roadmap"
+
+    def test_raises_loudly_on_gate_blocked_advance(self, tmp_path):
+        """A DB-side failure (e.g. a gate not yet satisfied) propagates,
+        and frontmatter is left untouched -- never a silently swallowed
+        partial write.
+        """
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+        # Advance to architecture-review, which requires the
+        # architecture_review gate before advancing further.
+        proj.db.advance_phase("001")  # roadmap -> planning-docs
+        proj.db.advance_phase("001")  # planning-docs -> architecture-review
+
+        with pytest.raises(ValueError, match="architecture_review"):
+            s.set_sprint_stage("stakeholder-review")
+
+        # Frontmatter must be untouched by the failed call.
+        assert s.status == "roadmap"
+
+    def test_raises_loudly_when_frontmatter_write_fails(self, tmp_path, monkeypatch):
+        """A frontmatter-write failure after a successful DB write must
+        propagate -- not be swallowed -- per this method's own contract.
+        The DB half is left as-is (the caller sees the exception and
+        knows definitively that stage may be partially written, rather
+        than a silent success)."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        def _boom(self, **kwargs):
+            raise OSError("simulated disk failure")
+
+        monkeypatch.setattr(Artifact, "update_frontmatter", _boom)
+
+        with pytest.raises(OSError, match="simulated disk failure"):
+            s.set_sprint_stage("planning-docs")
+
+        # The DB half already went through -- this is the "partial write"
+        # the method's docstring says it surfaces rather than hides.
+        assert proj.db.get_sprint_state("001")["phase"] == "planning-docs"
+
+    def test_raises_if_requested_phase_is_not_the_dbs_next_phase(self, tmp_path):
+        """A caller requesting a phase more than one step ahead gets a
+        loud ValueError, not a silent write of the wrong value."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        with pytest.raises(ValueError, match="not the DB's next phase"):
+            s.set_sprint_stage("ticketing")
+
+
+class TestSprintAdvancePhase:
+    """Tests for Sprint.advance_phase() -- the method advance_sprint_phase
+    the MCP tool calls. As of 030/001 it routes through set_sprint_stage(),
+    so frontmatter status: now tracks every phase advance, not just the
+    roadmap -> planning-docs promotion detail_promote() always covered."""
+
+    def test_advance_phase_mirrors_new_phase_into_frontmatter(self, tmp_path):
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.advance_phase()
+
+        assert result["old_phase"] == "roadmap"
+        assert result["new_phase"] == "planning-docs"
+        assert s.status == "planning-docs"
+        assert proj.db.get_sprint_state("001")["phase"] == "planning-docs"
+
+    def test_advance_phase_return_shape_unchanged(self, tmp_path):
+        """advance_sprint_phase's MCP tool returns this dict verbatim as
+        JSON -- its shape (sprint_id/old_phase/new_phase) must be
+        preserved even though the method now has a frontmatter side
+        effect."""
+        proj, sprint_dir = _make_roadmap_sprint(tmp_path)
+        s = Sprint(sprint_dir, proj)
+
+        result = s.advance_phase()
+
+        assert set(result.keys()) == {"sprint_id", "old_phase", "new_phase"}
 
 
 # ---------------------------------------------------------------------------
@@ -1130,11 +1255,15 @@ class TestSprintArchive:
         assert result["old_path"] == str(sprint_dir)
 
     def test_archive_updates_status(self, tmp_path):
-        """archive() writes the state machine's terminal state, `closed`.
+        """030/001: archive() writes status: "done" — the DB-phase
+        vocabulary's own terminal string, and the sole vocabulary
+        frontmatter status: mirrors as of this ticket.
 
-        019-007: this previously asserted `done`, which is not a state
-        sprint.yaml defines — the assertion encoded the bug rather than
-        the contract, which is why the mismatch survived 18 sprints.
+        Previously (019-007) this asserted `closed`, matching the
+        *computed sprint-machine* vocabulary's terminal name — a
+        different vocabulary frontmatter no longer tracks. See sprint
+        030's sprint.md Design Rationale for why "closed" and "done" were
+        two spellings of one fact, now collapsed to the DB-phase spelling.
         """
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         s = Sprint(sprint_dir, proj)
@@ -1143,65 +1272,64 @@ class TestSprintArchive:
         new_sprint_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
         from clasi.frontmatter import read_frontmatter
         fm = read_frontmatter(new_sprint_md)
-        assert fm.get("status") == "closed"
+        assert fm.get("status") == "done"
 
-    def test_archive_writes_the_machines_terminal_state(self, tmp_path):
-        """019-007: archive() writes the machine's terminal state.
+    def test_archive_writes_the_db_phase_terminal_state(self, tmp_path):
+        """030/001: archive() writes the DB-phase vocabulary's terminal value.
 
-        Derived from sprint.yaml rather than hardcoded, so a rename of the
-        terminal state updates this expectation automatically instead of
-        silently re-opening the drift this ticket closed.
+        Derived from state_db_class.PHASES rather than hardcoded, so a
+        rename of the terminal phase updates this expectation
+        automatically. Before sprint 030 this asserted the *sprint-
+        machine's* terminal state ("closed") — a different, now-decoupled
+        vocabulary; see this ticket's sprint.md Design Rationale.
         """
         from clasi.frontmatter import read_frontmatter
+        from clasi.state_db_class import PHASES
 
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         Sprint(sprint_dir, proj).archive()
 
         archived_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
         declared = read_frontmatter(archived_md).get("status")
-        assert declared == _TERMINAL_SPRINT_STATE
+        assert declared == PHASES[-1]
 
-    def test_archive_writes_a_state_the_machine_defines(self, tmp_path):
-        """019-007: the status archive() writes must be a real sprint.yaml state.
+    def test_archive_writes_a_value_the_db_phase_vocabulary_defines(self, tmp_path):
+        """030/001: the status archive() writes must be a real DB-phase value.
 
-        The original defect was not that `done` was the wrong word — it was
-        that `done` is not a state the machine defines at all, so
-        detect_inconsistencies computed `closed`, compared it against a
-        declared `done`, and reported permanent state_drift for every
-        archived sprint. Asserting membership in the machine's own state
-        set (rather than hardcoding "closed") means this test keeps
-        holding if the terminal state is ever renamed.
+        Post-030, frontmatter status: mirrors the DB-phase vocabulary
+        (state_db_class.PHASES), not the sprint-machine's state names —
+        the two are intentionally different vocabularies answering
+        different questions (see sprint 030's sprint.md Design
+        Rationale). Asserting membership in PHASES (rather than
+        hardcoding "done") means this test keeps holding if the terminal
+        phase is ever renamed.
         """
-        import yaml
-
         from clasi.frontmatter import read_frontmatter
+        from clasi.state_db_class import PHASES
 
         proj, sprint_dir = _make_sprint_dir(tmp_path)
         Sprint(sprint_dir, proj).archive()
 
-        machine_path = (
-            Path(__file__).parent.parent.parent
-            / "src" / "clasi" / "schemas" / "state-machines" / "sprint.yaml"
-        )
-        machine = yaml.safe_load(machine_path.read_text(encoding="utf-8"))
-        defined_states = set(machine["states"])
-
         archived_md = proj.sprints_dir / "done" / sprint_dir.name / "sprint.md"
         declared = read_frontmatter(archived_md).get("status")
 
-        assert declared in defined_states, (
-            f"archive() wrote status={declared!r}, which sprint.yaml does not "
-            f"define. Known states: {sorted(defined_states)}"
+        assert declared in PHASES, (
+            f"archive() wrote status={declared!r}, which is not one of the "
+            f"DB-phase vocabulary values. Known values: {PHASES}"
         )
 
     def test_archive_leaves_no_state_drift(self, tmp_path):
-        """019-007: detect_inconsistencies reports no state_drift post-archive.
+        """030/001: detect_inconsistencies reports no state_drift post-archive.
 
-        The declared status archive() writes must match the state the
-        machine computes for an archived sprint. Before this fix, archive()
-        wrote `done` while the machine computed `closed`, so every archived
-        sprint drifted the instant it was archived — permanently, since
-        `closed` has no outbound transitions.
+        archive() writes status: "done" (state_db_class.PHASES' own
+        terminal string) and moves the sprint under sprints/done/ — either
+        signal alone exempts it from stage drift-checking (the directory-
+        location-based terminal exemption in detect_inconsistencies,
+        status/inconsistency.py's _sprint_is_terminal), so an archived
+        sprint never drifts. The status_dict's "state" value is
+        irrelevant to the sprint-level check as of this ticket (the
+        computed sprint-machine vocabulary is no longer compared against
+        frontmatter) — kept here only as a realistic-shaped entry.
         """
         from clasi.status.inconsistency import detect_inconsistencies
 
@@ -1209,10 +1337,6 @@ class TestSprintArchive:
         s = Sprint(sprint_dir, proj)
         s.archive()
 
-        # `computed` must come from the state machine's terminal state, NOT
-        # from the sprint's own declared status — feeding the declared value
-        # in as `computed` makes both sides agree by construction and the
-        # test passes even against the `done`-writing bug.
         status_dict = {
             "sprints": [
                 {
@@ -1229,9 +1353,9 @@ class TestSprintArchive:
             if e.get("kind") == "state_drift"
         ]
         assert drift == [], (
-            f"archived sprint drifted immediately: {drift}. archive() wrote a "
-            f"declared status that disagrees with the machine's terminal "
-            f"state ({_TERMINAL_SPRINT_STATE!r})."
+            f"archived sprint drifted immediately: {drift}. Either the "
+            "directory location or the declared status=\"done\" signal "
+            "should have exempted it from stage drift-checking."
         )
 
     def test_archive_updates_path(self, tmp_path):

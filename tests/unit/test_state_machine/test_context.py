@@ -68,6 +68,9 @@ class TestNullStateReader:
     def test_branch_merged_returns_false(self):
         assert self.reader.branch_merged("001") is False
 
+    def test_sprint_is_archived_returns_false(self):
+        assert self.reader.sprint_is_archived("001") is False
+
     def test_dependencies_done_returns_false(self):
         assert self.reader.dependencies_done("001", "001-001") is False
 
@@ -250,6 +253,9 @@ class TestProtocolCompliance:
                 return ""
 
             def branch_merged(self, sprint_id: str) -> bool:
+                return False
+
+            def sprint_is_archived(self, sprint_id: str) -> bool:
                 return False
 
             def dependencies_done(self, sprint_id: str, ticket_id: str) -> bool:

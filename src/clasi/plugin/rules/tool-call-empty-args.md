@@ -25,8 +25,9 @@ When a parameter is optional and you have no value to pass, use the literal stri
 ## Server-side stripping
 
 The CLASI MCP server converts `"NONE"` back to `None` before dispatching to the tool
-function. The `_strip_none_sentinel` function in `clasi/mcp_server.py` handles this
-transparently. Tool implementations receive `None` and apply their defaults normally.
+function. The `@clasi_tool` decorator (`clasi/tools/_common.py`) strips it per-call,
+via `_strip_none_sentinel`, before the tool function ever runs. Tool implementations
+receive `None` and apply their defaults normally.
 
 Do NOT pass `"NONE"` for required parameters — only for optional ones.
 

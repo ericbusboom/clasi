@@ -1,8 +1,9 @@
 ---
 id: '002'
 title: Fix unsatisfiable state-machine predicates
-status: open
-use-cases: [SUC-003]
+status: done
+use-cases:
+- SUC-003
 depends-on: []
 github-issue: ''
 issue: fix-unsatisfiable-state-machine-predicates.md
@@ -69,20 +70,20 @@ planning, not assumed):
 
 ## Acceptance Criteria
 
-- [ ] `is_any_sprint_ticketed` (`state_machine/predicates/project.py`)
+- [x] `is_any_sprint_ticketed` (`state_machine/predicates/project.py`)
       queries DB phase `"ticketing"`, not `"ticketed"`.
-- [ ] The reader method it calls, `any_sprint_in_phase`
+- [x] The reader method it calls, `any_sprint_in_phase`
       (`status/reader.py:445-460`), is scoped to active (non-archived)
       sprints only — do not count a sprint under `sprints/done/` toward
       `any_sprint_in_phase`. (This also resolves the sprint-012 false
       positive described in ticket 001 as a side effect of the correct
       semantic, not as a special case — do not add sprint-012-specific
       logic.)
-- [ ] `is_architecture_review_recorded`/`is_pre_flight_satisfied`
+- [x] `is_architecture_review_recorded`/`is_pre_flight_satisfied`
       (`state_machine/predicates/sprint.py`) check
       `result in {"passed", "skipped"}`, matching
       `StateDB.advance_phase`'s own semantics, instead of `is not None`.
-- [ ] `sprint_review`, `is_review_satisfied`, `is_close_report_present`,
+- [x] `sprint_review`, `is_review_satisfied`, `is_close_report_present`,
       the `pre_flight_review`/`post_review` skip-flag predicates,
       `is_tests_passing` (ticket machine), and `is_reopen_requested`
       (ticket machine) are removed — not made recordable — from both
@@ -93,24 +94,24 @@ planning, not assumed):
       transition's conditions become `[is_acceptance_criteria_met]`
       only; the `reopen` transition drops `is_reopen_requested` from its
       conditions.
-- [ ] `evaluate_state` (`state_machine/evaluator.py`) defines
+- [x] `evaluate_state` (`state_machine/evaluator.py`) defines
       most-advanced-match-wins: when more than one state's invariants
       hold, return the last-declared match (declaration order in the
       YAML is significant) instead of raising `AmbiguousStateError`.
       Zero matches still raises `NoMatchingStateError`, unchanged.
-- [ ] `_last_matching_state_from_error` and its three call sites in
+- [x] `_last_matching_state_from_error` and its three call sites in
       `status/reporter.py` (lines 198, 238, 319) are deleted — no
       remaining caller of the function, and no remaining
       `except AmbiguousStateError` block anywhere in `reporter.py`.
-- [ ] A test asserts every phase string referenced by any predicate
+- [x] A test asserts every phase string referenced by any predicate
       exists in `ArtifactGraph.phases()` (closes the class of bug that
       shipped this defect the first time — the existing unit test at
       `tests/unit/test_state_machine/test_predicates.py:261` stubs the
       reader to agree with the predicate, which cannot catch this).
-- [ ] `evaluate_state` is exercised against a context matching both
+- [x] `evaluate_state` is exercised against a context matching both
       `open` and `planned` simultaneously and returns a determinate
       state, not an exception.
-- [ ] This repo's own status block no longer reports `enter-sprint`
+- [x] This repo's own status block no longer reports `enter-sprint`
       blocked by a predicate that cannot be true (verify via `clasi
       status` or `get_status` against this repo after the fix — but see
       the stale-server note below).
@@ -185,3 +186,72 @@ you confirm it.
   `_last_matching_state_from_error` remains.
 - **Verification command**: the existing-tests command above, scoped to
   this ticket's modules — not the full suite.
+
+## Regression Fix (post-close reopen)
+
+This ticket was reopened after the sprint's full-suite gate caught a
+regression it introduced: making the `closed` state's invariants
+`[is_branch_merged]` (this ticket's own AC 4) made `is_branch_merged`
+*reachable* for the first time — and `evaluate_state` checks every
+state's invariants for every sprint on every `evaluate_state` call, not
+just the ones near the sprint's actual current state, in order to
+implement "most-advanced-match-wins" (this ticket's own AC 5). Because
+`is_branch_merged` spawns a real `git branch --merged <default>`
+subprocess (no ref-file fast path exists for a merge-base/ancestry
+check — see `status/reader.py`'s module docstring), this meant every
+active, non-archived sprint evaluated on the per-prompt status-inject
+hot path now spawned git once, breaking sprint 027's zero-git-subprocess
+budget. Caught by
+`tests/unit/test_status/test_hook_injection.py::TestGitSpawnCollapseInRealRepo`
+(3 tests, all asserting exactly 0 spawns, not merely `<=N`).
+
+**Fix chosen**: option (c) from the regression dispatch — the `closed`
+state's own description was already "merged into the default branch
+**and** archived," but its invariants only checked the merged half.
+Added a new predicate, `is_sprint_archived`
+(`state_machine/predicates/sprint.py`), backed by a new cheap,
+git-free, directory-location-based reader method,
+`ClasiStateReader.sprint_is_archived` (`status/reader.py`) — the same
+authoritative signal `status/reporter.py`'s `_is_terminal_sprint` and
+this sprint's own ticket 001 already rely on
+(`sprint.path.parent.name == "done"`). `closed`'s invariants are now
+`[is_sprint_archived, is_branch_merged]`
+(`schemas/state-machines/sprint.yaml`) — `is_sprint_archived` is False
+for every non-archived sprint, so Python's `all()` short-circuits
+before `is_branch_merged` is ever called for the overwhelmingly common
+case (an active sprint being evaluated on the hot path). This is not
+merely a performance trick: a sprint that isn't archived cannot
+actually be "closed" by the state's own definition, since
+`close_sprint` performs the merge and the archive together — so the new
+invariant fills in a real, previously-missing half of `closed`'s own
+truthful definition, not just a git-spawn optimization.
+
+`is_branch_merged` itself, its predicate, and its reader method were
+kept exactly as they were (still directly unit-tested, still
+registered) — nothing from this ticket's original correctness fixes was
+weakened or reverted.
+
+**Verification**:
+- The 3 regression tests
+  (`TestGitSpawnCollapseInRealRepo::test_zero_git_subprocess_spawns_for_realistic_fixture`,
+  `..._for_closed_archived_fixture`,
+  `test_programmer_agent_also_zero_git_subprocess_spawns`) all pass; 0
+  git subprocess spawns confirmed.
+- `tests/unit/test_status/`, `tests/unit/test_state_machine/`,
+  `tests/integration/test_state_machine_smoke.py`, and
+  `tests/system/test_sprint_lifecycle_integration.py` (sprint 030's own
+  acceptance test, ticket 006) all pass when run standalone/in
+  isolation from each other. Running all four together in one process
+  reproduces a **pre-existing, already-filed, unrelated** issue —
+  `clasi/issues/test-suite-predicate-registry-pollution.md` — where a
+  test elsewhere in the unit tier clears the global predicate registry
+  without repopulating it, so a later module in the *same process*
+  finds an empty registry. Confirmed via `git stash` that this exact
+  7-test failure pattern reproduces identically on the pre-regression-
+  fix code too — it is unrelated to and unaffected by this fix.
+- Ad-hoc verification script (drove a real sprint through
+  create→...→close via the real MCP tools against a throwaway git repo,
+  then built the real status dict with `exclude_done=False`, the
+  on-demand `clasi status`/`get_status` path): the archived, merged
+  sprint is correctly reported as `state: "closed"` — `clasi status`
+  still reports something meaningful for a closed sprint.

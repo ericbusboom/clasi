@@ -1,9 +1,14 @@
 ---
 id: '006'
 title: Sprint-lifecycle three-way integration test
-status: open
-use-cases: [SUC-006]
-depends-on: ['001', '002', '003', '004']
+status: done
+use-cases:
+- SUC-006
+depends-on:
+- '001'
+- '002'
+- '003'
+- '004'
 github-issue: ''
 issue: sprint-lifecycle-three-way-integration-test.md
 completes_issue: true
@@ -36,14 +41,14 @@ sequencing.
 
 ## Acceptance Criteria
 
-- [ ] One test drives a sprint through the **real writers** — create
+- [x] One test drives a sprint through the **real writers** — create
       (`Project.create_sprint`), detail (`detail_promote`/
       `Sprint.set_sprint_stage`), gates (`record_gate`), tickets
       (`create_ticket`/`update_ticket_status`), in-progress, done, close
       (`close.SprintCloser`/`force_close`) — against a **real temporary
       project** (real files on a `tmp_path`, a real SQLite DB file, not an
       in-memory stub). No `StateReader` stubbing anywhere in this test.
-- [ ] At every lifecycle step, the test asserts:
+- [x] At every lifecycle step, the test asserts:
       1. DB phase, frontmatter `status:`, and the computed sprint-machine
          state agree in the sense ticket 001's redesigned
          `detect_inconsistencies` defines agreement (DB phase ==
@@ -55,10 +60,10 @@ sequencing.
          that a `"passed"`/`"skipped"` one does).
       3. `detect_inconsistencies` reports zero drift entries at every
          step along the healthy path.
-- [ ] The test exists in the default suite tier (a normal `tests/system/`
+- [x] The test exists in the default suite tier (a normal `tests/system/`
       or `tests/integration/` module collected by a plain `uv run
       pytest`, not gated behind a marker nothing currently activates).
-- [ ] A deliberately reintroduced vocabulary regression — e.g. a test
+- [x] A deliberately reintroduced vocabulary regression — e.g. a test
       variant that writes a stray `status:` string outside
       `set_sprint_stage()` — fails this test. Include this as an
       explicit sub-test or a documented manual verification step (revert

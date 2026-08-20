@@ -187,16 +187,19 @@ class Sprint:
     # --- Ticket management ---
 
     def list_tickets(self, status: str | None = None) -> list[Ticket]:
-        """List tickets in this sprint, optionally filtered by status."""
-        from clasi.ticket import Ticket
+        """List tickets in this sprint, optionally filtered by status.
+
+        Uses the shared ``list_ticket_files`` helper (sprint 030 ticket
+        003), which excludes ``*-plan.md`` companion files, so a stray
+        plan file left in ``tickets/`` cannot appear in the result.
+        """
+        from clasi.ticket import Ticket, list_ticket_files
         from clasi.frontmatter import read_frontmatter
 
         results: list[Ticket] = []
 
         for location in [self.tickets_dir, self.tickets_done_dir]:
-            if not location.exists():
-                continue
-            for f in sorted(location.glob("*.md")):
+            for f in list_ticket_files(location):
                 fm = read_frontmatter(f)
                 if status and fm.get("status") != status:
                     continue
@@ -436,8 +439,9 @@ class Sprint:
         Under the single-doc model, use cases and architecture live as
         sections inside sprint.md — there is nothing left to scaffold for
         them. This method creates tickets/ and tickets/done/ onto the
-        sprint directory, then advances the state DB phase from 'roadmap'
-        to 'planning-docs'.
+        sprint directory, then advances the state DB phase (and mirrors
+        it into frontmatter status:, via set_sprint_stage()) from
+        'roadmap' to 'planning-docs'.
 
         Returns a dict: {"sprint_id": ..., "phase": "planning-docs",
                           "files_written": [...]}.
@@ -466,11 +470,11 @@ class Sprint:
         files_written.append(str(self.tickets_dir))
         files_written.append(str(self.tickets_done_dir))
 
-        # Update sprint.md frontmatter status to reflect new phase
-        self.sprint_doc.update_frontmatter(status="planning-docs")
-
-        # Advance phase from roadmap -> planning-docs
-        self.advance_phase()
+        # Single writer (030/001): advances DB phase and mirrors the same
+        # value into frontmatter status: in one call, instead of this
+        # method writing frontmatter directly and separately calling
+        # advance_phase() as two independent, non-transactional steps.
+        self.set_sprint_stage("planning-docs")
 
         return {
             "sprint_id": sprint_id,
@@ -495,13 +499,21 @@ class Sprint:
         sprint_dir = self._path
         project = self._project
 
-        # Update sprint status to the state machine's terminal state.
-        # `closed` is the only terminal state sprint.yaml defines; writing
-        # `done` here (as this did until 019-007) minted a status the
-        # machine does not recognise, which detect_inconsistencies then
-        # reported as permanent state_drift. Sprints archived before that
-        # fix still carry `status: done` on disk and are tolerated on read.
-        self.sprint_doc.update_frontmatter(status="closed")
+        # Frontmatter is written directly here, not via set_sprint_stage()
+        # — archive() does not touch DB phase (030/001; DB phase
+        # advancement during close remains a separate step, redesigned by
+        # ticket 004). The value written is "done", the DB-phase
+        # vocabulary's own terminal string (state_db_class.PHASES[-1]) —
+        # this reverses 019-007's choice of "closed", which matched the
+        # *computed sprint-machine* vocabulary's terminal name instead.
+        # As of sprint 030 that vocabulary is no longer compared against
+        # frontmatter (see status/inconsistency.py and sprint 030's
+        # sprint.md Design Rationale), so frontmatter now mirrors DB
+        # phase exclusively. No historical archive is rewritten: a sprint
+        # physically under sprints/done/ is exempt from stage
+        # drift-checking regardless of which legacy status string
+        # ("done" or "closed") it carries.
+        self.sprint_doc.update_frontmatter(status="done")
 
         # Move to done directory
         done_dir = project.sprints_dir / "done"
@@ -536,9 +548,66 @@ class Sprint:
 
     # --- Phase management (delegates to project.db) ---
 
+    def set_sprint_stage(self, phase: str) -> dict:
+        """Single writer for a sprint's recorded lifecycle stage (030/001).
+
+        Writes the state-DB ``sprints.phase`` value and this sprint's
+        frontmatter ``status:`` field together, so the two — historically
+        written by independent, non-transactional steps (this method's
+        own reason for existing) — can never disagree for a sprint
+        written after this method exists.
+
+        If the DB is not already at *phase*, this advances it one step
+        (via ``self._project.db.advance_phase``) and verifies the result
+        lands on *phase*: every existing call site advances exactly one
+        phase at a time, so a caller requesting a phase more than one
+        step ahead — or one the DB's own gate/lock checks reject — gets a
+        loud ``ValueError`` instead of a silent partial write. If the DB
+        is already at *phase* (e.g. because a caller such as
+        :meth:`advance_phase` already advanced it earlier in the same
+        call), the DB half is skipped and only frontmatter is written —
+        so this method is safe to call either before or after the DB
+        write it mirrors.
+
+        Raises loudly — never ``except: pass`` — if either half fails: a
+        DB read/advance failure propagates before frontmatter is touched;
+        a frontmatter write failure propagates after the DB has already
+        been updated. Either way the caller receives an exception it
+        cannot silently ignore, rather than a half-written stage.
+
+        Args:
+            phase: The target DB-phase value — one of
+                ``clasi.state_db_class.PHASES`` ("roadmap" through
+                "done").
+
+        Returns:
+            {"sprint_id": ..., "phase": phase}
+        """
+        sprint_id = self.id
+
+        current_db_phase = self._project.db.get_sprint_state(sprint_id)["phase"]
+        if current_db_phase != phase:
+            result = self._project.db.advance_phase(sprint_id)
+            if result["new_phase"] != phase:
+                raise ValueError(
+                    f"set_sprint_stage({phase!r}) requested for sprint "
+                    f"{sprint_id!r}, but advancing the DB phase landed on "
+                    f"{result['new_phase']!r} instead — the requested "
+                    "stage is not the DB's next phase."
+                )
+
+        self.sprint_doc.update_frontmatter(status=phase)
+
+        return {"sprint_id": sprint_id, "phase": phase}
+
     def advance_phase(self) -> dict:
-        """Advance this sprint's phase in the state DB."""
-        return self._project.db.advance_phase(self.id)
+        """Advance this sprint's phase in the state DB, mirroring the new
+        phase into frontmatter status: via set_sprint_stage() (030/001) —
+        this is the method the advance_sprint_phase MCP tool calls.
+        """
+        result = self._project.db.advance_phase(self.id)
+        self.set_sprint_stage(result["new_phase"])
+        return result
 
     def record_gate(self, gate: str, result: str, notes: str | None = None) -> dict:
         """Record a gate result for this sprint."""

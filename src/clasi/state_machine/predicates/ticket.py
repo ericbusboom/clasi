@@ -11,10 +11,8 @@ StateReader methods used:
 - ``any_sprint_in_phase(phase)`` — True if any sprint (or parent sprint) is executing
 - ``dependencies_done(sprint_id, ticket_id)`` — True if all dependency tickets are done
 - ``acceptance_criteria_met(sprint_id, ticket_id)`` — True if all checkboxes are checked
-- ``tests_passing()`` — True if the test suite passes on the current branch
 - ``blocker_identified(sprint_id, ticket_id)`` — True if programmer declared it cannot proceed
 - ``blocker_resolved(sprint_id, ticket_id)`` — True if the blocker has been addressed
-- ``reopen_requested(sprint_id, ticket_id)`` — True if a reopen_ticket MCP call was made
 """
 
 from __future__ import annotations
@@ -77,12 +75,6 @@ def is_acceptance_criteria_met(ctx: TicketContext) -> bool:
     return ctx.reader.acceptance_criteria_met(ctx.sprint_id, ctx.ticket_id)
 
 
-@predicate("is_tests_passing")
-def is_tests_passing(ctx: TicketContext) -> bool:
-    """Return True iff the project's test suite passes on the current branch."""
-    return ctx.reader.tests_passing()
-
-
 @predicate("is_blocker_identified")
 def is_blocker_identified(ctx: TicketContext) -> bool:
     """Return True iff the programmer has declared it cannot proceed."""
@@ -93,9 +85,3 @@ def is_blocker_identified(ctx: TicketContext) -> bool:
 def is_blocker_resolved(ctx: TicketContext) -> bool:
     """Return True iff the blocker recorded in the ticket's exception block has been resolved."""
     return ctx.reader.blocker_resolved(ctx.sprint_id, ctx.ticket_id)
-
-
-@predicate("is_reopen_requested")
-def is_reopen_requested(ctx: TicketContext) -> bool:
-    """Return True iff a ``reopen_ticket`` MCP call has been made for this ticket."""
-    return ctx.reader.reopen_requested(ctx.sprint_id, ctx.ticket_id)

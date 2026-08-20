@@ -89,16 +89,41 @@ class _NonExistentPath:
         return []
 
 
+class FakeStateDB:
+    """Minimal stand-in for clasi.state_db_class.StateDB (030/001).
+
+    Maps sprint IDs to a DB phase string. ``get_sprint_state`` mirrors
+    the real StateDB's contract of raising ValueError for an
+    unregistered sprint, which _read_sprint_db_phase (inconsistency.py)
+    catches and treats as "no signal to compare" (fail-open).
+    """
+
+    def __init__(self, phases: dict[str, str] | None = None):
+        self._phases = dict(phases or {})
+
+    def get_sprint_state(self, sprint_id: str) -> dict:
+        if sprint_id not in self._phases:
+            raise ValueError(f"Sprint '{sprint_id}' is not registered")
+        return {"phase": self._phases[sprint_id]}
+
+
 class FakeProject:
     """Minimal stand-in for clasi.project.Project.
 
-    Maps sprint IDs to FakeSprint objects for ``get_sprint``.
+    Maps sprint IDs to FakeSprint objects for ``get_sprint``, and exposes
+    a ``.db`` (FakeStateDB) for the DB-phase side of the sprint-level
+    drift comparison (030/001).
     """
 
-    def __init__(self, sprints: list[FakeSprint] | None = None):
+    def __init__(
+        self,
+        sprints: list[FakeSprint] | None = None,
+        phases: dict[str, str] | None = None,
+    ):
         self._sprints_by_id: dict[str, FakeSprint] = {}
         for s in (sprints or []):
             self._sprints_by_id[s.id] = s
+        self.db = FakeStateDB(phases)
 
     def get_sprint(self, sprint_id: str) -> FakeSprint:
         if sprint_id in self._sprints_by_id:
@@ -158,37 +183,48 @@ class TestEmptyInputs:
         result = detect_inconsistencies(project, _status_dict())
         assert result == []
 
-    def test_sprint_with_no_tickets_and_matching_state_returns_empty(self):
-        """Sprint declared open, computed open → no inconsistency."""
-        project = FakeProject([FakeSprint("001", status="open")])
+    def test_sprint_with_no_tickets_and_matching_phase_returns_empty(self):
+        """Declared frontmatter status == DB phase → no inconsistency."""
+        project = FakeProject(
+            [FakeSprint("001", status="ticketing")],
+            phases={"001": "ticketing"},
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert result == []
 
     def test_sprint_with_no_declared_status_skipped(self):
         """No status: in frontmatter → skipped, no entry emitted."""
-        project = FakeProject([FakeSprint("001", status=None)])
+        project = FakeProject(
+            [FakeSprint("001", status=None)], phases={"001": "ticketing"}
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert result == []
 
 
 # ---------------------------------------------------------------------------
-# Tests: sprint state drift
+# Tests: sprint stage drift (030/001: DB phase vs frontmatter status)
 # ---------------------------------------------------------------------------
 
 
 class TestSprintStateDrift:
-    def test_matching_sprint_state_produces_no_entry(self):
-        """Declared open == computed open → empty list."""
-        project = FakeProject([FakeSprint("001", status="open")])
+    def test_matching_sprint_phase_produces_no_entry(self):
+        """Declared ticketing == DB phase ticketing → empty list."""
+        project = FakeProject(
+            [FakeSprint("001", status="ticketing")],
+            phases={"001": "ticketing"},
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert result == []
 
-    def test_mismatched_sprint_state_produces_entry(self):
-        """Declared planned != computed open → one state_drift entry."""
-        project = FakeProject([FakeSprint("001", status="planned")])
+    def test_mismatched_sprint_phase_produces_entry(self):
+        """Declared planning-docs != DB phase ticketing → one state_drift entry."""
+        project = FakeProject(
+            [FakeSprint("001", status="planning-docs")],
+            phases={"001": "ticketing"},
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert len(result) == 1
@@ -196,33 +232,42 @@ class TestSprintStateDrift:
         assert entry["kind"] == "state_drift"
         assert entry["machine"] == "sprint"
         assert entry["id"] == "001"
-        assert entry["declared"] == "planned"
-        assert entry["computed"] == "open"
+        assert entry["declared"] == "planning-docs"
+        assert entry["computed"] == "ticketing"
         assert "explanation" in entry
         assert isinstance(entry["explanation"], str)
         assert len(entry["explanation"]) > 0
 
-    def test_sprint_drift_explanation_mentions_failing_predicates(self):
-        """Explanation should mention at least one predicate name when available."""
-        project = FakeProject([FakeSprint("001", status="planned")])
+    def test_sprint_drift_explanation_mentions_both_values(self):
+        """Explanation states both the declared and DB-phase values directly
+        — no state-machine invariant evaluation is involved for a sprint
+        entry as of 030/001 (both sides are the same DB-phase vocabulary)."""
+        project = FakeProject(
+            [FakeSprint("001", status="planning-docs")],
+            phases={"001": "ticketing"},
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert len(result) == 1
         explanation = result[0]["explanation"]
-        # The planned state requires is_sprint_doc_present, which will fail
-        # against a NullStateReader-like context.
-        # Explanation should reference at least "planned" or a predicate name.
-        assert "planned" in explanation
+        assert "planning-docs" in explanation
+        assert "ticketing" in explanation
+        assert "set_sprint_stage" in explanation
 
-    def test_unknown_declared_sprint_state_produces_entry_with_explanation(self):
-        """A declared state that is not in the machine gets an explanation note."""
-        project = FakeProject([FakeSprint("001", status="nonexistent-state")])
+    def test_unrecognised_declared_sprint_status_still_reported(self):
+        """A declared status that isn't a real DB-phase value is still a
+        plain string mismatch — no "recognised state" check applies to
+        sprints (unlike tickets, which do evaluate a state machine)."""
+        project = FakeProject(
+            [FakeSprint("001", status="nonexistent-phase")],
+            phases={"001": "ticketing"},
+        )
         status = _status_dict([_sprint_entry("001", state="open")])
         result = detect_inconsistencies(project, status)
         assert len(result) == 1
         entry = result[0]
         assert entry["kind"] == "state_drift"
-        assert "nonexistent-state" in entry["explanation"]
+        assert "nonexistent-phase" in entry["explanation"]
 
     def test_sprint_not_found_in_project_produces_no_entry(self):
         """If project can't find the sprint, no entry is emitted (safe default)."""
@@ -232,12 +277,25 @@ class TestSprintStateDrift:
         result = detect_inconsistencies(project, status)
         assert result == []
 
+    def test_sprint_with_no_db_record_produces_no_entry(self):
+        """030/001: a sprint with a declared status but no DB registration
+        has no DB-phase signal to compare against — fail-open, no entry,
+        matching the existing behaviour for a missing frontmatter status."""
+        project = FakeProject([FakeSprint("001", status="planning-docs")])
+        # No phases= given → FakeStateDB has no record for "001".
+        status = _status_dict([_sprint_entry("001", state="open")])
+        result = detect_inconsistencies(project, status)
+        assert result == []
+
     def test_multiple_sprints_only_drifting_one_flagged(self):
         """Only the sprint with a mismatch produces an entry."""
-        project = FakeProject([
-            FakeSprint("001", status="open"),   # matches
-            FakeSprint("002", status="planned"),  # mismatch: computed open
-        ])
+        project = FakeProject(
+            [
+                FakeSprint("001", status="ticketing"),      # matches
+                FakeSprint("002", status="planning-docs"),  # mismatch: DB ticketing
+            ],
+            phases={"001": "ticketing", "002": "ticketing"},
+        )
         status = _status_dict([
             _sprint_entry("001", state="open"),
             _sprint_entry("002", state="open"),
@@ -475,22 +533,28 @@ class TestTerminalSprintsSkipped:
 
     def test_non_terminal_sprint_with_genuine_drift_still_reports(self, tmp_path):
         """A live, non-terminal sprint whose declared status genuinely
-        disagrees with its computed state must STILL report drift.
+        disagrees with its DB phase must STILL report drift.
 
         This is the assertion that matters most per the ticket: a skip
-        that only applies to the terminal state must not silence drift
-        for sprints sitting in any other (non-terminal) state.
+        that only applies to terminal/archived sprints must not silence
+        drift for sprints sitting in any other (non-terminal) state.
         """
-        proj, sprint_dir = _make_real_sprint(tmp_path, status="planned")
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="planning-docs")
         s = Sprint(sprint_dir, proj)
+        sprint_id = s.id
 
-        # computed = "open" (a non-terminal state), declared = "planned" —
-        # a genuine, live mismatch that must not be swallowed by the
-        # terminal-state skip.
+        # Register in the DB at its default "roadmap" phase — genuinely
+        # disagrees with frontmatter's "planning-docs", and the sprint is
+        # neither archived nor carrying a terminal status string, so the
+        # exemption must not apply.
+        proj.db.register_sprint(
+            sprint_id, "test-sprint", branch=f"sprint/{sprint_id}-test-sprint"
+        )
+
         status_dict = {
             "sprints": [
                 {
-                    "id": s.id,
+                    "id": sprint_id,
                     "state": "open",
                     "available_transitions": [],
                     "tickets": {"details": []},
@@ -507,23 +571,85 @@ class TestTerminalSprintsSkipped:
             f"expected genuine drift on a non-terminal sprint to still be "
             f"reported, got: {drift}"
         )
-        assert drift[0]["declared"] == "planned"
-        assert drift[0]["computed"] == "open"
+        assert drift[0]["declared"] == "planning-docs"
+        assert drift[0]["computed"] == "roadmap"
 
-    def test_terminal_state_skip_does_not_apply_to_matching_non_terminal_state(
+    def test_stale_db_phase_behind_archived_directory_produces_no_drift(
         self, tmp_path
     ):
-        """Sanity check: a sprint whose computed state simply is not the
-        terminal state is never skipped by the terminal-state check,
-        regardless of whether declared == computed.
+        """Models this repo's own live divergence (sprint 012): a sprint
+        archived under sprints/done/ (frontmatter status: "done", written
+        by archive()) whose DB phase was never advanced past an earlier
+        value ("ticketing") — archive() intentionally does not touch DB
+        phase (030/001; that remains a separate step, redesigned by
+        ticket 004). The directory-location-based terminal exemption must
+        still report zero drift for it, tolerating the stale DB phase
+        with zero data edits — the design's own explicit acceptance
+        criterion.
         """
-        proj, sprint_dir = _make_real_sprint(tmp_path, status="open")
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="roadmap")
         s = Sprint(sprint_dir, proj)
+        sprint_id = s.id
+
+        proj.db.register_sprint(
+            sprint_id, "test-sprint", branch=f"sprint/{sprint_id}-test-sprint"
+        )
+        proj.db.advance_phase(sprint_id)  # roadmap -> planning-docs
+        proj.db.advance_phase(sprint_id)  # planning-docs -> architecture-review
+        proj.db.record_gate(sprint_id, "architecture_review", "passed")
+        proj.db.advance_phase(sprint_id)  # architecture-review -> stakeholder-review
+        proj.db.record_gate(sprint_id, "stakeholder_approval", "passed")
+        proj.db.advance_phase(sprint_id)  # stakeholder-review -> ticketing
+        # DB phase stops here at "ticketing" — mirrors sprint 012's real
+        # stuck-at-"ticketing" DB row.
+
+        s.archive()  # moves under sprints/done/, writes status: "done";
+        # does NOT touch DB phase.
+
+        assert proj.db.get_sprint_state(sprint_id)["phase"] == "ticketing"
 
         status_dict = {
             "sprints": [
                 {
-                    "id": s.id,
+                    "id": sprint_id,
+                    "state": "closed",
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        drift = [
+            e
+            for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift"
+        ]
+        assert drift == [], (
+            f"archived sprint with a stale DB phase drifted despite the "
+            f"directory-based terminal exemption: {drift}"
+        )
+
+    def test_terminal_state_skip_does_not_apply_to_matching_non_terminal_state(
+        self, tmp_path
+    ):
+        """Sanity check: a sprint whose DB phase simply is not terminal is
+        never skipped by the terminal-state check — it is checked, and
+        happens to match (declared == DB phase), not skipped.
+        """
+        proj, sprint_dir = _make_real_sprint(tmp_path, status="roadmap")
+        s = Sprint(sprint_dir, proj)
+        sprint_id = s.id
+
+        # register_sprint's default phase ("roadmap") matches the
+        # frontmatter this sprint was created with.
+        proj.db.register_sprint(
+            sprint_id, "test-sprint", branch=f"sprint/{sprint_id}-test-sprint"
+        )
+
+        status_dict = {
+            "sprints": [
+                {
+                    "id": sprint_id,
                     "state": "open",
                     "available_transitions": [],
                     "tickets": {"details": []},
@@ -531,11 +657,76 @@ class TestTerminalSprintsSkipped:
             ],
         }
 
-        # declared == computed == "open" (non-terminal) → no drift, but for
-        # the *matching* reason, not because it was skipped as terminal.
+        # declared == DB phase == "roadmap" (non-terminal) → no drift, but
+        # for the *matching* reason, not because it was skipped as
+        # terminal.
         drift = [
             e
             for e in detect_inconsistencies(proj, status_dict)
             if e.get("kind") == "state_drift"
         ]
         assert drift == []
+
+
+# ---------------------------------------------------------------------------
+# Test: the headline 030/001 acceptance criterion
+# ---------------------------------------------------------------------------
+
+
+class TestHealthyActiveSprintZeroDrift:
+    """A healthy active sprint, built entirely through real writers, must
+    produce zero state_drift entries — not "every healthy sprint flagged",
+    the pre-030 defect this ticket fixes (detect_inconsistencies used to
+    compare frontmatter against a computed vocabulary disjoint from it by
+    construction)."""
+
+    def test_healthy_active_sprint_produces_zero_drift(self, tmp_path):
+        proj = Project(tmp_path)
+        proj.sprints_dir.mkdir(parents=True, exist_ok=True)
+        proj.clasi_dir.mkdir(parents=True, exist_ok=True)
+        proj.db.init()
+
+        sprint = proj.create_sprint("Healthy Sprint")
+        proj.db.register_sprint(
+            sprint.id, sprint.slug, branch=f"sprint/{sprint.id}-{sprint.slug}"
+        )
+
+        # Drive several real phase transitions the way detail_sprint /
+        # advance_sprint_phase do — every one routes through
+        # Sprint.set_sprint_stage() as of this ticket.
+        sprint.detail_promote()  # roadmap -> planning-docs
+        sprint.advance_phase()  # planning-docs -> architecture-review
+        sprint.record_gate("architecture_review", "passed")
+        sprint.advance_phase()  # architecture-review -> stakeholder-review
+        sprint.record_gate("stakeholder_approval", "passed")
+        sprint.advance_phase()  # stakeholder-review -> ticketing
+
+        assert sprint.status == "ticketing"
+        assert proj.db.get_sprint_state(sprint.id)["phase"] == "ticketing"
+
+        status_dict = {
+            "sprints": [
+                {
+                    "id": sprint.id,
+                    # The computed sprint-machine vocabulary — deliberately
+                    # a different string than the DB-phase vocabulary
+                    # above, and irrelevant to the sprint-level check as
+                    # of 030/001 (it is no longer compared against
+                    # frontmatter for drift).
+                    "state": "ticketed",
+                    "available_transitions": [],
+                    "tickets": {"details": []},
+                }
+            ],
+        }
+
+        drift = [
+            e
+            for e in detect_inconsistencies(proj, status_dict)
+            if e.get("kind") == "state_drift" and e.get("machine") == "sprint"
+        ]
+        assert drift == [], (
+            f"a healthy active sprint, driven entirely through real "
+            f"writers, must produce zero sprint-level state_drift "
+            f"entries: {drift}"
+        )

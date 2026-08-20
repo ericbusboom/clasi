@@ -700,3 +700,134 @@ class TestInitRunsAtMostOncePerInstance:
         sdb2.init()
         state = sdb2.get_sprint_state("001")
         assert state["phase_transitions"] == []
+
+
+class TestForceClose:
+    """Tests for StateDB.force_close (030/004) -- transactional phase->done
+    + lock release, replacing close_sprint's old ``except (ValueError,
+    Exception): pass`` phase-advance loop."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        return sdb
+
+    def test_sets_phase_done_and_releases_lock(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+        db.acquire_lock("010")
+
+        result = db.force_close("010")
+
+        assert result["phase"] == "done"
+        assert result["phase_changed"] is True
+        assert result["lock_released"] is True
+
+        state = db.get_sprint_state("010")
+        assert state["phase"] == "done"
+        assert state["lock"] is None
+        # Recorded in phase_transitions history, like advance_phase does.
+        transitions = state["phase_transitions"]
+        assert transitions[-1]["from_phase"] == "planning-docs"
+        assert transitions[-1]["to_phase"] == "done"
+
+    def test_jumps_directly_from_any_phase_no_gate_checks(self, db):
+        """Unlike advance_phase, force_close does not step through the
+        phase list one gate at a time -- it works from an early phase
+        with none of the later gates satisfied (e.g. no architecture_review
+        gate recorded, no execution lock held)."""
+        db.register_sprint("010", "test-sprint")
+        # Still at 'roadmap' -- no gates recorded, no lock acquired. A
+        # plain advance_phase() loop would hit the architecture_review
+        # gate requirement and raise; force_close must not.
+        result = db.force_close("010")
+        assert result["phase"] == "done"
+        assert db.get_sprint_state("010")["phase"] == "done"
+
+    def test_idempotent_noop_when_already_done(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.force_close("010")
+
+        # Second call: cheap no-op, not an error.
+        result = db.force_close("010")
+        assert result["phase"] == "done"
+        assert result["phase_changed"] is False
+        assert result["lock_released"] is False
+
+    def test_lock_released_only_if_held_by_this_sprint(self, db):
+        """force_close on sprint A must not release a lock held by a
+        different sprint B."""
+        db.register_sprint("010", "sprint-a")
+        db.register_sprint("011", "sprint-b")
+        db.acquire_lock("011")  # sprint B holds the lock
+
+        result = db.force_close("010")
+
+        assert result["phase"] == "done"
+        assert result["lock_released"] is False
+        # Lock is untouched -- still held by sprint B.
+        lock = db.get_lock_holder()
+        assert lock is not None
+        assert lock["sprint_id"] == "011"
+
+    def test_raises_for_unregistered_sprint(self, db):
+        with pytest.raises(ValueError, match="not registered"):
+            db.force_close("999")
+
+    def test_is_transactional_no_partial_write_on_mid_transaction_failure(self, db, monkeypatch):
+        """If something fails between the phase UPDATE and the final
+        commit, neither write should be visible afterward -- both halves
+        live in the one implicit transaction force_close's single
+        conn.commit() closes, so an interrupted call leaves ground truth
+        exactly where it started, not half-advanced.
+
+        sqlite3.Connection is a C-level immutable type (its methods
+        cannot be monkeypatched directly), so the failure is injected via
+        a thin proxy in place of clasi.state_db_class._connect's return
+        value instead.
+        """
+        import sqlite3
+
+        import clasi.state_db_class as state_db_class_module
+
+        db.register_sprint("010", "test-sprint")
+        db.advance_phase("010")  # roadmap -> planning-docs
+        db.acquire_lock("010")
+
+        real_connect = state_db_class_module._connect
+
+        class _FailingConnProxy:
+            """Delegates everything to a real connection except execute(),
+            which raises once the phase_transitions history INSERT runs --
+            i.e. right after the phase UPDATE succeeds but before
+            force_close reaches its lock DELETE or its one conn.commit()."""
+
+            def __init__(self, real_conn):
+                self._real = real_conn
+
+            def execute(self, sql, *args, **kwargs):
+                if sql.strip().upper().startswith("INSERT INTO PHASE_TRANSITIONS"):
+                    raise sqlite3.OperationalError("simulated mid-transaction failure")
+                return self._real.execute(sql, *args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+        def _patched_connect(db_path, timeout: float = 1.0):
+            return _FailingConnProxy(real_connect(db_path, timeout=timeout))
+
+        monkeypatch.setattr(state_db_class_module, "_connect", _patched_connect)
+
+        with pytest.raises(sqlite3.OperationalError):
+            db.force_close("010")
+
+        monkeypatch.undo()
+
+        # Re-read with the real (unpatched) connect: neither the phase
+        # UPDATE nor the lock DELETE survived -- force_close's
+        # finally: conn.close() discards the uncommitted transaction.
+        state = db.get_sprint_state("010")
+        assert state["phase"] == "planning-docs"
+        assert state["lock"] is not None
+        assert state["lock"]["sprint_id"] == "010"

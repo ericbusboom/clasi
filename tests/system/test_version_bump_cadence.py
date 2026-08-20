@@ -174,7 +174,7 @@ class TestVersionBumpCadenceDryRun:
         # --- Close the sprint through the real close_sprint MCP tool:
         # full lifecycle (precondition self-repair, archive, real git
         # rebase + --no-ff merge, real version bump + tag). Tests are
-        # skipped (test_command="") because this is a synthetic repo with
+        # skipped (test_command="SKIP") because this is a synthetic repo with
         # no test suite of its own; push/branch-delete are disabled to
         # keep the test hermetic (no remote, no destructive branch state).
         result = json.loads(
@@ -184,7 +184,7 @@ class TestVersionBumpCadenceDryRun:
                 main_branch="master",
                 push_tags=False,
                 delete_branch=False,
-                test_command="",
+                test_command="SKIP",
             )
         )
         assert result["status"] == "success", result
@@ -298,7 +298,7 @@ class TestVersionBumpCommitScoping:
                 main_branch="master",
                 push_tags=False,
                 delete_branch=False,
-                test_command="",
+                test_command="SKIP",
             )
         )
         assert result["status"] == "success", result

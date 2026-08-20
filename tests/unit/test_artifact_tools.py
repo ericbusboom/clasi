@@ -41,13 +41,24 @@ class TestUpdateTicketStatusException:
         assert result["old_status"] == "open"
 
     def test_update_ticket_status_rejects_unknown(self, tmp_path):
-        """update_ticket_status raises ValueError for an invalid status value."""
+        """update_ticket_status returns an {"ok": false, "error": ...} envelope
+        for an invalid status value (sprint 030/005: @clasi_tool converts the
+        domain ValueError into the uniform failure envelope instead of
+        letting it surface as a raw MCP tool error)."""
         path = _make_ticket(tmp_path)
-        with pytest.raises(ValueError, match="Invalid status"):
-            update_ticket_status(path, "invalid-value")
+        result = json.loads(update_ticket_status(path, "invalid-value"))
+        assert result["ok"] is False
+        assert "Invalid status" in result["error"]["message"]
 
     def test_update_ticket_status_accepts_all_valid_statuses(self, tmp_path):
         """All four valid statuses are accepted without raising."""
+        # Isolate the project: as of sprint 030 ticket 003,
+        # update_ticket_status(path, "done") also runs the sprint-issue
+        # sweep, which reads get_project().issues_dir. Without an explicit
+        # set_project() here, that call falls back to Path.cwd() -- this
+        # repo's own real clasi/issues/ -- and can crash trying to compare
+        # against this test's made-up (nonexistent) sprint.md.
+        set_project(tmp_path)
         for status in ("open", "in-progress", "done", "exception"):
             path = _make_ticket(tmp_path)
             result = json.loads(update_ticket_status(path, status))
@@ -113,9 +124,10 @@ class TestThrowTicketException:
         assert dt.tzinfo is not None
 
     def test_throw_ticket_exception_invalid_thrown_by(self, tmp_path):
-        """Invalid thrown_by raises ValueError."""
+        """Invalid thrown_by returns an {"ok": false, "error": ...} envelope
+        (sprint 030/005: @clasi_tool converts the domain ValueError)."""
         path = _make_ticket(tmp_path)
-        with pytest.raises(ValueError, match="thrown_by"):
+        result = json.loads(
             throw_ticket_exception(
                 path,
                 thrown_by="team-lead",
@@ -123,11 +135,15 @@ class TestThrowTicketException:
                 conflict="y",
                 surface="internal",
             )
+        )
+        assert result["ok"] is False
+        assert "thrown_by" in result["error"]["message"]
 
     def test_throw_ticket_exception_invalid_surface(self, tmp_path):
-        """Invalid surface raises ValueError."""
+        """Invalid surface returns an {"ok": false, "error": ...} envelope
+        (sprint 030/005: @clasi_tool converts the domain ValueError)."""
         path = _make_ticket(tmp_path)
-        with pytest.raises(ValueError, match="surface"):
+        result = json.loads(
             throw_ticket_exception(
                 path,
                 thrown_by="programmer",
@@ -135,14 +151,22 @@ class TestThrowTicketException:
                 conflict="y",
                 surface="public",
             )
+        )
+        assert result["ok"] is False
+        assert "surface" in result["error"]["message"]
 
     def test_throw_ticket_exception_unknown_path(self, tmp_path):
-        """Unknown ticket path raises ValueError with clear message."""
-        with pytest.raises(ValueError, match="Ticket not found"):
+        """Unknown ticket path returns an {"ok": false, "error": ...}
+        envelope with a clear message (sprint 030/005: @clasi_tool converts
+        the domain ValueError)."""
+        result = json.loads(
             throw_ticket_exception(
                 str(tmp_path / "nonexistent.md"),
                 **self._VALID_ARGS,
             )
+        )
+        assert result["ok"] is False
+        assert "Ticket not found" in result["error"]["message"]
 
     def test_throw_ticket_exception_both_writes_occur(self, tmp_path):
         """Both exception payload and status are written (not partial)."""

@@ -47,8 +47,8 @@ from clasi.state_machine import (
 def test_predicates_auto_registered() -> None:
     """Importing clasi.state_machine auto-registers all predicates."""
     predicates = list_predicates()
-    assert len(predicates) >= 31, (
-        f"Expected at least 31 predicates, got {len(predicates)}: {predicates}"
+    assert len(predicates) >= 27, (
+        f"Expected at least 27 predicates, got {len(predicates)}: {predicates}"
     )
     # A representative sample of well-known predicate names
     for name in (
@@ -119,6 +119,29 @@ def test_evaluate_state_ticket_raises_no_match() -> None:
 
     with pytest.raises(NoMatchingStateError):
         evaluate_state(machine, ticket_ctx)
+
+
+def test_evaluate_state_sprint_open_planned_ambiguity_resolves_determinately() -> None:
+    """030/002 AC: the sprint machine's `open` and `planned` states share
+
+    an identical invariant list (``[is_sprint_doc_present]``), so a
+    context satisfying just that one predicate matches both states
+    simultaneously. Confirm evaluate_state resolves this deterministically
+    to the last-declared (more advanced) match -- "planned" -- instead of
+    raising AmbiguousStateError.
+    """
+
+    class _SprintDocOnlyReader(NullStateReader):
+        def sprint_artifact_exists(self, sprint_id: str, artifact_name: str) -> bool:
+            return artifact_name == "sprint.md"
+
+    machine = load_machine("sprint")
+    reader = _SprintDocOnlyReader()
+    project_ctx = ProjectContext(reader=reader)
+    sprint_ctx = SprintContext(sprint_id="005", reader=reader, project=project_ctx)
+
+    result = evaluate_state(machine, sprint_ctx)
+    assert result.name == "planned"
 
 
 # ---------------------------------------------------------------------------

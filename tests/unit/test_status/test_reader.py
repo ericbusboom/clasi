@@ -290,6 +290,19 @@ class TestAllTicketsDone:
     def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
         assert reader.all_tickets_done("999") is False
 
+    def test_stray_plan_file_does_not_affect_result(
+        self, project: Project, reader: ClasiStateReader
+    ) -> None:
+        """A stray <ticket>-plan.md companion left in tickets/ must not be
+        read as an undone ticket (sprint 030 ticket 003: shared listing
+        helper excludes *-plan.md companions)."""
+        sprint_dir = _make_sprint(project)
+        _make_ticket(sprint_dir, "001", status="done")
+        (sprint_dir / "tickets" / "001-test-ticket-plan.md").write_text(
+            "---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8"
+        )
+        assert reader.all_tickets_done("001") is True
+
 
 # ---------------------------------------------------------------------------
 # ticket_in_done_dir
@@ -406,6 +419,39 @@ class TestBranchMerged:
 
     def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
         assert reader.branch_merged("999") is False
+
+
+# ---------------------------------------------------------------------------
+# sprint_is_archived (030/002 regression fix)
+# ---------------------------------------------------------------------------
+
+
+class TestSprintIsArchived:
+    def test_false_for_active_sprint(self, project: Project, reader: ClasiStateReader) -> None:
+        _make_sprint(project, "001", branch="sprint/001-feature")
+        assert reader.sprint_is_archived("001") is False
+
+    def test_true_for_sprint_under_done_dir(self, project: Project, reader: ClasiStateReader) -> None:
+        sprint_dir = project.sprints_dir / "done" / "001-archived-sprint"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint.md").write_text(
+            "---\nid: '001'\ntitle: t\nbranch: sprint/001-x\nstatus: done\n---\n",
+            encoding="utf-8",
+        )
+        assert reader.sprint_is_archived("001") is True
+
+    def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
+        assert reader.sprint_is_archived("999") is False
+
+    def test_no_git_subprocess_spawned(
+        self, project: Project, reader: ClasiStateReader, monkeypatch
+    ) -> None:
+        """Purely a filesystem check — no git subprocess involved, unlike
+        branch_merged()."""
+        _make_sprint(project, "001", branch="sprint/001-feature")
+        calls = _count_real_git_calls(monkeypatch)
+        reader.sprint_is_archived("001")
+        assert len(calls) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -921,3 +967,16 @@ class TestTicketCount:
 
     def test_zero_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
         assert reader.ticket_count("999") == 0
+
+    def test_stray_plan_file_does_not_inflate_count(
+        self, project: Project, reader: ClasiStateReader
+    ) -> None:
+        """A stray <ticket>-plan.md companion must not be counted as a
+        second ticket (sprint 030 ticket 003: shared listing helper
+        excludes *-plan.md companions)."""
+        sprint_dir = _make_sprint(project)
+        _make_ticket(sprint_dir, "001")
+        (sprint_dir / "tickets" / "001-test-ticket-plan.md").write_text(
+            "---\ntitle: Plan\n---\n# Plan\n", encoding="utf-8"
+        )
+        assert reader.ticket_count("001") == 1

@@ -279,7 +279,7 @@ class TestOptInFullLifecycle:
                 main_branch="master",
                 push_tags=False,
                 delete_branch=False,
-                test_command="",
+                test_command="SKIP",
             )
         )
         assert close_result.get("status") != "error", close_result
@@ -327,7 +327,7 @@ class TestOptInFullLifecycle:
                 main_branch="master",
                 push_tags=False,
                 delete_branch=False,
-                test_command="",
+                test_command="SKIP",
             )
         )
         assert result["status"] == "error"
@@ -379,7 +379,7 @@ class TestOptOutRegression:
                 main_branch="master",
                 push_tags=False,
                 delete_branch=False,
-                test_command="",
+                test_command="SKIP",
             )
         )
         assert close_result.get("status") != "error", close_result

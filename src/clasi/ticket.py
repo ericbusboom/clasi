@@ -11,6 +11,25 @@ if TYPE_CHECKING:
     from clasi.sprint import Sprint
 
 
+def list_ticket_files(directory: Path) -> list[Path]:
+    """List real ticket markdown files directly in *directory*.
+
+    Excludes ``<ticket-stem>-plan.md`` companion files (see
+    :meth:`Ticket.move_to_done_with_plan`) so that a stray plan file left
+    in a tickets directory does not inflate ticket counts or listings —
+    see sprint 030 ticket 003. Returns an empty list if *directory* does
+    not exist. Sorted for deterministic ordering.
+
+    This is the single shared listing primitive for
+    ``Sprint.list_tickets``, ``all_tickets_done``, and ``ticket_count`` —
+    do not reintroduce independent ``glob("*.md")`` call sites for ticket
+    listings; route them through this helper instead.
+    """
+    if not directory.exists():
+        return []
+    return sorted(f for f in directory.glob("*.md") if not f.stem.endswith("-plan"))
+
+
 class Ticket:
     """A ticket file within a sprint's tickets/ directory."""
 
@@ -182,6 +201,41 @@ class Ticket:
             result["plan_old_path"] = str(plan_path)
             result["plan_new_path"] = str(new_plan_path)
 
+        return result
+
+    def mark_done(self) -> dict:
+        """Set status to 'done' and move the ticket (and plan file, if any)
+        to tickets/done/ — one call, one operation.
+
+        This is the combined done-transition primitive: both
+        ``update_ticket_status(path, "done")`` and ``move_ticket_to_done``
+        delegate to it (sprint 030 ticket 003), so frontmatter and
+        directory location can never be set independently for a "done"
+        transition — the two stores that were previously written by
+        separate, skippable calls now agree by construction.
+
+        The frontmatter write happens first (while the file is still at
+        its pre-move path), then the file — already carrying
+        ``status: done`` — is moved via ``move_to_done_with_plan()``. This
+        is the exact converse of :meth:`reopen`, which moves first and
+        resets status second.
+
+        Idempotent: calling this on a ticket already in ``tickets/done/``
+        with ``status: done`` re-writes the same status and finds nothing
+        left to move — it returns successfully rather than raising, so a
+        second call (e.g. a stale caller invoking the old
+        ``move_ticket_to_done`` entry point after this already ran) is
+        tolerated, not an error.
+
+        Returns a dict with keys: old_path, new_path, old_status,
+        new_status, and optionally plan_old_path / plan_new_path if a
+        plan file was moved.
+        """
+        old_status = self.status
+        self.set_status("done")
+        result = self.move_to_done_with_plan()
+        result["old_status"] = old_status
+        result["new_status"] = "done"
         return result
 
     def reopen(self) -> dict:

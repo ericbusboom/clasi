@@ -16,7 +16,6 @@ from clasi.state_machine.evaluator import (
     inspect_transitions,
 )
 from clasi.state_machine.models import (
-    AmbiguousStateError,
     Machine,
     NoMatchingStateError,
     State,
@@ -122,7 +121,13 @@ class TestEvaluateState:
         with pytest.raises(NoMatchingStateError):
             evaluate_state(machine, None)
 
-    def test_ambiguous_raises_ambiguous_state_error(self):
+    def test_ambiguous_match_returns_last_declared_state(self):
+        """Most-advanced-match-wins: when more than one state's invariants
+
+        hold simultaneously, evaluate_state returns the last-declared
+        match (declaration order in the machine's ``states`` dict, which
+        mirrors YAML declaration order) instead of raising.
+        """
         @predicate("always_true")
         def always_true(ctx):
             return True
@@ -134,27 +139,48 @@ class TestEvaluateState:
             }
         )
 
-        with pytest.raises(AmbiguousStateError):
-            evaluate_state(machine, None)
+        result = evaluate_state(machine, None)
+        assert result.name == "state_b"
 
-    def test_ambiguous_error_contains_both_state_names(self):
+    def test_ambiguous_match_order_is_declaration_order_not_alphabetical(self):
+        """Confirms the winner is picked by declaration order, not by name
+
+        sorting -- declaring the alphabetically-earlier state last still
+        makes it win.
+        """
         @predicate("always_true_2")
         def always_true_2(ctx):
             return True
 
         machine = _make_machine(
             {
-                "alpha": _simple_state("alpha", invariants=["always_true_2"]),
-                "beta": _simple_state("beta", invariants=["always_true_2"]),
+                "zzz_first_declared": _simple_state(
+                    "zzz_first_declared", invariants=["always_true_2"]
+                ),
+                "aaa_last_declared": _simple_state(
+                    "aaa_last_declared", invariants=["always_true_2"]
+                ),
             }
         )
 
-        with pytest.raises(AmbiguousStateError) as exc_info:
-            evaluate_state(machine, None)
+        result = evaluate_state(machine, None)
+        assert result.name == "aaa_last_declared"
 
-        msg = str(exc_info.value)
-        assert "alpha" in msg
-        assert "beta" in msg
+    def test_three_way_ambiguous_match_returns_last_declared(self):
+        @predicate("always_true_3")
+        def always_true_3(ctx):
+            return True
+
+        machine = _make_machine(
+            {
+                "first": _simple_state("first", invariants=["always_true_3"]),
+                "second": _simple_state("second", invariants=["always_true_3"]),
+                "third": _simple_state("third", invariants=["always_true_3"]),
+            }
+        )
+
+        result = evaluate_state(machine, None)
+        assert result.name == "third"
 
     def test_unknown_predicate_in_invariant_raises(self):
         machine = _make_machine(

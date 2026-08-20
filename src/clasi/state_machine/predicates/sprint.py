@@ -10,14 +10,14 @@ match against ``reader.sprint_branch(sprint_id)``.
 
 StateReader methods used:
 - ``sprint_artifact_exists(sprint_id, artifact_name)`` — resolves sprint dir by ID-prefix glob
-- ``sprint_gate(sprint_id, gate)`` — gate result dict or None (architecture_review, sprint_review)
-- ``sprint_flag(sprint_id, flag)`` — sprint flag value (pre_flight_review, post_review)
+- ``sprint_gate(sprint_id, gate)`` — gate result dict or None (architecture_review, stakeholder_approval)
 - ``ticket_count(sprint_id)`` — number of ticket files in the sprint
 - ``execution_lock()`` — active lock dict or None
 - ``git_branch()`` — current HEAD branch name
 - ``sprint_branch(sprint_id)`` — expected branch name for this sprint
 - ``all_tickets_done(sprint_id)`` — True if every ticket is done
 - ``branch_merged(sprint_id)`` — True if sprint branch is merged into default
+- ``sprint_is_archived(sprint_id)`` — True if the sprint directory lives under sprints/done/
 """
 
 from __future__ import annotations
@@ -34,21 +34,28 @@ def is_sprint_doc_present(ctx: SprintContext) -> bool:
 
 @predicate("is_architecture_review_recorded")
 def is_architecture_review_recorded(ctx: SprintContext) -> bool:
-    """Return True iff the state DB has an ``architecture_review`` gate record for this sprint."""
-    return ctx.reader.sprint_gate(ctx.sprint_id, "architecture_review") is not None
+    """Return True iff the state DB has a passed or skipped ``architecture_review`` gate record for this sprint.
+
+    Matches ``StateDB.advance_phase``'s own gate semantics
+    (``result in {"passed", "skipped"}``) — a **failed** gate record does
+    not satisfy this predicate.
+    """
+    gate = ctx.reader.sprint_gate(ctx.sprint_id, "architecture_review")
+    return gate is not None and gate.get("result") in {"passed", "skipped"}
 
 
 @predicate("is_pre_flight_satisfied")
 def is_pre_flight_satisfied(ctx: SprintContext) -> bool:
-    """Return True iff pre-flight is satisfied.
+    """Return True iff the state DB has a passed or skipped ``stakeholder_approval`` gate record for this sprint.
 
-    Satisfied when EITHER the state DB has a ``stakeholder_approval`` gate
-    record for this sprint, OR the sprint's ``pre_flight_review`` flag is
-    set to ``skip``.  Encodes the pause-or-bump semantics.
+    Matches ``StateDB.advance_phase``'s own gate semantics
+    (``result in {"passed", "skipped"}``) — a **failed** gate record does
+    not satisfy this predicate. The sprint's ``pre_flight_review``
+    frontmatter flag is not consulted: no writer ever sets it, so a
+    flag-based fallback can never fire.
     """
-    if ctx.reader.sprint_gate(ctx.sprint_id, "stakeholder_approval") is not None:
-        return True
-    return ctx.reader.sprint_flag(ctx.sprint_id, "pre_flight_review") == "skip"
+    gate = ctx.reader.sprint_gate(ctx.sprint_id, "stakeholder_approval")
+    return gate is not None and gate.get("result") in {"passed", "skipped"}
 
 
 @predicate("is_at_least_one_ticket")
@@ -85,26 +92,20 @@ def is_all_tickets_done(ctx: SprintContext) -> bool:
     return ctx.reader.all_tickets_done(ctx.sprint_id)
 
 
-@predicate("is_review_satisfied")
-def is_review_satisfied(ctx: SprintContext) -> bool:
-    """Return True iff post-execution review is satisfied.
-
-    Satisfied when EITHER the state DB has a ``sprint_review`` gate record
-    marked passed, OR the sprint's ``post_review`` flag is set to ``skip``.
-    Encodes the pause-or-bump semantics.
-    """
-    if ctx.reader.sprint_gate(ctx.sprint_id, "sprint_review") is not None:
-        return True
-    return ctx.reader.sprint_flag(ctx.sprint_id, "post_review") == "skip"
-
-
-@predicate("is_close_report_present")
-def is_close_report_present(ctx: SprintContext) -> bool:
-    """Return True iff the sprint's close-report.md exists."""
-    return ctx.reader.sprint_artifact_exists(ctx.sprint_id, "close-report.md")
-
-
 @predicate("is_branch_merged")
 def is_branch_merged(ctx: SprintContext) -> bool:
     """Return True iff the sprint branch has been merged into the default branch."""
     return ctx.reader.branch_merged(ctx.sprint_id)
+
+
+@predicate("is_sprint_archived")
+def is_sprint_archived(ctx: SprintContext) -> bool:
+    """Return True iff the sprint directory lives under the archive (``sprints/done/``).
+
+    A cheap, git-free, directory-location-based check (030/002 regression
+    fix) — see :meth:`~clasi.status.reader.ClasiStateReader.sprint_is_archived`.
+    Declared first in the ``closed`` state's invariants so it short-circuits
+    ``is_branch_merged`` (which spawns a real ``git`` subprocess) for the
+    overwhelmingly common case of an active, non-archived sprint.
+    """
+    return ctx.reader.sprint_is_archived(ctx.sprint_id)

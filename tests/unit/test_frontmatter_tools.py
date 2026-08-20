@@ -45,8 +45,11 @@ class TestReadArtifactFrontmatter:
         assert result == {}
 
     def test_error_on_missing_file(self, work_dir):
-        with pytest.raises(ValueError, match="File not found"):
-            read_artifact_frontmatter(str(work_dir / "nonexistent.md"))
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(read_artifact_frontmatter(str(work_dir / "nonexistent.md")))
+        assert result["ok"] is False
+        assert "File not found" in result["error"]["message"]
 
 
 class TestWriteArtifactFrontmatter:
@@ -89,14 +92,20 @@ class TestWriteArtifactFrontmatter:
         assert "status: done" in content
 
     def test_error_on_missing_file(self, work_dir):
-        with pytest.raises(ValueError, match="File not found"):
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(
             write_artifact_frontmatter(
                 str(work_dir / "nonexistent.md"), '{"key": "value"}'
             )
+        )
+        assert result["ok"] is False
+        assert "File not found" in result["error"]["message"]
 
     def test_error_on_invalid_json(self, work_dir):
         f = work_dir / "doc.md"
         f.write_text("---\ntitle: Hello\n---\n")
 
-        with pytest.raises(ValueError, match="Invalid JSON"):
-            write_artifact_frontmatter(str(f), "not json")
+        result = json.loads(write_artifact_frontmatter(str(f), "not json"))
+        assert result["ok"] is False
+        assert "Invalid JSON" in result["error"]["message"]

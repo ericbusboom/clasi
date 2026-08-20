@@ -172,8 +172,11 @@ class TestMoveIssueToDone:
         assert (issue_dir / "done" / "idea.md").exists()
 
     def test_error_on_nonexistent(self, issue_dir):
-        with pytest.raises(ValueError, match="Issue not found"):
-            move_issue_to_done("nonexistent.md")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(move_issue_to_done("nonexistent.md"))
+        assert result["ok"] is False
+        assert "Issue not found" in result["error"]["message"]
 
     def test_writes_traceability_frontmatter(self, issue_dir):
         """ticket_ids are written to frontmatter (no sprint_id to avoid validation)."""
@@ -214,8 +217,9 @@ class TestMoveIssueToDone:
         (issue_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
         create_sprint("Test Sprint")
 
-        with pytest.raises(ValueError, match="not in the expected sprint issues"):
-            move_issue_to_done("idea.md", sprint_id="001")
+        result = json.loads(move_issue_to_done("idea.md", sprint_id="001"))
+        assert result["ok"] is False
+        assert "not in the expected sprint issues" in result["error"]["message"]
 
     def test_sprint_id_validation_already_done_dir(self, issue_dir, tmp_path):
         """Succeeds if sprint_id given and issue is already in sprint issues/done/."""
@@ -875,11 +879,19 @@ class TestCloseSprintIssueHandling:
         ticket to reference it (so it is NOT deferred). The full path should
         collect it in unresolved_issues and continue to a success result.
 
-        We use branch_name to trigger the full path, but close returns before
-        any subprocess calls (tests step runs but git is mocked by the tmp env).
+        We use branch_name to trigger the full path; version_trigger is
+        pinned to "manual" so the version-bump step's git calls (which
+        this test's temp work_dir, not a real git repo, cannot satisfy)
+        never run -- this test is about issue handling, not versioning.
+        As of sprint 030 ticket 004, a version-bump git failure fails the
+        step loudly instead of being silently swallowed, so a temp dir
+        with no .git can no longer coast through that step unnoticed.
         """
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
+        (work_dir / ".clasi" / "settings.yaml").write_text(
+            "version_trigger: manual\n", encoding="utf-8"
+        )
 
         sprints_dir = work_dir / ".clasi" / "sprints"
         sprint_dir = next(d for d in sprints_dir.iterdir() if d.name.startswith("001-"))
@@ -1238,13 +1250,16 @@ class TestSplitIssue:
             "---\nstatus: pending\n---\n\n# Already Exists\n"
         )
 
-        with pytest.raises(ValueError, match="Target file already exists"):
-            split_issue("original.md", "existing.md", "Conflict", "Body.")
+        result = json.loads(split_issue("original.md", "existing.md", "Conflict", "Body."))
+        assert result["ok"] is False
+        assert "Target file already exists" in result["error"]["message"]
 
     def test_split_missing_original_raises(self, issue_dir):
-        """Raises ValueError when the original issue is not found."""
-        with pytest.raises(ValueError, match="Issue not found"):
-            split_issue("nonexistent.md", "new.md", "New", "Body.")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(split_issue("nonexistent.md", "new.md", "New", "Body."))
+        assert result["ok"] is False
+        assert "Issue not found" in result["error"]["message"]
 
     def test_split_returns_paths(self, issue_dir):
         """Return value contains original_path and new_path as strings."""
@@ -1576,13 +1591,17 @@ class TestAddIssueRef:
         assert fm_b["issue"] == "y.md"
 
     def test_ticket_not_found_raises(self, work_dir):
-        """Raises ValueError when ticket_path does not exist."""
-        with pytest.raises(ValueError, match="Ticket not found"):
-            add_issue_ref("/nonexistent/path/ticket.md", "idea.md")
+        """@clasi_tool (030/005) converts the domain ValueError into an
+        {"ok": false, "error": ...} envelope instead of a raw MCP error."""
+        result = json.loads(add_issue_ref("/nonexistent/path/ticket.md", "idea.md"))
+        assert result["ok"] is False
+        assert "Ticket not found" in result["error"]["message"]
 
     def test_missing_issue_raises(self, work_dir):
-        """Raises ValueError when issue_filename does not exist in project."""
+        """issue_filename that does not exist in the project returns an
+        {"ok": false, "error": ...} envelope (@clasi_tool, sprint 030/005)
+        rather than propagating whatever domain exception was raised."""
         sprint_dir, ticket_path, issues_dir = self._setup_sprint_with_ticket(work_dir)
 
-        with pytest.raises((ValueError, Exception)):
-            add_issue_ref(ticket_path, "nonexistent-issue.md")
+        result = json.loads(add_issue_ref(ticket_path, "nonexistent-issue.md"))
+        assert result["ok"] is False

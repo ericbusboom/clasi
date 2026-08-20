@@ -516,6 +516,87 @@ class StateDB:
         finally:
             conn.close()
 
+    def force_close(self, sprint_id: str) -> dict[str, Any]:
+        """Idempotently set *sprint_id*'s phase to ``"done"`` and release
+        the execution lock, in one transaction (030/004).
+
+        Unlike :meth:`advance_phase`, this does not step through the
+        phase list one gate at a time -- it jumps directly from whatever
+        phase the sprint is currently at to ``"done"``, and deletes the
+        ``execution_locks`` row only if it is held by *this* sprint. Both
+        writes (the phase UPDATE and, when applicable, the lock DELETE)
+        happen in the same implicit SQLite transaction, committed together
+        by one ``conn.commit()`` -- either both land or, if an exception
+        is raised before that commit, neither does.
+
+        Idempotent: calling this against a sprint already at phase
+        ``"done"`` with no lock held by it is a cheap no-op (no UPDATE, no
+        DELETE, no phase_transitions row) -- not an error. This is what
+        makes a retried ``close_sprint`` call safe to call this again
+        unconditionally rather than needing its own "did I already do
+        this" branch.
+
+        Never wraps its own body in ``try/except: pass`` -- a read/write
+        failure (e.g. the sprint is not registered, or a locked database)
+        propagates to the caller as an exception, exactly as every other
+        write method on this class already does. This is precisely the
+        replacement for the ``except (ValueError, Exception): pass`` this
+        ticket's own reliability review flagged: the caller (``close.py``)
+        is responsible for catching it and surfacing the failure in the
+        tool result, never swallowing it here.
+
+        Args:
+            sprint_id: The sprint ID (e.g. '030').
+
+        Returns:
+            {"sprint_id": ..., "phase": "done", "phase_changed": bool,
+             "lock_released": bool}
+
+        Raises ValueError if the sprint is not registered.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            row = conn.execute(
+                "SELECT phase FROM sprints WHERE id = ?", (sprint_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Sprint '{sprint_id}' is not registered")
+
+            current_phase = row["phase"]
+            phase_changed = False
+            if current_phase != "done":
+                now = _now()
+                conn.execute(
+                    "UPDATE sprints SET phase = ?, updated_at = ? WHERE id = ?",
+                    ("done", now, sprint_id),
+                )
+                conn.execute(
+                    "INSERT INTO phase_transitions "
+                    "(sprint_id, from_phase, to_phase, at) VALUES (?, ?, ?, ?)",
+                    (sprint_id, current_phase, "done", now),
+                )
+                phase_changed = True
+
+            lock_row = conn.execute(
+                "SELECT sprint_id FROM execution_locks WHERE id = 1"
+            ).fetchone()
+            lock_released = False
+            if lock_row is not None and lock_row["sprint_id"] == sprint_id:
+                conn.execute("DELETE FROM execution_locks WHERE id = 1")
+                lock_released = True
+
+            conn.commit()
+
+            return {
+                "sprint_id": sprint_id,
+                "phase": "done",
+                "phase_changed": phase_changed,
+                "lock_released": lock_released,
+            }
+        finally:
+            conn.close()
+
     def rename_sprint(
         self,
         old_id: str,

@@ -107,10 +107,6 @@ class TestSprintArtifactPredicatesWithRealPaths:
         from clasi.state_machine.predicates.sprint import is_sprint_doc_present
         assert is_sprint_doc_present(_sprint_ctx(reader)) is True
 
-    def test_close_report_present(self, reader: ClasiStateReader) -> None:
-        from clasi.state_machine.predicates.sprint import is_close_report_present
-        assert is_close_report_present(_sprint_ctx(reader)) is True
-
 
 class TestTicketPredicateWithRealPaths:
     def test_ticket_file_present_active(self, reader: ClasiStateReader) -> None:
