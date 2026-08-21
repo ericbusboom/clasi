@@ -1,7 +1,7 @@
 ---
 id: '006'
 title: Fix the two live traps and add a tool-signature introspection test
-status: open
+status: done
 use-cases:
 - SUC-006
 depends-on: []
@@ -42,23 +42,23 @@ current code during planning, not assumed:
 
 ## Acceptance Criteria
 
-- [ ] `_get_definition`'s `rglob` fallback excludes any match under
+- [x] `_get_definition`'s `rglob` fallback excludes any match under
       `agents/old/`, matching the exclusion `_list_agents_recursive`/
       `_find_agent_dir` already apply.
-- [ ] A lookup for a nonexistent skill or agent name raises a clear,
+- [x] A lookup for a nonexistent skill or agent name raises a clear,
       named "not found" error — a test asserts this rather than
       asserting the absence of a specific silent-resolution outcome.
-- [ ] `platforms/_rules.py`'s `source-code.md` body no longer references
+- [x] `platforms/_rules.py`'s `source-code.md` body no longer references
       "the execute-ticket skill" — it points at the programmer agent
       definition instead (via `get_agent_definition("programmer")` or
       an equivalent pointer, whichever this codebase's existing
       convention for cross-referencing an agent from a rule uses).
-- [ ] `plugin/skills/dispatch-subagent/SKILL.md` no longer mandates
+- [x] `plugin/skills/dispatch-subagent/SKILL.md` no longer mandates
       `log_subagent_dispatch` or references any other tool absent from
       the current MCP tool surface — rewritten to describe what
       dispatch logging (if any) this package actually does, or the
       logging-mandate language is dropped entirely if none exists.
-- [ ] A new test introspects the live MCP tool signatures (via
+- [x] A new test introspects the live MCP tool signatures (via
       `inspect.signature` or the MCP server's own tool registry) for at
       least the tools named in the review's contradiction table
       (`move_ticket_to_done`, `reconcile_worktrees`) and asserts no doc

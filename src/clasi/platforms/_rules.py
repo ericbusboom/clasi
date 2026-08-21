@@ -67,8 +67,8 @@ Before writing code:
    gates entirely and proceed.
 2. You must have a ticket in `in-progress` status, or the stakeholder
    said "out of process".
-3. If you have a ticket, follow the execute-ticket skill — call
-   `get_skill_definition("execute-ticket")` if unsure of the steps.
+3. If you have a ticket, follow the programmer agent definition — call
+   `get_agent_definition("programmer")` if unsure of the steps.
 4. Run tests after changes, in the foreground (never
    `run_in_background: true`). If working a ticket, scope the run to
    the modules the ticket touches — the full suite is a once-per-sprint

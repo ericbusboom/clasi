@@ -51,7 +51,11 @@ class TestContentSmoke:
         assert len(content) > 100
 
     def test_get_skill_returns_markdown(self):
-        content = get_skill_definition("execute-ticket")
+        # Not "execute-ticket" -- sprint 031 ticket 006 fixed the
+        # lookup so that retired name (archived under agents/old/) now
+        # raises instead of resolving. See
+        # tests/system/test_process_tools.py::TestOldDirectoryExcludedFromLookup.
+        content = get_skill_definition("code-review")
         assert "# " in content
         assert len(content) > 100
 
