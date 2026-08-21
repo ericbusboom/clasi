@@ -8,6 +8,17 @@ SPEC_SRC="/spec/guessing-game-spec.md"
 SPEC_DST="$PROJECT_DIR/docs/guessing-game-spec.md"
 TMUX_SESSION="claude"
 
+# --- Harness-owned top-level entries in $PROJECT_DIR ------------------------
+# These are created by the harness itself (this script and start.sh) before
+# the fresh-vs-existing check below runs, and must NOT be mistaken for
+# genuine prior project state left by 'clasi init' or the subject agent.
+# This is the ONE place this list lives — the emptiness check below reads
+# it rather than hardcoding names, so a future harness file only needs to
+# be added here to stay invisible to the guard. Deliberately an explicit
+# allowlist, not "ignore all dotfiles": genuine project state such as
+# .clasi/, .claude/, .agents/, and .git/ must still trip the guard below.
+HARNESS_OWNED_ENTRIES=(".e2e-coverage" ".e2e-runs" ".gitignore")
+
 echo "=== CLASI E2E Environment ==="
 echo ""
 
@@ -40,7 +51,13 @@ if [ "$RESUMING" -eq 1 ]; then
     echo "[1/5] Resuming existing project (E2E_RESUME=1, .clasi + .git present)..."
 else
     # Fail loudly rather than silently re-initializing over stale state.
-    if [ -n "$(find "$PROJECT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
+    # Ignore harness-owned entries (HARNESS_OWNED_ENTRIES above) — those
+    # are created by the harness itself, not evidence of a prior run.
+    FIND_IGNORE_HARNESS=()
+    for owned in "${HARNESS_OWNED_ENTRIES[@]}"; do
+        FIND_IGNORE_HARNESS+=(! -name "$owned")
+    done
+    if [ -n "$(find "$PROJECT_DIR" -mindepth 1 -maxdepth 1 "${FIND_IGNORE_HARNESS[@]}" 2>/dev/null)" ]; then
         echo "ERROR: $PROJECT_DIR is non-empty and E2E_RESUME is not set." >&2
         echo "  Refusing to run 'clasi init' over existing state." >&2
         echo "  Use ./start.sh --resume to continue a prior run, or ./start.sh" >&2
