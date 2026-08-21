@@ -1,25 +1,13 @@
 ---
-id: "002"
-title: "Freeze and archive the clasr fork to its own branch"
-status: open
-use-cases: ["SUC-007"]
+id: '002'
+title: Freeze and archive the clasr fork to its own branch
+status: done
+use-cases:
+- SUC-007
 depends-on: []
-github-issue: ""
-issue: ""
-# completes_issue: Controls whether linked issues are archived when this ticket
-# is moved to done. Default: true (archive when all referencing tickets are done).
-# Set to false (scalar) to suppress archival for ALL linked issues on this ticket.
-# Set to a mapping {filename.md: false} to suppress archival per issue filename.
-# Use false for tickets that partially address a multi-sprint umbrella issue.
+github-issue: ''
+issue: ''
 completes_issue: true
-# exception: Written by a lower agent when it cannot proceed (see architecture §exception-protocol).
-# exception:
-#   thrown_by: "programmer"          # "programmer" | "sprint-planner"
-#   thrown_at: "2026-05-07T14:23:00Z"
-#   attempted: |
-#     Description of what was attempted before giving up.
-#   conflict: "architecture-update.md §3 — reason the agent is blocked"
-#   surface: "internal"              # "user-visible" | "internal"
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -60,15 +48,27 @@ SUC-007 in `sprint.md`. Ticket 007 (e2e coverage harness) and ticket
 
 ## Acceptance Criteria
 
-- [ ] An `archive/clasr` branch exists on `origin`, created at a commit
+- [x] An `archive/clasr` branch exists on `origin`, created at a commit
       that still has the full pre-deletion content of `src/clasr/`,
       `tests/clasr/`, and `tests/asr/` — created and pushed **before**
       the deletion commit lands on the sprint branch (same sequencing
       as ticket 001; see Implementation Plan).
-- [ ] `src/clasr/` (entire directory), `tests/clasr/` (entire
+      **DEVIATION (team-lead override, supersedes this criterion's
+      "on origin" wording):** `archive/clasr` was created **locally
+      only**, at commit `180da21` (the sprint-branch HEAD immediately
+      before this ticket's deletion commit), and deliberately **not
+      pushed**. Local `master` is 145 commits ahead of `origin/master`
+      at time of writing; pushing would have published this entire
+      unpublished campaign as a side effect of an archival ticket. That
+      is the stakeholder's call to make separately, not this ticket's.
+      Content-verified with `git show archive/clasr:src/clasr/cli.py`,
+      `git show archive/clasr:tests/asr/README.md`, and
+      `git show archive/clasr:tests/clasr/conftest.py` — all three
+      returned the expected pre-deletion content.
+- [x] `src/clasr/` (entire directory), `tests/clasr/` (entire
       directory), and `tests/asr/` (entire directory) are deleted from
       master.
-- [ ] `pyproject.toml`'s `clasr` references are removed:
+- [x] `pyproject.toml`'s `clasr` references are removed:
       `[project.scripts]`'s `clasr = "clasr.cli:main"` entry,
       `[tool.setuptools.packages.find]`'s `include = ["clasi*",
       "clasr*"]` (becomes `["clasi*"]`), `[tool.setuptools.package-data]`'s
@@ -78,7 +78,10 @@ SUC-007 in `sprint.md`. Ticket 007 (e2e coverage harness) and ticket
       Verify no other `pyproject.toml` line references `clasr` before
       calling this criterion done — this planning pass's grep found
       these five, not necessarily all.
-- [ ] A `clasi/issues/` file (this project's own issue-file convention,
+      Confirmed: a fresh `grep -n "clasr" pyproject.toml` at execution
+      time found exactly these five and no others; post-edit grep
+      returns zero matches.
+- [x] A `clasi/issues/` file (this project's own issue-file convention,
       not a GitHub issue) is created recording the manifest-based
       -uninstall-porting idea: the observation that clasr's uninstall
       model (per-provider manifest tracking exactly what it installed)
@@ -88,7 +91,16 @@ SUC-007 in `sprint.md`. Ticket 007 (e2e coverage harness) and ticket
       branch as the reference implementation. Use the `issue` skill's
       normal format; tag it so a future roadmap pass can find it (e.g.
       `tags: [clasr, uninstall, follow-up]`).
-- [ ] Full suite passes with the deletion in place.
+      Filed at `clasi/issues/port-clasr-manifest-uninstall-to-clasi-platforms.md`,
+      citing F14 by exact location
+      (`docs/reviews/2026-08-reliability/04-cli-install-platforms.md:31`)
+      and pointing at `archive/clasr`'s `src/clasr/manifest.py` /
+      `integration.py` as the reference implementation.
+- [x] Full suite passes with the deletion in place.
+      `uv run pytest`: **2828 passed**, 12 warnings, coverage 90.00%
+      (required 84.0%), exit code 0. Coverage report contains no
+      `src/clasr` rows, confirming the `pyproject.toml` coverage-source
+      edit took effect.
 
 ## Implementation Plan
 

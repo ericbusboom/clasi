@@ -33,7 +33,6 @@ dependencies = [
 
 [project.scripts]
 clasi = "clasi.cli:cli"
-clasr = "clasr.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -44,12 +43,12 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["tests/e2e/e2e-project"]
-addopts = "--cov=src/clasi --cov=src/clasr --cov-report=term-missing --cov-report=lcov:lcov.info -m 'not slow'"
+addopts = "--cov=src/clasi --cov-report=term-missing --cov-report=lcov:lcov.info -m 'not slow'"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.coverage.run]
 branch = true
-source = ["src/clasi", "src/clasr"]
+source = ["src/clasi"]
 omit = [
     "*/clasi/plugin/hooks/role_guard.py",
     "*/clasi/cli.py",
@@ -76,9 +75,8 @@ clasi = [
     "design/templates/*.md",
     "se-overview-template.md",
 ]
-clasr = ["*.md", "platforms/*.md"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["clasi*", "clasr*"]
+include = ["clasi*"]
 
