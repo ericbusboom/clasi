@@ -1,7 +1,7 @@
 ---
 id: '032'
 title: Delete dead weight and a fast test loop
-status: executing
+status: done
 branch: sprint/032-delete-dead-weight-and-a-fast-test-loop
 worktree: false
 use-cases: []
