@@ -1,10 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - process
 - agents
 - enforcement
+sprint: '031'
+tickets:
+- 031-009
 ---
 
 # Agents must report a block, not route around it

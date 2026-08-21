@@ -1,10 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
 - phase-3
 - speed
+sprint: '031'
+tickets:
+- 031-008
 ---
 
 # One full-suite run per sprint, owned by close_sprint

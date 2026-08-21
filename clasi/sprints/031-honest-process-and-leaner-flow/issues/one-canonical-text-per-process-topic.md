@@ -1,10 +1,14 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
 - phase-3
 - process-docs
+sprint: '031'
+tickets:
+- 031-006
+- 031-007
 ---
 
 # One canonical text per process topic; stop routing agents into retired machinery

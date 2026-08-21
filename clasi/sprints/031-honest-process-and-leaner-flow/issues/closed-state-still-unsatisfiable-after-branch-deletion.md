@@ -1,10 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - state-machine
 - follow-up
+sprint: '031'
+tickets:
+- 031-001
 ---
 
 # The `closed` sprint state is still unsatisfiable: close_sprint deletes the branch `is_branch_merged` needs

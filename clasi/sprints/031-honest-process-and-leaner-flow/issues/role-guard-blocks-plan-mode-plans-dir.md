@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '031'
+tickets:
+- 031-005
 ---
 
 # role-guard blocks tier-0 Writes to ~/.claude/plans/, breaking plan mode and the plan-to-issue pipeline

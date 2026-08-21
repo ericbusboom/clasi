@@ -4,6 +4,7 @@ type: bug
 tags:
 - testing
 - state-machine
+sprint: '032'
 ---
 
 # Test-order pollution: a test clears the predicate registry without repopulating it

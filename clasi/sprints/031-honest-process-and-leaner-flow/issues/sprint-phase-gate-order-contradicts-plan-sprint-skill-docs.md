@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '031'
+tickets:
+- 031-002
 ---
 
 # Sprint phase machine gates ticketing on stakeholder approval, but plan-sprint docs say tickets are created before review

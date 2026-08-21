@@ -1,11 +1,14 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - enforcement
 - guards
 - agents
 - sprint-planner
+sprint: '031'
+tickets:
+- 031-005
 ---
 
 # Sprint-planner tier-1 may never be set: verify CLASI_AGENT_TIER wiring end-to-end

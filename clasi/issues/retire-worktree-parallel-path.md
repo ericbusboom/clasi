@@ -5,6 +5,7 @@ tags:
 - reliability-campaign
 - phase-4
 - deletion
+sprint: '032'
 ---
 
 # Retire the worktree parallel path: delete about 1,700 lines still referenced by live instructions

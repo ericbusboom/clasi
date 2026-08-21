@@ -6,6 +6,7 @@ tags:
 - phase-4
 - install
 - data-loss
+sprint: '032'
 ---
 
 # Installers overwrite instead of merging — four destructive behaviors, one root cause

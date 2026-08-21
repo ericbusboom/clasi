@@ -1,5 +1,9 @@
 ---
-status: pending
+status: in-progress
+sprint: '031'
+tickets:
+- 031-003
+- 031-004
 ---
 
 # Relax tier-0/tier-1 write policy; make write scope discoverable

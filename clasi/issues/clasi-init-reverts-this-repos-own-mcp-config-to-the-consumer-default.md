@@ -6,6 +6,7 @@ tags:
 - mcp
 - dogfooding
 - staleness
+sprint: '032'
 ---
 
 # clasi init reverts this repo's own .mcp.json to the consumer default
