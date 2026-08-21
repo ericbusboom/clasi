@@ -32,12 +32,29 @@ planning. All planning happens on main.
 
 ## Critical Rules
 
-**DO NOT create tickets** during roadmap mode or before the sprint has
-advanced to the `ticketing` phase. The `create_ticket` MCP tool will
-reject attempts before that phase.
+**DO NOT create tickets** during roadmap mode or before the sprint's
+`architecture_review` gate has been recorded. `create_ticket` checks that
+gate's recorded result directly on the sprint's first call (not a phase
+index) and rejects if it is not `passed`/`skipped`; on success it
+auto-advances the phase to `ticketing` itself — there is no separate
+`stakeholder-review` phase to wait for and no `advance_sprint_phase` call
+to make (sprint 031 ticket 002). Tickets are therefore created *before*
+the stakeholder ever reviews the plan (Phase 2 step 3 below), not after —
+the stakeholder reviews the completed plan **with its tickets already in
+place** (Phase 2 step 3).
 
 **DO NOT create a git branch** during planning. Branches are created
 at execution time by `acquire_execution_lock`.
+
+**Team-lead (tier 0) may call `create_sprint` and write sprint files
+under `clasi/sprints/` directly** — mcp-guard's tier-0 block on
+`create_sprint` was lifted (sprint 031 ticket 003); only `create_ticket`
+remains tier-0-blocked, since ticket creation stays sprint-planner-owned.
+This flow (Phase 1 step 3 below) is written generically because either
+actor may call `create_sprint` — team-lead directly, or a dispatched
+sprint-planner as part of authoring the roadmap content in the same
+call — see `.claude/agents/team-lead/agent.md` for which one a given
+scenario uses.
 
 ## Issue Linkage
 
@@ -111,9 +128,16 @@ agent via the Agent tool to fill in full planning artifacts.
        - **`True`**: after the sprint-planner makes its sizing decision
          (trivial / compact / substantial) and identifies which canonical
          `docs/design/` doc(s) the sprint's changes affect (Mode 2a, Step
-         1 of `architecture-authoring`), it calls
-         `seed_sprint_design_overlay(sprint_id, doc_names)` with those
-         filenames. **This is the sequencing resolution for where the
+         1 of `architecture-authoring`), it makes **one single call** to
+         `seed_sprint_design_overlay(sprint_id, doc_names)`, passing
+         *every* affected doc's name in that one `doc_names` list — not
+         one call per doc, and not just the first doc identified. A
+         sprint that touches the system doc plus two subsystem docs
+         seeds all three in that one call (see `architecture-authoring`
+         Mode 2a Step 2 for the accepted `doc_names` forms and the
+         per-doc overlay-slug mechanics that let multiple co-located
+         `DESIGN.md` files be seeded together without colliding).
+         **This is the sequencing resolution for where the
          seed-and-commit step fires**: it happens here, during Phase 2
          detail planning, once the affected docs are known — not at
          `create_sprint` (Phase 1), which runs before any sprint-planner
@@ -141,10 +165,12 @@ agent via the Agent tool to fill in full planning artifacts.
    ends. Record stakeholder approval gate (`record_gate_result`).
 
 4. **Acquire execution lock**: Call `acquire_execution_lock` to claim
-   the lock and create the sprint branch. Advance to `executing`. Because
-   the edited-copy commit (step 3) already landed on `main`, the branch
-   created here already contains it — no cross-branch reconciliation is
-   needed.
+   the lock and create the sprint branch. The call checks the
+   `stakeholder_approval` gate recorded in step 3 and grants no lock if
+   it is missing, then auto-advances the phase to `executing` itself —
+   no separate `advance_sprint_phase` call. Because the edited-copy
+   commit (step 3) already landed on `main`, the branch created here
+   already contains it — no cross-branch reconciliation is needed.
 
 5. **Set sprint status**: Update sprint doc status to `active`.
 

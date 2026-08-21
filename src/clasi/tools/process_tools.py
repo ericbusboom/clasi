@@ -105,6 +105,13 @@ def _list_all_skills(skills_dir: Path, agents_dir: Path) -> list[dict[str, str]]
                 })
     if agents_dir.exists():
         for md_path in sorted(agents_dir.rglob("*.md")):
+            # Skip retired content archived under agents/old/ (sprint 031
+            # ticket 007 -- ticket 006 fixed the *lookup* fallback
+            # (_rglob_active) but not this *listing* path, so
+            # list_skills() kept advertising e.g. "execute-ticket" as
+            # available even though fetching it already correctly failed).
+            if "old" in md_path.parts:
+                continue
             if md_path.name == "agent.md":
                 continue
             if md_path.name.endswith("-legacy.md"):

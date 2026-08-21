@@ -94,6 +94,22 @@ class TestOldDirectoryExcludedFromLookup:
         assert result["ok"] is False
         assert "not found" in result["error"]["message"]
 
+    def test_list_all_skills_excludes_old(self):
+        """Sprint 031 ticket 007: ticket 006 fixed lookup
+        (_get_definition/get_skill_definition's rglob fallbacks) but not
+        the *listing* path -- _list_all_skills walked agents_dir without
+        excluding old/, so list_skills() kept advertising
+        'execute-ticket' (archived under agents/old/sprint-executor/) as
+        available even though fetching it already correctly raised."""
+        from clasi.tools.process_tools import _list_all_skills
+
+        results = _list_all_skills(
+            content_path("plugin", "skills"), content_path("plugin", "agents")
+        )
+        names = [r["name"] for r in results]
+        assert "execute-ticket" not in names
+        assert any(names)  # sanity: the listing isn't empty
+
 
 class TestMCPTools:
     def test_get_se_overview(self):
@@ -110,7 +126,12 @@ class TestMCPTools:
     def test_list_skills(self):
         result = json.loads(list_skills())
         assert isinstance(result, list)
-        assert any(s["name"] == "execute-ticket" for s in result)
+        assert any(s["name"] == "code-review" for s in result)
+        # Sprint 031 ticket 007: "execute-ticket" is retired, archived
+        # under agents/old/sprint-executor/ -- it must not be listed as
+        # available (ticket 006 fixed the lookup/fetch path; this is the
+        # matching fix for the listing path, TestOldDirectoryExcludedFromLookup).
+        assert not any(s["name"] == "execute-ticket" for s in result)
 
     def test_list_instructions(self):
         result = json.loads(list_instructions())

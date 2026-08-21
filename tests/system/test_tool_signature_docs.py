@@ -21,17 +21,19 @@ proves the scanner isn't vacuous by feeding it a reproduction of the
 exact wrong text the review found. ``TestDocsThisTicketTouchesAgree``
 then runs the same scanner over the docs this ticket actually modifies.
 
-Known, deliberately out-of-scope drift: ``plugin/agents/team-lead/agent.md``
-still says ``move_ticket_to_done(sprint_id, ticket_id)`` (confirmed by
-running this scanner over it by hand during ticket 006 -- see the
-ticket's implementation notes). Fixing that file is sprint 031 ticket
-007's scope (the prose-consolidation half), so it is deliberately not
-scanned by this suite -- scanning it here would make ticket 006's own
-tests fail for a bug ticket 006 was told not to fix.
+Sprint 031 ticket 007 fixed the drift this module's docstring used to
+document as deliberately out of scope: both ``.claude/agents/team-lead/
+agent.md`` and ``plugin/agents/team-lead/agent.md`` said
+``move_ticket_to_done(sprint_id, ticket_id)`` (a stale two-argument
+signature); ticket 007 corrected both (they are now reconciled to be
+identical) to ``move_ticket_to_done(path)``, and
+``plugin/instructions/software-engineering.md`` likewise. This suite now
+scans all three so the fix cannot silently regress.
 """
 
 import inspect
 import re
+from pathlib import Path
 
 import clasi.tools.artifact_tools  # noqa: F401  (registers MCP tools)
 import clasi.tools.design_tools  # noqa: F401  (registers MCP tools)
@@ -153,3 +155,36 @@ class TestDocsThisTicketTouchesAgree:
         skill_path = content_path("plugin", "skills", "dispatch-subagent", "SKILL.md")
         text = skill_path.read_text(encoding="utf-8")
         self._assert_no_disagreement(text, "dispatch-subagent/SKILL.md")
+
+    def test_plugin_team_lead_agent_md(self):
+        """plugin/agents/team-lead/agent.md -- sprint 031 ticket 007 fixed
+        its move_ticket_to_done(sprint_id, ticket_id) -> (path) signature
+        as part of reconciling it with the installed copy."""
+        path = content_path("plugin", "agents", "team-lead", "agent.md")
+        text = path.read_text(encoding="utf-8")
+        self._assert_no_disagreement(text, "plugin/agents/team-lead/agent.md")
+
+    def test_installed_team_lead_agent_md(self):
+        """.claude/agents/team-lead/agent.md -- the installed copy this
+        repo actually runs under; ticket 007 fixed the same signature
+        here too and made this file byte-identical to the plugin copy.
+
+        Resolved from this test file's own location (tests/system/ ->
+        repo root), not via get_project(), so the check does not depend
+        on which project the MCP server singleton happens to be bound to
+        when the suite runs.
+        """
+        repo_root = Path(__file__).resolve().parents[2]
+        path = repo_root / ".claude" / "agents" / "team-lead" / "agent.md"
+        assert path.is_file(), f"expected installed team-lead agent.md at {path}"
+        text = path.read_text(encoding="utf-8")
+        self._assert_no_disagreement(text, ".claude/agents/team-lead/agent.md")
+
+    def test_software_engineering_instruction(self):
+        """plugin/instructions/software-engineering.md -- rewritten by
+        this ticket to the real 3-agent process; it now states
+        move_ticket_to_done(path) throughout instead of the old
+        (sprint_id, ticket_id) form."""
+        path = content_path("plugin", "instructions", "software-engineering.md")
+        text = path.read_text(encoding="utf-8")
+        self._assert_no_disagreement(text, "instructions/software-engineering.md")

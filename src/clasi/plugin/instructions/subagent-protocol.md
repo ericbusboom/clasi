@@ -45,14 +45,15 @@ When dispatching, always specify the `scope_directory`:
 
 ## Logging
 
-Every dispatch is logged using `dispatch_log.log_dispatch()`:
-
-1. **Before dispatch**: write the full prompt to a log file
-2. **After dispatch**: update the log with the result
-
-Log files contain YAML frontmatter (structured metadata) and the
-complete prompt text as the body. See `dispatch_log.py` for the
-logging utility.
+**No dispatch logging is currently mandated or MCP-tool-backed.** Earlier
+versions of this instruction required calling `dispatch_log.log_dispatch()`
+before every dispatch and updating the log afterward — but that function
+is a plain Python helper in `src/clasi/dispatch_log.py`, not a registered
+MCP tool, so no agent following this protocol can actually invoke it (see
+the `dispatch-subagent` skill's own Notes section for the same finding,
+confirmed by `tests/unit/test_dispatch_log.py`, which asserts the absence
+of any MCP-tool wrapper). Do not follow stale instructions elsewhere that
+imply this call is available or required.
 
 ## Examples
 

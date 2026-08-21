@@ -1,6 +1,6 @@
 ---
 name: software-engineering
-description: Instructions for the software engineering process using brief, use cases, architecture, tickets, and ticket plans
+description: Instructions for the software engineering process using overview, architecture, sprints, and tickets (each ticket carries its own Implementation Plan)
 ---
 
 # Software Engineering Process
@@ -28,51 +28,60 @@ In short: issues propose; tickets implement.
 
 ## Agents
 
-Seven specialized agents drive this process, orchestrated by the
-project-manager:
+Three agents drive this process:
 
-- **project-manager** — Top-level orchestrator. Delegates to the other
-  agents, tracks project state, and coordinates sprints and ticket execution.
-  Does not implement code or write documents itself.
-- **product-manager** — Guides project initiation interviews. Takes a
-  stakeholder narration and produces the project overview document.
-- **requirements-analyst** — Elicits detailed requirements from stakeholder
-  narratives. Produces the brief and use cases for complex projects.
-- **architect** — Maintains the system architecture. Writes the sprint's
-  Architecture section (in `sprint.md`) each sprint, sized to the change.
-  Two modes: initial architecture and sprint update. See
-  `instructions/architectural-quality.md` for quality criteria. (In the
-  current three-agent model this responsibility is folded into the
-  **sprint-planner** agent; see the `architecture-authoring` skill.)
-- **technical-lead** — Breaks the sprint architecture into sequenced, numbered
-  tickets. Creates ticket plans before implementation begins.
-- **architecture-reviewer** — Reviews sprint plans and architecture updates
-  for consistency, quality, and risk. Evaluates against the architectural
-  quality guide. Produces verdicts with Design Quality Assessment.
-- **code-reviewer** — Reviews code changes during ticket execution for
-  quality, standards compliance, and security. Produces pass/fail verdicts.
+- **team-lead** — Top-level orchestrator, the agent the stakeholder talks
+  to directly. Manages issues, dispatches planning and implementation,
+  validates sprints, closes sprints. Never writes planning content or
+  code itself. See `.claude/agents/team-lead/agent.md` for the full,
+  authoritative process/routing detail — this file (and the
+  plugin-source copy at `plugin/agents/team-lead/agent.md`, kept
+  identical to it) is the canonical home for the team-lead's
+  step-by-step; it is not repeated here.
+- **sprint-planner** — Plans a sprint end-to-end in one dispatch: writes
+  the sprint's Architecture and Use Cases sections (sized to the
+  change — trivial/compact/substantial), records the
+  `architecture_review` gate, and creates the sprint's tickets inline —
+  all in a single dispatch, no separate ticket-materialization step.
+  Folds in what earlier process generations split across separate
+  architect, technical-lead, and architecture-reviewer agents. See the
+  `plan-sprint` skill and `architecture-authoring`/`create-tickets`.
+- **programmer** — Implements one ticket at a time: writes source code,
+  tests, and documentation updates per the ticket's own Implementation
+  Plan (embedded in the ticket file — there is no separate `-plan.md`
+  file), runs the ticket's scoped tests in the foreground, and updates
+  ticket frontmatter. Language-agnostic task worker. Folds in what
+  earlier process generations split across python-expert/
+  documentation-expert and a separate per-ticket code-reviewer agent —
+  there is no mandatory per-ticket code-review gate in the current
+  process (see `code-review` in Skills below for the on-demand skill).
 
-Supporting agents used during implementation:
-- **python-expert** — Implements Python code during ticket execution.
-- **documentation-expert** — Updates documentation during ticket execution.
+Team-lead dispatches sprint-planner and programmer via the Agent tool.
+Neither of the other two agents dispatches sub-agents itself.
 
 ## Skills
 
 Reusable workflows that correspond to each stage:
 
-- **project-initiation** — New project: spec → overview, specification, use cases (via project-manager)
-- **create-tickets** — Stage 2: architecture → numbered tickets
-- **execute-ticket** — Stage 3: ticket → plan → implement → test → done
-- **project-status** — Anytime: scan artifacts and report progress
-- **plan-sprint** — Plan and set up a new sprint
+- **project-initiation** — New project: spec → overview, specification, use cases
+- **plan-sprint** — Roadmap (batch, lightweight) and Detail (full
+  artifacts — architecture, review, tickets, all produced by one
+  sprint-planner dispatch) sprint planning
+- **execute-sprint** — Dispatches programmer agents one ticket at a time,
+  in dependency order, on the sprint branch
 - **close-sprint** — Validate and close a completed sprint
+- **project-status** — Anytime: scan artifacts and report progress
 
-Supporting skills used during ticket execution:
+Supporting skills used during ticket execution, sprint planning, or on demand:
 
-- **python-code-review** — Code review against coding standards and security
-- **generate-documentation** — Create or update project documentation
+- **create-tickets** — Ticket formatting, sequencing, and
+  dependency-ordering conventions, used by sprint-planner inline during
+  Detail Mode (not a separate dispatch or stage)
+- **code-review** — Two-phase code review (correctness, then quality) —
+  invoked on demand, not a mandatory per-ticket gate in the standard flow
 - **tdd-cycle** — Optional red-green-refactor TDD workflow for implementation
 - **systematic-debugging** — Structured four-phase debugging protocol with attempt cap
+- **generate-documentation** — Create or update project documentation
 
 ## Artifacts
 
@@ -233,8 +242,12 @@ completes_issue: true
 ---
 ```
 
-Followed by: description, acceptance criteria (checkboxes), and
-implementation notes.
+Followed by: description, acceptance criteria (checkboxes), an
+**Implementation Plan** (approach, files to create or modify, testing
+plan, documentation updates), Process Notes, and a Testing section — all
+embedded directly in the ticket file. There is no separate `-plan.md`
+file: sprint-planner writes the plan in the same `create_ticket` call
+that writes the description and acceptance criteria.
 
 **Ticket frontmatter field reference:**
 
@@ -249,25 +262,7 @@ implementation notes.
 | `issue` | string | Filename of the issue in `clasi/issues/` that this ticket addresses, if any. |
 | `completes_issue` | bool or map | Controls whether linked issues are archived when this ticket is moved to done. **Default: `true`** — the issue is archived once all tickets that reference it are done. Set to `false` (scalar) to suppress archival for **all** issues linked to this ticket. Set to a mapping `{filename.md: false}` to suppress archival for specific issues by filename. Use `false` when this ticket only partially addresses a long-lived multi-sprint umbrella issue that should survive the sprint close. |
 
-### 6. Ticket Plans (`tickets/NNN-slug-plan.md`)
-
-Before starting work on a ticket, create a plan file with the same number
-and slug, ending in `-plan`. For example, ticket `003-add-auth.md` gets a
-plan file `003-add-auth-plan.md`. The plan lives in the same `tickets/`
-directory as the ticket.
-
-Every ticket plan must include:
-1. **Approach** — How the work will be done, key decisions.
-2. **Files to create or modify** — What will be touched.
-3. **Testing plan** — What tests will be written, what type (unit, system,
-   dev), what verification strategy.
-4. **Documentation updates** — What docs need updating when the ticket is
-   complete.
-
-A ticket plan without a testing section and a documentation section is
-incomplete.
-
-### 7. Issues Directory (`clasi/issues/`)
+### 6. Issues Directory (`clasi/issues/`)
 
 A lightweight capture area for proposed changes — ideas, bug reports,
 enhancements, and tasks. Stakeholders and developers add issues here at any
@@ -289,7 +284,7 @@ relevant issues into tickets; issues that are not yet scheduled remain open.
 3. **Consume**: When an issue is incorporated into a sprint, it is closed
    via the MCP tool (frontmatter `status: done`).
 
-### 8. Knowledge Directory (`docs/knowledge/`)
+### 7. Knowledge Directory (`docs/knowledge/`)
 
 Captures hard-won technical understanding from difficult debugging sessions,
 non-obvious fixes, and solutions that required significant trial and error.
@@ -306,11 +301,11 @@ YAML frontmatter with date, tags, and related tickets. Use the
 
 ## Workflow
 
-### Project Setup (project-manager, initiation mode)
+### Project Setup (team-lead, via the project-initiation skill)
 
 1. The stakeholder provides a written specification file.
-2. Dispatch to **project-manager** (initiation mode) with the spec path.
-3. Project-manager processes the spec into structured documents:
+2. Team-lead invokes the `project-initiation` skill with the spec path.
+3. The skill processes the spec into structured documents:
    `overview.md`, `specification.md`, and `usecases.md`.
 4. **Review gate**: Present the overview to the stakeholder. Wait for
    approval before proceeding. If the stakeholder requests changes, revise
@@ -326,25 +321,41 @@ ticket set.
 directory contains `sprint.md` (with its Architecture and Use Cases
 sections) and a `tickets/` subdirectory (see Artifacts §4 above).
 
-**Sprint lifecycle** (skills: **plan-sprint**, **close-sprint**):
-1. Stakeholder describes the next batch of work.
-2. Create sprint directory with `sprint.md` (goals, scope, use cases,
-   architecture, right-sized to the change) and a `tickets/` subdirectory.
-3. Create sprint branch (`sprint/NNN-slug`).
-4. **Architecture review**: Delegate to the **architecture-reviewer** to
-   validate the plan against the existing codebase and architecture.
-5. **Review gate**: Present the sprint plan and architecture review to the
-   stakeholder. Wait for approval.
-6. Create tickets for the sprint in `tickets/` (Stage 2 below).
-7. Execute tickets on the sprint branch (Stage 3 below).
-8. When all tickets are done, close the sprint (**close-sprint** skill).
-   This is an atomic operation — all steps must be completed together:
-   a. Merge the sprint branch to main.
-   b. Update sprint status to `done` in `sprint.md` frontmatter.
-   c. Move the sprint directory to `clasi/sprints/done/`.
-   d. Delete the sprint branch.
-   e. Commit the closure.
-   **Never merge the branch without also archiving the sprint directory.**
+**Sprint lifecycle** (skill: **plan-sprint**; agent: **sprint-planner**;
+execution: **execute-sprint**; closing: **close-sprint**): a sprint moves
+through phases `roadmap → planning-docs → architecture-review →
+ticketing → executing → closing → done` (see Sprint State Database below
+for the full phase/gate model). At a glance:
+
+1. Stakeholder describes the next batch of work; team-lead captures any
+   raw ideas as issues.
+2. Team-lead calls `create_sprint` (directly, or via a sprint-planner
+   Roadmap Mode dispatch) to create the sprint directory and a
+   lightweight `sprint.md`.
+3. Team-lead dispatches sprint-planner (Detail Mode) once: it writes the
+   sprint's Architecture and Use Cases sections (or a `design/` overlay,
+   if the project has opted in), records the `architecture_review` gate,
+   and creates the sprint's tickets — all inline, in this one dispatch.
+4. **Stakeholder review**: team-lead presents the completed plan *with
+   its tickets already created* and records the `stakeholder_approval`
+   gate.
+5. Team-lead calls `acquire_execution_lock`, which grants the lock only
+   if `stakeholder_approval` has passed and creates the sprint branch
+   (`sprint/NNN-slug`).
+6. Team-lead invokes **execute-sprint**, which dispatches programmer
+   agents one ticket at a time, in dependency order, on the sprint
+   branch.
+7. When all tickets are done, team-lead invokes **close-sprint**, which
+   atomically merges the branch to main, archives the sprint directory
+   to `clasi/sprints/done/`, deletes the branch, and commits the
+   closure. **Never merge the branch without also archiving the sprint
+   directory.**
+
+See `.claude/agents/team-lead/agent.md` for the full, authoritative
+step-by-step (including the multi-sprint roadmap-arc variant) and
+`schemas/se-process/instructions/sprint-plan.md` for the sprint-planner's
+own Roadmap/Detail process — this summary is not repeated in either
+direction.
 
 Active sprints live in `clasi/sprints/`. Completed sprints live in
 `clasi/sprints/done/`.
@@ -358,103 +369,118 @@ database directly.
 **Seven-phase lifecycle model:**
 
 ```
-planning-docs → architecture-review → stakeholder-review → ticketing → executing → closing → done
+roadmap → planning-docs → architecture-review → ticketing → executing → closing → done
 ```
 
-Phase transitions are enforced: `advance_sprint_phase` validates that exit
-conditions for the current phase are met before allowing the transition.
+Phase transitions are event-derived, not agent-driven (sprint 031 ticket
+002): a sprint's *first* `create_ticket` call checks the
+`architecture_review` gate directly and auto-advances the phase to
+`ticketing`; a successful `acquire_execution_lock` call checks the
+`stakeholder_approval` gate and auto-advances the phase to `executing`.
+Neither requires a separate `advance_sprint_phase` call — no doc in the
+standard flow instructs an agent to call it. `advance_sprint_phase` (the
+MCP tool) still exists and remains usable for manual recovery from a
+stranded phase value, but is not part of the standard flow.
 
-**Review gates** (required to advance past certain phases):
+**Review gates** (checked by the tool call that depends on them, not by
+a phase-index comparison):
 
-| Gate | Required to advance from | Recorded by |
-|------|--------------------------|-------------|
-| `architecture_review` | `architecture-review` → `stakeholder-review` | `record_gate_result` |
-| `stakeholder_approval` | `stakeholder-review` → `ticketing` | `record_gate_result` |
-
-Each gate must be recorded as `passed` before the phase can advance.
+| Gate | Checked by | Recorded by |
+|------|------------|-------------|
+| `architecture_review` | `create_ticket` — sprint's first call; rejects (no ticket created) and the phase stays at `architecture-review` if not `passed`/`skipped` | `record_gate_result` (sprint-planner) |
+| `stakeholder_approval` | `acquire_execution_lock` — rejects (no lock granted) if not `passed`/`skipped` | `record_gate_result` (team-lead, only after genuine stakeholder approval) |
 
 **Execution lock:**
 
-Only one sprint can be in the `executing` phase at a time. Before advancing
-from `ticketing` to `executing`, the sprint must acquire the execution lock
-via `acquire_execution_lock`. The lock is released when the sprint is closed
+Only one sprint can be in the `executing` phase at a time. The
+`stakeholder_approval` gate is checked *before* the lock is granted;
+`acquire_execution_lock` then auto-advances the phase to `executing` and
+creates the sprint branch. The lock is released when the sprint is closed
 (`close_sprint` releases it automatically).
 
 **MCP tools for state management:**
 
 - `get_sprint_phase(sprint_id)` — Query current phase, gates, and lock status
-- `advance_sprint_phase(sprint_id)` — Move to the next phase (validates conditions)
 - `record_gate_result(sprint_id, gate, result, notes?)` — Record a review gate outcome
-- `acquire_execution_lock(sprint_id)` — Claim the execution lock
+- `acquire_execution_lock(sprint_id)` — Claim the execution lock; auto-advances the phase to `executing`
 - `release_execution_lock(sprint_id)` — Release the execution lock
+- `advance_sprint_phase(sprint_id)` — Manual single-hop recovery primitive; not used in the standard flow
 
 **Ticket creation gate enforcement:**
 
-**IMPORTANT: DO NOT create tickets until the sprint reaches the `ticketing`
-phase.** The `create_ticket` tool checks the state database and blocks ticket
-creation if the sprint is before the `ticketing` phase. This prevents tickets
-from being created before architecture and stakeholder reviews are complete.
-Always follow the phase order: populate planning docs first, pass architecture
-review, pass stakeholder review, then and only then create tickets.
+`create_ticket` checks the `architecture_review` gate's recorded result
+directly on a sprint's first call, and rejects if it is not
+`passed`/`skipped`. Tickets are therefore created *before* the
+stakeholder review, not after it: the sprint-planner authors the
+architecture, records `architecture_review`, and creates tickets all in
+one Detail Mode dispatch; the stakeholder then reviews the completed
+plan *with its tickets already in place*.
 
-### Stage 2: Ticketing (technical-lead)
+### Ticketing (sprint-planner, inline within Detail Mode)
 
-Skill: **create-tickets**
+There is no separate ticketing stage or dispatch — sprint-planner creates
+tickets as part of the same Detail Mode dispatch that writes the
+Architecture section (see Sprint lifecycle above). For ticket formatting,
+sequencing, and dependency-ordering conventions, see the `create-tickets`
+skill:
 
 1. Break the architecture's Sprint Changes into numbered tickets in dependency order.
 2. Ensure every use case is covered by at least one ticket.
 3. Ensure every ticket traces to at least one use case.
-4. **Review gate**: Present the ticket list to the stakeholder. Walk
-   through the sequencing and coverage. Wait for approval before starting
-   implementation. If the stakeholder requests changes, revise and re-present.
 
-### Stage 3: Implementation (project-manager coordinates)
+The stakeholder's review of the ticket list happens together with the
+architecture review — the `stakeholder_approval` gate in Sprint lifecycle
+step 4 above — not as a separate ticket-only review gate.
 
-Skill: **execute-ticket** (repeated for each ticket)
+### Implementation (programmer, one ticket at a time)
 
-1. Pick the next `open` ticket whose dependencies are all `done`.
-2. Create the ticket plan (`NNN-slug-plan.md`).
-3. Set the ticket status to `in-progress` in its YAML frontmatter.
-4. Implement the ticket following its plan (python-expert or appropriate
-   dev agent).
-5. Write tests as specified in the plan.
-6. Delegate code review to the **code-reviewer** agent. The reviewer checks
-   coding standards, security, test coverage, and acceptance criteria. If
-   the review fails, fix the findings and re-review.
-7. Update documentation as specified in the plan (documentation-expert).
-8. Verify all acceptance criteria are met and check them off (`[x]`).
-9. Complete the ticket (see **Completing a Ticket** below).
+Agent: **programmer**, dispatched once per ticket by team-lead via the
+`execute-sprint` skill.
+
+1. Team-lead dispatches the next `open` ticket whose dependencies are
+   all `done`.
+2. Programmer reads the ticket (description, acceptance criteria, and
+   its Implementation Plan — already part of the ticket file; there is
+   no separate `-plan.md` file) and sets its status to `in-progress`.
+3. Programmer implements the ticket, writes tests, and updates docs per
+   the ticket's own Implementation Plan.
+4. Programmer runs the ticket's scoped tests in the foreground (never
+   backgrounded) — not the full suite; the full suite is a
+   once-per-sprint gate owned by `execute-sprint`/`close-sprint`, run
+   once, not per ticket.
+5. Programmer checks off all acceptance criteria, sets `status: done`,
+   and commits, referencing the ticket ID.
+6. Team-lead — not the programmer — calls `move_ticket_to_done(path)`.
+
+There is no mandatory per-ticket code-review agent in the standard flow.
+`code-review` is an on-demand skill, invoked when team-lead or the
+stakeholder wants a second pass, not a gate between every ticket and
+"done."
+
+See `.claude/agents/programmer/agent.md` for the full, authoritative
+workflow (error-recovery protocol, exception protocol, test-execution
+rules) — not repeated here.
 
 #### Definition of Done
 
 A ticket is not done until ALL of the following are true:
 
 - [ ] All acceptance criteria in the ticket are met and checked off
-- [ ] Tests are written and passing (see `instructions/testing.md`)
-- [ ] Code review passed by **code-reviewer** (coding standards, security, test coverage)
-- [ ] Documentation updated as specified in the ticket plan
+- [ ] Tests are written and passing, run in the foreground and scoped to
+      the ticket (see `instructions/testing.md`)
+- [ ] Documentation updated as specified in the ticket's own
+      Implementation Plan
 - [ ] Changes committed to git with a message referencing the ticket ID
-- [ ] Ticket and plan moved to the sprint's `tickets/done/` directory
+- [ ] Ticket frontmatter `status` is `done`
+- [ ] `move_ticket_to_done(path)` has been called (by team-lead)
 
 Do not mark a ticket done if any item is incomplete. If an item cannot be
 satisfied, document why in the ticket before completing.
 
-#### Completing a Ticket
-
-When a ticket satisfies the Definition of Done:
-
-1. Set the ticket's `status` to `done` in its YAML frontmatter.
-2. Check off all acceptance criteria (`- [x]`).
-3. Commit all changes following `instructions/git-workflow.md`. The commit
-   message must reference the ticket ID and sprint number if applicable
-   (e.g., `feat: add auth endpoint (#003, sprint 001)`).
-4. Move the ticket file to the sprint's `tickets/done/` directory.
-5. Move the ticket plan file to the sprint's `tickets/done/` directory.
-
-Active tickets live in the sprint's `tickets/` directory. Completed tickets
-live in `tickets/done/`. This separation makes it easy to see at a glance
-what work remains (active directory) versus what has been finished (done
-directory).
+Active tickets live in the sprint's `tickets/` directory. Completed
+tickets live in `tickets/done/`, moved there atomically by
+`move_ticket_to_done` — this separation makes it easy to see at a
+glance what work remains versus what has finished.
 
 #### Error Recovery
 
@@ -464,20 +490,21 @@ Things go wrong during implementation. Here is what to do.
 1. Read the error output carefully. Diagnose the root cause.
 2. Fix the code (not the test, unless the test is wrong).
 3. Re-run the tests. Repeat until all pass.
-4. If the failure reveals a flaw in the ticket plan, update the plan.
+4. If the failure reveals a flaw in the ticket's own Implementation Plan
+   section, update it in place.
 5. If simple diagnosis does not resolve the failure — especially after
    two consecutive failed fix attempts, or when a previously passing
    test breaks — invoke the `systematic-debugging` skill. This provides
    a structured four-phase protocol (evidence gathering, pattern analysis,
    hypothesis testing, root cause fix) and caps attempts at three before
-   requiring stakeholder escalation.
+   escalation (see Exception protocol below).
 
-**Plan gaps** (the plan missed something needed for implementation):
+**Plan gaps** (the ticket's Implementation Plan missed something needed):
 1. If the gap is small and local (e.g., a missing helper function), update
-   the ticket plan and continue.
-2. If the gap is architectural (e.g., a missing component, wrong API design),
-   stop implementation. Flag the gap to the architect. Update the architecture
-   document first, then update the ticket plan, then resume.
+   the ticket's Implementation Plan section and continue.
+2. If the gap is architectural (e.g., a missing component, wrong API
+   design), stop implementation and throw a ticket exception (see
+   Exception protocol below) rather than improvising a design decision.
 
 **Ticket too large** (the ticket is taking much longer than expected):
 1. Stop and assess what is done vs. what remains.
@@ -488,10 +515,12 @@ Things go wrong during implementation. Here is what to do.
 
 **Unresolvable blockers:**
 1. If you cannot make progress despite trying the above patterns, stop.
-2. Document what you tried and what blocked you in the ticket.
-3. Set the ticket status back to `open` (not `in-progress` — it is not
-   being actively worked).
-4. Escalate to the human: explain the blocker and ask for guidance.
+2. Throw a ticket exception (see Exception protocol below), or — if the
+   block is a guard/permission denial rather than a design conflict —
+   report the block and stop; do not route around it.
+3. Do not leave the ticket in an ambiguous state: `open` (not
+   `in-progress`) unless an exception has been thrown, in which case its
+   status is `exception` (see below).
 
 ## Exception protocol
 
@@ -500,9 +529,18 @@ escalate blocks that cannot be resolved within the agent's own authority.
 
 ### Threshold
 
-After **three failed fix attempts** on the same problem, stop. Do not make
-a fourth attempt. Call `throw_ticket_exception` to record the block and
-hand off to the team-lead.
+Throw an exception when you cannot proceed without overriding an
+upstream architecture decision or a use-case boundary — a structural
+wall, not mere difficulty. Hard implementation work, even very hard
+work, is not by itself a threshold for `throw_ticket_exception`.
+
+Separately, after **three failed fix attempts** on the same problem
+during normal debugging (see Error Recovery above and the
+`systematic-debugging` skill), stop, revert partial or broken changes,
+and escalate to team-lead with the evidence gathered. That escalation is
+a report-and-stop, not automatically a `throw_ticket_exception` call —
+call `throw_ticket_exception` only if the underlying blocker also turns
+out to be the structural kind this section describes.
 
 ### Payload schema
 
@@ -514,7 +552,7 @@ exception:
   thrown_by: programmer        # "programmer" or "sprint-planner"
   thrown_at: 2026-05-07T14:23:00Z
   attempted: |
-    Summary of what was tried across three attempts.
+    Summary of what was tried before concluding the wall is structural.
   conflict: |
     Exact description of what blocked progress — architecture decision,
     missing dependency, contradictory requirements, etc.
@@ -535,7 +573,7 @@ the following routing branches:
 
 | `surface` value | Routing |
 |-----------------|---------|
-| `internal`      | Team-lead resolves autonomously: update architecture or ticket plan, reopen with `reopen_ticket`, then continue. |
+| `internal`      | Team-lead resolves autonomously: dispatch sprint-planner to update the architecture or the ticket's Implementation Plan section, reopen with `reopen_ticket`, then continue. |
 | `user-visible`  | Team-lead escalates to the stakeholder: present the conflict and wait for a decision before proceeding. |
 
 ### Revision naming convention
@@ -580,11 +618,11 @@ clasi/
     │   ├── sprint.md            # Sprint goals, scope, notes, plus
     │   │                        # Architecture + Use Cases sections
     │   └── tickets/
-    │       ├── 003-add-auth.md      # Active ticket
-    │       ├── 003-add-auth-plan.md # Its plan
-    │       └── done/                # Completed tickets
-    │           ├── 001-setup.md
-    │           └── 001-setup-plan.md
+    │       ├── 003-add-auth.md  # Active ticket (its Implementation
+    │       │                    # Plan is a section inside this file,
+    │       │                    # not a separate -plan.md file)
+    │       └── done/            # Completed tickets
+    │           └── 001-setup.md
     └── done/                    # Completed sprint directories
         └── 000-initial-setup/
             ├── sprint.md
@@ -610,27 +648,31 @@ commands.
 
 ## Rules for AI Assistants
 
-- The **project-manager** is the entry point for new projects. It determines
-  current state and delegates to the right agent/skill.
-- After initial setup (brief, use cases, architecture), always work within
-  a sprint. Use **plan-sprint** to start and **close-sprint** to finish.
-- When asked to plan work, produce or update these artifacts rather than
-  jumping straight to code.
-- When asked to implement, find the next unfinished ticket and work from it.
-- Always create a ticket plan before starting implementation.
+- The **team-lead** is the entry point for every session. It determines
+  current state and dispatches sprint-planner/programmer as needed — see
+  `.claude/agents/team-lead/agent.md`.
+- After initial setup (overview, architecture), always work within a
+  sprint. Use **plan-sprint** to start and **close-sprint** to finish.
+- When asked to plan work, dispatch sprint-planner to produce or update
+  the sprint's planning artifacts rather than jumping straight to code.
+- When asked to implement, find the next unfinished ticket and dispatch
+  a programmer agent to work from it.
+- A ticket's Implementation Plan lives in the ticket file itself — there
+  is no separate `-plan.md` file to create.
 - A ticket is not done until it satisfies the **Definition of Done** (see
-  above): acceptance criteria met, tests passing, code review passed,
-  documentation updated, changes committed to git.
-- Delegate code review to the **code-reviewer** agent, not self-review.
-- Delegate architecture review to the **architecture-reviewer** agent during
-  sprint planning.
+  above): acceptance criteria met, tests passing (scoped, foreground),
+  documentation updated, changes committed to git, and
+  `move_ticket_to_done` called.
+- Code review is an on-demand skill (`code-review`), not a mandatory
+  per-ticket gate — invoke it when team-lead or the stakeholder wants a
+  second pass, not automatically between every ticket and "done."
+- Sprint-planner performs its own architecture self-review during
+  planning (see `architectural-quality.md`); there is no separate
+  architecture-reviewer agent.
 - Follow `instructions/coding-standards.md` when writing code.
 - Follow `instructions/git-workflow.md` when committing changes.
 - Follow `instructions/testing.md` when writing tests.
 - Follow `instructions/architectural-quality.md` for architecture decisions.
-- When a ticket is completed, follow the **Completing a Ticket** steps
-  immediately — do not batch completions.
 - Do not create new artifacts without updating the existing ones to stay
   consistent.
-- If a change alters scope, update the brief and affected use cases first.
 - Use the **project-status** skill at any time to check where things stand.
