@@ -94,3 +94,42 @@ fresh installs.
   tier-0 status block includes it too.
 - **Verification command**: the existing-tests command above, scoped to
   this ticket's modules.
+
+## Post-Close Gate Fix (2026-08-20)
+
+`close_sprint`'s single full-suite gate (ticket 008) failed with 6
+collateral failures after this ticket landed. Reopened to fix; both
+causes verified as stale test premises, not source regressions -- no
+production code changed, only test fixtures:
+
+- **`tests/unit/test_relocate.py` (5 failures)**: this ticket's new
+  `_prompt_protected_paths()` interactive prompt (added to `run_init`)
+  legitimately fires in 5 `test_relocate.py` tests that fully mock
+  `clasi.init_command.sys` with both `isatty()` calls returning `True`
+  to simulate an interactive TTY for the *legacy-file-relocation*
+  prompt further down `run_init` -- an incidental side effect none of
+  those fixtures anticipated. This ticket's own commit (a4d2cbf) hit
+  the identical issue in `test_init_interactive.py` and fixed it there
+  by patching `clasi.init_command._prompt_protected_paths` to return
+  `[]`; it just didn't know about `test_relocate.py`. Applied the same
+  established fix to the 5 affected tests.
+- **`tests/unit/test_issue_lifecycle.py::TestIssueLinkageInstructionsPresent::test_team_lead_main_workflow_calls_link_sprint_issues_inline`
+  (1 failure)**: NOT caused by this ticket -- caused by ticket 031-007's
+  process-doc rewrite (887e63f), unrelated to this ticket's scope.
+  Verified the `link_sprint_issues` inline call is fully intact and
+  even reinforced ("required", "the most common way issue linkage
+  silently fails") in team-lead agent.md's "Execute Issues Through a
+  Sprint" workflow -- this is not a regression. The test's ordering
+  assertion just checked for literal strings (`create_sprint(title=`,
+  `Invoke the sprint-planner agent`) describing an old workflow shape
+  (team-lead calling `create_sprint` directly) that predates even
+  sprint 029; the doc has since legitimately moved to sprint-planner
+  calling `create_sprint` inline during its Roadmap Mode dispatch.
+  Updated the test's anchor strings to match the current, correct doc
+  text while preserving the same ordering guarantee (create -> link ->
+  next sprint-planner dispatch).
+
+Verified via
+`uv run pytest tests/unit/test_relocate.py tests/unit/test_issue_lifecycle.py tests/unit/test_init_command.py tests/unit/test_init_interactive.py tests/unit/test_hook_handlers.py tests/unit/test_status/test_hook_injection.py tests/system/test_process_tools.py tests/system/test_tool_signature_docs.py -v --no-cov`
+-- all pass (211 tests across the two failing modules plus their
+directly related neighbors).

@@ -63,7 +63,8 @@ class TestInitPromptsWhenLegacyFilesFound:
         with patch("clasi.init_command.sys") as mock_sys:
             mock_sys.stdin.isatty.return_value = True
             mock_sys.stdout.isatty.return_value = True
-            with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command._is_git_repo", return_value=False), \
+                 patch("clasi.init_command._prompt_protected_paths", return_value=[]):
                 run_init(str(tmp_path), claude=True)
 
         project = Project(tmp_path)
@@ -83,7 +84,8 @@ class TestInitPromptsWhenLegacyFilesFound:
         with patch("clasi.init_command.sys") as mock_sys:
             mock_sys.stdin.isatty.return_value = True
             mock_sys.stdout.isatty.return_value = True
-            with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command._is_git_repo", return_value=False), \
+                 patch("clasi.init_command._prompt_protected_paths", return_value=[]):
                 run_init(str(tmp_path), claude=True)
 
         captured = capsys.readouterr()
@@ -106,7 +108,8 @@ class TestInitNoAnswerLeavesFilesUntouched:
         with patch("clasi.init_command.sys") as mock_sys:
             mock_sys.stdin.isatty.return_value = True
             mock_sys.stdout.isatty.return_value = True
-            with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command._is_git_repo", return_value=False), \
+                 patch("clasi.init_command._prompt_protected_paths", return_value=[]):
                 run_init(str(tmp_path), claude=True)
 
         assert legacy_file.exists(), "File should remain after user declines move"
@@ -122,7 +125,8 @@ class TestInitNoAnswerLeavesFilesUntouched:
         with patch("clasi.init_command.sys") as mock_sys:
             mock_sys.stdin.isatty.return_value = True
             mock_sys.stdout.isatty.return_value = True
-            with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command._is_git_repo", return_value=False), \
+                 patch("clasi.init_command._prompt_protected_paths", return_value=[]):
                 run_init(str(tmp_path), claude=True)
 
         captured = capsys.readouterr()
@@ -390,7 +394,8 @@ class TestIdempotency:
         with patch("clasi.init_command.sys") as mock_sys:
             mock_sys.stdin.isatty.return_value = True
             mock_sys.stdout.isatty.return_value = True
-            with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command._is_git_repo", return_value=False), \
+                 patch("clasi.init_command._prompt_protected_paths", return_value=[]):
                 run_init(str(tmp_path), claude=True)
 
         assert not confirm_called, (
