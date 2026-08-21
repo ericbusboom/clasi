@@ -575,6 +575,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit (version bump)
@@ -736,6 +738,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
@@ -792,6 +796,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
@@ -846,6 +852,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit

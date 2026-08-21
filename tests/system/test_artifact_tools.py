@@ -1077,6 +1077,9 @@ class TestCloseSprintFull:
         # git rev-parse --verify branch (delete check), git branch -d
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1174,6 +1177,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1241,6 +1247,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths only> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1354,6 +1363,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1398,6 +1410,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1609,6 +1624,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1643,6 +1661,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1690,6 +1711,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1756,6 +1780,9 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(
+                    0, "# branch.oid deadbeef0000\n# branch.head master\n"
+                ),  # git status --porcelain=v2 --branch (031/008 marker write)
                 self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
                 self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
@@ -1831,6 +1858,9 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(
+                    0, "# branch.oid deadbeef0000\n# branch.head master\n"
+                ),  # git status --porcelain=v2 --branch (031/008 marker write)
                 self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
                 self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
@@ -2072,6 +2102,9 @@ class TestCloseSprintLockAndDbGuard:
         # git rev-parse --verify (delete, branch gone)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "sprint/001-sprint\n"),  # git rev-parse --abbrev-ref HEAD
             self._make_subprocess_result(0),            # git add .clasi.db
@@ -2117,6 +2150,9 @@ class TestCloseSprintLockAndDbGuard:
         # git rev-parse --verify (branch gone), git push --tags, git rev-parse --verify (delete)
         mock_run.side_effect = [
             self._make_subprocess_result(0),        # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),        # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),        # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),        # git commit (version bump)
@@ -2165,6 +2201,9 @@ class TestCloseSprintLockAndDbGuard:
         # (merge raises RuntimeError, finally block runs release_lock)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),    # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, ""),    # git status --porcelain (clean)
             self._make_subprocess_result(0),        # git rev-parse --verify (branch exists)
             self._make_subprocess_result(1),        # git merge-base (not ancestor)
@@ -2200,6 +2239,9 @@ class TestCloseSprintLockAndDbGuard:
         # db is dirty but HEAD is not the sprint branch (e.g. accidentally on master)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "master\n"),  # git rev-parse --abbrev-ref HEAD (wrong branch)
             # Guard skipped — no git add or git commit for .clasi.db

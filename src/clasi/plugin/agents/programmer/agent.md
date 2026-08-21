@@ -86,11 +86,10 @@ instead (see below).
 **Scope your test run to the ticket, not the full suite.** Run the test
 modules/files that exercise the code you touched (e.g. `uv run pytest
 tests/unit/test_<module>.py --no-cov` or the equivalent for your
-language), not the entire project suite. The full suite is a
-once-per-sprint gate owned by execute-sprint/close-sprint, run exactly
-once before the sprint closes — not once per ticket. Running it
-redundantly on every ticket is slow and is part of what makes
-backgrounding tempting in the first place.
+language), not the entire project suite. The full suite runs exactly
+once per sprint, inside `close_sprint` itself (031/008) — not once per
+ticket. Running it redundantly on every ticket is slow and is part of
+what makes backgrounding tempting in the first place.
 
 **A ticket is not done until, in the same turn:** its scoped tests were
 run in the foreground and observed passing, the code is committed, and

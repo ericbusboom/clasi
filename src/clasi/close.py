@@ -49,11 +49,22 @@ pointer:
   ``prune_worktrees`` were already tolerant of "nothing to do" before
   this ticket. These steps need no resume-path branching at all.
 - ``tests`` has no independent ground truth for "did the tests already
-  pass" (sprint 030/002 removes the writer-less test-cache marker
-  predicate this codebase used to half-rely on) — so when the recorded
-  recovery step is *after* ``tests`` in ``ALL_STEPS`` (meaning a later
-  step failed on a prior attempt, so tests must already have passed to
-  reach it), the tests step is skipped rather than re-run.
+  pass" from the resume pointer alone (sprint 030/002 removes the
+  writer-less test-cache marker predicate this codebase used to
+  half-rely on) — so when the recorded recovery step is *after*
+  ``tests`` in ``ALL_STEPS`` (meaning a later step failed on a prior
+  attempt, so tests must already have passed to reach it), the tests
+  step is skipped rather than re-run. Sprint 031/008 adds one narrow,
+  independently-verified ground truth back on top of that: a
+  ``test_pass_markers`` DB row (sprint_id, head_sha, test_cmd) written
+  only immediately after a real, successful subprocess test run, and
+  consulted only when the *current* HEAD sha and test command still
+  match the stored row **and** the working tree is clean right now
+  (``_valid_test_pass_marker``). Unlike the removed predicate, this
+  marker always has both a writer and a reader landing in the same
+  change, and re-validates against live git state on every read rather
+  than trusting a stored fact indefinitely — a dirty working tree at a
+  matching sha is treated as unverified, not as a pass.
 - ``version_bump`` is the one step whose own idempotency check needs a
   live git call: does the version currently recorded in the project's
   version file already have a matching tag in git (``_get_existing_tags``)?
@@ -513,6 +524,77 @@ class SprintCloser:
             return True
         return False
 
+    # ------------------------------------------------------------------
+    # Test-pass marker helpers (031/008)
+    # ------------------------------------------------------------------
+
+    def _git_head_and_cleanliness(self) -> tuple[Optional[str], bool]:
+        """Return (head_sha, is_clean) from a single git call.
+
+        Uses ``git status --porcelain=v2 --branch``, which prints a
+        ``# branch.oid <sha>`` header line (the current HEAD commit)
+        followed by zero or more porcelain entry lines -- any entry line
+        means the tree is dirty, matching plain ``--porcelain``'s
+        untracked-files-included default (a stray untracked file is
+        still "not the same code" as what a marker's test run covered).
+        One subprocess call instead of two (``rev-parse HEAD`` plus a
+        separate ``status --porcelain``) keeps this marker's overhead to
+        the single git call it actually needs, at both the write site
+        (right after a real test pass) and the read site
+        (``_valid_test_pass_marker``).
+
+        Returns ``(None, False)`` on any git failure or on a repo with
+        no commits yet (``branch.oid (initial)``) -- callers treat that
+        as "cannot verify," failing closed toward running tests for real
+        rather than trusting or writing a marker.
+        """
+        result = run_git(["status", "--porcelain=v2", "--branch"], cwd=self.project.root)
+        if result.returncode != 0:
+            return None, False
+        sha: Optional[str] = None
+        is_clean = True
+        for line in result.stdout.splitlines():
+            if line.startswith("# branch.oid "):
+                sha = line[len("# branch.oid "):].strip()
+            elif line.startswith("#"):
+                continue
+            elif line.strip():
+                is_clean = False
+        if sha == "(initial)":
+            sha = None
+        return sha, is_clean
+
+    def _valid_test_pass_marker(self, sprint_id: str, test_cmd_str: str) -> Optional[str]:
+        """Return the marker's head_sha if it is still safe to trust, else None.
+
+        All three of the following must hold, checked in cheapest-first
+        order to avoid spawning a git subprocess when there is no marker
+        to begin with:
+
+        1. A marker row exists for *sprint_id*.
+        2. Its recorded ``test_cmd`` matches *test_cmd_str* exactly --
+           a marker written for one test command must never license
+           skipping a *different* command a later call asks for.
+        3. Its recorded ``head_sha`` equals the repository's current
+           HEAD sha, AND the working tree is clean right now. Both are
+           re-checked live on every call; nothing is cached beyond the
+           single DB row itself. A dirty tree at a matching sha is
+           explicitly not trusted -- see the module docstring and
+           close.md's design note for why (uncommitted edits present
+           now are not reflected in the sha either way).
+        """
+        if not self.db.path.exists():
+            return None
+        marker = self.db.get_test_pass_marker(sprint_id)
+        if marker is None or marker["test_cmd"] != test_cmd_str:
+            return None
+        current_sha, is_clean = self._git_head_and_cleanliness()
+        if current_sha is None or current_sha != marker["head_sha"]:
+            return None
+        if not is_clean:
+            return None
+        return marker["head_sha"]
+
     def run(self) -> str:
         project = self.project
         sprint_id = self.sprint_id
@@ -602,6 +684,21 @@ class SprintCloser:
 
         # ── Step: Run tests ──
         skip_tests = resume_index > ALL_STEPS.index("tests")
+
+        # Resolved unconditionally (cheap: a string split, no subprocess)
+        # so both the marker check below and the real-run branch use the
+        # exact same command -- a marker recorded for one test_cmd must
+        # never license skipping a different one.
+        if self.test_command is not None:
+            test_cmd = self.test_command.split()
+        else:
+            test_cmd = ["uv", "run", "pytest"]
+        test_cmd_str = " ".join(test_cmd)
+
+        marker_sha: Optional[str] = None
+        if not skip_tests and self.test_command != "SKIP":
+            marker_sha = self._valid_test_pass_marker(sprint_id, test_cmd_str)
+
         if skip_tests:
             self.repairs.append(
                 "skipped tests (already passed on a prior attempt at this close)"
@@ -615,12 +712,16 @@ class SprintCloser:
             # sees them (sprint 030 ticket 005; see
             # .claude/rules/tool-call-empty-args.md).
             self.repairs.append('skipped tests (test_command is "SKIP")')
+        elif marker_sha is not None:
+            # 031/008: a real prior run already passed for this exact
+            # HEAD sha and test command, and the working tree is clean
+            # right now -- skip the redundant re-run without the operator
+            # reaching for a fake test_command. See _valid_test_pass_marker.
+            self.repairs.append(
+                f"skipped tests (already passed for HEAD {marker_sha[:12]} "
+                f'with "{test_cmd_str}", working tree clean)'
+            )
         else:
-            if self.test_command is not None:
-                test_cmd = self.test_command.split()
-            else:
-                test_cmd = ["uv", "run", "pytest"]
-
             if self.test_timeout is not None:
                 effective_timeout = self.test_timeout
             else:
@@ -664,6 +765,20 @@ class SprintCloser:
                     error_msg,
                     _recovery(db.path.exists(), [], "Investigate slow tests, then call close_sprint again."),
                 )
+            else:
+                # Tests genuinely ran and passed (no exception, no early
+                # return above) -- record the HEAD-sha marker so a
+                # subsequent close_sprint call against this exact,
+                # still-clean commit can skip a redundant re-run (031/008).
+                # Only recorded when the tree is clean *right now*: a
+                # marker written while the tree was dirty would certify
+                # code that was never actually isolated at this sha (the
+                # uncommitted edits present during this run are not part
+                # of head_sha either way).
+                if db.path.exists():
+                    current_sha, is_clean = self._git_head_and_cleanliness()
+                    if current_sha is not None and is_clean:
+                        db.record_test_pass_marker(sprint_id, current_sha, test_cmd_str)
 
         self.completed_steps.append("tests")
 
@@ -953,6 +1068,10 @@ class SprintCloser:
         if db.path.exists():
             try:
                 db.clear_recovery_state()
+            except Exception:
+                pass
+            try:
+                db.clear_test_pass_marker(sprint_id)
             except Exception:
                 pass
 

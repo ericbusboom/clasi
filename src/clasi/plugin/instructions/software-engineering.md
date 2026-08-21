@@ -445,9 +445,16 @@ Agent: **programmer**, dispatched once per ticket by team-lead via the
 3. Programmer implements the ticket, writes tests, and updates docs per
    the ticket's own Implementation Plan.
 4. Programmer runs the ticket's scoped tests in the foreground (never
-   backgrounded) — not the full suite; the full suite is a
-   once-per-sprint gate owned by `execute-sprint`/`close-sprint`, run
-   once, not per ticket.
+   backgrounded) — not the full suite. **The full suite runs exactly
+   once per sprint: inside `close_sprint` itself, as its own internal
+   test-execution step (031/008).** No other point in the process
+   re-runs it — `execute-sprint` does not run it before handing off to
+   close, and `sprint-review` interprets `review_sprint_pre_close`'s
+   result rather than re-running the suite itself. This sentence is
+   the canonical statement of that fact; other docs that mention
+   full-suite ownership (the programmer agent definition, the
+   `source-code.md` rule, `close.md`) point back here rather than
+   re-asserting a count of their own.
 5. Programmer checks off all acceptance criteria, sets `status: done`,
    and commits, referencing the ticket ID.
 6. Team-lead — not the programmer — calls `move_ticket_to_done(path)`.

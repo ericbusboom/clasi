@@ -154,6 +154,13 @@ CREATE TABLE IF NOT EXISTS recovery_state (
     recorded_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS test_pass_markers (
+    sprint_id TEXT PRIMARY KEY,
+    head_sha TEXT NOT NULL,
+    test_cmd TEXT NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS active_agents (
     agent_id TEXT PRIMARY KEY,
     agent_type TEXT NOT NULL,
@@ -970,6 +977,109 @@ class StateDB:
         conn = _connect(self._path)
         try:
             cursor = conn.execute("DELETE FROM recovery_state WHERE id = 1")
+            conn.commit()
+            return {"cleared": cursor.rowcount > 0}
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Test-pass marker (031/008)
+    # ------------------------------------------------------------------
+    #
+    # Records "the full suite really passed for sprint X at commit Y with
+    # command Z", written only after a real, successful subprocess test
+    # run (see close.py's SprintCloser) and read only to decide whether a
+    # *subsequent* close_sprint call may skip a genuinely redundant
+    # re-run. This is deliberately unlike the pre-030/002
+    # `.clasi/test-cache` predicate removed from the ticket state
+    # machine: that one was writer-less (nothing in the codebase ever
+    # wrote it, so it was permanently unsatisfiable) — this marker's
+    # writer and reader are introduced together, in the same change, and
+    # the reader additionally re-validates the sha and working-tree
+    # cleanliness at use time rather than trusting the stored row alone.
+
+    def record_test_pass_marker(
+        self, sprint_id: str, head_sha: str, test_cmd: str,
+    ) -> dict[str, Any]:
+        """Record that the full suite passed for *sprint_id* at *head_sha*.
+
+        Upsert semantics keyed on ``sprint_id`` -- a later real pass (a
+        new commit, or the same commit re-verified) replaces the
+        previous marker for this sprint rather than accumulating rows.
+        """
+        self.init()
+        now = _now()
+        conn = _connect(self._path)
+        try:
+            conn.execute(
+                "INSERT INTO test_pass_markers "
+                "(sprint_id, head_sha, test_cmd, recorded_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(sprint_id) DO UPDATE SET "
+                "head_sha = excluded.head_sha, "
+                "test_cmd = excluded.test_cmd, "
+                "recorded_at = excluded.recorded_at",
+                (sprint_id, head_sha, test_cmd, now),
+            )
+            conn.commit()
+            return {
+                "sprint_id": sprint_id,
+                "head_sha": head_sha,
+                "test_cmd": test_cmd,
+                "recorded_at": now,
+            }
+        finally:
+            conn.close()
+
+    def get_test_pass_marker(self, sprint_id: str) -> Optional[dict[str, Any]]:
+        """Read the test-pass marker for *sprint_id*, or None if absent.
+
+        Returns the raw stored row (sprint_id, head_sha, test_cmd,
+        recorded_at) with no validation against the current repository
+        state -- comparing the sha/test_cmd against "now" and checking
+        working-tree cleanliness is the caller's job (it requires a git
+        call against a repo root, which this class does not have).
+
+        If the DB file does not exist, returns None without creating it,
+        mirroring ``get_recovery_state``'s no-file behavior.
+        """
+        if not self._path.exists():
+            return None
+        self.init()
+        conn = _connect(self._path)
+        try:
+            row = conn.execute(
+                "SELECT sprint_id, head_sha, test_cmd, recorded_at "
+                "FROM test_pass_markers WHERE sprint_id = ?",
+                (sprint_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "sprint_id": row["sprint_id"],
+                "head_sha": row["head_sha"],
+                "test_cmd": row["test_cmd"],
+                "recorded_at": row["recorded_at"],
+            }
+        finally:
+            conn.close()
+
+    def clear_test_pass_marker(self, sprint_id: str) -> dict[str, Any]:
+        """Delete the test-pass marker for *sprint_id*, if any.
+
+        Returns {"cleared": True} if a record was removed,
+        {"cleared": False} if no record existed. Called once a sprint
+        finishes closing successfully -- a marker for an archived sprint
+        can never be consulted again (close_sprint won't find the sprint
+        under its active id a second time), so this is bookkeeping
+        hygiene, not a correctness requirement.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            cursor = conn.execute(
+                "DELETE FROM test_pass_markers WHERE sprint_id = ?", (sprint_id,)
+            )
             conn.commit()
             return {"cleared": cursor.rowcount > 0}
         finally:

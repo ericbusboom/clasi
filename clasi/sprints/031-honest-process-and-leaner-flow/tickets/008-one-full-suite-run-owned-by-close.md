@@ -1,7 +1,7 @@
 ---
 id: 008
 title: One full-suite run, owned by close
-status: open
+status: done
 use-cases:
 - SUC-008
 depends-on:
@@ -36,24 +36,24 @@ a HEAD-sha marker) does not require anything 007 produces.
 
 ## Acceptance Criteria
 
-- [ ] `execution.md` §5.2's separate pre-close full-suite-run
+- [x] `execution.md` §5.2's separate pre-close full-suite-run
       instruction is deleted.
-- [ ] The `sprint-review` skill calls `review_sprint_pre_close` and
+- [x] The `sprint-review` skill calls `review_sprint_pre_close` and
       interprets its output instead of re-running the suite itself.
-- [ ] The orphaned `review_sprint_post_close` MCP tool (confirmed by
+- [x] The orphaned `review_sprint_post_close` MCP tool (confirmed by
       grep during planning: referenced by no skill or agent doc today)
       is either wired to a caller or explicitly retired with a note
       explaining the decision — not left silently unreferenced.
-- [ ] A "tests already passed for HEAD `<sha>`" marker (or equivalent)
+- [x] A "tests already passed for HEAD `<sha>`" marker (or equivalent)
       lets a deliberate close re-run skip redundant work without the
       operator reaching for a fake `test_command`. `close_sprint`'s
       existing `test_command="SKIP"` sentinel (030) is kept unchanged as
       the explicit escape hatch it already is — this marker makes it
       unnecessary in the *normal* flow, it does not replace it.
-- [ ] `close_sprint`'s own internal test run (`close.py`'s `SprintCloser`)
+- [x] `close_sprint`'s own internal test run (`close.py`'s `SprintCloser`)
       is unchanged — this ticket makes it the sprint's *only* run, not a
       different run.
-- [ ] The docs state the number of full-suite runs per sprint (one) once,
+- [x] The docs state the number of full-suite runs per sprint (one) once,
       in one place, matching what the code does.
 
 ## Implementation Plan

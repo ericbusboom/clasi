@@ -328,8 +328,9 @@ Finishing the code is NOT finishing the ticket. A ticket is done when:
 2. Ticket frontmatter `status` is `done`
 3. The ticket's scoped tests pass, run in the foreground by the
    programmer agent (never backgrounded) — not a full `uv run pytest`
-   per ticket. The full suite is a once-per-sprint gate run once by
-   `execute-sprint` before `close-sprint`, not a per-ticket check.
+   per ticket. The full suite runs exactly once per sprint, inside
+   `close_sprint` itself (031/008) — not a per-ticket check, and not
+   run separately by `execute-sprint` first.
 4. Changes are committed with ticket ID in the message
 5. `move_ticket_to_done(path)` is called
 

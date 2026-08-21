@@ -348,6 +348,8 @@ def _mock_ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMo
 
 _FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS = [
     _mock_ok(0, "all tests passed"),  # pytest
+    _mock_ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                                        # git status --porcelain=v2 --branch (031/008 marker write)
     _mock_ok(0),                       # git config rebase.autoStash (version bump prep)
     _mock_ok(0),                       # git add <archive paths + version file> (version bump)
     _mock_ok(0),                       # git commit (version bump)

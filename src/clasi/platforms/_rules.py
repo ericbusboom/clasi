@@ -71,8 +71,8 @@ Before writing code:
    `get_agent_definition("programmer")` if unsure of the steps.
 4. Run tests after changes, in the foreground (never
    `run_in_background: true`). If working a ticket, scope the run to
-   the modules the ticket touches — the full suite is a once-per-sprint
-   gate owned by execute-sprint/close-sprint, not a per-ticket step. If
+   the modules the ticket touches — the full suite runs exactly once
+   per sprint, inside `close_sprint` itself, not a per-ticket step. If
    working out-of-process (no sprint), run the full test suite, since
    there is no later sprint-close gate to catch what a scoped run
    would miss.
