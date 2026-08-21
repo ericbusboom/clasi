@@ -23,7 +23,6 @@ _EXPECTED_ORDER = [
     "roadmap",
     "planning-docs",
     "architecture-review",
-    "stakeholder-review",
     "ticketing",
     "executing",
     "closing",
@@ -52,14 +51,20 @@ class TestSeSchemaLoads:
         assert ar.gate.kind == "review"
         assert ar.gate.record == "architecture_review"
 
-    def test_stakeholder_review_gate(self):
-        """stakeholder-review artifact has gate kind=stakeholder-review, record=stakeholder_approval."""
+    def test_stakeholder_review_phase_removed(self):
+        """031/002: the stakeholder-review artifact/phase is deleted --
+        stakeholder_approval now gates acquire_execution_lock instead of a
+        phase in this schema (see state_db_class.py's advance_to())."""
+        schema = loader.load(_SCHEMA_PATH)
+        ids = {a.id for a in schema.artifacts}
+        assert "stakeholder-review" not in ids
+
+    def test_ticketing_requires_only_architecture_review(self):
+        """031/002: ticketing's requires: is [architecture-review] now that
+        the stakeholder-review artifact between them is gone."""
         schema = loader.load(_SCHEMA_PATH)
         idx = {a.id: a for a in schema.artifacts}
-        sr = idx["stakeholder-review"]
-        assert sr.gate is not None
-        assert sr.gate.kind == "stakeholder-review"
-        assert sr.gate.record == "stakeholder_approval"
+        assert idx["ticketing"].requires == ["architecture-review"]
 
     def test_executing_gate_and_lock(self):
         """executing artifact has gate kind=per-ticket and lock=execution."""

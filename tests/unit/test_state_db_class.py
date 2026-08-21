@@ -2,7 +2,7 @@
 
 import pytest
 
-from clasi.state_db_class import PHASES, StateDB
+from clasi.state_db_class import PHASES, StateDB, StrandedPhaseError
 from clasi.project import Project
 
 
@@ -19,12 +19,16 @@ class TestPhases:
         assert PHASES[idx + 1] == "planning-docs"
 
     def test_phases_is_complete_list_derived_from_schema(self):
-        """PHASES contains all expected lifecycle phases, unconditionally from schema."""
+        """PHASES contains all expected lifecycle phases, unconditionally from schema.
+
+        031/002: 'stakeholder-review' is deleted from schema.yaml --
+        stakeholder_approval now gates acquire_execution_lock instead of a
+        phase transition.
+        """
         expected = [
             "roadmap",
             "planning-docs",
             "architecture-review",
-            "stakeholder-review",
             "ticketing",
             "executing",
             "closing",
@@ -93,7 +97,7 @@ class TestStateDB:
         db.register_sprint("010", "test-sprint")
         db.advance_phase("010")  # roadmap -> planning-docs
         db.advance_phase("010")  # planning-docs -> architecture-review
-        # architecture-review -> stakeholder-review requires architecture_review gate
+        # architecture-review -> ticketing requires architecture_review gate
         with pytest.raises(ValueError, match="gate.*architecture_review.*not passed"):
             db.advance_phase("010")
 
@@ -102,8 +106,8 @@ class TestStateDB:
         db.advance_phase("010")  # roadmap -> planning-docs
         db.advance_phase("010")  # planning-docs -> architecture-review
         db.record_gate("010", "architecture_review", "passed")
-        result = db.advance_phase("010")  # -> stakeholder-review
-        assert result["new_phase"] == "stakeholder-review"
+        result = db.advance_phase("010")  # -> ticketing (031/002)
+        assert result["new_phase"] == "ticketing"
 
     def test_acquire_and_release_lock(self, db):
         db.register_sprint("010", "test-sprint")
@@ -831,3 +835,160 @@ class TestForceClose:
         assert state["phase"] == "planning-docs"
         assert state["lock"] is not None
         assert state["lock"]["sprint_id"] == "010"
+
+
+class TestAdvanceTo:
+    """Tests for StateDB.advance_to (031/002) -- generalizes force_close's
+    "jump directly to a target phase, check one precondition,
+    transactional, idempotent" shape to a gate-checked, non-terminal
+    target phase, for create_ticket's and acquire_execution_lock's new
+    auto-advance call sites."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        sdb = StateDB(tmp_path / ".clasi.db")
+        sdb.init()
+        return sdb
+
+    def test_jumps_directly_skipping_intermediate_phases(self, db):
+        """From 'roadmap', advance_to('ticketing') jumps straight there in
+        one call -- unlike advance_phase(), no need to step through
+        planning-docs/architecture-review one hop at a time."""
+        db.register_sprint("010", "test-sprint")
+        result = db.advance_to("010", "ticketing")
+        assert result["old_phase"] == "roadmap"
+        assert result["new_phase"] == "ticketing"
+        assert result["changed"] is True
+        assert db.get_sprint_state("010")["phase"] == "ticketing"
+
+    def test_records_one_phase_transitions_row(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.advance_to("010", "ticketing")
+        transitions = db.get_sprint_state("010")["phase_transitions"]
+        assert len(transitions) == 1
+        assert transitions[0]["from_phase"] == "roadmap"
+        assert transitions[0]["to_phase"] == "ticketing"
+
+    def test_idempotent_noop_when_already_at_target(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.advance_to("010", "ticketing")
+
+        result = db.advance_to("010", "ticketing")
+
+        assert result == {
+            "sprint_id": "010",
+            "old_phase": "ticketing",
+            "new_phase": "ticketing",
+            "changed": False,
+        }
+        # No second phase_transitions row from the no-op call.
+        assert len(db.get_sprint_state("010")["phase_transitions"]) == 1
+
+    def test_idempotent_noop_when_already_past_target(self, db):
+        """A sprint already further along than target_phase is a cheap
+        no-op, not an error or a backward jump -- e.g. a second
+        create_ticket call after the sprint has moved on to executing."""
+        db.register_sprint("010", "test-sprint")
+        db.advance_to("010", "executing")
+
+        result = db.advance_to("010", "ticketing")
+
+        assert result["changed"] is False
+        assert result["old_phase"] == "executing"
+        assert result["new_phase"] == "executing"
+        assert db.get_sprint_state("010")["phase"] == "executing"
+
+    def test_gate_check_blocks_when_not_recorded(self, db):
+        db.register_sprint("010", "test-sprint")
+        with pytest.raises(ValueError, match="gate 'architecture_review' has not passed"):
+            db.advance_to("010", "ticketing", "architecture_review")
+        assert db.get_sprint_state("010")["phase"] == "roadmap"
+
+    def test_gate_check_blocks_on_failed_result(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.record_gate("010", "architecture_review", "failed")
+        with pytest.raises(ValueError, match="not passed"):
+            db.advance_to("010", "ticketing", "architecture_review")
+
+    def test_gate_check_passes_on_passed_result(self, db):
+        db.register_sprint("010", "test-sprint")
+        db.record_gate("010", "architecture_review", "passed")
+        result = db.advance_to("010", "ticketing", "architecture_review")
+        assert result["changed"] is True
+        assert result["new_phase"] == "ticketing"
+
+    def test_gate_check_passes_on_skipped_result(self, db):
+        """'skipped' satisfies a required_gate the same as 'passed'."""
+        db.register_sprint("010", "test-sprint")
+        db.record_gate("010", "architecture_review", "skipped")
+        result = db.advance_to("010", "ticketing", "architecture_review")
+        assert result["changed"] is True
+
+    def test_no_gate_check_when_required_gate_is_none(self, db):
+        db.register_sprint("010", "test-sprint")
+        result = db.advance_to("010", "ticketing")  # no gate recorded, none required
+        assert result["changed"] is True
+
+    def test_idempotent_noop_skips_gate_check(self, db):
+        """Once already at/past target, a later call naming a gate that
+        was never recorded still succeeds as a no-op -- the gate is only
+        checked on the call that actually needs to move the phase,
+        matching force_close's own idempotency shape (no precondition
+        re-check on the no-op path)."""
+        db.register_sprint("010", "test-sprint")
+        db.record_gate("010", "architecture_review", "passed")
+        db.advance_to("010", "ticketing", "architecture_review")
+
+        result = db.advance_to("010", "ticketing", "stakeholder_approval")
+
+        assert result["changed"] is False
+
+    def test_raises_for_invalid_target_phase(self, db):
+        db.register_sprint("010", "test-sprint")
+        with pytest.raises(ValueError, match="not a valid phase"):
+            db.advance_to("010", "bogus-phase")
+
+    def test_raises_for_unregistered_sprint(self, db):
+        with pytest.raises(ValueError, match="not registered"):
+            db.advance_to("999", "ticketing")
+
+    def test_raises_stranded_phase_error_for_current_phase_absent_from_schema(self, db):
+        """A sprint's DB row holding a phase value no longer present in
+        the schema-derived phases list -- e.g. this ticket's own deletion
+        of 'stakeholder-review' -- raises the named, actionable
+        StrandedPhaseError, not a raw ValueError from list.index(). Uses
+        'stakeholder-review' itself as the stranded value: it is a real
+        phase string this exact ticket removes from schema.yaml, so this
+        simulates precisely the downstream-project scenario the ticket's
+        Migration Concerns describes, without needing a second schema
+        fixture."""
+        import sqlite3
+
+        db.register_sprint("010", "test-sprint")
+        conn = sqlite3.connect(str(db.path))
+        conn.execute(
+            "UPDATE sprints SET phase = 'stakeholder-review' WHERE id = '010'"
+        )
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(StrandedPhaseError, match="stakeholder-review"):
+            db.advance_to("010", "executing")
+
+    def test_advance_phase_also_raises_stranded_phase_error(self, db):
+        """advance_phase() shares _phase_index() with advance_to() -- the
+        same named error fires for the same stranded-value case there
+        too (Migration Concerns: 'advance_to() and advance_phase()'s
+        phase-list lookup raise a named, actionable error')."""
+        import sqlite3
+
+        db.register_sprint("010", "test-sprint")
+        conn = sqlite3.connect(str(db.path))
+        conn.execute(
+            "UPDATE sprints SET phase = 'stakeholder-review' WHERE id = '010'"
+        )
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(StrandedPhaseError):
+            db.advance_phase("010")

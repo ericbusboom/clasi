@@ -32,6 +32,7 @@ from clasi.state_db import (
     PHASES as _PHASES,
     rename_sprint as _rename_sprint,
 )
+from clasi.state_db_class import _SATISFYING_GATE_RESULTS
 from clasi.templates import (
     slugify,
     SPRINT_TEMPLATE,
@@ -512,29 +513,42 @@ def link_sprint_issues(sprint_id: str, issue_filenames: list[str]) -> str:
     )
 
 
-def _check_sprint_phase_for_ticketing(sprint_id: str) -> None:
-    """Check that a sprint is in ticketing phase or later.
+def _check_architecture_review_gate(sprint_id: str) -> None:
+    """Check that a sprint's ``architecture_review`` gate has recorded a
+    satisfying (``passed``/``skipped``) result (031/002).
+
+    Replaces the old phase-index check (was
+    ``_check_sprint_phase_for_ticketing``): the real precondition for
+    ticket creation is the gate result itself, not which phase the
+    sprint's ``sprints.phase`` row happens to say -- checking the gate
+    directly is what lets a sprint's *first* ``create_ticket`` call
+    succeed the moment the gate passes, with no separate
+    ``advance_sprint_phase`` call in between (the gate-order bug this
+    ticket exists to fix).
 
     Degrades gracefully: if the DB doesn't exist or the sprint isn't
-    registered, the check is skipped (backward compatibility).
+    registered, the check is skipped (backward compatibility) -- the
+    same graceful-degradation contract the check this replaces had.
     """
     project = get_project()
     if not project.db.path.exists():
         return
     try:
         state = project.db.get_sprint_state(sprint_id)
-        phase_idx = _PHASES.index(state["phase"])
-        ticketing_idx = _PHASES.index("ticketing")
-        if phase_idx < ticketing_idx:
-            raise ValueError(
-                f"Cannot create tickets: sprint '{sprint_id}' is in "
-                f"'{state['phase']}' phase. Tickets can only be created "
-                f"in 'ticketing' phase or later. Complete the review gates first."
-            )
     except ValueError as e:
         if "not registered" in str(e):
             return  # Sprint not in DB — allow (backward compat)
         raise
+
+    gates = {g["gate_name"]: g["result"] for g in state["gates"]}
+    result = gates.get("architecture_review")
+    if result not in _SATISFYING_GATE_RESULTS:
+        raise ValueError(
+            f"Cannot create tickets: sprint '{sprint_id}' has not "
+            "recorded a passing 'architecture_review' gate result "
+            f"(current: {result!r}). Record the gate result first via "
+            "record_gate_result."
+        )
 
 
 @server.tool()
@@ -547,7 +561,11 @@ def create_ticket(
     """Create a new ticket in a sprint's tickets/ directory.
 
     Auto-assigns the next ticket number within the sprint.
-    Checks sprint phase if the state database exists.
+    Checks the sprint's recorded ``architecture_review`` gate result (not
+    its phase) if the state database exists; on a sprint's first
+    ``create_ticket`` call, this also auto-advances the sprint's phase to
+    ``"ticketing"`` (031/002) -- no separate ``advance_sprint_phase`` call
+    is needed. Later calls are unaffected (the auto-advance is idempotent).
 
     When ``issue`` is provided (a filename or list of filenames), the
     ticket's frontmatter ``issue`` field is set and the referenced issue
@@ -570,9 +588,24 @@ def create_ticket(
                ticket addresses (e.g., 'my-idea.md' or
                ['idea-a.md', 'idea-b.md'])
     """
-    _check_sprint_phase_for_ticketing(sprint_id)
+    _check_architecture_review_gate(sprint_id)
     project = get_project()
     sprint = project.get_sprint(sprint_id)
+
+    # 031/002: auto-advance to 'ticketing' as a side effect of the first
+    # create_ticket call, instead of requiring a separate
+    # advance_sprint_phase call in between recording architecture_review
+    # and creating tickets. Guarded by the same "DB doesn't exist / sprint
+    # not registered" backward-compat skip _check_architecture_review_gate
+    # above already applies -- advance_to() calls self.init(), which would
+    # otherwise create a state DB file as a side effect of ticket creation
+    # for a project/sprint that isn't using one.
+    if project.db.path.exists():
+        try:
+            sprint.advance_to("ticketing", "architecture_review")
+        except ValueError as e:
+            if "not registered" not in str(e):
+                raise
 
     # Auto-link to the sprint's issue only in the unambiguous single-issue
     # case. With 2+ linked issues, "the sprint's issues" is not a sensible
@@ -704,9 +737,9 @@ def list_sprints(status: Optional[str] = None) -> str:
 
     Args:
         status: Optional filter by status — one of the DB-phase values
-            Sprint.set_sprint_stage() mirrors into frontmatter status:
-            (roadmap, planning-docs, architecture-review,
-            stakeholder-review, ticketing, executing, closing, done).
+            Sprint.set_sprint_stage()/Sprint.advance_to() mirror into
+            frontmatter status: (roadmap, planning-docs,
+            architecture-review, ticketing, executing, closing, done).
 
     Returns JSON array of {id, title, status, path, branch}.
     """
@@ -1370,6 +1403,29 @@ def record_gate_result(
         return json.dumps({"error": str(e)}, indent=2)
 
 
+def _check_stakeholder_approval_gate(project, sprint_id: str) -> None:
+    """Check that a sprint's ``stakeholder_approval`` gate has recorded a
+    satisfying (``passed``/``skipped``) result (031/002).
+
+    No DB-absent / not-registered graceful degradation here, unlike
+    ``_check_architecture_review_gate``: ``acquire_execution_lock``'s own
+    ``sprint.acquire_lock()`` call already requires the sprint to be
+    registered (it raises 'not registered' itself, unchanged by this
+    ticket) -- there is no pre-existing backward-compat path for an
+    unregistered sprint to preserve here.
+    """
+    state = project.db.get_sprint_state(sprint_id)
+    gates = {g["gate_name"]: g["result"] for g in state["gates"]}
+    result = gates.get("stakeholder_approval")
+    if result not in _SATISFYING_GATE_RESULTS:
+        raise ValueError(
+            f"Cannot acquire execution lock: sprint '{sprint_id}' has "
+            "not recorded a passing 'stakeholder_approval' gate result "
+            f"(current: {result!r}). Record the gate result first via "
+            "record_gate_result."
+        )
+
+
 @server.tool()
 @clasi_tool
 def acquire_execution_lock(sprint_id: str) -> str:
@@ -1377,6 +1433,27 @@ def acquire_execution_lock(sprint_id: str) -> str:
 
     Only one sprint can hold the lock at a time. Prevents concurrent
     sprint execution in the same repository.
+
+    Checks the sprint's recorded ``stakeholder_approval`` gate result
+    *before* granting the lock (031/002) -- no lock is granted without a
+    recorded ``passed``/``skipped`` result. Once the lock is granted,
+    auto-advances the sprint's phase to ``"executing"``; no separate
+    ``advance_sprint_phase`` call is needed.
+
+    Failure-mode contract: the gate check and the lock acquisition are
+    the safety-critical steps; the phase-advance that follows is a
+    status-display convenience, not a second safety gate. If the
+    phase-advance fails after the lock has already been granted, the
+    lock is **not** rolled back -- the lock, not the phase string, is
+    what every other consumer (the tier-2 ticket-state gate,
+    ``close_sprint``'s precondition check) treats as authoritative. The
+    failure still surfaces to the caller (in the returned ``{"error":
+    ...}`` JSON, this function's existing error-reporting shape) rather
+    than being swallowed. A retried call is safe: ``acquire_lock()``'s
+    existing re-entrant path returns success immediately for a lock this
+    sprint already holds, and the phase-advance is independently
+    idempotent, so the retry's only real work is completing whatever
+    failed the first time.
 
     Late branching: the sprint branch (``sprint/NNN-slug``) is created
     here, not during planning. All planning (roadmap and detail phases)
@@ -1393,6 +1470,9 @@ def acquire_execution_lock(sprint_id: str) -> str:
     try:
         project = get_project()
         sprint = project.get_sprint(sprint_id)
+
+        _check_stakeholder_approval_gate(project, sprint_id)
+
         lock = sprint.acquire_lock()
 
         # Late branching: create the sprint branch when acquiring
@@ -1409,6 +1489,12 @@ def acquire_execution_lock(sprint_id: str) -> str:
         else:
             # Re-entrant: look up existing branch
             lock["branch"] = sprint.branch
+
+        # 031/002: auto-advance to 'executing' now that the lock is
+        # granted. Per the failure-mode contract above, a failure here
+        # propagates to the outer except ValueError -- the lock acquired
+        # above is not rolled back.
+        sprint.advance_to("executing", "stakeholder_approval")
 
         return json.dumps(lock, indent=2)
     except ValueError as e:

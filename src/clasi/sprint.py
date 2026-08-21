@@ -609,6 +609,71 @@ class Sprint:
         self.set_sprint_stage(result["new_phase"])
         return result
 
+    def advance_to(self, target_phase: str, required_gate: str | None = None) -> dict:
+        """Jump this sprint's phase directly to *target_phase* via
+        ``StateDB.advance_to()``, mirroring an *actual* phase change into
+        frontmatter ``status:`` (031/002).
+
+        Keeps the single-recorded-vocabulary invariant sprint 030
+        established -- DB phase authoritative, frontmatter a mirror,
+        never written independently (see ``set_sprint_stage()``'s own
+        docstring and `docs/clasi/DESIGN.md`'s Design Principles) --
+        intact for the two new auto-advance call sites 031/002
+        introduces (``create_ticket``, ``acquire_execution_lock``), the
+        same way :meth:`advance_phase` already keeps it intact for the
+        older one-hop-at-a-time transitions.
+
+        Mirrors frontmatter **only when ``result["changed"]`` is True**
+        -- deliberately, not unconditionally like :meth:`set_sprint_stage`.
+        ``create_ticket``/``acquire_execution_lock`` call this on *every*
+        invocation, including the many incidental ones (a sprint's 2nd,
+        3rd, ... ticket) where the DB phase is already at or past
+        *target_phase* and ``advance_to()`` is a no-op by design. Writing
+        frontmatter unconditionally on those no-op calls would silently
+        overwrite whatever a *different* writer most recently set
+        ``status:`` to (verified against a real regression while
+        implementing this ticket: tests that manipulate the state DB
+        directly, bypassing ``Sprint``, to build a fixture with
+        deliberately stale/absent frontmatter -- e.g. checking
+        ``review_sprint_pre_execution`` flags a sprint still marked
+        ``status: draft`` -- broke, because a later incidental
+        ``create_ticket`` call "fixed" the frontmatter no test writer
+        asked it to touch). Only the call that actually performs the
+        jump is a deliberate stage-setting act worth mirroring; the
+        no-op calls are not.
+
+        Deliberately does *not* reuse :meth:`set_sprint_stage` for the
+        frontmatter half even on the changed path: that method raises if
+        the DB does not land exactly on the *phase* it was asked to
+        reach -- correct for its single-hop callers, but wrong here,
+        since ``StateDB.advance_to``'s idempotent no-op path can leave
+        the sprint's actual phase *past* `target_phase` (e.g. a sprint
+        already executing when a later ``create_ticket`` call fires)
+        without that being an error. This method mirrors whatever
+        ``advance_to()`` reports as the sprint's actual resulting phase
+        (``result["new_phase"]``), which is correct in the changed case
+        (it equals `target_phase`) without needing that stricter check.
+
+        Raises whatever ``StateDB.advance_to`` raises (a required gate
+        not satisfied, an unregistered sprint, a stranded phase value) —
+        never swallowed — and, if the DB write succeeds, raises loudly if
+        the subsequent frontmatter write fails, exactly the "never
+        `except: pass`" contract :meth:`set_sprint_stage` documents.
+
+        Args:
+            target_phase: The phase to jump to (see ``StateDB.advance_to``).
+            required_gate: Optional gate name that must have a satisfying
+                recorded result before the jump is allowed.
+
+        Returns:
+            The dict ``StateDB.advance_to`` returns:
+            ``{"sprint_id":, "old_phase":, "new_phase":, "changed": bool}``.
+        """
+        result = self._project.db.advance_to(self.id, target_phase, required_gate)
+        if result["changed"]:
+            self.sprint_doc.update_frontmatter(status=result["new_phase"])
+        return result
+
     def record_gate(self, gate: str, result: str, notes: str | None = None) -> dict:
         """Record a gate result for this sprint."""
         return self._project.db.record_gate(self.id, gate, result, notes)

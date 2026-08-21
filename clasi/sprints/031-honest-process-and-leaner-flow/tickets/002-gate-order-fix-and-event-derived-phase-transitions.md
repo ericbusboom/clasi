@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Gate-order fix and event-derived phase transitions
-status: open
+status: done
 use-cases:
 - SUC-002
 depends-on: []
@@ -74,11 +74,11 @@ one commit; do not push an intermediate state.
 
 ## Acceptance Criteria
 
-- [ ] `schemas/se-process/schema.yaml`: `stakeholder-review` artifact
+- [x] `schemas/se-process/schema.yaml`: `stakeholder-review` artifact
       entry deleted; `ticketing`'s `requires:` is `[architecture-review]`.
-- [ ] `state_db_class.py`: `_GATE_REQUIREMENTS` no longer has a
+- [x] `state_db_class.py`: `_GATE_REQUIREMENTS` no longer has a
       `"stakeholder-review"` key.
-- [ ] `state_db_class.py`: new `StateDB.advance_to(sprint_id,
+- [x] `state_db_class.py`: new `StateDB.advance_to(sprint_id,
       target_phase, required_gate=None)` — idempotent no-op if already
       at/past `target_phase`; checks `required_gate`'s recorded result
       is `passed`/`skipped` when given (raises if not); jumps the phase
@@ -86,17 +86,17 @@ one commit; do not push an intermediate state.
       `phase_transitions` row; raises a named, actionable error (not a
       raw `ValueError` from `list.index()`) if the sprint's *current*
       phase is absent from the computed phases list.
-- [ ] `tools/artifact_tools.py`: `create_ticket`'s
+- [x] `tools/artifact_tools.py`: `create_ticket`'s
       `_check_sprint_phase_for_ticketing` is replaced by a direct check
       of the `architecture_review` gate's recorded result, followed by
       `advance_to(sprint_id, "ticketing", "architecture_review")` on the
       sprint's first `create_ticket` call.
-- [ ] `tools/artifact_tools.py`: `acquire_execution_lock` checks the
+- [x] `tools/artifact_tools.py`: `acquire_execution_lock` checks the
       `stakeholder_approval` gate's recorded result **before** calling
       `db.acquire_lock()` — no lock is granted without a recorded
       `passed`/`skipped` result — then calls `advance_to(sprint_id,
       "executing", "stakeholder_approval")` after the lock is granted.
-- [ ] **Failure-mode contract**: if `advance_to` fails after
+- [x] **Failure-mode contract**: if `advance_to` fails after
       `db.acquire_lock()` has already succeeded, the lock is **not**
       rolled back (the lock, not the phase string, is what the tier-2
       ticket-state gate and `close_sprint`'s precondition check treat as
@@ -106,17 +106,17 @@ one commit; do not push an intermediate state.
       own idempotency). Add a test that forces `advance_to` to raise
       after a successful `acquire_lock()` and asserts the lock is still
       held and a retry completes cleanly.
-- [ ] `advance_sprint_phase` (the MCP tool) and `sprint.advance_phase()`
+- [x] `advance_sprint_phase` (the MCP tool) and `sprint.advance_phase()`
       are unchanged in behavior — still usable for manual recovery; no
       doc this ticket touches instructs an agent to call it in the
       standard flow (tickets 006/007 own the doc updates; this ticket
       only must not regress the tool itself).
-- [ ] A single sprint-planner dispatch following the documented flow
+- [x] A single sprint-planner dispatch following the documented flow
       (record `architecture_review` → create tickets → record
       `stakeholder_approval` → `acquire_execution_lock`) reaches ticket
       creation with zero rejected MCP calls — verified against a real
       dispatch or an equivalent E2E-fixture-driven test.
-- [ ] `record_gate_result` is unaffected — still callable at any phase
+- [x] `record_gate_result` is unaffected — still callable at any phase
       (confirmed during planning: it validates gate name/result/sprint
       registration only, no phase check).
 
