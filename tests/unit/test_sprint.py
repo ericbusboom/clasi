@@ -768,7 +768,7 @@ class TestSetSprintStage:
         proj.db.advance_phase("001")  # planning-docs -> architecture-review
 
         with pytest.raises(ValueError, match="architecture_review"):
-            s.set_sprint_stage("stakeholder-review")
+            s.set_sprint_stage("ticketing")
 
         # Frontmatter must be untouched by the failed call.
         assert s.status == "roadmap"

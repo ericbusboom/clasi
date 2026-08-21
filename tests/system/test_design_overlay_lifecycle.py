@@ -106,13 +106,20 @@ def _seed_canonical_docs(root: Path) -> None:
 
 
 def _advance_to_ticketing(work_dir: Path, sprint_id: str) -> None:
-    """Advance a sprint from planning-docs (post detail_sprint) to ticketing."""
+    """Advance a sprint from planning-docs (post detail_sprint) to ticketing.
+
+    Records stakeholder_approval here too (even though 031/002 no longer
+    requires it to reach ticketing) because this module's
+    acquire_execution_lock call sites now need it recorded before that
+    call succeeds -- see state_db_class.py's advance_to() / the
+    stakeholder_approval gate check in tools/artifact_tools.py's
+    acquire_execution_lock.
+    """
     db_path = work_dir / ".clasi" / ".clasi.db"
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
-    advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+    advance_phase(db_path, sprint_id)  # architecture-review -> ticketing (031/002)
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-    advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
 
 
 def _fill_sprint_placeholders(work_dir: Path, sprint_dir_name: str) -> None:

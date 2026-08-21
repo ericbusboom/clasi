@@ -33,7 +33,6 @@ _SE_EXPECTED_PHASES = [
     "roadmap",
     "planning-docs",
     "architecture-review",
-    "stakeholder-review",
     "ticketing",
     "executing",
     "closing",
@@ -62,7 +61,12 @@ class TestSeProcessRoundTrip:
         assert schema.name == "se-process"
 
     def test_se_process_phases(self):
-        """ArtifactGraph(se_schema).phases() returns the full 8-phase list."""
+        """ArtifactGraph(se_schema).phases() returns the full 7-phase list.
+
+        031/002: 'stakeholder-review' is deleted from schema.yaml --
+        stakeholder_approval now gates acquire_execution_lock instead of
+        a phase transition.
+        """
         schema = loader.load(_SE_SCHEMA_PATH)
         assert ArtifactGraph(schema).phases() == _SE_EXPECTED_PHASES
 
@@ -73,12 +77,13 @@ class TestSeProcessRoundTrip:
         expected = GateSpec(kind="review", record="architecture_review")
         assert graph.gate_for("architecture-review") == expected
 
-    def test_se_gate_for_stakeholder_review(self):
-        """gate_for('stakeholder-review') returns stakeholder-review gate with correct record."""
+    def test_se_no_stakeholder_review_artifact(self):
+        """031/002: gate_for('stakeholder-review') no longer resolves --
+        the artifact itself is gone from the schema."""
         schema = loader.load(_SE_SCHEMA_PATH)
         graph = ArtifactGraph(schema)
-        expected = GateSpec(kind="stakeholder-review", record="stakeholder_approval")
-        assert graph.gate_for("stakeholder-review") == expected
+        with pytest.raises(KeyError):
+            graph.gate_for("stakeholder-review")
 
     def test_se_phases_match_state_db_phases(self):
         """ArtifactGraph(se_schema).phases() equals PHASES from state_db_class.py."""

@@ -32,9 +32,8 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)  # roadmap -> planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
-    advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+    advance_phase(db_path, sprint_id)  # architecture-review -> ticketing (031/002)
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-    advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
 
 
 def _advance_to_executing(work_dir, sprint_id: str) -> None:

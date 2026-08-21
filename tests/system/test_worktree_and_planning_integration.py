@@ -433,9 +433,8 @@ class TestIssueBSingleDocSprintLifecycleEndToEnd:
         assert gate_result.get("gate_name") == "architecture_review"
         assert gate_result.get("result") == "skipped"
 
-        advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+        advance_phase(db_path, sprint_id)  # architecture-review -> ticketing (031/002)
         record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-        advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
 
         assert _only_sprint_md_and_tickets_present(sprint_dir)
 

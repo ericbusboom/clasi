@@ -179,8 +179,6 @@ class TestSprintMdOnlySprintTransitionsPlannedToTicketed:
         project.db.advance_phase(SPRINT_ID)  # roadmap -> planning-docs
         project.db.advance_phase(SPRINT_ID)  # planning-docs -> architecture-review
         project.db.record_gate(SPRINT_ID, "architecture_review", "skipped")
-        result = project.db.advance_phase(SPRINT_ID)  # -> stakeholder-review
-        assert result["new_phase"] == "stakeholder-review"
-        project.db.record_gate(SPRINT_ID, "stakeholder_approval", "passed")
-        result = project.db.advance_phase(SPRINT_ID)  # -> ticketing
+        result = project.db.advance_phase(SPRINT_ID)  # -> ticketing (031/002)
         assert result["new_phase"] == "ticketing"
+        project.db.record_gate(SPRINT_ID, "stakeholder_approval", "passed")

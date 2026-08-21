@@ -150,26 +150,27 @@ class TestAdvancePhase:
         advance_phase(db_path, "001")  # roadmap → planning-docs
         advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        result = advance_phase(db_path, "001")  # → stakeholder-review
-        assert result["new_phase"] == "stakeholder-review"
+        result = advance_phase(db_path, "001")  # → ticketing (031/002)
+        assert result["new_phase"] == "ticketing"
 
-    def test_advance_stakeholder_gate(self, db_path):
+    def test_advance_no_longer_requires_stakeholder_gate(self, db_path):
+        """031/002: stakeholder_approval moved off the phase machine (it
+        now gates acquire_execution_lock instead) -- advance_phase() from
+        architecture-review reaches ticketing with only architecture_review
+        recorded, no stakeholder_approval gate involved at all."""
         register_sprint(db_path, "001", "test")
         advance_phase(db_path, "001")  # roadmap → planning-docs
         advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")  # → stakeholder-review
-        with pytest.raises(ValueError, match="stakeholder_approval.*not passed"):
-            advance_phase(db_path, "001")
+        result = advance_phase(db_path, "001")  # → ticketing, no stakeholder gate needed
+        assert result["new_phase"] == "ticketing"
 
     def test_full_lifecycle(self, db_path):
         register_sprint(db_path, "001", "test")
         advance_phase(db_path, "001")  # roadmap → planning-docs
         advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")  # → stakeholder-review
-        record_gate(db_path, "001", "stakeholder_approval", "passed")
-        advance_phase(db_path, "001")  # → ticketing
+        advance_phase(db_path, "001")  # → ticketing (031/002)
         acquire_lock(db_path, "001")
         advance_phase(db_path, "001")  # → executing
         advance_phase(db_path, "001")  # → closing
@@ -182,9 +183,7 @@ class TestAdvancePhase:
         advance_phase(db_path, "001")  # roadmap → planning-docs
         advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")  # → stakeholder-review
-        record_gate(db_path, "001", "stakeholder_approval", "passed")
-        advance_phase(db_path, "001")  # → ticketing
+        advance_phase(db_path, "001")  # → ticketing (031/002)
         acquire_lock(db_path, "001")
         advance_phase(db_path, "001")  # → executing
         advance_phase(db_path, "001")  # → closing
@@ -197,9 +196,7 @@ class TestAdvancePhase:
         advance_phase(db_path, "001")  # roadmap → planning-docs
         advance_phase(db_path, "001")  # planning-docs → architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")  # → stakeholder-review
-        record_gate(db_path, "001", "stakeholder_approval", "passed")
-        advance_phase(db_path, "001")  # → ticketing
+        advance_phase(db_path, "001")  # → ticketing (031/002)
         with pytest.raises(ValueError, match="execution lock"):
             advance_phase(db_path, "001")
 
@@ -273,8 +270,8 @@ class TestRecordGate:
         advance_phase(db_path, "001")  # roadmap -> planning-docs
         advance_phase(db_path, "001")  # planning-docs -> architecture-review
         record_gate(db_path, "001", "architecture_review", "skipped")
-        result = advance_phase(db_path, "001")  # -> stakeholder-review
-        assert result["new_phase"] == "stakeholder-review"
+        result = advance_phase(db_path, "001")  # -> ticketing (031/002)
+        assert result["new_phase"] == "ticketing"
 
     def test_visible_in_state(self, db_path):
         register_sprint(db_path, "001", "test")
@@ -358,11 +355,12 @@ class TestPhaseConstants:
         assert PHASES[0] == "roadmap"
         assert PHASES[1] == "planning-docs"
         assert PHASES[-1] == "done"
-        assert len(PHASES) == 8
+        # 031/002: 'stakeholder-review' deleted -- 7 phases, not 8.
+        assert len(PHASES) == 7
 
     def test_all_phases_present(self):
         expected = {
-            "roadmap", "planning-docs", "architecture-review", "stakeholder-review",
+            "roadmap", "planning-docs", "architecture-review",
             "ticketing", "executing", "closing", "done",
         }
         assert set(PHASES) == expected
