@@ -40,10 +40,20 @@ def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         raises on a non-zero exit code (``check`` is not set) -- callers
         inspect ``.returncode`` themselves, matching the pre-existing
         idiom this helper replaces.
+
+    ``stdin`` is always ``DEVNULL``: with no ``stdin=`` argument, a
+    subprocess inherits the *calling* process's stdin. When ``run_git``
+    is invoked from CLASI's MCP server, that inherited stdin is the
+    JSON-RPC pipe from the client -- it will never deliver input. No
+    caller passes ``input=`` to any of these git invocations (verified
+    031/008), so a git subcommand that unexpectedly tries to read stdin
+    (a credential prompt, a merge driver, etc.) now hits EOF and fails
+    fast instead of hanging the calling MCP tool indefinitely.
     """
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd),
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )

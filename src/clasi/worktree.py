@@ -341,6 +341,7 @@ def cleanup_worktree(
             cwd=repo_root,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             stderr = result.stderr.strip()
@@ -357,6 +358,7 @@ def cleanup_worktree(
             cwd=repo_root,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         )
 
     if not keep_branch:
@@ -365,6 +367,7 @@ def cleanup_worktree(
             cwd=repo_root,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         ).returncode == 0
 
         if branch_exists:
@@ -373,6 +376,7 @@ def cleanup_worktree(
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
+                stdin=subprocess.DEVNULL,
             )
             if delete_result.returncode != 0:
                 raise RuntimeError(
@@ -398,6 +402,7 @@ def _parse_ticket_worktrees(repo_root: Path, sprint_id: str) -> dict[str, dict]:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
 
     branch_prefix = f"refs/heads/ticket/{sprint_id}-"
@@ -556,6 +561,7 @@ def reconcile_worktrees(repo_root: Path, sprint_dir: Path) -> dict:
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
+                stdin=subprocess.DEVNULL,
             )
             if merged_check.returncode == 0:
                 cleanup_worktree(repo_root, Path(path), branch, keep_branch=False)
@@ -600,6 +606,7 @@ def reconcile_worktrees(repo_root: Path, sprint_dir: Path) -> dict:
             cwd=path,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         )
         if status_result.stdout.strip() == "":
             cleanup_worktree(repo_root, Path(path), branch, keep_branch=True)

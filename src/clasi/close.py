@@ -442,6 +442,40 @@ def _recovery(recorded: bool, allowed_paths: list[str], instruction: str) -> dic
     return {"recorded": recorded, "allowed_paths": allowed_paths, "instruction": instruction}
 
 
+def _run_test_command(
+    cmd: list[str], timeout: Optional[float]
+) -> "subprocess.CompletedProcess[str]":
+    """Run the sprint's test command with stdin closed (031/008 follow-up).
+
+    A bare ``subprocess.run(cmd, ...)`` with no ``stdin=`` inherits the
+    *parent's* stdin. When this runs inside the MCP server, that parent
+    stdin is the JSON-RPC pipe from the client -- it will never deliver
+    input. Any test that reads stdin (directly or via a fixture/runner
+    default) blocked forever instead of failing, taking the whole sprint
+    close down with it -- measured directly: the same suite that finished
+    in about 12 minutes from a shell (stdin redirected from ``/dev/null``)
+    was still running after 32+ minutes through the MCP server, long
+    after the client itself had given up. ``stdin=DEVNULL`` makes such a
+    read hit EOF and fail fast -- a diagnosable test failure instead of
+    an unbounded hang.
+
+    Deliberately still ``subprocess.run`` under the hood (not
+    ``Popen``+``communicate``), even though ``run``'s own timeout
+    handling kills only the direct child it spawned, not any grandchild
+    a wrapper like ``uv run`` may fork -- see this ticket's Design
+    Rationale / commit message for why a process-group-kill on timeout
+    was investigated and deliberately deferred to a follow-up rather
+    than folded in here.
+    """
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        stdin=subprocess.DEVNULL,
+    )
+
+
 class SprintCloser:
     """Orchestrates the full-lifecycle close for one sprint.
 
@@ -734,12 +768,7 @@ class SprintCloser:
             subprocess_timeout = None if effective_timeout == 0 else effective_timeout
 
             try:
-                test_result = subprocess.run(
-                    test_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=subprocess_timeout,
-                )
+                test_result = _run_test_command(test_cmd, subprocess_timeout)
                 # Pytest exit codes: 0=all passed, 1=some failed, 2=interrupted,
                 # 3=internal error, 4=usage error, 5=no tests collected.
                 # Exit code 5 is not a failure -- repos with no test suite are fine.

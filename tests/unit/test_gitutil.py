@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -82,6 +83,27 @@ class TestRunGit:
         result = run_git(["log", "--oneline"], cwd=repo_a)
         assert result.returncode == 0
         assert "repo a commit" in result.stdout
+
+    def test_stdin_is_devnull(self, repo):
+        """031/008 follow-up: run_git must never inherit the calling
+        process's stdin. When invoked from CLASI's MCP server, that
+        inherited stdin is the JSON-RPC pipe from the client -- a git
+        subcommand that unexpectedly tries to read it (a credential
+        prompt, a merge driver) would hang the calling tool forever
+        instead of failing fast. Asserted on the real subprocess.run
+        call (mocked) rather than trying to provoke an actual git
+        stdin-read, matching the same "assert on call arguments" style
+        used for the analogous close.py fix.
+        """
+        with patch("clasi.gitutil.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            )
+            run_git(["status", "--porcelain"], cwd=repo)
+
+        mock_run.assert_called_once()
+        _, call_kwargs = mock_run.call_args
+        assert call_kwargs["stdin"] is subprocess.DEVNULL
 
 
 class TestExplicitPathspecCommit:
