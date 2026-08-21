@@ -50,7 +50,6 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 branch = true
 source = ["src/clasi"]
 omit = [
-    "*/clasi/plugin/hooks/role_guard.py",
     "*/clasi/cli.py",
     "*/clasi/hook_handlers.py",
     "*/clasi/mcp_server.py",
@@ -63,6 +62,29 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.",
     "if TYPE_CHECKING:",
+]
+
+[tool.coverage.paths]
+# Remaps the e2e container's wheel-installed path back to this repo's own
+# src/clasi layout (ticket 032/007; SUC-006). Only meaningful for
+# combining/reporting on coverage collected INSIDE the e2e container
+# (tests/e2e/) — this repo's own unit-gate coverage (`just test-all`)
+# never needs remapping, since it measures src/clasi directly, in place.
+# tests/e2e/.coveragerc carries an equivalent [paths] section, and that
+# is what tests/e2e/coverage.sh actually uses at combine/report time —
+# see that file's header for why: this table's sibling
+# [tool.coverage.run].omit above excludes cli.py/hook_handlers.py/
+# mcp_server.py for the unit gate, but the e2e/real-app report must NOT
+# omit them, and coverage.py has no CLI flag that overrides a config
+# file's own `omit` list at report time (verified empirically while
+# building this harness: `coverage report --omit=` does not clear a
+# rcfile's [run] omit). This table exists so the path mapping itself is
+# documented in one canonical place, and is directly usable by anyone who
+# deliberately wants pyproject.toml's own (unit-gate) omit view applied
+# to e2e-collected data.
+source = [
+    "src/clasi",
+    "*/site-packages/clasi",
 ]
 
 [tool.setuptools.package-data]

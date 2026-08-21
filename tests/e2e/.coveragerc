@@ -1,0 +1,44 @@
+# CLASI E2E — subprocess coverage config for the container's real-app
+# processes (ticket 032/007; SUC-006). Read automatically by coverage.py's
+# subprocess-startup hook (coverage's own `*.pth` file — already present in
+# any environment with `coverage` installed as of coverage 7.x, which this
+# image gets for free as a transitive dependency of clasi's own
+# `pytest-cov` dependency; no separate `pip install coverage` step or
+# hand-written `.pth` file was needed) whenever COVERAGE_PROCESS_START
+# points at this file (see Dockerfile's ENV). Every `clasi` CLI invocation
+# AND the long-lived `clasi mcp` server (spawned via .mcp.json, which
+# inherits the container's env) pick this up transparently.
+#
+# DELIBERATELY SEPARATE from the repo root pyproject.toml's own
+# [tool.coverage.run] table — see sprint 032's Design Rationale, "Decision:
+# two separate coverage configs for the unit gate vs. the e2e/real-app
+# report". pyproject.toml's omit list excludes cli.py, hook_handlers.py,
+# and mcp_server.py for the UNIT gate (weak/awkward unit coverage of
+# process entry points); this file measures the real application, so it
+# does NOT omit them — they're exactly what an e2e run exists to exercise.
+#
+# Do not merge these two configs back into one: coverage.py has no CLI
+# override for a config file's own `omit` list (verified empirically while
+# building this harness — `coverage report --rcfile=pyproject.toml
+# --omit=` does NOT clear pyproject.toml's [run] omit), so reusing
+# pyproject.toml for the e2e report would silently re-hide the three files
+# this report exists to show. tests/e2e/coverage.sh uses THIS file — not
+# pyproject.toml — for both the container's live collection and the
+# host-side combine/report step, for exactly that reason. pyproject.toml
+# also carries an equivalent [tool.coverage.paths] section (ticket
+# 032/007's own acceptance criteria ask for it there specifically, and it
+# documents the mapping in the repo's main config file), but it is this
+# copy that coverage.sh actually reads.
+
+[run]
+parallel = true
+branch = true
+source = clasi
+
+[report]
+show_missing = true
+
+[paths]
+source =
+    src/clasi
+    */site-packages/clasi

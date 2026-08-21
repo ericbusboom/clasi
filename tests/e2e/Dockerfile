@@ -55,6 +55,24 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Guessing game spec (baked in, no mount needed)
 COPY guessing-game-spec.md /spec/guessing-game-spec.md
 
+# Coverage instrumentation for the occasional, developer-triggered e2e run
+# under coverage (ticket 032/007; SUC-006 — see
+# clasi/issues/test-system-improvements-real-app-coverage-from-the-e2e-a-leaner-faster-suite.md).
+# `coverage` is already installed above as a transitive dependency of
+# clasi's own `pytest-cov` dependency, including its subprocess-auto-start
+# `.pth` hook — no separate `pip install coverage` step is needed here.
+# Setting these two env vars container-wide (not just inside
+# entrypoint.sh's own process tree) is what turns that dormant hook on for
+# every `clasi` CLI invocation via `docker exec` AND the long-lived `clasi
+# mcp` server (spawned via .mcp.json, which inherits this same env).
+# Placed AFTER the `clasi --version` build-time check above so the image
+# build itself never tries to write into /project/.e2e-coverage, which
+# only exists once the bind mount is live at `docker run` — not at build
+# time.
+COPY .coveragerc /etc/clasi-e2e/.coveragerc
+ENV COVERAGE_PROCESS_START=/etc/clasi-e2e/.coveragerc
+ENV COVERAGE_FILE=/project/.e2e-coverage/.coverage
+
 # Create non-root user (Claude refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash agent && \
     mkdir -p /project /home/agent/.claude && \
