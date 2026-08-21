@@ -118,6 +118,17 @@ def _prompt_protected_paths() -> list[str]:
 def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
     """Merge MCP server config into .mcp.json.
 
+    If a `clasi` entry already exists in `mcpServers` — in ANY form, not
+    just the exact default this function would otherwise write — it is
+    left untouched. Only a missing entry is written, using the default
+    from :func:`_detect_mcp_command`. This is deliberately more general
+    than detecting "is this the clasi repo itself": any project that has
+    hand-edited its `clasi` entry (e.g. to `uv run clasi mcp` for a local
+    editable install) keeps that edit across every `clasi init`/`clasi
+    migrate` re-run, instead of having it silently reverted to the bare
+    consumer default (ticket 032/004; see also
+    `clasi-init-reverts-this-repos-own-mcp-config-to-the-consumer-default.md`).
+
     Returns True if the file was written/updated, False if unchanged.
     """
     rel = str(mcp_json_path.name)
@@ -133,8 +144,8 @@ def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
 
     mcp_servers = data.setdefault("mcpServers", {})
 
-    if mcp_servers.get("clasi") == mcp_config:
-        click.echo(f"  Unchanged: {rel}")
+    if "clasi" in mcp_servers:
+        click.echo(f"  Unchanged: {rel} (existing clasi server entry preserved)")
         return False
 
     mcp_servers["clasi"] = mcp_config

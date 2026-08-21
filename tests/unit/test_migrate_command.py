@@ -861,16 +861,38 @@ class TestRunMigrateLegacyDocsClasi:
         assert (project.design_dir / "file.md").exists()
 
     def test_calls_run_init(self, tmp_path):
-        """run_migrate calls run_init after migration."""
+        """run_migrate calls run_init after migration, when Claude is
+        already installed (.claude/ exists) — refreshing an
+        already-installed platform, not force-installing a new one."""
         legacy_issues = tmp_path / "docs" / "clasi" / "issues"
         legacy_issues.mkdir(parents=True)
         (legacy_issues / "issue1.md").write_text("# x", encoding="utf-8")
+        (tmp_path / ".claude").mkdir()  # Claude platform already installed
 
         with patch("clasi.migrate_command._is_git_repo", return_value=False):
             with patch("clasi.migrate_command.run_init") as mock_init:
                 run_migrate(str(tmp_path))
 
         mock_init.assert_called_once()
+
+    def test_skips_run_init_when_no_platform_installed(self, tmp_path):
+        """run_migrate does not force-install Claude into a repo that
+        never opted into it — `run_init` is only called to refresh
+        platforms actually installed (as of this ticket, effectively
+        "Claude, if .claude/ exists"). Previously `run_migrate` always
+        finished with `run_init(target, claude=True)` unconditionally,
+        force-installing Claude even on a repo with no .claude/ at all
+        (ticket 032/004, review finding F11)."""
+        legacy_issues = tmp_path / "docs" / "clasi" / "issues"
+        legacy_issues.mkdir(parents=True)
+        (legacy_issues / "issue1.md").write_text("# x", encoding="utf-8")
+        assert not (tmp_path / ".claude").exists()
+
+        with patch("clasi.migrate_command._is_git_repo", return_value=False):
+            with patch("clasi.migrate_command.run_init") as mock_init:
+                run_migrate(str(tmp_path))
+
+        mock_init.assert_not_called()
 
     def test_prints_restart_notice(self, tmp_path, capsys):
         """run_migrate prints a restart notice after migration."""

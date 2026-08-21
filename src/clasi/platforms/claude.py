@@ -224,6 +224,59 @@ def _migrate_claude(target: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Hooks merge helpers
+# ---------------------------------------------------------------------------
+
+_CLASI_HOOK_COMMAND_PREFIX = "clasi hook"
+
+
+def _is_clasi_hook_entry(entry: dict) -> bool:
+    """Return True if every hook command in *entry* is CLASI-owned.
+
+    *entry* is a single matcher-group dict from a hooks.json event list —
+    ``{"matcher": ..., "hooks": [{"type": "command", "command": ...}, ...]}``.
+    It is identified as CLASI's own only if every command in its "hooks"
+    list starts with ``"clasi hook"``, the CLI convention every CLASI hook
+    registration uses. An entry with no hooks, or with any non-CLASI
+    command mixed in, is treated as user-owned and left alone.
+    """
+    hook_list = entry.get("hooks", [])
+    if not hook_list:
+        return False
+    return all(
+        str(h.get("command", "")).startswith(_CLASI_HOOK_COMMAND_PREFIX)
+        for h in hook_list
+    )
+
+
+def _merge_hooks(existing_hooks: dict, new_hooks: dict) -> tuple[dict, bool]:
+    """Merge CLASI's hook registrations into *existing_hooks*, per event type.
+
+    For each event type CLASI defines (a key in *new_hooks*): existing
+    entries identified as CLASI's own (:func:`_is_clasi_hook_entry`) are
+    dropped, and the current plugin entries for that event are appended in
+    their place — this is the "replace only CLASI's own entries" half.
+    Any existing entry NOT identified as CLASI's — a user-defined hook,
+    however it's shaped — is kept in the list untouched. Event types that
+    CLASI does not define are not touched at all, even if *existing_hooks*
+    has entries under them.
+
+    Returns ``(merged_hooks, changed)``, where *changed* is True if the
+    merge result differs from *existing_hooks* for any touched event type.
+    """
+    merged = dict(existing_hooks)
+    changed = False
+    for event_type, clasi_entries in new_hooks.items():
+        existing_entries = existing_hooks.get(event_type, [])
+        kept = [e for e in existing_entries if not _is_clasi_hook_entry(e)]
+        merged_entries = kept + clasi_entries
+        if existing_hooks.get(event_type) != merged_entries:
+            changed = True
+        merged[event_type] = merged_entries
+    return merged, changed
+
+
+# ---------------------------------------------------------------------------
 # Plugin content helpers
 # ---------------------------------------------------------------------------
 
@@ -318,7 +371,11 @@ def _install_plugin_content(
                 click.echo(f"  Wrote: {rel}")
         click.echo()
 
-    # Overwrite hooks from plugin hooks.json into .claude/settings.json
+    # Merge hooks from plugin hooks.json into .claude/settings.json.
+    # Per-event-type merge, not a wholesale replace: only entries
+    # identifiable as CLASI's own are added/replaced; any other entry
+    # under the same event key (a user-defined hook) is left in place.
+    # See _merge_hooks.
     plugin_hooks = _PLUGIN_DIR / "hooks" / "hooks.json"
     if plugin_hooks.exists():
         click.echo("Hooks (from plugin):")
@@ -335,10 +392,12 @@ def _install_plugin_content(
             settings = {}
 
         new_hooks = hooks_data.get("hooks", {})
-        if settings.get("hooks") == new_hooks:
+        existing_hooks = settings.get("hooks", {})
+        merged_hooks, changed = _merge_hooks(existing_hooks, new_hooks)
+        if not changed:
             click.echo("  Unchanged: .claude/settings.json (hooks)")
         else:
-            settings["hooks"] = new_hooks
+            settings["hooks"] = merged_hooks
             settings_path.write_text(
                 json.dumps(settings, indent=2) + "\n", encoding="utf-8"
             )
@@ -400,6 +459,18 @@ def _create_rules(target: Path) -> bool:
     for filename, content in RULES.items():
         path = rules_dir / filename
         rel = f".claude/rules/{filename}"
+        if path.exists():
+            try:
+                existing = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                existing = None
+        else:
+            existing = None
+
+        if existing == content:
+            click.echo(f"  Unchanged: {rel}")
+            continue
+
         path.write_text(content, encoding="utf-8")
         click.echo(f"  Wrote: {rel}")
         changed = True
@@ -494,19 +565,29 @@ def uninstall(target: Path, copy: bool = False) -> None:
         target: Resolved Path to the target project root.
         copy: If True, alias removal uses file-copy semantics.  Accepted for
             parity with ``clasi uninstall --copy``; wired to
-            ``_links.unlink_alias`` in ticket 003/004.  Currently a no-op.
+            ``_links.unlink_alias`` for the skill-alias removal path below.
+            Currently a no-op there too (removal doesn't depend on how the
+            alias was created). Not used by the CLAUDE.md path, which uses
+            ``strip_section`` regardless of *copy* since CLAUDE.md is a
+            regular file, never a symlink alias.
     """
     click.echo(f"Uninstalling Claude platform integration from {target}")
     click.echo()
 
-    # --- CLAUDE.md (alias) ---
-    _links.unlink_alias(target / "CLAUDE.md")
-    click.echo("  Removed: CLAUDE.md (alias)")
+    from clasi.platforms._markers import strip_section
+
+    # --- CLAUDE.md (regular file holding the CLASI marker block) ---
+    # CLAUDE.md is written via the marker-block writer (_write_claude_md)
+    # specifically so other tools can manage their own blocks in the same
+    # file. Uninstall must strip only CLASI's block, not delete the whole
+    # file — `_links.unlink_alias` would destroy any other-tool content
+    # sharing the file (ticket 032/004). Deletes the file only if the
+    # CLASI block was its only content, matching AGENTS.md below.
+    strip_section(target / "CLAUDE.md")
 
     # --- AGENTS.md (canonical) ---
     # Strip the CLASI block only if Codex is NOT installed; if Codex is present
     # it owns the AGENTS.md block and will clean it up on its own uninstall.
-    from clasi.platforms._markers import strip_section
     codex_installed = (target / ".codex").exists()
     if not codex_installed:
         strip_section(target / "AGENTS.md")

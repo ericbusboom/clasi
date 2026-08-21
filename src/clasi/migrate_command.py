@@ -540,10 +540,19 @@ def run_migrate(target: str, yes: bool = False) -> None:
             )
             return
 
-    # ── Refresh rule files and agent prompts ──────────────────────────────
-    click.echo()
-    click.echo("Refreshing CLASI install (rule files and agent prompts):")
-    run_init(target, claude=True)
+    # ── Refresh rule files and agent prompts ───────────────────────────────
+    # Only refresh platforms actually installed — never force-install a
+    # platform this repo never opted into. Claude is the only platform in
+    # master (Codex/Copilot archived, ticket 032/001), so as of this ticket
+    # that's simply "refresh Claude if .claude/ already exists" (ticket
+    # 032/004, review finding F11). Unconditionally calling
+    # run_init(target, claude=True) previously installed Claude support
+    # into a repo that had never run `clasi init --claude` (e.g. a
+    # Codex-only repo, before Codex was archived).
+    if (target_path / ".claude").exists():
+        click.echo()
+        click.echo("Refreshing CLASI install (rule files and agent prompts):")
+        run_init(target, claude=True)
 
     # ── Done ──────────────────────────────────────────────────────────────
     click.echo()
