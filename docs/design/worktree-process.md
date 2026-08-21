@@ -1,10 +1,28 @@
 ---
 title: "Worktree Process for Parallel Ticket Execution"
-status: draft
+status: retired
 sprint: "022"
+retired-sprint: "032"
 ---
 
 # Worktree Process for Parallel Ticket Execution
+
+**Retired in sprint 032.** The parallel-execution worktree lifecycle this
+document specifies (`create_worktree`, `create_ticket_branch`,
+`validate_worktree`, `merge_ticket_branch`, `check_independence`, and their
+parsing/topo-sort helpers) was deleted from `src/clasi/worktree.py` as dead
+code — it was never wired into any MCP tool, every real sprint (022-031)
+carried `worktree: false`, and `schemas/se-process/instructions/execution.md`
+now describes a single serial execution path with no reference to this
+design. This document is kept, retired rather than deleted, for its
+historical value (the independence-check algorithm and audit-format
+rationale below were real design work, now superseded rather than wrong).
+The reconcile/cleanup/audit core this design also describes
+(`reconcile_worktrees`, `cleanup_worktree`, `write_audit_record`,
+`read_audit_record`) remains live and unchanged in `worktree.py` — only the
+parallel-execution half below is retired. Recovery path if parallel
+execution is ever revisited: git history for `worktree.py` at the sprint 032
+tag, plus this document as the design starting point.
 
 This document is the authoritative specification for the parallel-execution
 worktree lifecycle in CLASI. It is a design document only — it does not

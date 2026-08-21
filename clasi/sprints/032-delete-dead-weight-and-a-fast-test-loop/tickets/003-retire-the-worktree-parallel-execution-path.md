@@ -1,8 +1,9 @@
 ---
 id: '003'
 title: Retire the worktree parallel-execution path
-status: open
-use-cases: ["SUC-002"]
+status: done
+use-cases:
+- SUC-002
 depends-on: []
 github-issue: ''
 issue: retire-worktree-parallel-path.md
@@ -50,17 +51,17 @@ that work.
 
 ## Acceptance Criteria
 
-- [ ] `create_worktree`, `create_ticket_branch`, `validate_worktree`,
+- [x] `create_worktree`, `create_ticket_branch`, `validate_worktree`,
       `merge_ticket_branch` (lines 48-295) are deleted from
       `worktree.py`.
-- [ ] `check_independence` and its seven now-orphaned helpers
+- [x] `check_independence` and its seven now-orphaned helpers
       (`_tickets_dependent`, `_topo_sort_tickets`, `_extract_ticket_files`,
       `_parse_files_from_body`, `_parse_list_item`, `_normalize_path`,
       `_derive_test_basename`; lines 743-1042) are deleted.
       `_DEFAULT_TEST_COMMAND` (the module-level constant near line 46)
       is deleted too if nothing else references it after the above
       deletions — verify with a grep before removing.
-- [ ] `worktree.py`'s module docstring is rewritten: it no longer
+- [x] `worktree.py`'s module docstring is rewritten: it no longer
       describes a "Worktree lifecycle API for parallel ticket
       execution" with parallel execution "not yet wired into the
       controller" (implying provisional); it describes a
@@ -69,23 +70,23 @@ that work.
       execution half was deleted in sprint 032 (pointing at
       `docs/design/worktree-process.md`, retired, for the design
       history).
-- [ ] `worktree.py`'s already-deleted-worktree branch inside
+- [x] `worktree.py`'s already-deleted-worktree branch inside
       `cleanup_worktree` (around lines 351-360 pre-deletion — re-locate
       after the above deletions shift line numbers) uses `git worktree
       prune` instead of re-running `git worktree remove --force
       <path>` and not checking its return code.
-- [ ] `execution.md`'s `## Parallel Path` section (lines 55-230) is
+- [x] `execution.md`'s `## Parallel Path` section (lines 55-230) is
       deleted in full, including its `### Concurrency invariant` and
       `### Preflight sweep`/`### Preconditions`/`### Grouping`/
       `### Per-group loop`/`### Escalation handling`/`### Close`
       subsections.
-- [ ] `execution.md`'s `§0. Mode Selection` section is rewritten: it no
+- [x] `execution.md`'s `§0. Mode Selection` section is rewritten: it no
       longer branches on the sprint's `worktree` flag or references
       `check_independence` — there is exactly one execution path.
       `## Serial Path`'s heading may be simplified (drop "Serial" if it
       reads oddly as the only path — implementer's call) but its five
       numbered steps stay as the content.
-- [ ] `src/clasi/plugin/skills/close-sprint/SKILL.md` **and**
+- [x] `src/clasi/plugin/skills/close-sprint/SKILL.md` **and**
       `.agents/skills/close-sprint/SKILL.md` (both git-tracked; verify
       with `diff` that they still match each other after editing both
       — this sprint's dispatch flagged this exact pair as a repeat
@@ -97,7 +98,17 @@ that work.
       tickets ran. Do **not** hand-edit `.claude/skills/close-sprint/SKILL.md`
       — it is gitignored/installed and regenerates from the canonical
       copy on the next `clasi init`.
-- [ ] `docs/design/worktree-process.md`'s frontmatter `status:` moves
+      **Implementation note**: the two copies were not near-identical
+      at execution time as this criterion's "verify with diff" phrasing
+      assumed — the plugin copy is a short pointer to `close.md` plus
+      two extra sections (one carrying the false claim); the `.agents`
+      copy is a fully inlined, differently-structured doc that never
+      contained the false claim in the first place. Fixed the false
+      claim where it actually existed (the plugin copy); confirmed via
+      grep the `.agents` copy has no such claim to fix. Forcing the two
+      into a byte-identical "match" would have been an unrequested
+      restructuring beyond this ticket's scope, so it was not done.
+- [x] `docs/design/worktree-process.md`'s frontmatter `status:` moves
       from `draft` to `retired`, with `retired-sprint: "032"` added, and
       the retirement note drafted during this sprint's planning pass is
       added at the top (the exact text is in this sprint's
@@ -109,23 +120,44 @@ that work.
       sprint.md's Design Rationale correction note); edit
       `docs/design/worktree-process.md` in place, the same as any other
       project doc.
-- [ ] `templates/sprint.md` no longer includes `worktree: false` in its
+      **Implementation note**: `sprint.md`'s Design Rationale describes
+      the note's required *content* (a one-paragraph note pointing at
+      this sprint and the delete decision) but does not contain an
+      exact quotable block to copy verbatim — the overlay entry that
+      would have carried a drafted verbatim note was removed during
+      planning (see the Design Rationale's own correction note). Wrote
+      a note matching the described content instead of re-drafting the
+      decision from scratch.
+- [x] `templates/sprint.md` no longer includes `worktree: false` in its
       frontmatter template block, so new sprints don't get the field.
       Do not touch any existing sprint's `sprint.md` frontmatter —
       `Sprint.worktree` (`sprint.py:80-82`) keeps reading the field for
       the 30+ existing sprints that still carry it; it is documented
       inert, not migrated away.
-- [ ] `tests/clasi/test_worktree.py` is trimmed: tests of
+- [x] `tests/clasi/test_worktree.py` is trimmed: tests of
       `create_worktree`/`create_ticket_branch`/`validate_worktree`/
       `merge_ticket_branch`/`check_independence`/the seven helpers are
       removed; tests of `reconcile_worktrees`/`cleanup_worktree`/
       `write_audit_record`/`read_audit_record`/the two live parsing
       helpers/the `git worktree prune` fix stay and pass.
-- [ ] `tests/system/test_worktree_and_planning_integration.py` is
+- [x] `tests/system/test_worktree_and_planning_integration.py` is
       trimmed the same way — read it first to determine which of its
       tests exercise the deleted lifecycle vs. the surviving core;
       delete only the former.
-- [ ] Full suite passes with the deletion in place.
+- [x] Full suite passes with the deletion in place. **Implementation
+      note**: per this ticket's own dispatch and `.claude/rules/source-code.md`,
+      the programmer does not run the full suite — that is `close_sprint`'s
+      one-per-sprint gate (031/008). Verified at ticket scope instead:
+      every scoped test file/module touching worktree.py passes
+      (`tests/clasi/test_worktree.py`,
+      `tests/system/test_worktree_and_planning_integration.py`,
+      `tests/unit/test_close_sprint_worktrees.py`, plus
+      `tests/system/test_one_full_suite_run_docs.py` and
+      `tests/unit/test_skill_stub_loader.py`/`test_init_command.py` for
+      the skill-doc layers touched), and a repo-wide grep confirms zero
+      remaining references to any deleted symbol outside historical/
+      comment mentions. Full-suite confirmation is the team-lead's
+      close-sprint gate.
 
 ## Implementation Plan
 
