@@ -317,6 +317,127 @@ class TestSprintIdInFrontmatter:
 
 
 # ---------------------------------------------------------------------------
+# Write-scope discoverability at SubagentStart (ticket 031-004)
+#
+# An agent previously had no way to learn its write scope except by being
+# blocked first by handle_role_guard. handle_subagent_start's existing
+# status-block print (via _build_status_block -> _write_scope_block) now
+# also carries a short, tier-scoped write-scope summary: allowed prefixes,
+# blocked prefixes, and the OOP recovery route.
+# ---------------------------------------------------------------------------
+
+
+class TestWriteScopeSummaryAtSubagentStart:
+    def _start_payload(self, agent_type: str) -> dict:
+        return {
+            "agent_type": agent_type,
+            "agent_id": "abc123",
+            "session_id": "sess-xyz",
+            "hook_event_name": "SubagentStart",
+        }
+
+    def test_programmer_dispatch_includes_write_scope_heading(self, tmp_path, capsys):
+        """A dispatched tier-2 (programmer) subagent's SubagentStart output
+        includes the '## CLASI write scope' summary."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_start, self._start_payload("programmer"))
+
+        out = capsys.readouterr().out
+        assert "## CLASI write scope" in out
+
+    def test_programmer_dispatch_describes_tier2_scope(self, tmp_path, capsys):
+        """Tier 2's summary states it may write anywhere (its role) and is
+        gated by the ticket-state lock rather than by directory."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_start, self._start_payload("programmer"))
+
+        out = capsys.readouterr().out
+        assert "tier 2 (programmer) allowed: anywhere in the project" in out
+        assert "tier 2 blocked:" in out
+
+    def test_sprint_planner_dispatch_includes_write_scope_heading(self, tmp_path, capsys):
+        """A dispatched tier-1 (sprint-planner) subagent's SubagentStart
+        output also includes the write-scope summary."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(
+                tmp_path, handle_subagent_start, self._start_payload("sprint-planner")
+            )
+
+        out = capsys.readouterr().out
+        assert "## CLASI write scope" in out
+        assert "sprint-planner (tier 1)" in out
+
+    def test_write_scope_states_oop_recovery_route(self, tmp_path, capsys):
+        """Every tier's summary names the OOP recovery route so an agent
+        that hits a real block already knows how to recover."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_start, self._start_payload("programmer"))
+
+        out = capsys.readouterr().out
+        assert "clasi oop on --reason" in out
+        assert ".clasi/oop" in out
+
+    def test_unconfigured_project_blocked_line_names_clasi_init(self, tmp_path, capsys):
+        """Tier 1's summary, with no protected_paths configured, tells the
+        agent to run `clasi init` rather than silently naming nothing."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(
+                tmp_path, handle_subagent_start, self._start_payload("sprint-planner")
+            )
+
+        out = capsys.readouterr().out
+        assert "protected_paths not configured" in out
+        assert "clasi init" in out
+
+    def test_configured_protected_paths_named_in_blocked_line(self, tmp_path, capsys):
+        """With protected_paths configured, tier 1's blocked line names the
+        actual configured prefixes instead of the generic fallback text."""
+        clasi_dir = tmp_path / ".clasi"
+        clasi_dir.mkdir(parents=True, exist_ok=True)
+        (clasi_dir / "config.yaml").write_text(
+            "process: se\nprotected_paths:\n  - src\n  - tests\n", encoding="utf-8"
+        )
+        _make_log_dir(tmp_path)
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(
+                tmp_path, handle_subagent_start, self._start_payload("sprint-planner")
+            )
+
+        out = capsys.readouterr().out
+        assert "src, tests" in out
+
+    def test_oop_active_suppresses_write_scope_block(self, tmp_path, capsys):
+        """OOP bypass suppresses the whole status print (existing
+        behavior), including the write-scope summary — nothing new to
+        surface when CLASI enforcement itself is bypassed."""
+        _write_legacy_pin(tmp_path)
+        _make_log_dir(tmp_path)
+        (tmp_path / ".clasi" / "oop").write_text("", encoding="utf-8")
+
+        with pytest.raises(SystemExit):
+            _run_with_cwd(tmp_path, handle_subagent_start, self._start_payload("programmer"))
+
+        out = capsys.readouterr().out
+        assert "## CLASI write scope" not in out
+
+
+# ---------------------------------------------------------------------------
 # _log_hook_event: file_path resolution + dated timestamps (ticket 026-004)
 # ---------------------------------------------------------------------------
 

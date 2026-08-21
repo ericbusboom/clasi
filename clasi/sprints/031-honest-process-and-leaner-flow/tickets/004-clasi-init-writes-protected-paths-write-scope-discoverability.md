@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: clasi init writes protected_paths; write-scope discoverability
-status: open
+status: done
 use-cases:
 - SUC-004
 depends-on:
@@ -38,18 +38,18 @@ without a hard dependency.
 
 ## Acceptance Criteria
 
-- [ ] `clasi init` on a fresh fixture project detects (or is
+- [x] `clasi init` on a fresh fixture project detects (or is
       interactively told) the project's source/test directories and
       writes `protected_paths:` to `.clasi/config.yaml`.
-- [ ] A project that declines, or that upgrades without re-running
+- [x] A project that declines, or that upgrades without re-running
       `init`, keeps today's block-by-default fallback unchanged (no
       regression for existing configured or unconfigured projects).
-- [ ] A dispatched tier-1/tier-2 subagent's `SubagentStart` output
+- [x] A dispatched tier-1/tier-2 subagent's `SubagentStart` output
       includes a 3-4 line write-scope summary: allowed prefixes, blocked
       prefixes, the OOP recovery route (`clasi oop on --reason '...'`).
-- [ ] The same summary (or its tier-0-scoped equivalent) is folded into
+- [x] The same summary (or its tier-0-scoped equivalent) is folded into
       the existing tier-0 status block.
-- [ ] The summary text reflects ticket 003's post-relaxation policy —
+- [x] The summary text reflects ticket 003's post-relaxation policy —
       confirm 003 has landed before writing this ticket's summary
       strings; if it hasn't yet, coordinate rather than guessing at the
       wording.

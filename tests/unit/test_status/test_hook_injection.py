@@ -342,6 +342,50 @@ class TestRealStatusBlockSize:
 
 
 # ---------------------------------------------------------------------------
+# Write-scope discoverability folded into the tier-0 status block
+# (ticket 031-004)
+#
+# The same summary handle_subagent_start prints for a dispatched tier-1/2
+# subagent (see TestWriteScopeSummaryAtSubagentStart in
+# tests/unit/test_hook_handlers.py) is folded into this hot per-prompt
+# path too, via the shared _build_status_block/_write_scope_block call
+# chain — a team-lead session (tier 0, CLASI_AGENT_NAME unset/team-lead)
+# learns its write scope on every prompt without ever being blocked
+# first.
+# ---------------------------------------------------------------------------
+
+
+class TestWriteScopeInTierZeroStatusBlock:
+    def test_team_lead_status_block_includes_write_scope_heading(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "## CLASI write scope" in output
+
+    def test_team_lead_status_block_names_tier_0_and_oop_route(self, tmp_path):
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "team-lead (tier 0)" in output
+        assert "clasi oop on --reason" in output
+        assert ".clasi/oop" in output
+
+    def test_unconfigured_project_blocked_line_names_clasi_init(self, tmp_path):
+        """_build_realistic_multi_sprint_fixture's config.yaml has no
+        protected_paths:, so the tier-0 summary falls back to the
+        generic block-by-default text naming `clasi init` as the fix —
+        matching AC 2 (no regression for an unconfigured project)."""
+        _build_realistic_multi_sprint_fixture(tmp_path)
+
+        output = _run_status_inject(tmp_path, agent="team-lead")
+
+        assert "protected_paths not configured" in output
+        assert "clasi init" in output
+
+
+# ---------------------------------------------------------------------------
 # Git-call and load_machine parse-count collapse across a REAL, realistic
 # multi-sprint build_status invocation (sprint 026 / ticket 003).
 #
