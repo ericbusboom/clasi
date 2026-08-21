@@ -1,7 +1,7 @@
 ---
 id: '031'
 title: Honest process and leaner flow
-status: planning-docs
+status: closed
 branch: sprint/031-honest-process-and-leaner-flow
 worktree: false
 use-cases: []
