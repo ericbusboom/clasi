@@ -1,6 +1,6 @@
 # clasi (source root)
 
-**Owner:** clasi maintainers · **Last reviewed:** 2026-07-24 · **Status:** stable
+**Owner:** clasi maintainers · **Last reviewed:** 2026-08-21 (sprint 033) · **Status:** stable
 
 ---
 
@@ -34,7 +34,10 @@ The package divides into subsystem directories (each with its own
 - `status/` — computes and renders the project-status block surfaced to
   the team-lead and injected by hooks.
 - `platforms/` — platform installers (Claude, Codex, Copilot, Cursor) that
-  materialize agent/skill/rule content into a target project.
+  materialize agent/skill/rule content into a target project. **As of
+  sprint 033**: `claude.py` (the only adapter in master since sprint 032)
+  gains manifest-based uninstall tracking and a hook-removal symmetry
+  fix — see `platforms-DESIGN.md`'s sprint-033 entry.
 - `plugin/` — the packaged agent definitions, skills, and path-scoped rules
   shipped to installed projects.
 - `templates/` — packaged template resources served to skills/tools.
@@ -69,6 +72,43 @@ The package divides into subsystem directories (each with its own
   diagnostic tap (`JSONRPCMessage.model_validate_json`, installed for a
   now-closed investigation) is unchanged by this sprint — flagged as
   Phase 4 debug-scaffolding cleanup, not touched here.
+  **As of sprint 033**: the migration this entry predicted has landed.
+  `mcp_server.py`'s `from mcp.server.fastmcp import FastMCP` becomes
+  `from mcp.server.mcpserver import MCPServer` (2.x's rename of the same
+  class — `MCPServer("clasi", instructions=...)`, `.tool()`,
+  `.run(transport="stdio")` all keep the 1.x call shape unchanged, so
+  `_common.py`'s `@clasi_tool` decorator — the one piece the sprint-030
+  entry above was written to protect — needed no change at all, exactly
+  as designed). Three *other*, narrower private-internal touches that
+  `@clasi_tool` never covered (because they predate it and serve
+  different, diagnostic purposes) needed their own small fixes: the
+  staleness-warning append at server startup now writes
+  `self.server._lowlevel_server.instructions` (2.x renamed the
+  `_mcp_server` attribute the old code wrote to `_lowlevel_server`; the
+  existing `try/except AttributeError` around this write meant the old
+  code degraded to a warning rather than a startup crash even before
+  this fix, so this is a correctness fix, not a hazard-closing one); the
+  `_tool_manager._tools` diagnostic dump (tool count and per-tool schema,
+  logged at startup) is confirmed structurally unchanged under 2.x
+  (`ToolManager._tools` is still a plain `dict[str, Tool]` at the same
+  attribute path) but was previously the one touch of the four with *no*
+  exception guard around it — a future private-shape change here would
+  have crashed server startup outright, so this sprint wraps it the same
+  way the instructions write already was, closing that gap rather than
+  merely surviving this particular library version by luck. The raw-RPC
+  tap (`JSONRPCMessage.model_validate_json`) is confirmed to still
+  resolve under 2.x (`mcp.types.JSONRPCMessage` mirrors
+  `mcp_types.JSONRPCMessage`, a pydantic `RootModel` that still exposes
+  `model_validate_json`) and is left exactly as flagged above — still
+  future debug-scaffolding cleanup, not touched by this sprint.
+  `pyproject.toml`'s `mcp>=1.0,<2.0` cap is removed as this ticket's
+  last step, only after the above is verified against an installed
+  `mcp==2.0.0` and the existing `tests/unit/test_tools_common.py` suite
+  (which exercises `@clasi_tool`'s NONE-sentinel stripping against
+  synthetic functions, with no FastMCP/MCPServer dependency at all) is
+  confirmed still green — see sprint 033's `sprint.md` Architecture
+  Migration Concerns for the rollback procedure if a later, fresh
+  dependency resolve surfaces a problem this local verification did not.
 - `project.py` — the root object; all path resolution, `sources`/
   `design_docs` config, and artifact-directory discovery flow through it.
 - `artifact.py`, `sprint.py`, `ticket.py`, `issue.py`, `frontmatter.py` —
@@ -220,7 +260,13 @@ The package divides into subsystem directories (each with its own
   2.x migration is tracked separately and depends on Phase 3/4's
   `@clasi_tool` decorator landing first (`02-mcp-tools.md` F5: the
   NONE-sentinel stripping and call-logging taps three private FastMCP
-  internals that mcp 2.x removes).
+  internals that mcp 2.x removes). **As of sprint 033**: that migration
+  has landed and the cap is removed — see the `mcp_server.py` entry
+  above for what changed. This module (`skill_resolve.py`) itself is
+  untouched by the migration; it is cited here only because it is the
+  historical reason `platforms/claude.py`'s install path survived the
+  original `mcp==2.0.0` break at all — that decoupling remains in place
+  regardless of which `mcp` version the MCP server itself now targets.
 - `hook_handlers.py`, `plan_to_issue.py`, `staleness.py` — hook-time
   behavior (role/mcp guards, plan-mode capture, running-build drift).
   As of sprint 026, `handle_role_guard` resolves `Project`, its parsed

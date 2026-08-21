@@ -1,10 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - clasr
 - uninstall
 - follow-up
+sprint: '033'
+tickets:
+- 033-001
 ---
 
 # Port clasr's manifest-based uninstall model into clasi.platforms

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
@@ -7,6 +7,9 @@ tags:
 - mcp
 - mcp-2x-migration
 blocked-by: uniform-mcp-tool-envelope.md
+sprint: '033'
+tickets:
+- 033-002
 ---
 
 # Migrate CLASI's MCP server to the mcp 2.x API

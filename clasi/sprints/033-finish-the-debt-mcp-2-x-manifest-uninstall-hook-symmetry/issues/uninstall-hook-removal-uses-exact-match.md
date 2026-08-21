@@ -1,9 +1,12 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - install
 - follow-up
+sprint: '033'
+tickets:
+- 033-001
 ---
 
 # uninstall's hook removal uses exact-match, so it can leave CLASI entries behind
