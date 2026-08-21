@@ -1,7 +1,7 @@
 ---
 id: '033'
 title: 'Finish the debt: mcp 2.x, manifest uninstall, hook symmetry'
-status: executing
+status: done
 branch: sprint/033-finish-the-debt-mcp-2-x-manifest-uninstall-hook-symmetry
 worktree: false
 use-cases:
