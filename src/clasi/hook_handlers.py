@@ -745,7 +745,7 @@ def handle_role_guard(payload: dict) -> None:
     AGENTS.md                        ALLOW    ALLOW    ALLOW    ALLOW
     issues_dir / reflections_dir     ALLOW    ALLOW    ALLOW*   ALLOW
     design_dir / clasi_dir / log_dir ALLOW    ALLOW    ALLOW    ALLOW
-    .clasi/sprints/**                BLOCK    ALLOW    ALLOW    ALLOW
+    .clasi/sprints/**                ALLOW    ALLOW    ALLOW    ALLOW
     Source / tests / config          BLOCK    BLOCK    ALLOW*   ALLOW
     (anything else, in-root)         BLOCK    BLOCK    ALLOW*   ALLOW
     (anything outside project root)  ALLOW    ALLOW    ALLOW    ALLOW
@@ -1169,21 +1169,6 @@ def handle_role_guard(payload: dict) -> None:
     if agent_tier == "2":
         _exit(0, "tier-2")
 
-    if agent_tier in ("", "0"):
-        # Check block list first: sprints_dir is owned by sprint-planner/MCP.
-        for blk in _block_prefixes:
-            if file_path.startswith(blk):
-                # Sprint artifacts are owned by sprint-planner (tier 1) and
-                # managed via MCP tools. Direct edits are blocked to prevent
-                # process violations (e.g. bypassing ticket status transitions).
-                print(
-                    "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
-                    "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
-                    file=sys.stderr,
-                )
-                decisions.append(f"match=blk-sprint:{blk}")
-                _exit(2, "blk-sprint")
-
     if agent_tier in ("", "0", "1"):
         # Check allow list: issues, reflections, design, clasi state, log.
         # Tier 1 was added here by ticket 026-001 — see the docstring
@@ -1193,10 +1178,15 @@ def handle_role_guard(payload: dict) -> None:
                 decisions.append(f"match={alw}")
                 _exit(0, "artifact-dir")
 
-    # Sprint-planner (tier 1) can write to sprint directories they own.
+    # Sprint directories: tier 0 (team-lead) and tier 1 (sprint-planner)
+    # may both write here directly (stakeholder decision, 2026-08-19 —
+    # see clasi/issues/report-guard-friction-slowness-relax-tier-0-
+    # restrictions.md). `create_ticket` remains MCP-gated separately
+    # (mcp-guard) since ticket creation stays planner-owned; this is
+    # only the role-guard file-write path.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
     _sprints_prefix = _block_prefixes[0]
-    if agent_tier == "1" and file_path.startswith(_sprints_prefix):
+    if agent_tier in ("", "0", "1") and file_path.startswith(_sprints_prefix):
         decisions.append(f"match={_sprints_prefix}")
         _exit(0, "tier-1")
 

@@ -1216,6 +1216,16 @@ class TestRoleGuardLegacyLayout:
         _write_legacy_layout_config(tmp_path)
         assert _run_role_guard(tmp_path, ".clasi/architecture/x.md", "") == 0
 
+    def test_tier0_sprints_dir_allowed(self, tmp_path):
+        """Tier 0: write to .clasi/sprints/013-.../sprint.md is allowed.
+
+        Ticket 031-003 (stakeholder decision, 2026-08-19): the tier-0
+        blk-sprint block was removed — team-lead may now write sprint
+        artifacts directly. create_ticket remains blocked separately via
+        mcp-guard (ticket creation stays planner-owned)."""
+        _write_legacy_layout_config(tmp_path)
+        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "") == 0
+
     def test_tier0_design_dir_allowed(self, tmp_path):
         """Tier 0: write to docs/design/x.md is allowed (design_dir)."""
         _write_legacy_layout_config(tmp_path)
@@ -1254,11 +1264,6 @@ class TestRoleGuardLegacyLayout:
         assert _run_role_guard(tmp_path, "AGENTS.md", "") == 0
 
     # --- Tier 0 (team-lead) block cases ---
-
-    def test_tier0_sprints_dir_blocked(self, tmp_path):
-        """Tier 0: write to .clasi/sprints/013-.../sprint.md is blocked."""
-        _write_legacy_layout_config(tmp_path)
-        assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "") == 2
 
     def test_tier0_source_code_blocked(self, tmp_path):
         """Tier 0: write to source file is blocked."""
@@ -1347,12 +1352,14 @@ class TestRoleGuardFreshLayout:
         _write_fresh_config(tmp_path)
         assert _run_role_guard(tmp_path, ".clasi/log/hooks.log", "") == 0
 
-    # --- Tier 0 block cases with new layout ---
-
-    def test_tier0_sprints_dir_blocked(self, tmp_path):
-        """Tier 0: write to clasi/sprints/013-.../sprint.md is blocked (new default)."""
+    def test_tier0_sprints_dir_allowed(self, tmp_path):
+        """Tier 0: write to clasi/sprints/013-.../sprint.md is allowed
+        (new default). Ticket 031-003: the tier-0 blk-sprint block was
+        removed; create_ticket remains blocked separately via mcp-guard."""
         _write_fresh_config(tmp_path)
-        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 0
+
+    # --- Tier 0 block cases with new layout ---
 
     def test_tier0_source_code_blocked(self, tmp_path):
         """Tier 0: write to source file is blocked (new layout same as legacy)."""
@@ -1378,20 +1385,18 @@ class TestRoleGuardFreshLayout:
         # This is expected: clasi_dir prefix covers all state files under .clasi/
         assert _run_role_guard(tmp_path, ".clasi/issues/x.md", "") == 0
 
-    def test_tier0_old_sprints_path_blocked_with_fresh_config(self, tmp_path):
-        """Tier 0: .clasi/sprints/x.md is blocked even with fresh config.
+    def test_tier0_old_sprints_path_allowed_with_fresh_config(self, tmp_path):
+        """Tier 0: .clasi/sprints/x.md is allowed with fresh config too.
 
-        In fresh layout, sprints_dir=clasi/sprints/. The old path .clasi/sprints/
-        would fall under clasi_dir (.clasi/) but NOT under sprints_dir (clasi/sprints/).
-        The block check runs first — so if .clasi/sprints/ is not in block_prefixes
-        (because block_prefixes only contains clasi/sprints/), the write falls through
-        to clasi_dir allow, and is allowed. This is intentional: the guard blocks
-        writes to the CONFIGURED sprints_dir.
+        In fresh layout, sprints_dir=clasi/sprints/, so the legacy path
+        .clasi/sprints/ falls under clasi_dir (.clasi/) rather than the
+        configured sprints_dir prefix — but as of ticket 031-003 tier 0
+        no longer has a sprints-specific block at all, so this is allowed
+        either way: via clasi_dir (checked first) if not via sprints_dir.
         """
         _write_fresh_config(tmp_path)
         # With fresh config, sprints_dir = clasi/sprints/, not .clasi/sprints/
         # So .clasi/sprints/ is under clasi_dir, which is in allow_prefixes.
-        # Result: allowed (team-lead can write to non-sprint .clasi/ state)
         assert _run_role_guard(tmp_path, ".clasi/sprints/013-x/sprint.md", "") == 0
 
     # --- Tier 1 (sprint-planner) with fresh layout ---
@@ -1413,9 +1418,10 @@ class TestRoleGuardFreshLayout:
         # No config file — _load_paths_config returns {} → ARTIFACT_PATH_DEFAULTS used
         assert _run_role_guard(tmp_path, "clasi/issues/x.md", "") == 0
 
-    def test_tier0_no_config_sprints_blocked(self, tmp_path):
-        """Tier 0: without config, clasi/sprints/ is blocked (new default sprints_dir)."""
-        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+    def test_tier0_no_config_sprints_allowed(self, tmp_path):
+        """Tier 0: without config, clasi/sprints/ (new default sprints_dir)
+        is allowed — ticket 031-003 removed the tier-0 blk-sprint block."""
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 0
 
 
 class TestRoleGuardNestedPayloadShape:
@@ -1592,13 +1598,15 @@ class TestRoleGuardAbsolutePathNormalization:
         _write_fresh_config(tmp_path)
         assert _run_role_guard(tmp_path, _abs(tmp_path, "docs/design/foo.md"), "") == 0
 
-    # --- Tier 0 (team-lead): blocked paths, absolute form ---
-
-    def test_tier0_sprints_dir_blocked_absolute(self, tmp_path):
+    def test_tier0_sprints_dir_allowed_absolute(self, tmp_path):
+        """Ticket 031-003: tier 0 sprints_dir writes are allowed, absolute
+        form too."""
         _write_fresh_config(tmp_path)
         assert _run_role_guard(
             tmp_path, _abs(tmp_path, "clasi/sprints/013-x/sprint.md"), ""
-        ) == 2
+        ) == 0
+
+    # --- Tier 0 (team-lead): blocked paths, absolute form ---
 
     def test_tier0_source_code_blocked_absolute(self, tmp_path):
         _write_fresh_config(tmp_path)
@@ -2276,12 +2284,13 @@ class TestRoleGuardProtectedPaths:
         self._write_config_with_protected_paths(tmp_path, ["src", "clasi_pkg_tests"])
         assert _run_role_guard(tmp_path, "tests/e2e/start.sh", "1") == 0
 
-    def test_sprints_dir_still_blocked_even_outside_protected_paths(self, tmp_path):
-        """.clasi/sprints/** stays blocked for tier 0 regardless of
-        protected_paths — that block is independent (sprint-planner/MCP
-        ownership), not something protected_paths controls."""
+    def test_sprints_dir_still_allowed_regardless_of_protected_paths(self, tmp_path):
+        """clasi/sprints/** stays allowed for tier 0 regardless of
+        protected_paths — the sprints_dir allow (ticket 031-003) is
+        checked independently and is not something protected_paths
+        controls."""
         self._write_config_with_protected_paths(tmp_path, ["src", "tests"])
-        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 2
+        assert _run_role_guard(tmp_path, "clasi/sprints/013-x/sprint.md", "") == 0
 
     def test_no_protected_paths_configured_preserves_block_by_default(self, tmp_path):
         """Regression guard: an empty/unconfigured protected_paths must
@@ -2888,14 +2897,17 @@ class TestRealDispatchTierResolutionEndToEnd:
             f"expected reason 'tier-2' with exit 0, got: {matching}"
         )
 
-    def test_team_lead_no_dispatch_remains_blocked_from_sprints_and_source(
+    def test_team_lead_no_dispatch_remains_blocked_from_source_only(
         self, tmp_path,
     ):
         """Regression: a team-lead caller — no SubagentStart registration
         ever happened for this identity, no CLASI_AGENT_TIER set — must
-        remain blocked from both clasi/sprints/** and source-code writes.
+        remain blocked from source-code writes. clasi/sprints/** writes
+        are allowed for this same unresolved (tier-0-default) identity as
+        of ticket 031-003 — sprints_dir is no longer sprint-planner-only
+        for direct writes, only create_ticket stays gated.
         The fix for sprint-planner's tier resolution must not make the
-        unresolved (no-dispatch-context) case permissive."""
+        unresolved (no-dispatch-context) case permissive for source."""
         _write_fresh_config(tmp_path)
         _make_log_dir(tmp_path)
         db_path = _init_db_only(tmp_path)
@@ -2915,7 +2927,7 @@ class TestRealDispatchTierResolutionEndToEnd:
             sprints_payload["agent_id"] = "team-lead-no-dispatch"
             with pytest.raises(SystemExit) as exc:
                 _run_with_cwd(tmp_path, handle_role_guard, sprints_payload)
-            assert exc.value.code == 2
+            assert exc.value.code == 0
 
             source_payload = _role_guard_payload("src/clasi/some_module.py")
             source_payload["agent_id"] = "team-lead-no-dispatch"
@@ -2977,26 +2989,99 @@ class TestMcpGuardTierResolutionByCallerIdentity:
                 os.environ["CLASI_AGENT_TIER"] = old_tier
 
 
-class TestMcpGuardBlocksCreateSprintAtTierZero:
-    """Ticket 024-001: the team-lead agent doc was rewritten to dispatch
-    sprint-planner for sprint creation instead of calling `create_sprint`
-    directly, aligning the doc to this guard behavior rather than the
-    guard to the doc. This test asserts the guard side of that alignment
-    holds: `mcp__clasi__create_sprint` (the fully-prefixed tool name Claude
-    Code's PreToolUse hook actually sends, and the exact string matched by
-    the `mcp__clasi__create_ticket|mcp__clasi__create_sprint` matcher in
-    `.claude/settings.json`) is still denied for a tier-0 caller.
+class TestMcpGuardHandlerHasNoToolBranching:
+    """Superseded by ticket 031-003 (stakeholder decision, 2026-08-19):
+    tier 0 may now call `create_sprint` directly — only `create_ticket`
+    stays MCP-gated (ticket creation remains planner-owned). Before this
+    ticket, `mcp__clasi__create_sprint` was also routed to mcp-guard and
+    denied for tier 0 (ticket 024-001); the PreToolUse matcher in both
+    `.claude/settings.json` and `src/clasi/plugin/hooks/hooks.json` was
+    shrunk from `mcp__clasi__create_ticket|mcp__clasi__create_sprint` to
+    `mcp__clasi__create_ticket` alone, so `create_sprint` calls no longer
+    reach `handle_mcp_guard` at all in the real dispatch path.
+
+    `handle_mcp_guard` itself was deliberately left unchanged (it has no
+    tool-name branching — it blocks tier 0 for WHATEVER tool name it is
+    invoked with, relying entirely on the matcher to decide which tool
+    calls reach it). Calling it directly with tool_name=create_sprint
+    therefore still returns a block — that is defense-in-depth, not a
+    live behavior, since the matcher no longer routes real create_sprint
+    calls here. See TestMcpGuardMatcherScope below for the actual proof
+    that create_sprint is unblocked (a matcher-config test, since that is
+    where this policy is actually enforced).
     """
 
-    def test_create_sprint_denied_for_tier_zero(self, tmp_path):
+    def test_handler_still_blocks_create_sprint_tool_name_directly(self, tmp_path):
+        """Defense-in-depth regression: even if a future matcher
+        misconfiguration ever routed create_sprint to mcp-guard again,
+        the handler's tier-0 block is unconditional per-tool-name."""
         _write_fresh_config(tmp_path)
         assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "") == 2
 
     def test_create_sprint_allowed_for_tier_one(self, tmp_path):
         """Regression control: sprint-planner (tier 1) must still be able
-        to call create_sprint — only tier 0 is blocked."""
+        to call create_sprint — only tier 0 is affected by this ticket."""
         _write_fresh_config(tmp_path)
         assert _run_mcp_guard(tmp_path, "mcp__clasi__create_sprint", "1") == 0
+
+
+class TestMcpGuardMatcherScope:
+    """Ticket 031-003: proves the actual policy change — `create_sprint`
+    calls no longer route to mcp-guard at all — by reading the real
+    PreToolUse matcher regex out of BOTH installed hook-config copies
+    (this repo's own `.claude/settings.json` and the canonical source
+    `src/clasi/plugin/hooks/hooks.json` that `clasi init` installs from
+    into every new project) rather than calling `handle_mcp_guard`
+    directly. `handle_mcp_guard` has no tool-name-specific logic (see
+    TestMcpGuardHandlerHasNoToolBranching above) — whether a given MCP
+    tool call is gated at all is entirely a function of this matcher, so
+    that is the only place "create_sprint is now allowed" can actually be
+    proven.
+    """
+
+    def _mcp_guard_matcher(self, settings_path: Path) -> str:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        for entry in data["hooks"]["PreToolUse"]:
+            commands = " ".join(
+                h.get("command", "") for h in entry.get("hooks", [])
+            )
+            if "mcp-guard" in commands:
+                return entry["matcher"]
+        raise AssertionError(f"no mcp-guard PreToolUse entry found in {settings_path}")
+
+    @pytest.mark.parametrize(
+        "settings_path",
+        [
+            _REPO_ROOT / ".claude" / "settings.json",
+            _REPO_ROOT / "src" / "clasi" / "plugin" / "hooks" / "hooks.json",
+        ],
+        ids=["repo-settings", "plugin-source"],
+    )
+    def test_create_sprint_no_longer_matched(self, settings_path):
+        import re
+
+        matcher = self._mcp_guard_matcher(settings_path)
+        assert re.fullmatch(matcher, "mcp__clasi__create_sprint") is None, (
+            f"{settings_path}: matcher {matcher!r} still routes create_sprint "
+            "to mcp-guard — tier 0 should be able to call it directly now"
+        )
+
+    @pytest.mark.parametrize(
+        "settings_path",
+        [
+            _REPO_ROOT / ".claude" / "settings.json",
+            _REPO_ROOT / "src" / "clasi" / "plugin" / "hooks" / "hooks.json",
+        ],
+        ids=["repo-settings", "plugin-source"],
+    )
+    def test_create_ticket_still_matched(self, settings_path):
+        import re
+
+        matcher = self._mcp_guard_matcher(settings_path)
+        assert re.fullmatch(matcher, "mcp__clasi__create_ticket") is not None, (
+            f"{settings_path}: matcher {matcher!r} no longer routes "
+            "create_ticket to mcp-guard — ticket creation must stay gated"
+        )
 
 
 class TestMcpGuardTierAllowlist:

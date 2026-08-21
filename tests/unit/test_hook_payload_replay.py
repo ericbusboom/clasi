@@ -37,6 +37,13 @@ methodology):
   the fixture file) — sprint 028's automatic deny-payload dump only
   fires for ``exit_code == 2``, so there is no equivalent built-in
   capture mechanism for the allow path.
+- ``role-guard-allow-tier0-sprints.json`` (ticket 031-003): captured the
+  same live-CLI-against-a-scratch-project way, tier 0 (env var unset), a
+  ``Write`` to a ``clasi/sprints/**`` path. Proves the stakeholder-decided
+  policy change (2026-08-19) that removed the tier-0 blk-sprint block —
+  team-lead may now write sprint artifacts directly; only ``create_ticket``
+  stays MCP-gated (see ``TestMcpGuardMatcherScope`` in
+  ``test_hook_handlers.py`` for that half of the same policy).
 - ``role-guard-deny-no-ticket.json`` / ``role-guard-allow-ticket-done-edit.json``
   (ticket 029-010): captured the same tee-against-a-scratch-project way,
   tier 2, against a scratch project with a real execution lock held for
@@ -183,6 +190,18 @@ _FIXTURES = [
         "role-guard-allow-tier2.json", "role-guard", "2",
         expected_exit=0, expected_reason="tier-2",
         path_rewrite_suffix="src/app/new_module.py",
+    ),
+    _Fixture(
+        # Ticket 031-003 (stakeholder decision, 2026-08-19): tier 0
+        # (team-lead) may now write directly under sprints_dir — the
+        # tier-0 blk-sprint block was removed (create_ticket stays
+        # gated separately, via mcp-guard). Captured live against a
+        # throwaway scratch project the same tee-against-the-real-CLI
+        # way as the sibling role-guard fixtures above, tier unset
+        # (functionally tier 0).
+        "role-guard-allow-tier0-sprints.json", "role-guard", "0",
+        expected_exit=0, expected_reason="tier-1",
+        path_rewrite_suffix="clasi/sprints/013-x/sprint.md",
     ),
     _Fixture(
         # Ticket 029-010, AC2/AC3: tier 2, execution lock held, zero
