@@ -524,10 +524,56 @@ Things go wrong during implementation. Here is what to do.
 1. If you cannot make progress despite trying the above patterns, stop.
 2. Throw a ticket exception (see Exception protocol below), or — if the
    block is a guard/permission denial rather than a design conflict —
-   report the block and stop; do not route around it.
+   follow the guard-block rule immediately below: stop, report, wait.
 3. Do not leave the ticket in an ambiguous state: `open` (not
    `in-progress`) unless an exception has been thrown, in which case its
    status is `exception` (see below).
+
+**Guard blocks (stop, report, wait).** This is the canonical statement
+of this rule — stated once, here. The programmer and sprint-planner
+agent definitions reference this section; they do not restate it.
+
+CLASI's write gates (`role-guard`, `mcp-guard`) are cooperative
+controls, not infrastructure an agent cannot defeat: the matcher only
+watches the `Edit`, `Write`, and `MultiEdit` tools, so a Bash heredoc,
+`sed -i`, a shell redirection, or `git apply` all reach the filesystem
+without ever tripping it. The value of a guardrail is that it stops
+things; an agent that treats a block as an obstacle to route around
+removes that value — even when the workaround's own content turns out
+to be harmless, because the method is what generalizes and a benign
+outcome does not redeem it.
+
+When a guard blocks a write:
+1. **Stop.** Do not attempt an alternate write path: no Bash heredoc,
+   `sed -i`, shell redirection, `git apply`, or any other tool or
+   mechanism that reaches the same file without going through the tool
+   call the guard is watching.
+2. **Report** to the dispatcher: what was attempted, the exact
+   violation/denial text the guard returned, and the agent's own belief
+   about the correct resolution (e.g. "the ticket needs to move to
+   `in-progress`," "this looks like a false positive on path X").
+3. **Wait** for the dispatcher to resolve it — by changing ticket
+   status, granting OOP, or redirecting the work. Do not guess and
+   proceed unresolved.
+
+The one legitimate exception is a documented escape hatch —
+`clasi oop on --reason '...'` — invoked *deliberately* and *reported* to
+the dispatcher. Invoking it silently, to make a block go away without
+saying so, is the same failure as routing around a block with a
+heredoc.
+
+**Reporting a block is a successful outcome of a dispatch, not a
+failure.** An agent that stops and reports has done its job correctly.
+Dispatch prompts and templates state this explicitly, at dispatch time
+— without that framing, the rule above only adds pressure to work
+around blocks quietly, which is worse than saying nothing.
+
+**Out of scope, deliberately**: this is a norm fix, not a guard-code
+fix. `role-guard`'s own matcher gap (it watches `Edit|Write|MultiEdit`
+only, so a Bash heredoc bypasses it entirely) is not closed by this
+rule and is not touched here — the gates still depend on agents
+choosing to respect them. Do not assume this gap has been closed just
+because the norm around it has been stated.
 
 ## Exception protocol
 

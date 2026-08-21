@@ -163,6 +163,21 @@ results, and a recommendation. Wait for guidance.
 - Consider the `tdd-cycle` skill when designing well-defined, testable
   interfaces.
 
+## Guard Blocks
+
+If a CLASI guard (role-guard, mcp-guard) blocks a write, stop and report
+it to the dispatcher — do not route around it with a Bash heredoc,
+`sed -i`, a shell redirection, `git apply`, or any other tool or
+mechanism that reaches the file without going through the blocked call.
+The full stop/report/wait rule, the one legitimate exception (a
+deliberately invoked, reported `clasi oop on --reason '...'`), and the
+explicit note that this does not close role-guard's own matcher gap all
+live in one place — call `get_instruction("software-engineering")` and
+read "Error Recovery" -> "Guard blocks (stop, report, wait)" if unsure
+of the steps. **Reporting a block is a successful outcome of a
+dispatch, not a failure** — an agent that stops and reports has done
+its job correctly.
+
 ## Exception Protocol
 
 **Threshold**: Throw an exception when you cannot proceed without overriding
