@@ -129,124 +129,23 @@ complete.
 | `/issue <description>` | Capture an idea as an issue file in `.clasi/issues/` |
 | `/project-initiation` | Start a new project with a guided interview |
 
-## Codex Integration
+## Codex / GitHub Copilot Integration (Archived)
 
-CLASI supports [OpenAI Codex](https://openai.com/codex) in addition to Claude Code.
+CLASI previously supported [OpenAI Codex](https://openai.com/codex) and
+[GitHub Copilot](https://github.com/features/copilot) alongside Claude
+Code. As of sprint 032, both adapters were archived to the
+`archive/codex-copilot-adapters` branch — neither was ever dogfooded in
+this repo (Claude-only), both were reachable only via the explicit
+`--codex`/`--copilot` flags, and the Codex adapter carried a live bug
+where installing it after Claude overwrote Claude's resolved skill
+content.
 
-### Installing for Codex
-
-```bash
-clasi init --codex
-```
-
-Or install for both Claude Code and Codex at once:
-
-```bash
-clasi init --claude --codex
-```
-
-### Files Written by `clasi init --codex`
-
-| Path | Purpose |
-|------|---------|
-| `AGENTS.md` | Root marker file with the CLASI entry-point sentence (marker-managed CLASI section) |
-| `.codex/config.toml` | Codex config with `[mcp_servers.clasi]` and `codex_hooks = true` |
-| `.codex/hooks.json` | Stop hook that calls `clasi hook codex-plan-to-issue` (correct wrapper schema per the [Codex hooks spec](https://developers.openai.com/codex/hooks)); `codex-plan-to-todo` is a deprecated alias |
-| `.codex/agents/team-lead.toml` | Sub-agent definition for the team-lead role |
-| `.codex/agents/sprint-planner.toml` | Sub-agent definition for the sprint-planner role |
-| `.codex/agents/programmer.toml` | Sub-agent definition for the programmer role |
-| `.agents/skills/<name>/SKILL.md` | 26 skill workflow files (cross-tool standard — usable by any agent) |
-| `.clasi/AGENTS.md` | Nested rule file: SE process rules for agents working in `.clasi/` |
-| `clasi/AGENTS.md` | Nested rule file: source-code rules for agents working in `clasi/` |
-
-### Sub-Agents
-
-CLASI installs three Codex sub-agent definitions under `.codex/agents/`:
-`team-lead`, `sprint-planner`, and `programmer`. These correspond to the
-CLASI SE process roles and can be invoked as Codex sub-agents from within
-a session.
-
-### Stop Hook Firing Limitation
-
-> **Note**: As of April 2026, Codex fires Stop hooks only from
-> `~/.codex/hooks.json`, not from a repo-local `.codex/hooks.json`
-> ([openai/codex#17532](https://github.com/openai/codex/issues/17532)).
-> To enable plan-to-issue capture, copy `.codex/hooks.json` to
-> `~/.codex/hooks.json` after install:
->
-> ```bash
-> cp .codex/hooks.json ~/.codex/hooks.json
-> ```
-
-### Removing Codex Integration
-
-```bash
-clasi uninstall --codex
-```
-
-This removes only CLASI-managed files and entries — the CLASI marker block
-in `AGENTS.md`, `[mcp_servers.clasi]` from `.codex/config.toml`, the CLASI
-Stop hook from `.codex/hooks.json`, the `.codex/agents/<name>.toml` sub-agent
-files, the `.agents/skills/` skill files, and the nested `.clasi/AGENTS.md`
-and `clasi/AGENTS.md` rule files. User-added content is preserved.
-
-To remove only the Claude integration:
-
-```bash
-clasi uninstall --claude
-```
-
----
-
-## GitHub Copilot Integration
-
-CLASI supports [GitHub Copilot](https://github.com/features/copilot) as a
-third AI platform.
-
-### Installing for Copilot
-
-```bash
-clasi init --copilot
-```
-
-Or install for all three platforms at once:
-
-```bash
-clasi init --claude --codex --copilot
-```
-
-### Files Written by `clasi init --copilot`
-
-| Path | Purpose |
-|------|---------|
-| `.github/copilot-instructions.md` | Global Copilot instructions (marker-managed CLASI block) |
-| `.github/instructions/*.instructions.md` | Path-scoped rules with `applyTo:` frontmatter |
-| `.github/agents/team-lead.agent.md` | Sub-agent definition for the team-lead role |
-| `.github/agents/sprint-planner.agent.md` | Sub-agent definition for the sprint-planner role |
-| `.github/agents/programmer.agent.md` | Sub-agent definition for the programmer role |
-| `.github/skills/` | Symlink to `.agents/skills/` (see canonical-symlink pattern below) |
-| `.vscode/mcp.json` | VS Code MCP configuration with `servers.clasi` entry |
-
-### Cloud Coding Agent MCP (manual step required)
-
-After running `clasi init --copilot`, the VS Code MCP config is written
-automatically. However, Copilot's **Cloud Coding Agent** reads MCP settings
-from GitHub Settings, not from `.vscode/mcp.json`. To enable MCP for cloud
-sessions:
-
-1. Go to `https://github.com/settings/copilot` (or your org's settings page).
-2. Under **Model Context Protocol (MCP) Servers**, click **Add MCP server**.
-3. Paste the JSON snippet printed by `clasi init --copilot` at the end of the
-   install output.
-
-This step is not automatable from the CLI — it requires a browser login to
-GitHub. The local VS Code integration works without it.
-
-### Removing Copilot Integration
-
-```bash
-clasi uninstall --copilot
-```
+`--codex` and `--copilot` are still accepted by `clasi init`/`clasi
+uninstall` for backward compatibility, but now exit with a clear error
+pointing at the archive branch instead of installing anything or
+silently no-op'ing. Plain `clasi init`/`clasi uninstall` (no platform
+flag) are unaffected and continue to manage Claude support only. See
+`src/clasi/platforms/DESIGN.md` for the full rationale.
 
 ---
 
@@ -260,7 +159,6 @@ synchronization.
 ```
 .agents/skills/<name>/SKILL.md   ← canonical (single source of truth)
 .claude/skills/<name>/SKILL.md   → symlink to canonical (Claude Code)
-.github/skills/                  → directory symlink to .agents/skills/ (Copilot)
 AGENTS.md                        ← canonical instruction file
 CLAUDE.md                        → symlink to AGENTS.md (Claude Code shim)
 ```
@@ -271,7 +169,7 @@ In environments where symlinks are unavailable (Windows without Developer
 Mode, some CI sandboxes), use `--copy` to write regular file copies instead:
 
 ```bash
-clasi init --claude --codex --copilot --copy
+clasi init --claude --copy
 ```
 
 With `--copy`, all aliases become independent file copies. Content will

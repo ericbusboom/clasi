@@ -28,8 +28,8 @@ def __getattr__(name):
     <event>` CLI invocation is a fresh, one-shot process that imports
     `clasi` at startup regardless of whether that particular hook
     handler ever touches the real version. Some handlers never do
-    (``handle_subagent_start``/``_stop``, ``handle_plan_to_issue``,
-    ``handle_codex_plan_to_issue``); others only do it conditionally, on
+    (``handle_subagent_start``/``_stop``, ``handle_plan_to_issue``);
+    others only do it conditionally, on
     the branch that actually calls ``clasi.staleness.check_staleness``
     — the sole current consumer of the real version — via ``from clasi
     import __version__`` inside that function.

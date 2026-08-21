@@ -2164,50 +2164,6 @@ def _next_log_number(log_dir: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
-def handle_codex_plan_to_issue(payload: dict) -> None:
-    """Convert a Codex plan tag in last_assistant_message to a CLASI issue.
-
-    Reads ``last_assistant_message`` from the payload, extracts the content
-    between ``<proposed_plan>`` and ``</proposed_plan>`` tags, and calls
-    ``plan_to_issue_from_text`` to write a pending issue file.
-
-    Always exits 0 — the Codex Stop hook fires after the session has ended,
-    so there is nothing to block. Unlike ``handle_plan_to_issue`` (the Claude
-    Code ``ExitPlanMode`` path), there is no live model turn left to hand a
-    "rewrite this into house format" instruction to, so the option 1 fix
-    (block-and-hand-off, see `handle_plan_to_issue`) does not apply here.
-    ``plan_to_issue_from_text`` still gets the mechanical, non-brittle part
-    of the fix — stripping a redundant ``issue-`` filename prefix — but the
-    resulting file may still carry plan-shaped prose that needs a later
-    manual or sprint-planner-side reshape.
-
-    Routed through ``_exit_hook`` (ticket 028-005) instead of raw
-    ``sys.exit`` so ``codex-plan-to-issue`` events finally appear in
-    ``hooks.log`` — previously zero ever did, for either this handler or
-    ``handle_plan_to_issue``.
-    """
-    import re
-
-    from clasi.plan_to_issue import plan_to_issue_from_text
-
-    message = payload.get("last_assistant_message", "")
-    match = re.search(r"<proposed_plan>(.*?)</proposed_plan>", message, re.DOTALL)
-    if not match:
-        _exit_hook("codex-plan-to-issue", payload, 0, "no-plan-tag")
-
-    plan_text = match.group(1).strip()
-    issue_dir = get_project().issues_dir
-    result = plan_to_issue_from_text(plan_text, issue_dir)
-    if result:
-        print(f"CLASI: Codex plan saved as TODO: {result}")
-        _exit_hook("codex-plan-to-issue", payload, 0, "saved")
-    _exit_hook("codex-plan-to-issue", payload, 0, "no-file")
-
-
-# Backward-compatible alias
-handle_codex_plan_to_todo = handle_codex_plan_to_issue
-
-
 def handle_plan_to_issue(payload: dict) -> None:
     """Convert the most recent plan file to a CLASI issue.
 
@@ -2317,8 +2273,6 @@ def handle_hook(event: str) -> None:
         "mcp-guard": handle_mcp_guard,
         "plan-to-issue": handle_plan_to_issue,
         "plan-to-todo": handle_plan_to_issue,  # backward-compatible alias
-        "codex-plan-to-issue": handle_codex_plan_to_issue,
-        "codex-plan-to-todo": handle_codex_plan_to_issue,  # backward-compatible alias
         "status-inject": handle_status_inject,
     }
 

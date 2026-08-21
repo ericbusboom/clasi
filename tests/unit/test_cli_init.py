@@ -1,13 +1,18 @@
-"""Tests for --claude / --codex flag handling and 'install' synonym in clasi init.
+"""Tests for --claude flag handling, the archived --codex/--copilot flags,
+and the 'install' synonym in clasi init.
 
 Verifies that:
 - Default (no flags) installs Claude-only artifacts (backward compat).
 - --claude installs Claude artifacts only.
-- --codex installs Codex artifacts only (no .claude/ or CLAUDE.md).
-- --claude --codex installs both sets of artifacts.
+- --codex/--copilot are still accepted by the CLI but raise a clear
+  "archived" error instead of installing anything or silently no-op'ing
+  (Codex and Copilot were archived to the archive/codex-copilot-adapters
+  branch in sprint 032 — see src/clasi/init_command.py).
 - 'clasi install' behaves identically to 'clasi init' with the same flags.
 """
 
+import click
+import pytest
 from click.testing import CliRunner
 
 from clasi.cli import cli
@@ -23,15 +28,6 @@ def _has_claude_artifacts(target):
     return (
         (target / ".claude" / "skills" / "se" / "SKILL.md").exists()
         and (target / "CLAUDE.md").exists()
-    )
-
-
-def _has_codex_artifacts(target):
-    """True when the core Codex-owned files are present."""
-    return (
-        (target / ".codex" / "config.toml").exists()
-        and (target / "AGENTS.md").exists()
-        and (target / ".agents" / "skills" / "se" / "SKILL.md").exists()
     )
 
 
@@ -75,7 +71,7 @@ class TestRunInitDefaultInstallsClaudeOnly:
 
 
 class TestRunInitExplicitClaude:
-    """run_init(claude=True, codex=False) installs Claude artifacts only."""
+    """run_init(claude=True) installs Claude artifacts only."""
 
     def test_claude_artifacts_created(self, tmp_path):
         target = tmp_path / "repo"
@@ -93,50 +89,39 @@ class TestRunInitExplicitClaude:
         assert (target / "AGENTS.md").exists()
 
 
-class TestRunInitCodexOnly:
-    """run_init(claude=False, codex=True) installs Codex artifacts only."""
+class TestRunInitArchivedPlatforms:
+    """run_init(codex=True) / run_init(copilot=True) raise a clear archived
+    error instead of installing anything or silently no-op'ing (backward
+    compatibility acceptance criterion, sprint 032 ticket 001)."""
 
-    def test_codex_artifacts_created(self, tmp_path):
+    def test_codex_true_raises_click_exception(self, tmp_path):
         target = tmp_path / "repo"
         target.mkdir()
-        run_init(str(target), claude=False, codex=True)
-        assert _has_codex_artifacts(target)
+        with pytest.raises(click.ClickException, match="archived"):
+            run_init(str(target), codex=True)
 
-    def test_claude_artifacts_not_created(self, tmp_path):
-        """Claude-specific files must NOT be created in codex-only mode."""
+    def test_copilot_true_raises_click_exception(self, tmp_path):
         target = tmp_path / "repo"
         target.mkdir()
-        run_init(str(target), claude=False, codex=True)
-        assert not (target / ".claude").exists()
-        assert not (target / "CLAUDE.md").exists()
+        with pytest.raises(click.ClickException, match="archived"):
+            run_init(str(target), copilot=True)
 
-    def test_shared_artifacts_created(self, tmp_path):
+    def test_codex_true_creates_no_files(self, tmp_path):
+        """The archived error fires before any file is written (not a
+        partial/silent no-op)."""
         target = tmp_path / "repo"
         target.mkdir()
-        run_init(str(target), claude=False, codex=True)
-        assert _has_shared_artifacts(target)
+        with pytest.raises(click.ClickException):
+            run_init(str(target), codex=True)
+        assert not (target / ".mcp.json").exists()
+        assert not (target / ".clasi").exists()
 
-
-class TestRunInitBoth:
-    """run_init(claude=True, codex=True) installs all artifacts."""
-
-    def test_claude_artifacts_created(self, tmp_path):
+    def test_codex_true_error_mentions_archive_branch(self, tmp_path):
         target = tmp_path / "repo"
         target.mkdir()
-        run_init(str(target), claude=True, codex=True)
-        assert _has_claude_artifacts(target)
-
-    def test_codex_artifacts_created(self, tmp_path):
-        target = tmp_path / "repo"
-        target.mkdir()
-        run_init(str(target), claude=True, codex=True)
-        assert _has_codex_artifacts(target)
-
-    def test_shared_artifacts_created(self, tmp_path):
-        target = tmp_path / "repo"
-        target.mkdir()
-        run_init(str(target), claude=True, codex=True)
-        assert _has_shared_artifacts(target)
+        with pytest.raises(click.ClickException) as exc_info:
+            run_init(str(target), codex=True)
+        assert "archive/codex-copilot-adapters" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +129,7 @@ class TestRunInitBoth:
 # ---------------------------------------------------------------------------
 
 class TestCliInitFlags:
-    """Test --claude / --codex flags through the CLI."""
+    """Test --claude flag and the archived --codex/--copilot flags through the CLI."""
 
     def test_init_default_is_claude_only(self, tmp_path):
         runner = CliRunner()
@@ -160,20 +145,23 @@ class TestCliInitFlags:
         assert _has_claude_artifacts(tmp_path)
         assert not (tmp_path / ".codex").exists()
 
-    def test_init_codex_flag_installs_codex_only(self, tmp_path):
+    def test_init_codex_flag_exits_nonzero_with_clear_message(self, tmp_path):
+        """clasi init --codex does not crash with a stack trace, does not
+        silently no-op, and does not install anything — it exits nonzero
+        with a message pointing at the archive branch."""
         runner = CliRunner()
         result = runner.invoke(cli, ["init", "--codex", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_codex_artifacts(tmp_path)
+        assert result.exit_code != 0
+        assert "archive" in result.output.lower()
+        assert not (tmp_path / ".codex").exists()
         assert not (tmp_path / ".claude").exists()
-        assert not (tmp_path / "CLAUDE.md").exists()
 
-    def test_init_both_flags_installs_all(self, tmp_path):
+    def test_init_copilot_flag_exits_nonzero_with_clear_message(self, tmp_path):
         runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--claude", "--codex", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_claude_artifacts(tmp_path)
-        assert _has_codex_artifacts(tmp_path)
+        result = runner.invoke(cli, ["init", "--copilot", str(tmp_path)])
+        assert result.exit_code != 0
+        assert "archive" in result.output.lower()
+        assert not (tmp_path / ".github").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -195,13 +183,11 @@ class TestInstallSynonym:
         assert _has_claude_artifacts(tmp_path)
         assert not (tmp_path / ".codex").exists()
 
-    def test_install_codex_flag(self, tmp_path):
+    def test_install_codex_flag_exits_nonzero_with_clear_message(self, tmp_path):
         runner = CliRunner()
         result = runner.invoke(cli, ["install", "--codex", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_codex_artifacts(tmp_path)
-        assert not (tmp_path / ".claude").exists()
-        assert not (tmp_path / "CLAUDE.md").exists()
+        assert result.exit_code != 0
+        assert "archive" in result.output.lower()
 
     def test_install_claude_flag(self, tmp_path):
         runner = CliRunner()
@@ -209,13 +195,6 @@ class TestInstallSynonym:
         assert result.exit_code == 0, result.output
         assert _has_claude_artifacts(tmp_path)
         assert not (tmp_path / ".codex").exists()
-
-    def test_install_both_flags(self, tmp_path):
-        runner = CliRunner()
-        result = runner.invoke(cli, ["install", "--claude", "--codex", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_claude_artifacts(tmp_path)
-        assert _has_codex_artifacts(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -240,19 +219,6 @@ class TestCopyFlag:
         result = runner.invoke(cli, ["init", "--claude", "--copy", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert _has_claude_artifacts(tmp_path)
-
-    def test_init_copy_with_codex_flag(self, tmp_path):
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--codex", "--copy", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_codex_artifacts(tmp_path)
-
-    def test_init_copy_with_both_flags(self, tmp_path):
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--claude", "--codex", "--copy", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_claude_artifacts(tmp_path)
-        assert _has_codex_artifacts(tmp_path)
 
     def test_install_synonym_copy_flag_accepted(self, tmp_path):
         runner = CliRunner()
@@ -285,12 +251,6 @@ class TestMigrateFlag:
         result = runner.invoke(cli, ["init", "--claude", "--migrate", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert _has_claude_artifacts(tmp_path)
-
-    def test_init_migrate_with_codex_flag(self, tmp_path):
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--codex", "--migrate", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert _has_codex_artifacts(tmp_path)
 
     def test_install_synonym_migrate_flag_accepted(self, tmp_path):
         runner = CliRunner()

@@ -2,8 +2,9 @@
 
 Provides ``resolve_skill_body``, used by both the MCP server's
 ``get_skill_definition`` tool (via ``clasi.tools.process_tools``, which
-imports it back) and by the platform installers (``clasi.platforms.claude``,
-``clasi.platforms.codex``, ...) that run as part of ``clasi init``.
+imports it back) and by the platform installer (``clasi.platforms.claude`` —
+the only one in master as of sprint 032; Codex and Copilot were archived to
+the archive/codex-copilot-adapters branch) that runs as part of `clasi init`.
 
 This module deliberately imports nothing from ``clasi.mcp_server``. The
 installers run in the ``clasi init`` CLI path, which must not pull in

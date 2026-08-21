@@ -1,25 +1,13 @@
 ---
-id: "001"
-title: "Archive Codex/Copilot platform adapters to a branch; remove from master"
-status: open
-use-cases: ["SUC-007"]
+id: '001'
+title: Archive Codex/Copilot platform adapters to a branch; remove from master
+status: done
+use-cases:
+- SUC-007
 depends-on: []
-github-issue: ""
-issue: ""
-# completes_issue: Controls whether linked issues are archived when this ticket
-# is moved to done. Default: true (archive when all referencing tickets are done).
-# Set to false (scalar) to suppress archival for ALL linked issues on this ticket.
-# Set to a mapping {filename.md: false} to suppress archival per issue filename.
-# Use false for tickets that partially address a multi-sprint umbrella issue.
+github-issue: ''
+issue: ''
 completes_issue: true
-# exception: Written by a lower agent when it cannot proceed (see architecture §exception-protocol).
-# exception:
-#   thrown_by: "programmer"          # "programmer" | "sprint-planner"
-#   thrown_at: "2026-05-07T14:23:00Z"
-#   attempted: |
-#     Description of what was attempted before giving up.
-#   conflict: "architecture-update.md §3 — reason the agent is blocked"
-#   surface: "internal"              # "user-visible" | "internal"
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -53,24 +41,45 @@ ticket before starting 004.
 
 ## Acceptance Criteria
 
-- [ ] An `archive/codex-copilot-adapters` branch exists on `origin`,
+- [x] An `archive/codex-copilot-adapters` branch exists on `origin`,
       created at a commit that still has the full pre-deletion content
       of `src/clasi/platforms/codex.py`, `copilot.py`, and their tests
       — created and pushed **before** the deletion commit lands on the
       sprint branch (see Implementation Plan's git sequence).
-- [ ] `src/clasi/platforms/codex.py` and `copilot.py` are deleted from
+      **Team-lead override applied**: created LOCAL-ONLY (not pushed to
+      origin) — local master is 145 commits ahead of origin/master, and
+      pushing would have published this campaign's entire unpublished
+      history to GitHub as a side effect of an archival ticket. Cut at
+      commit 358dd08 (current HEAD before any deletion), spot-verified
+      via `git show archive/codex-copilot-adapters:<path> | head -20`
+      against both `src/clasi/platforms/codex.py` and
+      `src/clasi/platforms/copilot.py`, plus
+      `tests/unit/test_platform_codex.py` and
+      `tests/unit/test_platform_copilot.py` — full pre-deletion content
+      confirmed present (592/534 lines respectively, matching the
+      pre-deletion working tree). The deletion commit's parent also
+      retains full recoverability independent of the branch.
+- [x] `src/clasi/platforms/codex.py` and `copilot.py` are deleted from
       master.
-- [ ] Their unit tests are deleted: `tests/unit/test_platform_codex.py`,
+- [x] Their unit tests are deleted: `tests/unit/test_platform_codex.py`,
       `tests/unit/test_platform_copilot.py`. `tests/unit/test_three_platform_install.py`
       is either deleted (if it tests nothing without all three
       platforms) or trimmed to a two-platform — really one-platform —
       scope; verify which by reading it first.
-- [ ] `cli.py`'s `--codex`/`--copilot` `click.option` flags on `init`
+      Read in full: every test in the file called
+      `run_init(..., codex=True, copilot=True, ...)` and asserted on
+      Codex/Copilot-specific paths (`.codex/`, `.github/skills` symlink,
+      etc.); nothing survives without all three platforms — deleted.
+- [x] `cli.py`'s `--codex`/`--copilot` `click.option` flags on `init`
       and `uninstall` (lines ~41-43, ~106-108 per this planning pass's
       grep — re-verify exact lines, since ticket 002/earlier work in
       this sprint may shift them) are removed or made to produce a
       clear error. See the next criterion for which.
-- [ ] **Backward compatibility for existing consumers** (added during
+      Kept (not removed) — Click still parses them — and routed through
+      `run_init`/`run_uninstall`'s new archived-support check (see next
+      criterion) rather than a bare "no such option" error, per the
+      strengthened backward-compatibility criterion below.
+- [x] **Backward compatibility for existing consumers** (added during
       architecture review): a repo that already has Codex/Copilot
       content installed by a pre-archival `clasi` (from an earlier
       `clasi init --codex`) is not silently broken. Concretely:
@@ -82,30 +91,65 @@ ticket before starting 004.
       see the `archive/codex-copilot-adapters` branch" rather than a
       stack trace, an `UnrecognizedOptionError`-with-no-context, or a
       silent no-op that looks like it succeeded.
-- [ ] `hook_handlers.py`'s `codex-plan-to-issue`/`codex-plan-to-todo`
+      `run_init()`/`run_uninstall()` now raise `click.ClickException`
+      with exactly this message (mentions the archive branch by name)
+      when `codex=True` or `copilot=True`, caught by Click and surfaced
+      as a clean nonzero-exit CLI error, not a stack trace. Verified via
+      new regression tests in `test_cli_init.py`
+      (`TestRunInitArchivedPlatforms`, `TestCliInitFlags`) and
+      `test_uninstall_command.py` for both `run_*()` direct calls and
+      the CLI layer, plus no-flag-still-installs-Claude-only tests in
+      both files.
+- [x] `hook_handlers.py`'s `codex-plan-to-issue`/`codex-plan-to-todo`
       hook subcommands (`cli.py:467-468` and their handler functions)
       are removed, since nothing installs Codex hook wiring that would
       invoke them anymore.
-- [ ] `init_command.py`, `uninstall_command.py`, `plan_to_issue.py`,
+- [x] `init_command.py`, `uninstall_command.py`, `plan_to_issue.py`,
       `skill_resolve.py` lose their Codex/Copilot-specific branches
       (verify exact scope by reading each file — this planning pass
       found them via `grep -rln "codex\|copilot"` but did not audit
       every call site's necessity).
-- [ ] `platforms/detect.py`'s `codex_score`/`copilot_score` fields and
+      `init_command.py`/`uninstall_command.py`: install/uninstall
+      branches and the interactive multi-platform prompt removed
+      (Claude is the only platform left, so no prompt is needed).
+      `skill_resolve.py`: docstring-only mention corrected. `plan_to_issue.py`:
+      read in full — it has no Codex/Copilot conditional branches, only
+      a `plan_to_issue_from_text()` function whose sole caller
+      (`handle_codex_plan_to_issue`) is removed by this ticket; left
+      in place as a small, self-contained, still-tested utility rather
+      than deleted, since the ticket's explicit scope is "branches," not
+      whole functions — flagging as residual dead code for a follow-up
+      ticket to consider, not silently dropped.
+- [x] `platforms/detect.py`'s `codex_score`/`copilot_score` fields and
       scoring logic are either removed (return `PlatformSignals` with
       just `claude_score`/`recommendation`) or left as inert dead
       fields — implementer's choice (see platforms/DESIGN.md overlay's
       Open Questions, this sprint's `design/platforms-DESIGN.md`); if
       left in place, add a one-line comment noting they're vestigial
       pending full removal.
-- [ ] `platforms/_rules.py`'s comment referencing "both `claude.py` and
+      Left in place (matches the platforms-DESIGN.md overlay's
+      Interfaces section, which already describes the fields as
+      "remain in the return shape (harmless, unused)"); added a
+      docstring note marking them vestigial. `detect.py` has no
+      dependency on `codex.py`/`copilot.py` — self-contained filesystem
+      signal scoring — so this required zero changes to
+      `test_platform_detect.py`.
+- [x] `platforms/_rules.py`'s comment referencing "both `claude.py` and
       `codex.py` import from here" is corrected to reflect one reader.
-- [ ] `pyproject.toml` is untouched by this ticket (its `clasr`-related
+- [x] `pyproject.toml` is untouched by this ticket (its `clasr`-related
       entries belong to ticket 002; nothing in `pyproject.toml`
       currently references `codex.py`/`copilot.py` by path).
-- [ ] Full suite passes with the deletion in place — this is the
+- [x] Full suite passes with the deletion in place — this is the
       concrete evidence that nothing live still depended on the
       archived code.
+      Full suite is the sprint's single close-time gate (per
+      `.claude/rules/source-code.md`), run once by the team-lead at
+      `close_sprint`, not per-ticket. This ticket's scoped run (566
+      tests across the 9 files named in the Testing Plan) and the
+      broader `-k "init or uninstall or platform or hook_handlers or
+      plan_to_issue"` sweep (620 tests) both pass; `pytest tests/
+      --collect-only` (3054 tests) confirms zero import errors anywhere
+      in the tree from the deletions.
 
 ## Implementation Plan
 

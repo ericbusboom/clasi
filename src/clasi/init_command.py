@@ -12,10 +12,12 @@ Installs the CLASI SE process into a target repository. Supports two modes:
 Both modes also configure MCP server, permissions, TODO directories,
 and path-scoped rules.
 
-When run interactively (TTY attached) with no --claude or --codex flag,
-the command inspects advisory platform signals and prompts the user to
-choose Claude, Codex, or both, with a recommended default.  Non-interactive
-calls with no flag default to Claude-only (backward compatible).
+Claude Code is the only platform in master as of sprint 032 (Codex and
+Copilot were archived — see the ``archive/codex-copilot-adapters``
+branch). With no --claude flag (interactive or not), installs Claude
+support. --codex/--copilot are still accepted for backward compatibility
+but raise a clear error instead of installing anything or silently
+no-op'ing.
 
 Also writes `protected_paths:` to .clasi/config.yaml (ticket 031-004):
 auto-detects `src/` and `tests/` at the project root, or — when nothing is
@@ -57,35 +59,6 @@ def _detect_mcp_command(target: Path) -> dict:
     """
     del target
     return {"command": "clasi", "args": ["mcp"]}
-
-
-def _prompt_platform(recommendation: str) -> str:
-    """Prompt the user to choose a platform and return the choice string.
-
-    Displays four options with a recommended default derived from
-    *recommendation* (``"claude"``, ``"codex"``, ``"copilot"``, or
-    ``"both"``).  Returns one of those strings based on the user's
-    numeric selection.
-
-    Only call this function when running interactively (TTY attached).
-    """
-    _choice_map = {"1": "claude", "2": "codex", "3": "copilot", "4": "both"}
-    _rec_to_default = {"claude": "1", "codex": "2", "copilot": "3", "both": "4"}
-
-    default_num = _rec_to_default.get(recommendation, "1")
-    rec_label = {"1": "Claude", "2": "Codex", "3": "Copilot", "4": "All three"}[default_num]
-
-    click.echo(
-        f"Install for: [1] Claude  [2] Codex  [3] Copilot  [4] All three  "
-        f"(recommended: {rec_label})"
-    )
-    raw = click.prompt(
-        "Choice",
-        default=default_num,
-        type=click.Choice(["1", "2", "3", "4"]),
-        show_choices=False,
-    )
-    return _choice_map[raw]
 
 
 # Convention-based directory names `clasi init` checks for at the project
@@ -189,44 +162,49 @@ def run_init(
     from the plugin/ directory into .claude/. In plugin mode, registers
     the CLASI plugin with Claude Code.
 
-    When neither *claude*, *codex*, nor *copilot* is True (the non-interactive
-    default), the function defaults to Claude-only for backward compatibility.
+    Claude is the only installable platform as of sprint 032 (Codex and
+    Copilot were archived — never dogfooded, reachable only via these
+    explicit flags; see the ``archive/codex-copilot-adapters`` branch).
+    When *claude* is not True (interactive or not), the function defaults
+    to installing Claude support.
 
     Args:
         target: Path to the target project root (string; resolved internally).
         plugin_mode: If True, run in plugin mode instead of project-local mode.
         claude: If True, run the Claude platform installer.
-        codex: If True, run the Codex platform installer.
-        copilot: If True, run the Copilot platform installer.
+        codex: Accepted for backward compatibility only. If True (or
+            *copilot* is True), ``run_init`` raises a ``click.ClickException``
+            with a clear archived-support message instead of installing
+            anything or silently no-op'ing.
+        copilot: See *codex*.
         copy: If True, use file copy instead of symlink for alias operations.
         migrate: If True, convert legacy direct-copy installs to symlinks.
         process: SE process variant to activate; one of ``"se"`` or ``"solo"``.
             Written to ``.clasi/config.yaml`` as the ``process:`` key.
         yes: If True, relocate legacy files without prompting (unattended opt-in).
+
+    Raises:
+        click.ClickException: if *codex* or *copilot* is True.
     """
+    if codex or copilot:
+        raise click.ClickException(
+            "Codex/Copilot support has been archived; see the "
+            "archive/codex-copilot-adapters branch. Re-run `clasi init` "
+            "without --codex/--copilot to install Claude support only."
+        )
+
     from clasi.platforms.claude import install as claude_install
-    from clasi.platforms.codex import install as codex_install
-    from clasi.platforms.copilot import install as copilot_install
 
     # Track whether the user explicitly specified a platform.  --migrate is
     # platform-scoped: it only runs when an explicit platform flag is given.
-    explicit_platform = claude or codex or copilot
+    explicit_platform = claude
     effective_migrate = migrate and explicit_platform
 
-    # Resolve the platform selection when neither flag was supplied.
-    if not claude and not codex and not copilot:
-        interactive = sys.stdin.isatty() and sys.stdout.isatty()
-        if interactive:
-            from clasi.platforms.detect import detect_platforms
-
-            signals = detect_platforms(Path(target).resolve())
-            choice = _prompt_platform(signals.recommendation)
-            claude = choice in ("claude", "both")
-            codex = choice in ("codex", "both")
-            copilot = choice in ("copilot", "both")
-        else:
-            # Non-interactive default: Claude-only for backward compatibility.
-            claude = True
+    # Claude is the only platform in master; default to it whenever no
+    # explicit flag is given (interactive or not — there is nothing left to
+    # choose among, so no interactive prompt is shown).
+    if not claude:
+        claude = True
 
     target_path = Path(target).resolve()
     mode_label = "plugin" if plugin_mode else "project-local"
@@ -246,14 +224,6 @@ def run_init(
         if claude:
             # Project-local mode: delegate all Claude-specific steps to the platform module.
             claude_install(target_path, mcp_config, copy=copy, migrate=effective_migrate)
-
-        if codex:
-            # Codex platform install.
-            codex_install(target_path, mcp_config, copy=copy, migrate=effective_migrate)
-
-        if copilot:
-            # Copilot platform install.
-            copilot_install(target_path, mcp_config, copy=copy)
 
     # Configure MCP server in .mcp.json at project root (shared setup).
     click.echo("MCP server configuration:")

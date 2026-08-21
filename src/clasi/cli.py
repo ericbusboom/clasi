@@ -39,9 +39,11 @@ def cli():
 @click.option("--claude", "install_claude", is_flag=True, default=False,
               help="Install Claude platform integration.")
 @click.option("--codex", "install_codex", is_flag=True, default=False,
-              help="Install Codex platform integration.")
+              help="Archived (sprint 032): produces an error pointing to "
+                   "the archive/codex-copilot-adapters branch.")
 @click.option("--copilot", "install_copilot", is_flag=True, default=False,
-              help="Install GitHub Copilot platform integration.")
+              help="Archived (sprint 032): produces an error pointing to "
+                   "the archive/codex-copilot-adapters branch.")
 @click.option("--copy/--no-copy", default=False,
               help="Use file copy instead of symlink for alias operations.")
 @click.option("--migrate", is_flag=True, default=False,
@@ -63,18 +65,14 @@ def cli():
 def init(target, plugin, install_claude, install_codex, install_copilot, copy, migrate, process, yes):
     """Initialize a repository for the CLASI SE process.
 
-    By default (no --claude, --codex, or --copilot flag), behavior depends on context:
+    Claude Code is the only platform in master as of sprint 032 (Codex and
+    Copilot were archived — never dogfooded, reachable only via these
+    explicit flags; see the ``archive/codex-copilot-adapters`` branch).
+    With no flag, installs Claude support. With --codex/--copilot, exits
+    with a clear error instead of installing anything or silently no-op'ing.
 
-    \b
-    - Interactive (TTY): inspects advisory platform signals and prompts the
-      user to choose Claude, Codex, Copilot, or all three, with a recommended
-      default.
-    - Non-interactive (no TTY, e.g. scripts/CI): defaults to Claude-only for
-      backward compatibility.
-
-    With --claude, --codex, and/or --copilot, installs the selected platform(s)
-    without prompting.  With --plugin, registers the CLASI plugin with Claude
-    Code (plugin mode).  With --copy, alias operations use file copy instead of
+    With --plugin, registers the CLASI plugin with Claude Code (plugin
+    mode).  With --copy, alias operations use file copy instead of
     symlink (useful on Windows without Developer Mode).  With --migrate,
     converts legacy direct-copy installs to symlinks.  With --process, selects
     the SE process variant (se or solo; default: se).  With --yes/--relocate,
@@ -104,9 +102,11 @@ cli.add_command(init, name="install")
 @click.option("--claude", "uninstall_claude", is_flag=True, default=False,
               help="Remove Claude platform integration.")
 @click.option("--codex", "uninstall_codex", is_flag=True, default=False,
-              help="Remove Codex platform integration.")
+              help="Archived (sprint 032): produces an error pointing to "
+                   "the archive/codex-copilot-adapters branch.")
 @click.option("--copilot", "uninstall_copilot", is_flag=True, default=False,
-              help="Remove GitHub Copilot platform integration.")
+              help="Archived (sprint 032): produces an error pointing to "
+                   "the archive/codex-copilot-adapters branch.")
 @click.option("--copy/--no-copy", default=False,
               help="Use file copy removal instead of symlink removal for alias operations.")
 def uninstall(target, uninstall_claude, uninstall_codex, uninstall_copilot, copy):
@@ -464,8 +464,6 @@ def mcp():
             "mcp-guard",
             "plan-to-issue",
             "plan-to-todo",
-            "codex-plan-to-issue",
-            "codex-plan-to-todo",
             "status-inject",
             # Retired (sprint 027 / ticket 001). Kept in this Choice list —
             # not removed — so a stale hook registration (a session
@@ -481,7 +479,7 @@ def mcp():
     ),
 )
 def hook(event):
-    """Handle a hook event from Claude Code or Codex.
+    """Handle a hook event from Claude Code.
 
     Reads hook payload from stdin (JSON), delegates to the appropriate
     handler in clasi.hooks, and exits with the correct code.
@@ -493,8 +491,6 @@ def hook(event):
       mcp-guard            PreToolUse: block team-lead from direct MCP writes.
       plan-to-issue        PostToolUse(ExitPlanMode): save Claude plan as issue.
       plan-to-todo         PostToolUse(ExitPlanMode): alias for plan-to-issue (deprecated).
-      codex-plan-to-issue  Stop(Codex): extract <proposed_plan> and save as issue.
-      codex-plan-to-todo   Stop(Codex): alias for codex-plan-to-issue (deprecated).
       status-inject        UserPromptSubmit: prepend CLASI status block to context.
 
     Retired events (sprint 026 / ticket 004 removed their handlers and
