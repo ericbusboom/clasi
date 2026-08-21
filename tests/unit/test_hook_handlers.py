@@ -2459,6 +2459,7 @@ def _invoke_role_guard_cli(clasi_bin: Path, cwd: Path, payload: dict) -> _subpro
     not _CURRENT_CLASI.exists(),
     reason="requires the project's own .venv/bin/clasi (editable install)",
 )
+@pytest.mark.slow  # 032/008: real `clasi hook role-guard` CLI subprocess
 class TestRoleGuardRealCliInvocationPath:
     """Ticket 020-001: exercise OOP bypass through the real `clasi hook
     role-guard` CLI entrypoint (subprocess), not handle_role_guard() called

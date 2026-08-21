@@ -30,6 +30,12 @@ from click.testing import CliRunner
 
 from clasi.cli import cli
 
+# 032/008: full-stack (reader -> reporter -> narrowing -> formatting) tests
+# against this repo's real `.clasi/` directory -- measured at 10-23s per
+# test (032/008 durations audit), real-fs/real-git tier by both duration
+# and kind.
+pytestmark = [pytest.mark.slow]
+
 # Root of this repository (two levels up from this file).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

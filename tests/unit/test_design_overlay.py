@@ -15,6 +15,11 @@ from clasi.design.overlay import (
     seed_and_commit,
 )
 
+# 032/008: every class in this module drives a real git repo via _init_repo
+# (real `git init`/commit subprocess calls below) -- real-git tier, not a
+# raw-duration outlier.
+pytestmark = [pytest.mark.slow]
+
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(

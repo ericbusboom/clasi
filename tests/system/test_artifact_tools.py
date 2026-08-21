@@ -1833,6 +1833,7 @@ class TestCloseSprintTestTimeout:
 
         assert result["status"] == "success", f"Expected success, got: {result}"
 
+    @pytest.mark.slow  # 032/008: real subprocess.run("sleep 30"), real timeout wait
     def test_slow_command_trips_low_explicit_timeout_and_names_value(self, work_dir):
         """A hung command with test_timeout explicitly set low (2s) still
         trips the timeout, blocks the close, and the error message names
@@ -1854,6 +1855,7 @@ class TestCloseSprintTestTimeout:
         assert "300" not in result["error"]["message"]
         assert "tests" not in result["completed_steps"]
 
+    @pytest.mark.slow  # 032/008: real subprocess.run("sleep 30"), real timeout wait
     def test_config_key_used_when_no_explicit_param(self, work_dir):
         """A .clasi/config.yaml `test_timeout:` key is honored when the
         test_timeout parameter is not passed explicitly."""

@@ -787,10 +787,31 @@ class SprintCloser:
         # so both the marker check below and the real-run branch use the
         # exact same command -- a marker recorded for one test_cmd must
         # never license skipping a different one.
+        #
+        # 032/008: pyproject.toml's default addopts now filters to
+        # `-m 'not slow'` and carries no `--cov=...` flags (moved to the
+        # `just test-all` recipe instead), so a bare `uv run pytest` is
+        # the fast developer loop, not the full suite. This default
+        # branch is close_sprint's *only* full-suite run (031/008) and
+        # must keep behaving like one, so it does not track that bare
+        # command -- it spells out the same invocation `just test-all`
+        # uses (`-m 'slow or not slow'` overrides the addopts filter to
+        # collect everything again, plus the coverage flags this ticket
+        # removed from addopts). Keep this list and justfile's
+        # `test-all` recipe in sync; if one changes, update the other.
         if self.test_command is not None:
             test_cmd = self.test_command.split()
         else:
-            test_cmd = ["uv", "run", "pytest"]
+            test_cmd = [
+                "uv",
+                "run",
+                "pytest",
+                "-m",
+                "slow or not slow",
+                "--cov=src/clasi",
+                "--cov-report=term-missing",
+                "--cov-report=lcov:lcov.info",
+            ]
         test_cmd_str = " ".join(test_cmd)
 
         marker_sha: Optional[str] = None

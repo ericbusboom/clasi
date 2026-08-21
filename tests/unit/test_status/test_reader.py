@@ -19,6 +19,12 @@ from clasi.project import Project
 from clasi.state_machine.context import StateReader
 from clasi.status.reader import ClasiStateReader
 
+# 032/008: every test in this module goes through the `project` fixture,
+# which does a real `git init` + commit in tmp_path (see _git_init/_git_commit
+# below) -- this whole file is the real-fs/real-git tier the slow marker
+# exists for, not a raw-duration outlier (see module docstring).
+pytestmark = [pytest.mark.slow]
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

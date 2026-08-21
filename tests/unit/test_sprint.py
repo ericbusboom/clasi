@@ -1026,6 +1026,7 @@ class TestSprintMergeBranch:
         except RuntimeError as e:
             assert "no 'branch' field" in str(e)
 
+    @pytest.mark.slow  # 032/008: real git repo (init/rebase/merge), real-git tier
     def test_merge_branch_rebase_produces_linear_history(self, tmp_path, monkeypatch, tmp_path_factory):
         """Integration test: rebase before --no-ff merge yields linear history.
 
@@ -1575,6 +1576,7 @@ def _copy_real_done_sprints_into(tmp_path) -> Project:
     return proj
 
 
+@pytest.mark.slow  # 032/008: real filesystem scan of clasi/sprints/done/001-017
 class TestRealDoneArchiveBackwardCompat:
     """018-015 item 3(a): list_sprints()/get_status()-equivalent code must
 

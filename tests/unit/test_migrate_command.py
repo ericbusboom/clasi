@@ -137,6 +137,7 @@ class TestMoveDataclass:
 
 
 class TestIsGitRepo:
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_returns_true_inside_git_repo(self, tmp_path):
         _init_git_repo(tmp_path)
         assert _is_git_repo(tmp_path) is True
@@ -153,6 +154,7 @@ class TestIsGitRepo:
 
 
 class TestIsTracked:
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_returns_true_for_tracked_file(self, tmp_path):
         _init_git_repo(tmp_path)
         f = tmp_path / "tracked.md"
@@ -164,6 +166,7 @@ class TestIsTracked:
         )
         assert _is_tracked(f, tmp_path) is True
 
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_returns_false_for_untracked_file(self, tmp_path):
         _init_git_repo(tmp_path)
         f = tmp_path / "untracked.md"
@@ -177,6 +180,7 @@ class TestIsTracked:
 
 
 class TestFindUntrackedSources:
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_reports_untracked_file_in_move(self, tmp_path):
         from clasi.migrate_command import _find_untracked_sources
 
@@ -196,6 +200,7 @@ class TestFindUntrackedSources:
         result = _find_untracked_sources([move], tmp_path)
         assert untracked in result
 
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_ignores_tracked_files(self, tmp_path):
         from clasi.migrate_command import _find_untracked_sources
 
@@ -219,6 +224,7 @@ class TestFindUntrackedSources:
         )
         assert _find_untracked_sources([move], tmp_path) == []
 
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_ignores_gitkeep_housekeeping(self, tmp_path):
         """.gitkeep is removed rather than moved, so it must not block init."""
         from clasi.migrate_command import _find_untracked_sources
@@ -552,6 +558,7 @@ class TestExecuteMovesPerformsMove:
         assert (dst_dir / "conflict.md").read_text(encoding="utf-8") == "original"
         assert (dst_dir / "new.md").read_text(encoding="utf-8") == "new file"
 
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_untracked_files_in_real_git_repo_fail_cleanly(self, tmp_path, capsys):
         """Regression: init crashed moving untracked artifacts in a git repo.
 
@@ -585,6 +592,7 @@ class TestExecuteMovesPerformsMove:
         assert src_file.exists()
         assert not (project.issues_dir / "manufacturer-relation-followups.md").exists()
 
+    @pytest.mark.slow  # 032/008: real git repo (_init_git_repo)
     def test_committed_files_in_real_git_repo_move_via_git(self, tmp_path):
         """Once artifacts are committed, migration proceeds through git mv."""
         _init_git_repo(tmp_path)

@@ -39,13 +39,21 @@ which handles the full lifecycle.
        main_branch="master",
        push_tags=True,
        delete_branch=True,
-       test_command="uv run pytest",  # or "" to skip tests
+       test_command="NONE",   # omit/default -- see below; or "SKIP" to skip tests
    )
    ```
 
    The `test_command` parameter controls how tests are run:
-   - Omit or `None`: runs `uv run pytest` (default)
-   - Custom string (e.g., `"npm test"`): runs that command
+   - Omit, `None`, or the `"NONE"` sentinel: runs the **full suite with
+     coverage** — the same invocation as `just test-all`
+     (`uv run pytest -m 'slow or not slow' --cov=src/clasi
+     --cov-report=term-missing --cov-report=lcov:lcov.info`). This is
+     deliberately *not* a bare `uv run pytest` (032/008: default
+     `addopts` now filters out `@pytest.mark.slow` tests and carries no
+     coverage flags, so a bare `uv run pytest` is the fast developer
+     loop, not the full-suite gate — see `justfile`'s `test` vs.
+     `test-all` recipes).
+   - Custom string (e.g., `"npm test"`): runs that command instead.
    - `"SKIP"`: skips tests entirely (non-Python projects, or a
      deliberate, explicit escape hatch). This is the sentinel string
      `"SKIP"`, not an empty string — an empty-string argument is

@@ -1082,15 +1082,23 @@ def close_sprint(
         main_branch: Target branch for merge (default: 'master')
         push_tags: Whether to push tags after tagging (default: True)
         delete_branch: Whether to delete the sprint branch after merge (default: True)
-        test_command: Shell command to run tests. Defaults to 'uv run pytest'.
-            Pass the literal string "SKIP" to skip tests entirely (for
-            non-Python projects or a deliberate no-test close). This is the
-            only supported skip mechanism -- an empty string is
-            unreachable in practice (the Claude Code harness bug documented
-            in .claude/rules/tool-call-empty-args.md drops *all* arguments
-            when any one argument is empty or null, so `test_command=""`
-            never arrives) and "NONE" maps to `None` (the default
-            'uv run pytest'), not to "skip".
+        test_command: Shell command to run tests. Defaults to the full
+            suite with coverage -- the same invocation as `just test-all`
+            (`uv run pytest -m 'slow or not slow' --cov=src/clasi
+            --cov-report=term-missing --cov-report=lcov:lcov.info`), not
+            the fast-loop `uv run pytest` a developer runs while
+            iterating (032/008: default `addopts` now filters out
+            `@pytest.mark.slow` tests and carries no coverage flags, so a
+            *bare* `uv run pytest` is deliberately not this tool's
+            default -- see close.py's SprintCloser.run for the exact
+            command). Pass the literal string "SKIP" to skip tests
+            entirely (for non-Python projects or a deliberate no-test
+            close). This is the only supported skip mechanism -- an empty
+            string is unreachable in practice (the Claude Code harness bug
+            documented in .claude/rules/tool-call-empty-args.md drops
+            *all* arguments when any one argument is empty or null, so
+            `test_command=""` never arrives) and "NONE" maps to `None`
+            (the full-suite-with-coverage default above), not to "skip".
         test_timeout: Seconds to allow the test command to run before it is
             considered hung and killed. Resolution order (highest priority
             first): (1) this parameter, if not None; (2) a top-level

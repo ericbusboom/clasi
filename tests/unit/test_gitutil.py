@@ -19,6 +19,11 @@ import pytest
 
 from clasi.gitutil import run_git
 
+# 032/008: this module is the git subprocess helper's own test suite --
+# all but one test drive a real git repo via _git()/run_git (real-git
+# tier by definition, not a raw-duration outlier).
+pytestmark = [pytest.mark.slow]
+
 
 def _git(repo: Path, *args: str) -> None:
     """Set up a fixture repo using a plain subprocess call (not run_git
