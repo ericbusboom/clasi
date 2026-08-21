@@ -28,6 +28,12 @@ from click.testing import CliRunner
 
 from clasi.cli import cli
 
+# 032/008: every test here runs `clasi status` against this repo's real,
+# full-history `.clasi/` directory through the real reader/reporter/
+# narrowing stack -- measured at 10-23s per test (032/008 durations audit),
+# real-fs/real-git tier by both duration and kind.
+pytestmark = [pytest.mark.slow]
+
 # Root of this repository (parent of tests/).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

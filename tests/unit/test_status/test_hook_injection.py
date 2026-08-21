@@ -397,6 +397,7 @@ class TestWriteScopeInTierZeroStatusBlock:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow  # 032/008: builds a real multi-sprint on-disk fixture
 class TestGitCallAndLoadMachineCountCollapse:
     def test_git_subprocess_call_count_stays_small_across_multi_sprint_status(
         self, tmp_path
@@ -498,6 +499,7 @@ def _git_init_fixture(root):
     )
 
 
+@pytest.mark.slow  # 032/008: real git repo (_git_init_fixture), real-git tier
 class TestGitSpawnCollapseInRealRepo:
     def test_zero_git_subprocess_spawns_for_realistic_fixture(self, tmp_path):
         """With a real git repo (attached HEAD + refs/remotes/origin/HEAD
@@ -886,6 +888,7 @@ class TestStatusInjectSkipsInconsistencies:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow  # 032/008: builds a real multi-sprint on-disk fixture
 class TestRealNarrowing:
     """narrow_status must actually receive real sprint_id/ticket_id —
     verified here by asserting the RETURNED DICT is smaller/scoped for a

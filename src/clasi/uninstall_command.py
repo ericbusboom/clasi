@@ -1,17 +1,20 @@
 """Implementation of the `clasi uninstall` command.
 
 Removes CLASI-managed platform integration files from a target repository.
-Supports --claude and --codex flags to select which platform(s) to uninstall.
+Claude is the only installable platform as of sprint 032 (Codex and Copilot
+were archived — see the ``archive/codex-copilot-adapters`` branch); the
+--codex/--copilot flags are still accepted for backward compatibility but
+raise a clear error instead of silently no-op'ing.
 
-In interactive mode (no flag, TTY), inspects what is installed and prompts
-the user to choose.
+In interactive mode (no flag, TTY), prompts the user to confirm removing
+Claude platform integration.
 
 In non-interactive mode (no flag), exits with a clear error requiring an
 explicit flag.
 
 Public interface::
 
-    run_uninstall(target: str, claude: bool, codex: bool) -> None
+    run_uninstall(target: str, claude: bool) -> None
 """
 
 import sys
@@ -21,64 +24,24 @@ import click
 
 
 def _prompt_uninstall(target: Path) -> str:
-    """Inspect installed CLASI platform files and prompt the user.
+    """Prompt the user to confirm removing Claude platform integration.
 
-    Uses detect_platforms() to determine which platforms are installed,
-    then presents a numbered menu.  Returns one of "claude", "codex",
-    "copilot", or "both".
+    Claude is the only installable platform as of sprint 032 (Codex and
+    Copilot were archived — see the ``archive/codex-copilot-adapters``
+    branch), so this no longer inspects multi-platform detect_platforms()
+    signals or offers a multi-platform menu; it presents a single
+    confirmation.
     """
-    from clasi.platforms.detect import detect_platforms
-
-    signals = detect_platforms(target)
-
-    has_claude = signals.claude_score > 0
-    has_codex = signals.codex_score > 0
-    has_copilot = signals.copilot_score > 0
-
-    detected_count = sum([has_claude, has_codex, has_copilot])
-
-    if detected_count >= 2:
-        # Multiple platforms detected — offer individual and combined options.
-        opt_list = []
-        n = 1
-        if has_claude:
-            opt_list.append((str(n), "Claude only", "claude"))
-            n += 1
-        if has_codex:
-            opt_list.append((str(n), "Codex only", "codex"))
-            n += 1
-        if has_copilot:
-            opt_list.append((str(n), "Copilot only", "copilot"))
-            n += 1
-        opt_list.append((str(n), "All detected", "both"))
-        options = opt_list
-    elif has_claude:
-        options = [("1", "Claude", "claude")]
-    elif has_codex:
-        options = [("1", "Codex", "codex")]
-    elif has_copilot:
-        options = [("1", "Copilot", "copilot")]
-    else:
-        # No CLASI artifacts detected; offer all so the user can still clean up.
-        options = [
-            ("1", "Claude only", "claude"),
-            ("2", "Codex only", "codex"),
-            ("3", "Copilot only", "copilot"),
-            ("4", "All", "both"),
-        ]
+    del target  # kept for call-site/API compatibility; no longer consulted
 
     click.echo("Uninstall CLASI platform integration:")
-    for num, label, _ in options:
-        click.echo(f"  [{num}] {label}")
+    click.echo("  [1] Claude")
 
     while True:
-        choice = click.prompt("Choice", type=str).strip()
-        for num, _label, value in options:
-            if choice == num:
-                return value
-        click.echo(
-            f"Invalid choice. Enter one of: {', '.join(n for n, _, _ in options)}"
-        )
+        choice = click.prompt("Choice", type=str, default="1").strip()
+        if choice == "1":
+            return "claude"
+        click.echo("Invalid choice. Enter 1.")
 
 
 def run_uninstall(
@@ -97,38 +60,41 @@ def run_uninstall(
     claude:
         If True, run the Claude platform uninstaller.
     codex:
-        If True, run the Codex platform uninstaller.
+        Accepted for backward compatibility only. If True (or *copilot*
+        is True), raises a ``click.ClickException`` with a clear
+        archived-support message instead of removing anything or
+        silently no-op'ing.
     copilot:
-        If True, run the Copilot platform uninstaller.
+        See *codex*.
     copy:
         If True, alias operations use file-copy removal semantics.
         In practice ``_links.unlink_alias`` handles both symlinks and
         regular files identically, so this flag is surfaced for parity
         with ``clasi init --copy`` and passed through to the uninstallers.
+
+    Raises
+    ------
+    click.ClickException
+        If *codex* or *copilot* is True.
     """
+    if codex or copilot:
+        raise click.ClickException(
+            "Codex/Copilot support has been archived; see the "
+            "archive/codex-copilot-adapters branch. Re-run `clasi uninstall` "
+            "without --codex/--copilot to manage Claude support only."
+        )
+
     target_path = Path(target).resolve()
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
 
-    if not claude and not codex and not copilot:
+    if not claude:
         if interactive:
             choice = _prompt_uninstall(target_path)
-            claude = choice in ("claude", "both")
-            codex = choice in ("codex", "both")
-            copilot = choice in ("copilot", "both")
+            claude = choice == "claude"
         else:
-            click.echo(
-                "Error: specify --claude, --codex, --copilot, or a combination.", err=True
-            )
+            click.echo("Error: specify --claude.", err=True)
             raise SystemExit(1)
 
     if claude:
         from clasi.platforms.claude import uninstall as claude_uninstall
         claude_uninstall(target_path, copy=copy)
-
-    if codex:
-        from clasi.platforms.codex import uninstall as codex_uninstall
-        codex_uninstall(target_path, copy=copy)
-
-    if copilot:
-        from clasi.platforms.copilot import uninstall as copilot_uninstall
-        copilot_uninstall(target_path, copy=copy)

@@ -17,6 +17,11 @@ from pathlib import Path
 
 import pytest
 
+# 032/008: real reader/reporter/narrowing stack against this repo's real
+# `.clasi/` directory -- measured at 10-14s per test (032/008 durations
+# audit), real-fs/real-git tier by both duration and kind.
+pytestmark = [pytest.mark.slow]
+
 # Root of this repository (two directories above tests/).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

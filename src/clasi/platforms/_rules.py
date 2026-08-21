@@ -1,8 +1,10 @@
 """Canonical rule body content for all five CLASI path-scoped rules.
 
-This module is the single source of truth for rule content.  Both
-``claude.py`` and ``codex.py`` import from it.  Neither platform
-hardcodes rule strings of its own.
+This module is the single source of truth for rule content.  ``claude.py``
+imports from it — the only platform installer in master as of sprint 032
+(Codex and Copilot were archived to the archive/codex-copilot-adapters
+branch; both previously imported from here too). No platform hardcodes
+rule strings of its own.
 
 Boundary: data-only module.  No I/O, no side effects, no imports from
 other CLASI modules.  Leaf node in the dependency graph.

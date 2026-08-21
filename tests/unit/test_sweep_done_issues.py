@@ -346,8 +346,21 @@ def _mock_ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMo
     return r
 
 
+def _mock_popen_ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:
+    """Popen-shaped mock for the "tests" step (032/006: close.py's
+    _run_test_command uses subprocess.Popen, not subprocess.run, so the
+    pytest-command call is mocked separately from the git-call side_effect
+    list below)."""
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, stderr)
+    proc.returncode = returncode
+    return proc
+
+
+# Note: no "pytest" entry here -- since 032/006, close.py's
+# _run_test_command invokes subprocess.Popen, not subprocess.run. Each
+# test below sets mock_popen.return_value = _mock_popen_ok(...) instead.
 _FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS = [
-    _mock_ok(0, "all tests passed"),  # pytest
     _mock_ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                                         # git status --porcelain=v2 --branch (031/008 marker write)
     _mock_ok(0),                       # git config rebase.autoStash (version bump prep)
@@ -398,8 +411,9 @@ class TestCloseSprintFullIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_close_unresolved_issue_returns_success(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """_close_sprint_full with an in-progress unresolved issue returns success.
 
@@ -426,6 +440,7 @@ class TestCloseSprintFullIssueHandling:
             encoding="utf-8",
         )
 
+        mock_popen.return_value = _mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = list(_FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS)
         mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
@@ -442,8 +457,9 @@ class TestCloseSprintFullIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.2")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_close_deferred_issue_does_not_block(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """_close_sprint_full with a deferred issue closes cleanly.
 
@@ -485,6 +501,7 @@ class TestCloseSprintFullIssueHandling:
             "Issue must still be in sprint issues/ (deferred, not completed)"
         )
 
+        mock_popen.return_value = _mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = list(_FULL_CLOSE_SUBPROCESS_SIDE_EFFECTS)
         mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 

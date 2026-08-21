@@ -160,6 +160,53 @@ class TestRunInit:
         expected = _detect_mcp_command(target_dir)
         assert data["mcpServers"]["clasi"] == expected
 
+    def test_mcp_json_preserves_existing_clasi_entry_any_form(self, target_dir):
+        """If a `clasi` entry already exists in .mcp.json in ANY form —
+        e.g. this repo's own `uv run clasi mcp` dogfooding config — clasi
+        init must leave it untouched rather than overwriting it with the
+        consumer default. Regression test for the 2026-07-16 incident
+        (clasi-init-reverts-this-repos-own-mcp-config-to-the-consumer-default,
+        ticket 032/004)."""
+        target_dir.mkdir()
+        mcp_json = target_dir / ".mcp.json"
+        dogfood_config = {
+            "mcpServers": {
+                "clasi": {
+                    "command": "uv",
+                    "args": ["run", "clasi", "mcp"],
+                }
+            }
+        }
+        mcp_json.write_text(json.dumps(dogfood_config), encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        data = json.loads(mcp_json.read_text(encoding="utf-8"))
+        assert data["mcpServers"]["clasi"] == {
+            "command": "uv",
+            "args": ["run", "clasi", "mcp"],
+        }
+
+    def test_mcp_json_fresh_scratch_project_gets_bare_default(
+        self, tmp_path, monkeypatch
+    ):
+        """A scratch project with no uv and no [project] table in
+        pyproject.toml — i.e. no existing `clasi` mcp entry at all —
+        still gets the bare `{"command": "clasi", "args": ["mcp"]}`
+        consumer default written by `clasi init`. The dogfood-preservation
+        fix in _update_mcp_json must not regress this baseline consumer
+        case (ticket 032/004 AC2)."""
+        monkeypatch.chdir(tmp_path)
+        target = tmp_path / "scratch_project"
+        target.mkdir()
+        # Deliberately no pyproject.toml at all: no [project] table, no uv.
+
+        run_init(str(target))
+
+        mcp_json = target / ".mcp.json"
+        data = json.loads(mcp_json.read_text(encoding="utf-8"))
+        assert data["mcpServers"]["clasi"] == {"command": "clasi", "args": ["mcp"]}
+
     def test_adds_permission_to_settings(self, target_dir):
         target_dir.mkdir()
         run_init(str(target_dir))
@@ -357,8 +404,12 @@ class TestHooksConfig:
                 assert "hooks" in entry
                 assert isinstance(entry["hooks"], list)
 
-    def test_hooks_overwrite_old_commands(self, target_dir):
-        """Hook installation overwrites old hook commands (e.g. python3) with new clasi commands."""
+    def test_hooks_overwrite_stale_clasi_commands(self, target_dir):
+        """Hook installation replaces a stale CLASI-owned command (any
+        command starting with `clasi hook`) with the current plugin
+        version. Identification is by command prefix (ticket 032/004),
+        not by matcher — see test_hooks_preserve_user_defined_hook for
+        the complementary case of a genuinely user-owned entry."""
         target_dir.mkdir()
         settings_path = target_dir / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -367,7 +418,7 @@ class TestHooksConfig:
                 "PreToolUse": [
                     {
                         "matcher": "Edit|Write|MultiEdit",
-                        "hooks": [{"type": "command", "command": "python3 role_guard.py"}],
+                        "hooks": [{"type": "command", "command": "clasi hook role-guard-legacy"}],
                     }
                 ]
             }
@@ -378,14 +429,50 @@ class TestHooksConfig:
 
         data = json.loads(settings_path.read_text(encoding="utf-8"))
         pre_tool = data["hooks"]["PreToolUse"]
-        # Old python3 command must be gone
+        # Stale CLASI command must be gone
         all_commands = [
             h.get("command", "")
             for entry in pre_tool
             for h in entry.get("hooks", [])
         ]
-        assert not any("python3" in cmd for cmd in all_commands)
+        assert not any("role-guard-legacy" in cmd for cmd in all_commands)
         # New clasi hook role-guard command is present
+        assert any("clasi hook role-guard" in cmd for cmd in all_commands)
+
+    def test_hooks_preserve_user_defined_hook(self, target_dir):
+        """A user-defined hook (non-`clasi hook` command) under any event
+        survives `clasi init` — the hooks-install step merges per event
+        type instead of replacing the whole `hooks` object; only entries
+        identifiable as CLASI's own (command starts with `clasi hook`)
+        are added/replaced (ticket 032/004, review findings F1-F3)."""
+        target_dir.mkdir()
+        settings_path = target_dir / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{"type": "command", "command": "python3 my_custom_hook.py"}],
+                    }
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(existing), encoding="utf-8")
+
+        run_init(str(target_dir))
+
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        pre_tool = data["hooks"]["PreToolUse"]
+        all_commands = [
+            h.get("command", "")
+            for entry in pre_tool
+            for h in entry.get("hooks", [])
+        ]
+        assert any("my_custom_hook.py" in cmd for cmd in all_commands), (
+            "user-defined hook must survive clasi init"
+        )
+        # CLASI's own hooks for this event are still installed alongside it.
         assert any("clasi hook role-guard" in cmd for cmd in all_commands)
 
     def test_hooks_unchanged_when_already_correct(self, target_dir):
@@ -605,6 +692,23 @@ class TestRules:
 
         actual = stale.read_text(encoding="utf-8")
         assert actual == RULES["clasi-artifacts.md"]
+
+    def test_rules_unchanged_no_write_echo(self, target_dir, capsys):
+        """`_create_rules` compares each file's existing content against
+        the canonical body before writing, and skips (no write, no
+        "Wrote:" echo) when they already match — matching its own
+        docstring's existing claim, which the old implementation did not
+        honor (it always wrote unconditionally; ticket 032/004)."""
+        target_dir.mkdir()
+        run_init(str(target_dir))
+        capsys.readouterr()  # discard first run's output
+
+        run_init(str(target_dir))
+        captured = capsys.readouterr()
+
+        for filename in RULES:
+            assert f"Wrote: .claude/rules/{filename}" not in captured.out
+            assert f"Unchanged: .claude/rules/{filename}" in captured.out
 
 
 class TestPlatformsClaude:
@@ -829,103 +933,6 @@ class TestMigratePlatformScope:
             "SKILL.md must be removed by uninstall"
         # Directory stays because it is non-empty
         assert (target / ".claude" / "skills" / "se").is_dir()
-
-
-# ---------------------------------------------------------------------------
-# --copilot flag wiring
-# ---------------------------------------------------------------------------
-
-
-class TestCopilotFlag:
-    """Verify --copilot flag is accepted and dispatches to copilot.install."""
-
-    def test_run_init_copilot_only(self, tmp_path):
-        """run_init(copilot=True) calls copilot.install and writes Copilot files."""
-        target = tmp_path / "repo"
-        target.mkdir()
-
-        run_init(str(target), copilot=True)
-
-        # Copilot installer writes .github/copilot-instructions.md
-        copilot_instr = target / ".github" / "copilot-instructions.md"
-        assert copilot_instr.exists(), ".github/copilot-instructions.md must be created"
-
-    def test_run_init_copilot_only_no_claude_artifacts(self, tmp_path):
-        """run_init(copilot=True) must not create .claude/ platform artifacts."""
-        target = tmp_path / "repo"
-        target.mkdir()
-
-        run_init(str(target), copilot=True)
-
-        # .claude/skills/ must not exist when only copilot is requested
-        assert not (target / ".claude" / "skills").exists(), \
-            ".claude/skills/ must not be created by --copilot-only install"
-
-    def test_run_init_claude_and_copilot(self, tmp_path):
-        """run_init(claude=True, copilot=True) installs both platforms."""
-        target = tmp_path / "repo"
-        target.mkdir()
-
-        run_init(str(target), claude=True, copilot=True)
-
-        assert (target / ".claude" / "skills" / "se" / "SKILL.md").exists(), \
-            "Claude SKILL.md must be created"
-        assert (target / ".github" / "copilot-instructions.md").exists(), \
-            "Copilot instructions must be created"
-
-    def test_run_init_all_three_platforms(self, tmp_path):
-        """run_init(claude=True, codex=True, copilot=True) installs all three."""
-        target = tmp_path / "repo"
-        target.mkdir()
-
-        run_init(str(target), claude=True, codex=True, copilot=True)
-
-        assert (target / ".claude" / "skills" / "se" / "SKILL.md").exists()
-        assert (target / ".codex" / "config.toml").exists()
-        assert (target / ".github" / "copilot-instructions.md").exists()
-
-    def test_cli_copilot_flag_accepted(self, tmp_path):
-        """clasi init --copilot is accepted by the CLI without error."""
-        from click.testing import CliRunner
-        from clasi.cli import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--copilot", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-
-    def test_cli_copilot_flag_creates_copilot_files(self, tmp_path):
-        """clasi init --copilot creates .github/copilot-instructions.md."""
-        from click.testing import CliRunner
-        from clasi.cli import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["init", "--copilot", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert (tmp_path / ".github" / "copilot-instructions.md").exists()
-
-    def test_cli_install_synonym_copilot_flag(self, tmp_path):
-        """clasi install --copilot (synonym) is also accepted."""
-        from click.testing import CliRunner
-        from clasi.cli import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, ["install", "--copilot", str(tmp_path)])
-        assert result.exit_code == 0, result.output
-        assert (tmp_path / ".github" / "copilot-instructions.md").exists()
-
-    def test_cli_claude_codex_copilot_combined(self, tmp_path):
-        """clasi init --claude --codex --copilot installs all three."""
-        from click.testing import CliRunner
-        from clasi.cli import cli
-
-        runner = CliRunner()
-        result = runner.invoke(cli, [
-            "init", "--claude", "--codex", "--copilot", str(tmp_path)
-        ])
-        assert result.exit_code == 0, result.output
-        assert (tmp_path / ".claude" / "skills" / "se" / "SKILL.md").exists()
-        assert (tmp_path / ".codex" / "config.toml").exists()
-        assert (tmp_path / ".github" / "copilot-instructions.md").exists()
 
 
 # ---------------------------------------------------------------------------

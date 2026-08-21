@@ -1031,6 +1031,16 @@ class TestCloseSprintFull:
         result.stderr = stderr
         return result
 
+    def _mock_popen_ok(self, returncode=0, stdout="", stderr=""):
+        """Popen-shaped mock for the "tests" step (032/006: close.py's
+        _run_test_command uses subprocess.Popen, not subprocess.run, so
+        the pytest-command call needs its own mock separate from
+        mock_run's git-call side_effect list)."""
+        proc = MagicMock()
+        proc.communicate.return_value = (stdout, stderr)
+        proc.returncode = returncode
+        return proc
+
     def test_branch_name_none_falls_back_to_legacy(self, work_dir):
         """Omitting branch_name uses legacy behavior."""
         create_sprint("Sprint")
@@ -1051,8 +1061,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_lifecycle_success(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, mock_cleanup, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, mock_cleanup, work_dir
     ):
         """Full lifecycle returns structured success JSON, and orphaned ticket
         worktrees are swept: a merged-not-cleaned one is pruned, a
@@ -1075,8 +1086,8 @@ class TestCloseSprintFull:
         # git rev-parse --verify branch (merge check), git merge-base --is-ancestor,
         # git rebase, git checkout master, git merge --no-ff, git push --tags,
         # git rev-parse --verify branch (delete check), git branch -d
+        mock_popen.return_value = self._mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all tests passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1153,8 +1164,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_version_bump_stages_explicit_paths_not_add_dash_a(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """027/002 regression: the version-bump commit must stage explicit
         paths -- the detected version file, plus the archived sprint
@@ -1175,8 +1187,8 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
+        mock_popen.return_value = self._mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all tests passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1224,8 +1236,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("clasi.tools.artifact_tools.detect_version_file", return_value=None)
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_version_bump_stages_archive_move_but_no_file_when_none_detected(
-        self, mock_run, mock_detect, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_detect, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """027/002 acceptance criterion (adjusted -- see ticket notes):
         when detect_version_file finds nothing, Step 5 must not call
@@ -1245,8 +1258,8 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
+        mock_popen.return_value = self._mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all tests passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1280,7 +1293,8 @@ class TestCloseSprintFull:
         )
 
     @patch("subprocess.run")
-    def test_test_failure_returns_error(self, mock_run, work_dir):
+    @patch("subprocess.Popen")
+    def test_test_failure_returns_error(self, mock_popen, mock_run, work_dir):
         """When tests fail, return structured error with recovery."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -1288,7 +1302,11 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
-        mock_run.return_value = self._make_subprocess_result(
+        # A failing test run: close_sprint returns from the "tests" step
+        # before any git call, so mock_run (subprocess.run) is never
+        # actually reached here -- only Popen (the pytest-command runner)
+        # matters for this test.
+        mock_popen.return_value = self._mock_popen_ok(
             1, "FAILED test_foo.py", "1 failed"
         )
 
@@ -1350,7 +1368,8 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
-    def test_merge_conflict_returns_error(self, mock_run, mock_ver, mock_tag, work_dir):
+    @patch("subprocess.Popen")
+    def test_merge_conflict_returns_error(self, mock_popen, mock_run, mock_ver, mock_tag, work_dir):
         """When merge has conflicts, return structured error."""
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -1361,8 +1380,8 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
+        mock_popen.return_value = self._mock_popen_ok(0, "all tests passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all tests passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1395,8 +1414,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_already_merged_branch_is_idempotent(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """If branch doesn't exist, merge step is skipped."""
         create_sprint("Sprint")
@@ -1408,8 +1428,8 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
+        mock_popen.return_value = self._mock_popen_ok(0, "all passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1601,8 +1621,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_self_repair_moves_done_ticket(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Ticket with done status but in tickets/ (not done/) gets moved."""
         create_sprint("Sprint")
@@ -1622,8 +1643,8 @@ class TestCloseSprintFull:
         fm["status"] = "done"
         write_frontmatter(ticket["path"], fm)
 
+        mock_popen.return_value = self._mock_popen_ok(0, "all passed")
         mock_run.side_effect = [
-            self._make_subprocess_result(0, "all passed"),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1646,8 +1667,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_structured_result_format(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Verify all expected fields in success result."""
         create_sprint("Sprint")
@@ -1659,8 +1681,8 @@ class TestCloseSprintFull:
         update_ticket_status(ticket["path"], "done")
         move_ticket_to_done(ticket["path"])
 
+        mock_popen.return_value = self._mock_popen_ok(0)
         mock_run.side_effect = [
-            self._make_subprocess_result(0),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1692,8 +1714,9 @@ class TestCloseSprintFull:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_recovery_state_cleared_on_success(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Recovery state is cleared after successful close."""
         create_sprint("Sprint")
@@ -1709,8 +1732,8 @@ class TestCloseSprintFull:
         db_path = work_dir / ".clasi" / ".clasi.db"
         write_recovery_state(str(db_path), "001", "tests", [], "old failure")
 
+        mock_popen.return_value = self._mock_popen_ok(0)
         mock_run.side_effect = [
-            self._make_subprocess_result(0),  # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1755,6 +1778,14 @@ class TestCloseSprintTestTimeout:
         result.stderr = stderr
         return result
 
+    def _mock_popen_ok(self, returncode=0, stdout="", stderr=""):
+        """Popen-shaped mock for the "tests" step (032/006: close.py's
+        _run_test_command uses subprocess.Popen, not subprocess.run)."""
+        proc = MagicMock()
+        proc.communicate.return_value = (stdout, stderr)
+        proc.returncode = returncode
+        return proc
+
     def _setup_sprint(self, work_dir):
         create_sprint("Sprint")
         _advance_to_executing(work_dir, "001")
@@ -1776,10 +1807,11 @@ class TestCloseSprintTestTimeout:
                     return_value="0.20260329.1",
                 ), \
                 patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
-                patch("subprocess.run") as mock_run:
+                patch("subprocess.run") as mock_run, \
+                patch("subprocess.Popen") as mock_popen:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+            mock_popen.return_value = self._mock_popen_ok(0)  # test_command="true"
             mock_run.side_effect = [
-                self._make_subprocess_result(0),  # test_command="true"
                 self._make_subprocess_result(
                     0, "# branch.oid deadbeef0000\n# branch.head master\n"
                 ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1801,6 +1833,7 @@ class TestCloseSprintTestTimeout:
 
         assert result["status"] == "success", f"Expected success, got: {result}"
 
+    @pytest.mark.slow  # 032/008: real subprocess.run("sleep 30"), real timeout wait
     def test_slow_command_trips_low_explicit_timeout_and_names_value(self, work_dir):
         """A hung command with test_timeout explicitly set low (2s) still
         trips the timeout, blocks the close, and the error message names
@@ -1822,6 +1855,7 @@ class TestCloseSprintTestTimeout:
         assert "300" not in result["error"]["message"]
         assert "tests" not in result["completed_steps"]
 
+    @pytest.mark.slow  # 032/008: real subprocess.run("sleep 30"), real timeout wait
     def test_config_key_used_when_no_explicit_param(self, work_dir):
         """A .clasi/config.yaml `test_timeout:` key is honored when the
         test_timeout parameter is not passed explicitly."""
@@ -1845,7 +1879,7 @@ class TestCloseSprintTestTimeout:
 
     def test_zero_timeout_means_unlimited_fast_command_completes(self, work_dir):
         """test_timeout=0 disables the timeout (passes timeout=None to
-        subprocess.run); a fast command still completes normally."""
+        Popen.communicate()); a fast command still completes normally."""
         self._setup_sprint(work_dir)
 
         with patch("clasi.tools.artifact_tools.create_version_tag"), \
@@ -1854,10 +1888,11 @@ class TestCloseSprintTestTimeout:
                     return_value="0.20260329.1",
                 ), \
                 patch("clasi.worktree.reconcile_worktrees") as mock_reconcile, \
-                patch("subprocess.run") as mock_run:
+                patch("subprocess.run") as mock_run, \
+                patch("subprocess.Popen") as mock_popen:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
+            mock_popen.return_value = self._mock_popen_ok(0)  # test_command="true"
             mock_run.side_effect = [
-                self._make_subprocess_result(0),  # test_command="true"
                 self._make_subprocess_result(
                     0, "# branch.oid deadbeef0000\n# branch.head master\n"
                 ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -1882,9 +1917,10 @@ class TestCloseSprintTestTimeout:
                 )
             )
 
-            # Confirm timeout=None was passed through to the test-command call.
-            first_call = mock_run.call_args_list[0]
-            assert first_call.kwargs.get("timeout") is None
+            # Confirm timeout=None was passed through to the test-command's
+            # communicate() call (032/006: Popen.communicate(timeout=...),
+            # not subprocess.run(..., timeout=...)).
+            mock_popen.return_value.communicate.assert_called_once_with(timeout=None)
 
         assert result["status"] == "success", f"Expected success, got: {result}"
 
@@ -2078,10 +2114,19 @@ class TestCloseSprintLockAndDbGuard:
         result.stderr = stderr
         return result
 
+    def _mock_popen_ok(self, returncode=0, stdout="", stderr=""):
+        """Popen-shaped mock for the "tests" step (032/006: close.py's
+        _run_test_command uses subprocess.Popen, not subprocess.run)."""
+        proc = MagicMock()
+        proc.communicate.return_value = (stdout, stderr)
+        proc.returncode = returncode
+        return proc
+
     @patch("clasi.worktree.reconcile_worktrees")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_dirty_db_guard_commits_when_versioning_disabled(
-        self, mock_run, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_reconcile, work_dir
     ):
         """Guard stages and commits .clasi.db when dirty and versioning is manual."""
         # Disable versioning so no version bump subprocess calls happen
@@ -2100,8 +2145,8 @@ class TestCloseSprintLockAndDbGuard:
         # (on sprint branch), git add .clasi.db, git commit,
         # git rev-parse --verify (branch gone), git push --tags (skipped),
         # git rev-parse --verify (delete, branch gone)
+        mock_popen.return_value = self._mock_popen_ok(0, "")  # pytest (pass)
         mock_run.side_effect = [
-            self._make_subprocess_result(0, ""),        # pytest (pass)
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -2130,8 +2175,9 @@ class TestCloseSprintLockAndDbGuard:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260329.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_dirty_db_guard_is_noop_when_versioning_cleans_it(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Guard is a no-op when git status shows .clasi.db is clean (version bump committed it)."""
         create_sprint("Sprint")
@@ -2148,8 +2194,8 @@ class TestCloseSprintLockAndDbGuard:
         # git add <archive paths + version file> (version bump), git commit
         # (version bump), git status --porcelain (empty = clean, guard is no-op),
         # git rev-parse --verify (branch gone), git push --tags, git rev-parse --verify (delete)
+        mock_popen.return_value = self._mock_popen_ok(0)  # pytest
         mock_run.side_effect = [
-            self._make_subprocess_result(0),        # pytest
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -2176,7 +2222,8 @@ class TestCloseSprintLockAndDbGuard:
         assert len(db_commit_calls) == 0, "Guard should not commit .clasi.db when tree is clean"
 
     @patch("subprocess.run")
-    def test_lock_released_after_merge_failure(self, mock_run, work_dir):
+    @patch("subprocess.Popen")
+    def test_lock_released_after_merge_failure(self, mock_popen, mock_run, work_dir):
         """Execution lock is released in finally block even when merge raises RuntimeError."""
         # Disable versioning for a simpler call sequence
         settings_dir = work_dir / ".clasi"
@@ -2199,8 +2246,8 @@ class TestCloseSprintLockAndDbGuard:
         # pytest, git status --porcelain (clean), git rev-parse --verify (branch exists),
         # git merge-base (not ancestor), git rebase (fails with non-zero) -> abort,
         # (merge raises RuntimeError, finally block runs release_lock)
+        mock_popen.return_value = self._mock_popen_ok(0, "")  # pytest (pass)
         mock_run.side_effect = [
-            self._make_subprocess_result(0, ""),    # pytest (pass)
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)
@@ -2221,8 +2268,9 @@ class TestCloseSprintLockAndDbGuard:
 
     @patch("clasi.worktree.reconcile_worktrees")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_db_guard_skipped_when_not_on_sprint_branch(
-        self, mock_run, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_reconcile, work_dir
     ):
         """Guard does not commit .clasi.db when HEAD is not the sprint branch."""
         # Disable versioning for a simpler call sequence
@@ -2237,8 +2285,8 @@ class TestCloseSprintLockAndDbGuard:
         move_ticket_to_done(ticket["path"])
 
         # db is dirty but HEAD is not the sprint branch (e.g. accidentally on master)
+        mock_popen.return_value = self._mock_popen_ok(0, "")  # pytest (pass)
         mock_run.side_effect = [
-            self._make_subprocess_result(0, ""),        # pytest (pass)
             self._make_subprocess_result(
                 0, "# branch.oid deadbeef0000\n# branch.head master\n"
             ),  # git status --porcelain=v2 --branch (031/008 marker write)

@@ -26,8 +26,12 @@ not resolved in the sprint and need follow-up.
 ## Worktree Pruning at Close
 
 As the final step of `close_sprint`, the tool prunes any git worktrees
-associated with the closing sprint branch. Sprint execution creates one
-worktree per ticket via `acquire_execution_lock`; this step removes them all.
+associated with the closing sprint branch. This is a cleanup safety net for
+worktrees left behind by other tooling (e.g. a manually created worktree, or
+one left over from an interrupted session) — sprint execution itself never
+creates a worktree per ticket; `acquire_execution_lock` only acquires the
+sprint's execution lock and does not touch worktrees at all. This step's
+scope is unrelated to how many tickets the sprint ran.
 
 The result JSON includes a `worktrees_pruned` list of absolute paths removed.
 If any removal failed, a `worktrees_failed` list is also present and the

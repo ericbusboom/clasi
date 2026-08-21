@@ -24,8 +24,6 @@ from clasi.hook_handlers import (
     handle_subagent_stop,
     handle_plan_to_issue,
     handle_plan_to_todo,  # backward-compatible alias
-    handle_codex_plan_to_issue,
-    handle_codex_plan_to_todo,  # backward-compatible alias
     handle_hook,
     handle_role_guard,
     handle_mcp_guard,
@@ -1061,153 +1059,6 @@ class TestHandlePlanToIssue:
         assert not plan_file.exists()
         assert "status: pending" in issue_files[0].read_text(encoding="utf-8")
         assert not issue_files[0].name.startswith("issue-")
-
-
-# ---------------------------------------------------------------------------
-# handle_codex_plan_to_issue tests
-# ---------------------------------------------------------------------------
-
-
-class TestHandleCodexPlanToIssue:
-    def _payload(self, message: str) -> dict:
-        return {"last_assistant_message": message}
-
-    def test_no_plan_tag_exits_0_no_file(self, tmp_path, capsys):
-        """No <proposed_plan> in message: exits 0, no issue file created."""
-        payload = self._payload("No plan tag here, just some text.")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-        issue_dir = tmp_path / ".clasi" / "issues"
-        assert not issue_dir.exists() or len(list(issue_dir.glob("*.md"))) == 0
-
-    def test_no_plan_tag_never_exits_2(self, tmp_path):
-        """handle_codex_plan_to_issue never exits with code 2."""
-        payload = self._payload("No plan here.")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code != 2
-
-    def test_with_plan_creates_issue_exits_0(self, tmp_path, capsys):
-        """<proposed_plan> present: one issue file created, exits 0."""
-        _write_legacy_pin(tmp_path)
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
-        message = "Here is my plan:\n<proposed_plan>\n# My Plan\n\nDo some things.\n</proposed_plan>"
-        payload = self._payload(message)
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-        issue_dir = tmp_path / ".clasi" / "issues"
-        issue_files = list(issue_dir.glob("*.md"))
-        assert len(issue_files) == 1
-        content = issue_files[0].read_text()
-        assert "# My Plan" in content
-        assert "source: codex-plan" in content
-
-        captured = capsys.readouterr()
-        assert "CLASI: Codex plan saved as TODO:" in captured.out
-
-    def test_with_plan_never_exits_2(self, tmp_path):
-        """handle_codex_plan_to_issue always exits 0, even when an issue is created."""
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True)
-        message = "<proposed_plan>\n# Plan\n\nDetails here.\n</proposed_plan>"
-        payload = self._payload(message)
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-    def test_drops_redundant_issue_prefix_from_filename(self, tmp_path):
-        """A Codex plan titled '# Issue: ...' does not land with an 'issue-' filename prefix.
-
-        The Codex Stop hook fires after the session ends, so there is no live
-        model turn to hand a rewrite instruction to (see the docstring on
-        handle_codex_plan_to_issue) — but the mechanical filename fix still
-        applies via plan_to_issue_from_text, exercised here through the real
-        hook path (no mocks).
-        """
-        _write_legacy_pin(tmp_path)
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
-        message = (
-            "<proposed_plan>\n"
-            "# Issue: re-enable the MCP process-content tools\n\n"
-            "## Scope of this plan\n\nDo not implement.\n"
-            "</proposed_plan>"
-        )
-        payload = self._payload(message)
-
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-        issue_dir = tmp_path / ".clasi" / "issues"
-        issue_files = list(issue_dir.glob("*.md"))
-        assert len(issue_files) == 1
-        assert not issue_files[0].name.startswith("issue-")
-
-    def test_dedup_second_call_creates_no_file(self, tmp_path):
-        """Duplicate plan (same content hash): second call creates no file."""
-        _write_legacy_pin(tmp_path)
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
-        message = "<proposed_plan>\n# Unique Plan\n\nExactly this content.\n</proposed_plan>"
-        payload = self._payload(message)
-
-        # First call — creates an issue
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-        issue_dir = tmp_path / ".clasi" / "issues"
-        files_after_first = list(issue_dir.glob("*.md"))
-        assert len(files_after_first) == 1
-
-        # Second call with identical payload — dedup, no new file
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-        files_after_second = list(issue_dir.glob("*.md"))
-        assert len(files_after_second) == 1
-
-    def test_empty_message_exits_0_no_file(self, tmp_path):
-        """Empty last_assistant_message: exits 0, no issue created."""
-        payload = self._payload("")
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-        issue_dir = tmp_path / ".clasi" / "issues"
-        assert not issue_dir.exists() or len(list(issue_dir.glob("*.md"))) == 0
-
-    def test_missing_last_assistant_message_key_exits_0(self, tmp_path):
-        """Payload without last_assistant_message key: exits 0, no issue created."""
-        payload = {}
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_todo, payload)
-        assert exc.value.code == 0
-
-
-class TestHandleHookCodexPlanToIssue:
-    """Test that handle_hook routes codex-plan-to-issue and its backward-compat alias."""
-
-    def test_routes_codex_plan_to_issue(self):
-        """handle_hook('codex-plan-to-issue') calls handle_codex_plan_to_issue."""
-        with patch("clasi.hook_handlers.handle_codex_plan_to_issue") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("codex-plan-to-issue")
-            mock_handler.assert_called_once_with({})
-
-    def test_routes_codex_plan_to_todo(self):
-        """handle_hook('codex-plan-to-todo') calls handle_codex_plan_to_issue (backward-compat alias)."""
-        with patch("clasi.hook_handlers.handle_codex_plan_to_issue") as mock_handler, \
-             patch("clasi.hook_handlers.read_payload", return_value={}):
-            mock_handler.side_effect = SystemExit(0)
-            with pytest.raises(SystemExit):
-                handle_hook("codex-plan-to-todo")
-            mock_handler.assert_called_once_with({})
 
 
 # ---------------------------------------------------------------------------
@@ -2608,6 +2459,7 @@ def _invoke_role_guard_cli(clasi_bin: Path, cwd: Path, payload: dict) -> _subpro
     not _CURRENT_CLASI.exists(),
     reason="requires the project's own .venv/bin/clasi (editable install)",
 )
+@pytest.mark.slow  # 032/008: real `clasi hook role-guard` CLI subprocess
 class TestRoleGuardRealCliInvocationPath:
     """Ticket 020-001: exercise OOP bypass through the real `clasi hook
     role-guard` CLI entrypoint (subprocess), not handle_role_guard() called
@@ -5039,33 +4891,10 @@ class TestGuardFailClosedExceptionBoundary:
 
 
 class TestPlanHandlersRoutedThroughExitHook:
-    """handle_plan_to_issue and handle_codex_plan_to_issue are routed
-    through _exit_hook (not raw sys.exit), so plan-to-issue/
-    codex-plan-to-issue events appear in hooks.log for the first time
-    (ticket 028-005) — confirmed zero such lines existed before this
+    """handle_plan_to_issue is routed through _exit_hook (not raw
+    sys.exit), so plan-to-issue events appear in hooks.log for the first
+    time (ticket 028-005) — confirmed zero such lines existed before this
     ticket."""
-
-    def test_codex_no_plan_tag_writes_hooks_log_line(self, tmp_path):
-        _make_log_dir(tmp_path)
-        payload = {"last_assistant_message": "no tag here"}
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_issue, payload)
-        assert exc.value.code == 0
-        line = _last_hooks_log_line(tmp_path, "codex-plan-to-issue")
-        assert " 0 " in line
-        assert "no-plan-tag" in line
-
-    def test_codex_saved_writes_hooks_log_line(self, tmp_path):
-        _write_legacy_pin(tmp_path)
-        (tmp_path / ".clasi" / "issues").mkdir(parents=True, exist_ok=True)
-        message = "<proposed_plan>\n# Plan\n\nDetails.\n</proposed_plan>"
-        payload = {"last_assistant_message": message}
-        with pytest.raises(SystemExit) as exc:
-            _run_with_cwd(tmp_path, handle_codex_plan_to_issue, payload)
-        assert exc.value.code == 0
-        line = _last_hooks_log_line(tmp_path, "codex-plan-to-issue")
-        assert " 0 " in line
-        assert "saved" in line
 
     def test_plan_to_issue_no_file_writes_hooks_log_line(self, tmp_path):
         _make_log_dir(tmp_path)

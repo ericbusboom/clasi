@@ -566,6 +566,39 @@ class TestClaudeMdUninstall:
         claude_mod.uninstall(tmp_path)
         assert not claude_md.exists(), "Copy-mode CLAUDE.md must be removed by uninstall"
 
+    def test_uninstall_preserves_other_tool_content_in_claude_md(
+        self, tmp_path: Path
+    ) -> None:
+        """uninstall() strips only CLASI's marker block from CLAUDE.md via
+        strip_section, matching what AGENTS.md's uninstall path already
+        does correctly — not `_links.unlink_alias`, which would destroy
+        the whole file. CLAUDE.md is written as a regular file specifically
+        so other tools (e.g. rundbat) can manage their own blocks in the
+        same file; a consumer running `clasi uninstall` must not lose that
+        content (ticket 032/004, review finding F2)."""
+        claude_md = tmp_path / "CLAUDE.md"
+        other_tool_block = (
+            "<!-- RUNDBAT:START -->\n"
+            "# rundbat\n"
+            "rundbat-specific content here.\n"
+            "<!-- RUNDBAT:END -->\n"
+        )
+        claude_md.write_text(other_tool_block, encoding="utf-8")
+
+        claude_mod.install(tmp_path, mcp_config={})
+        assert "CLASI:START" in claude_md.read_text(encoding="utf-8")
+
+        claude_mod.uninstall(tmp_path)
+
+        assert claude_md.exists(), (
+            "CLAUDE.md must survive uninstall when it holds other-tool content"
+        )
+        content = claude_md.read_text(encoding="utf-8")
+        assert "RUNDBAT:START" in content
+        assert "rundbat-specific content here." in content
+        assert "CLASI:START" not in content
+        assert "CLASI:END" not in content
+
 
 # ---------------------------------------------------------------------------
 # Version stamp — consolidated .clasi/clasi-version

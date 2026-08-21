@@ -23,20 +23,13 @@ from clasi.state_machine.models import (
     TransitionResult,
     UnknownPredicateError,
 )
-from clasi.state_machine.registry import clear_registry, predicate
+from clasi.state_machine.registry import predicate
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    """Isolate registry state between tests."""
-    clear_registry()
-    yield
-    clear_registry()
+# Registry isolation between tests (and between this module and whatever
+# runs after it in the same pytest process) is provided by the autouse
+# ``_clean_registry`` fixture in this package's ``conftest.py`` — see
+# that file's docstring for why it's a snapshot/restore fixture rather
+# than a plain clear.
 
 
 def _make_machine(states: dict[str, State], name: str = "test") -> Machine:

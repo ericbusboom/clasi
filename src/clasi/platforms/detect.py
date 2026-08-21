@@ -45,7 +45,14 @@ from pathlib import Path
 
 @dataclass
 class PlatformSignals:
-    """Result of advisory platform detection."""
+    """Result of advisory platform detection.
+
+    codex_score/copilot_score are vestigial as of sprint 032 (Codex and
+    Copilot were archived to the archive/codex-copilot-adapters branch —
+    see platforms/DESIGN.md); they are still computed and returned
+    (harmless, unused by any installer) pending a future full-removal
+    pass, kept in case Codex/Copilot are ever un-archived.
+    """
 
     claude_score: int
     codex_score: int

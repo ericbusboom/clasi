@@ -39,6 +39,12 @@
 #   7. A scan of <project-dir>/.clasi/log/mcp-server.log for
 #      `input_value={}` signatures (the empty-args-sentinel bug from
 #      .claude/rules/tool-call-empty-args.md).
+#   8. Real-app coverage report, from <run-dir>/coverage/report.txt
+#      (sprint 032 ticket 007's coverage.sh — run separately, not by this
+#      script; see that script's own header).
+#   9. Dead-code report, from <run-dir>/dead-code-report.md — agent-
+#      authored (per AGENTS.md's "Coverage & Dead-Code Report" section),
+#      not produced by any script in this directory (sprint 032/007).
 #
 # Degrades gracefully: a missing/malformed input produces a clearly
 # labeled "not available" note in that section, never a hard crash that
@@ -539,6 +545,65 @@ section_empty_args_scan() {
     fi
 }
 
+# --- Section 8: real-app coverage report (ticket 032/007's coverage.sh) ---
+
+section_coverage() {
+    echo "## 8. Real-App Coverage (\`coverage.sh\`)"
+    echo
+    local cov_dir="$RUN_DIR/coverage"
+    local report_txt="$cov_dir/report.txt"
+    echo "Source: \`$report_txt\` (plus \`coverage.json\`, \`coverage.lcov\`,"
+    echo "and \`html/index.html\` alongside it in \`$cov_dir/\`)."
+    echo
+    if [ ! -f "$report_txt" ]; then
+        unavailable "\`coverage/report.txt\` was not found in the run directory — \`./coverage.sh\` has not been run for this run yet (or this run predates sprint 032 ticket 007's coverage harness). Run \`./coverage.sh\` after the run to produce it."
+        return 0
+    fi
+    echo "This measures the **real application** — unlike the unit gate's"
+    echo "\`pyproject.toml\` config, this report does not omit"
+    echo "\`cli.py\`/\`hook_handlers.py\`/\`mcp_server.py\` (see"
+    echo "\`tests/e2e/.coveragerc\`'s own header for why the two configs are"
+    echo "kept deliberately separate)."
+    echo
+    echo "<details><summary>Full coverage report</summary>"
+    echo
+    echo '```'
+    cat "$report_txt"
+    echo '```'
+    echo
+    echo "</details>"
+    echo
+}
+
+# --- Section 9: dead-code report (agent-authored, not script-generated) ---
+
+section_dead_code() {
+    echo "## 9. Dead-Code Report (\`dead-code-report.md\`)"
+    echo
+    local dc_file="$RUN_DIR/dead-code-report.md"
+    echo "Source: \`$dc_file\` — agent-authored (see \`AGENTS.md\`'s"
+    echo "\"Coverage & Dead-Code Report\" section), ranking \`src/clasi\`"
+    echo "code never executed by either this run's real-app coverage"
+    echo "(section 8 above) or the unit suite's own coverage."
+    echo
+    echo "**This report is a deliverable only.** Nothing in this harness"
+    echo "acts on it, deletes code from it, or files an issue from it —"
+    echo "any removal decision is the developer's, made later, outside"
+    echo "this harness (see the source issue's Part B, and sprint 032's"
+    echo "own human-in-the-loop constraint on this exact report)."
+    echo
+    if [ ! -f "$dc_file" ]; then
+        unavailable "\`dead-code-report.md\` was not found in the run directory — this step is agent-authored and has not been produced for this run yet (or this run predates sprint 032 ticket 007)."
+        return 0
+    fi
+    echo "<details><summary>Full dead-code report</summary>"
+    echo
+    cat "$dc_file"
+    echo
+    echo "</details>"
+    echo
+}
+
 # --- Assemble --------------------------------------------------------------
 
 main() {
@@ -569,6 +634,8 @@ main() {
         section_guard_decisions || echo "_Section 5 crashed unexpectedly; see report.sh's stderr for details._"
         section_dispatch_inventory || echo "_Section 6 crashed unexpectedly; see report.sh's stderr for details._"
         section_empty_args_scan || echo "_Section 7 crashed unexpectedly; see report.sh's stderr for details._"
+        section_coverage || echo "_Section 8 crashed unexpectedly; see report.sh's stderr for details._"
+        section_dead_code || echo "_Section 9 crashed unexpectedly; see report.sh's stderr for details._"
     } > "$REPORT_FILE"
 
     echo "=== report.sh: run $RUN_ID ==="

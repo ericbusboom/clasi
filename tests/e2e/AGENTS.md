@@ -319,6 +319,62 @@ the `validate.sh` result. A clean `validate.sh` with a Category-A
 `rubric.md` failure is still a failed run — that's the whole reason
 `rubric.md` exists.
 
+## Coverage & Dead-Code Report (ticket 032/007)
+
+An optional step, done at the very end of a full run (after
+`./validate.sh`, alongside `rubric.md` — Milestone 6 of `script.md`):
+measure real `src/clasi` coverage from this run and write a textual
+dead-code report. This is "Part A" of
+`test-system-improvements-real-app-coverage-from-the-e2e-a-leaner-faster-suite.md`
+(see `clasi/sprints/032-*/issues/` for the full text if you want the
+source reasoning) — **automated up through combining and rendering the
+numbers; the dead-code judgment itself is yours to write, and this step
+never deletes anything.** Do NOT skip straight to proposing deletions —
+that's explicitly out of scope here (see step 3 below).
+
+1. On the host, after the run (the container may already be stopped —
+   like `validate.sh`, this reads the bind-mounted project directly):
+   ```bash
+   ./coverage.sh
+   ```
+   Combines every `.coverage.*` file the run produced — one per `clasi`
+   CLI invocation, plus one per `clasi mcp` server session — into
+   `.e2e-runs/<run-id>/coverage/report.txt` (plus `coverage.json`,
+   `coverage.lcov`, `html/index.html`): real `src/clasi` coverage from
+   this run, INCLUDING `cli.py`/`hook_handlers.py`/`mcp_server.py` (the
+   unit gate's `pyproject.toml` config omits those three for the unit
+   suite; this report deliberately does not — see
+   `tests/e2e/.coveragerc`'s header for why). If it errors that no
+   `.coverage.*` files were found, something upstream didn't measure —
+   don't paper over it, report it as-is.
+2. Also get the **unit suite's own** coverage of the same `src/clasi`
+   tree, to compare against — run on the host from the repo root:
+   ```bash
+   just test-all
+   ```
+   This is a separate, already-existing coverage measurement (the unit
+   gate's own `pyproject.toml` config, `fail_under = 84`); you're
+   re-reading its output, not re-instrumenting anything new.
+3. Write `.e2e-runs/<run-id>/dead-code-report.md`: a ranked markdown
+   list of `src/clasi` modules/functions/branches that show **zero**
+   hits in BOTH reports above — code nothing currently exercises,
+   either from the real app or from the unit suite. For each item give
+   a file:line and a short rationale for why it looks dead (e.g. "no
+   caller found in src/clasi or tests/", "superseded by X", "never
+   wired to a CLI flag or MCP tool"). Rank most-confidently-dead first.
+   **This report is a deliverable, not an action**: it makes no code or
+   test changes, proposes no deletions as an executable diff, and does
+   not open a CLASI issue on its own. Per the source issue's own
+   human-in-the-loop framing (its "Part B"), only the *developer*,
+   reading this report later and saying so explicitly, decides whether
+   any of it becomes a removal issue — that step happens outside this
+   harness, not as a consequence of running it.
+4. `./report.sh` (already part of the existing Grading-the-run flow —
+   see "Files In This Directory" below) picks up both
+   `coverage/report.txt` and `dead-code-report.md` automatically into
+   its sections 8 and 9 if they exist by the time you run it, so do
+   this step before `./report.sh`, not after.
+
 ## Environment Noise Notes
 
 A few things you'll see that are expected noise, not signs of a clasi
@@ -349,6 +405,8 @@ bug:
 | `stop.sh` | Stop and remove container; captures `docker logs` and the subject's session directory into the run dir first; `--wipe` also clears the project dir |
 | `connect.sh` | Attach to the container's tmux session for interactive/manual poking |
 | `validate.sh` | Mechanical product-rubric checker — run after all sprints and OOP changes; tees its output into the run dir and reads host-mounted paths where possible so it still works after `stop.sh` |
+| `coverage.sh` | Combines the run's real-app `.coverage.*` files (from `.e2e-coverage/` in the bind-mounted project) and writes `report.txt`/`coverage.json`/`coverage.lcov`/`html/` into `.e2e-runs/<run-id>/coverage/` — see "Coverage & Dead-Code Report" above |
+| `.coveragerc` | e2e-scoped coverage config (parallel mode, `src/clasi` source, does NOT omit `cli.py`/`hook_handlers.py`/`mcp_server.py`) — deliberately separate from the repo root `pyproject.toml`'s own coverage config; see this file's own header |
 | `guessing-game-spec.md` | The 4-sprint spec baked into the container image |
 | `e2e-project/` | Project directory — real dir, or a symlink to `~/.clasi/e2e-project/` on the fallback path (see Harness usage above); gitignored, transient |
 | `.gitignore` | Excludes `e2e-project/` and built wheels (`clasi-*.whl`) from the repo |

@@ -1,6 +1,7 @@
 """Tests for _prune_sprint_worktrees and its integration with _close_sprint_full."""
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,51 @@ def _mock_run(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicM
     r.stdout = stdout
     r.stderr = stderr
     return r
+
+
+@pytest.fixture(autouse=True)
+def _guard_against_real_subprocess_popen(monkeypatch):
+    """Fail loudly if any test in this file reaches a real subprocess.Popen
+    unmocked (032/006).
+
+    031/008 attempted the Popen-based process-group-kill fix this file's
+    mocking now matches, and reverted it: switching close.py's test
+    runner from subprocess.run to Popen silently bypassed this file's
+    (then) global ``@patch("subprocess.run")`` mock, which had no slot
+    for a Popen call. A unit test ended up spawning a *real* ``uv run
+    pytest`` subprocess inside its own tmp_path. It happened to exit fast
+    (no tests collected there) so the defect surfaced as a quiet
+    assertion mismatch instead of an obvious hang -- easy to miss, easy
+    to repeat by accident.
+
+    This fixture makes that failure mode loud and immediate instead: any
+    call to subprocess.Popen not explicitly re-patched by the test itself
+    raises here rather than silently forking a real process. The three
+    tests in TestCloseSSprintWorktreeResultJSON that need
+    _run_test_command's happy path patch subprocess.Popen themselves
+    (nested inside this one), which takes precedence for their duration.
+    """
+
+    def _unexpected_popen(*args, **kwargs):
+        raise AssertionError(
+            "subprocess.Popen invoked unmocked in "
+            "test_close_sprint_worktrees.py -- a real subprocess would "
+            "have been spawned. Patch subprocess.Popen explicitly in "
+            "this test if it needs to exercise _run_test_command "
+            "(close.py's pytest-command runner)."
+        )
+
+    monkeypatch.setattr(subprocess, "Popen", _unexpected_popen)
+
+
+def _mock_popen(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:
+    """Build a Popen-shaped mock for _run_test_command's happy path:
+    Popen(...).communicate(timeout=...) -> (stdout, stderr), then
+    .returncode is read. See close.py's _run_test_command (032/006)."""
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, stderr)
+    proc.returncode = returncode
+    return proc
 
 
 _MAIN_ONLY_PORCELAIN = (
@@ -419,8 +465,14 @@ class TestCloseSSprintWorktreeResultJSON:
         return r
 
     def _subprocess_side_effects(self, worktree_stdout: str) -> list:
+        # Note: the pytest-command call is no longer here. Since 032/006,
+        # close.py's _run_test_command invokes subprocess.Popen (for
+        # process-group-kill on timeout), not subprocess.run -- it is
+        # mocked separately via @patch("subprocess.Popen") /
+        # _mock_popen() on each test below. Every other call in this list
+        # is a real git invocation made through gitutil.run_git, which is
+        # still plain subprocess.run and still belongs in this list.
         return [
-            self._mock_ok(0, "all tests passed"),  # pytest
             self._mock_ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                                                       # git status --porcelain=v2 --branch (031/008 marker write)
             self._mock_ok(0),                       # git config rebase.autoStash (version bump prep)
@@ -439,12 +491,14 @@ class TestCloseSSprintWorktreeResultJSON:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_result_includes_worktrees_pruned_empty(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Result JSON includes worktrees_pruned: [] when no sprint worktrees exist."""
         from clasi.tools.artifact_tools import close_sprint
 
+        mock_popen.return_value = _mock_popen(0, "all tests passed")
         mock_run.side_effect = self._subprocess_side_effects(_MAIN_ONLY_PORCELAIN)
         mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
 
@@ -462,12 +516,14 @@ class TestCloseSSprintWorktreeResultJSON:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.2")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_result_includes_worktrees_pruned_with_path(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Result JSON lists pruned worktree path when one sprint worktree exists."""
         from clasi.tools.artifact_tools import close_sprint
 
+        mock_popen.return_value = _mock_popen(0, "all tests passed")
         side_effects = self._subprocess_side_effects(
             "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"
             "worktree /repo/.git/worktrees/sprint-001-ticket-001\n"
@@ -491,12 +547,14 @@ class TestCloseSSprintWorktreeResultJSON:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260627.3")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_failed_worktree_removal_does_not_abort_close(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """A worktree removal failure still yields status: success and populates worktrees_failed."""
         from clasi.tools.artifact_tools import close_sprint
 
+        mock_popen.return_value = _mock_popen(0, "all tests passed")
         side_effects = self._subprocess_side_effects(
             "worktree /repo/root\nHEAD abc123\nbranch refs/heads/master\n\n"
             "worktree /repo/.git/worktrees/sprint-001-ticket-001\n"

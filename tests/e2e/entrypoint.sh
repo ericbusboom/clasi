@@ -13,6 +13,23 @@ echo ""
 
 cd "$PROJECT_DIR"
 
+# --- Coverage output dir + gitignore (ticket 032/007) ----------------------
+# COVERAGE_PROCESS_START/COVERAGE_FILE (set container-wide in the
+# Dockerfile) write parallel-mode `.coverage.*` files into
+# /project/.e2e-coverage/ for every `clasi` CLI call and the long-lived
+# `clasi mcp` server. This must happen BEFORE step [1] below: `clasi init`
+# is itself a coverage-measured CLI invocation, so its own .coverage.*
+# file can already exist by the time step [2]'s "Initial commit: CLASI
+# init" runs. Gitignoring first — unlike .e2e-runs/, which is appended to
+# .gitignore from the HOST side by start.sh, safely after that first
+# commit already happened — keeps these out of the SUBJECT's own git
+# history from the very first commit, since that ordering trick isn't
+# available here (this script IS the thing making that first commit).
+mkdir -p "$PROJECT_DIR/.e2e-coverage"
+if [ ! -f "$PROJECT_DIR/.gitignore" ] || ! grep -qxF '.e2e-coverage/' "$PROJECT_DIR/.gitignore"; then
+    echo '.e2e-coverage/' >> "$PROJECT_DIR/.gitignore"
+fi
+
 # --- Determine fresh vs resume ---
 RESUMING=0
 if [ "${E2E_RESUME:-0}" = "1" ] && [ -d "$PROJECT_DIR/.clasi" ] && [ -d "$PROJECT_DIR/.git" ]; then

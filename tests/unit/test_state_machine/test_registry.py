@@ -2,6 +2,12 @@
 
 Covers: register, lookup, list, duplicate-name error, unknown-name error,
 and ``clear_registry`` teardown isolation.
+
+Registry isolation between tests (and between this module and whatever
+runs after it in the same pytest process) is provided by the autouse
+``_clean_registry`` fixture in this package's ``conftest.py`` — see that
+file's docstring for why it's a snapshot/restore fixture rather than a
+plain clear.
 """
 
 from __future__ import annotations
@@ -15,23 +21,6 @@ from clasi.state_machine.registry import (
     list_predicates,
     predicate,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    """Clear the global registry before and after every test.
-
-    Using ``autouse=True`` ensures no predicate leaks between tests even if
-    a test raises an exception.
-    """
-    clear_registry()
-    yield
-    clear_registry()
 
 
 # ---------------------------------------------------------------------------
