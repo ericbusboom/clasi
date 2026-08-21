@@ -1,7 +1,7 @@
 ---
 id: '001'
 title: Closed sprint-machine state is reachable
-status: open
+status: done
 use-cases:
 - SUC-001
 depends-on: []
@@ -41,22 +41,22 @@ happened — it is the single honest, git-free signal.
 
 ## Acceptance Criteria
 
-- [ ] `is_branch_merged` is removed from `sprint.yaml`'s `closed` state
+- [x] `is_branch_merged` is removed from `sprint.yaml`'s `closed` state
       invariants — `closed`'s invariants become `[is_sprint_archived]`
       alone.
-- [ ] `is_branch_merged`'s predicate registration
+- [x] `is_branch_merged`'s predicate registration
       (`state_machine/predicates/sprint.py`) and `ClasiStateReader.
       branch_merged()` (`status/reader.py`) are deleted, not left as
       dead code — confirm no remaining caller with a repo-wide grep
       before removing.
-- [ ] A sprint driven through a real `close_sprint` call (via
+- [x] A sprint driven through a real `close_sprint` call (via
       `tests/system/test_sprint_lifecycle_integration.py`, the natural
       home per the issue — it currently asserts DB/frontmatter
       agreement through close but not the *computed machine state*
       afterward, which is exactly the gap that let this through) asserts
       `evaluate_state`/`clasi status` reports `state: closed` for that
       sprint afterward.
-- [ ] **Non-negotiable: the three `TestGitSpawnCollapseInRealRepo` tests
+- [x] **Non-negotiable: the three `TestGitSpawnCollapseInRealRepo` tests
       (`tests/unit/test_status/test_hook_injection.py`) stay green.**
       This ticket removes a predicate from the exact hot path sprint 030
       (ticket 002's regression fix) just finished restoring to zero git
@@ -64,7 +64,7 @@ happened — it is the single honest, git-free signal.
       change — not just as part of a full-file pytest run — and if
       either count changes, stop and investigate before proceeding; do
       not "fix" the test to accept a new spawn.
-- [ ] A repo-wide grep for `branch_merged` and `is_branch_merged` returns
+- [x] A repo-wide grep for `branch_merged` and `is_branch_merged` returns
       no hits outside test files this ticket updates.
 
 ## Implementation Plan

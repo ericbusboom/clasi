@@ -65,9 +65,6 @@ class TestNullStateReader:
     def test_sprint_flag_returns_empty_string(self):
         assert self.reader.sprint_flag("001", "pre_flight_review") == ""
 
-    def test_branch_merged_returns_false(self):
-        assert self.reader.branch_merged("001") is False
-
     def test_sprint_is_archived_returns_false(self):
         assert self.reader.sprint_is_archived("001") is False
 
@@ -251,9 +248,6 @@ class TestProtocolCompliance:
 
             def sprint_flag(self, sprint_id: str, flag: str) -> str:
                 return ""
-
-            def branch_merged(self, sprint_id: str) -> bool:
-                return False
 
             def sprint_is_archived(self, sprint_id: str) -> bool:
                 return False

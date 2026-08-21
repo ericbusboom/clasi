@@ -16,7 +16,6 @@ StateReader methods used:
 - ``git_branch()`` — current HEAD branch name
 - ``sprint_branch(sprint_id)`` — expected branch name for this sprint
 - ``all_tickets_done(sprint_id)`` — True if every ticket is done
-- ``branch_merged(sprint_id)`` — True if sprint branch is merged into default
 - ``sprint_is_archived(sprint_id)`` — True if the sprint directory lives under sprints/done/
 """
 
@@ -92,20 +91,17 @@ def is_all_tickets_done(ctx: SprintContext) -> bool:
     return ctx.reader.all_tickets_done(ctx.sprint_id)
 
 
-@predicate("is_branch_merged")
-def is_branch_merged(ctx: SprintContext) -> bool:
-    """Return True iff the sprint branch has been merged into the default branch."""
-    return ctx.reader.branch_merged(ctx.sprint_id)
-
-
 @predicate("is_sprint_archived")
 def is_sprint_archived(ctx: SprintContext) -> bool:
     """Return True iff the sprint directory lives under the archive (``sprints/done/``).
 
     A cheap, git-free, directory-location-based check (030/002 regression
     fix) — see :meth:`~clasi.status.reader.ClasiStateReader.sprint_is_archived`.
-    Declared first in the ``closed`` state's invariants so it short-circuits
-    ``is_branch_merged`` (which spawns a real ``git`` subprocess) for the
-    overwhelmingly common case of an active, non-archived sprint.
+    The sole invariant of the ``closed`` state (031/001): a prior
+    merged-branch invariant was removed because ``close_sprint`` deletes
+    the sprint branch after merging it, making that check unsatisfiable
+    for a correctly closed sprint. The archive location alone already
+    implies the merge happened, since ``close_sprint`` performs merge,
+    archive, and branch deletion atomically.
     """
     return ctx.reader.sprint_is_archived(ctx.sprint_id)

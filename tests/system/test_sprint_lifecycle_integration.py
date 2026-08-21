@@ -79,15 +79,20 @@ was committed.
 
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import clasi.state_machine.predicates  # noqa: F401 — side-effect: registers all predicates
+import clasi.state_machine.predicates.project
+import clasi.state_machine.predicates.sprint
+import clasi.state_machine.predicates.ticket
 from clasi.mcp_server import get_project, set_project
-from clasi.state_machine import ProjectContext, SprintContext
-from clasi.state_machine.registry import get_predicate
+from clasi.state_machine import ProjectContext, SprintContext, evaluate_state, load_machine
+from clasi.state_machine.registry import clear_registry, get_predicate
 from clasi.status.inconsistency import detect_inconsistencies
 from clasi.status.reader import ClasiStateReader
 from clasi.status.reporter import StatusReporter
@@ -101,6 +106,28 @@ from clasi.tools.artifact_tools import (
     record_gate_result,
     update_ticket_status,
 )
+
+
+# ---------------------------------------------------------------------------
+# Registry guard: this module evaluates the real, unmocked sprint machine
+# (step 10 below, added by 031/001). If a prior test module's autouse
+# fixture cleared the predicate registry and this module happened to run
+# afterward in the same session (e.g. `pytest test_predicates.py
+# test_sprint_lifecycle_integration.py`), evaluate_state() would raise
+# UnknownPredicateError for a reason that has nothing to do with what this
+# module actually tests. Re-registering before every test — matching the
+# guard already used in test_hook_injection.py / test_reporter.py — makes
+# this file's real-state-machine assertion independent of module run order.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _ensure_predicates_registered():
+    clear_registry()
+    importlib.reload(clasi.state_machine.predicates.project)
+    importlib.reload(clasi.state_machine.predicates.sprint)
+    importlib.reload(clasi.state_machine.predicates.ticket)
+    yield
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +435,13 @@ class TestSprintLifecycleThreeWayIntegration:
         # ------------------------------------------------------------
         # 9. close (close.SprintCloser / StateDB.force_close, via the
         #    close_sprint tool)
+        #
+        # delete_branch=True (the tool's own default) deliberately, not
+        # False: this is the exact real-world sequence that exposed
+        # 031/001 (branch merged, archived, then deleted) -- a run with
+        # delete_branch=False would never touch that code path and could
+        # not have caught the regression the closed-state assertion
+        # below now guards against.
         # ------------------------------------------------------------
         close_result = json.loads(
             close_sprint(
@@ -415,7 +449,7 @@ class TestSprintLifecycleThreeWayIntegration:
                 branch_name=branch_name,
                 main_branch="master",
                 push_tags=False,
-                delete_branch=False,
+                delete_branch=True,
                 test_command="SKIP",
             )
         )
@@ -445,3 +479,27 @@ class TestSprintLifecycleThreeWayIntegration:
         archived_ticket = archived_sprint.get_ticket(ticket_id)
         assert archived_ticket.status == "done"
         assert archived_ticket.path.parent.name == "done"
+
+        # ------------------------------------------------------------
+        # 10. computed sprint-machine state after a real close (031/001
+        #    regression teeth). This is distinct from final_phase/
+        #    final_status above -- those are the recorded DB phase and
+        #    frontmatter status: ("done"); this is the *computed*
+        #    sprint-machine state ("closed"), evaluated against a fresh
+        #    ClasiStateReader the same way `clasi status` would. Before
+        #    031/001, `closed`'s invariants were
+        #    [is_sprint_archived, is_branch_merged], and is_branch_merged
+        #    read `git branch --merged <default>` -- a query that can
+        #    never see a branch close_sprint has just deleted
+        #    (delete_branch=True above). That made `closed` permanently
+        #    unreachable and evaluate_state fell back to the
+        #    most-advanced state that still matched ("pre-flight"). This
+        #    assertion is the one this sprint's own bug report shows was
+        #    missing.
+        # ------------------------------------------------------------
+        sprint_machine = load_machine("sprint")
+        final_state = evaluate_state(sprint_machine, _sprint_ctx(sprint_id))
+        assert final_state.name == "closed", (
+            f"expected computed sprint-machine state 'closed', got "
+            f"{final_state.name!r}"
+        )

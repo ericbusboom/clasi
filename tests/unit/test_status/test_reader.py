@@ -392,36 +392,6 @@ class TestSprintFlag:
 
 
 # ---------------------------------------------------------------------------
-# branch_merged
-# ---------------------------------------------------------------------------
-
-
-class TestBranchMerged:
-    def test_false_when_branch_not_merged(self, project: Project, reader: ClasiStateReader) -> None:
-        _make_sprint(project, "001", branch="sprint/001-feature")
-        # Create the branch but don't merge it
-        subprocess.run(
-            ["git", "checkout", "-b", "sprint/001-feature"],
-            cwd=project.root, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=project.root, capture_output=True,
-        )
-        assert reader.branch_merged("001") is False
-
-    def test_false_for_empty_branch(self, project: Project, reader: ClasiStateReader) -> None:
-        # sprint with no branch field
-        sprint_dir = project.sprints_dir / "002-nobranch"
-        sprint_dir.mkdir(parents=True)
-        (sprint_dir / "sprint.md").write_text("---\nid: '002'\ntitle: t\nbranch: ''\nstatus: planning-docs\n---\n")
-        assert reader.branch_merged("002") is False
-
-    def test_false_for_unknown_sprint(self, reader: ClasiStateReader) -> None:
-        assert reader.branch_merged("999") is False
-
-
-# ---------------------------------------------------------------------------
 # sprint_is_archived (030/002 regression fix)
 # ---------------------------------------------------------------------------
 
@@ -446,8 +416,7 @@ class TestSprintIsArchived:
     def test_no_git_subprocess_spawned(
         self, project: Project, reader: ClasiStateReader, monkeypatch
     ) -> None:
-        """Purely a filesystem check — no git subprocess involved, unlike
-        branch_merged()."""
+        """Purely a filesystem check — no git subprocess involved."""
         _make_sprint(project, "001", branch="sprint/001-feature")
         calls = _count_real_git_calls(monkeypatch)
         reader.sprint_is_archived("001")
@@ -528,27 +497,6 @@ class TestGitCallMemoization:
         # the subprocess path once (memoized). One real spawn total,
         # regardless of how many times each was individually requested.
         assert len(calls) == 1
-
-    def test_branch_merged_across_multiple_sprints_shares_one_merged_list(
-        self, project: Project, reader: ClasiStateReader, monkeypatch
-    ) -> None:
-        _make_sprint(project, "001", branch="sprint/001-a")
-        _make_sprint(project, "002", branch="sprint/002-b")
-        _make_sprint(project, "003", branch="sprint/003-c")
-
-        calls = _count_real_git_calls(monkeypatch)
-        reader.branch_merged("001")
-        reader.branch_merged("002")
-        reader.branch_merged("003")
-
-        # `git branch --merged <default>` does not depend on sprint_id —
-        # it's the SAME command for every sprint in this reader instance,
-        # so it (plus the one `default_branch` resolution it depends on,
-        # which falls back to a subprocess call since this fixture has no
-        # remote) must shell out exactly twice total, not twice per
-        # sprint. branch_merged() itself has no fast path (see module
-        # docstring) — a merge-base/ancestry check always spawns.
-        assert len(calls) == 2
 
     def test_new_instance_starts_with_an_empty_cache(
         self, project: Project, monkeypatch
