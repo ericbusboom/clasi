@@ -1,8 +1,9 @@
 ---
 id: '005'
 title: Fix predicate-registry test-order pollution
-status: open
-use-cases: ["SUC-004"]
+status: done
+use-cases:
+- SUC-004
 depends-on: []
 github-issue: ''
 issue: test-suite-predicate-registry-pollution.md
@@ -52,7 +53,7 @@ why this has survived undetected.
 
 ## Acceptance Criteria
 
-- [ ] The three `_clean_registry` fixtures (`test_registry.py`,
+- [x] The three `_clean_registry` fixtures (`test_registry.py`,
       `test_evaluator.py`, `test_predicates.py`) restore the registry
       to real, production state on teardown instead of leaving it
       empty. Two implementation shapes are acceptable — pick one and
@@ -74,7 +75,7 @@ why this has survived undetected.
       context — (a) doesn't need to know which modules register
       predicates, so it can't drift out of sync if a new predicate
       module is added later.
-- [ ] A new check runs `tests/unit/test_state_machine/` and
+- [x] A new check runs `tests/unit/test_state_machine/` and
       `tests/integration/test_state_machine_smoke.py` (plus any other
       module that evaluates the real state machine — grep for
       `evaluate_state`/`inspect_transitions` callers outside
@@ -89,7 +90,7 @@ why this has survived undetected.
       implementer's call on the exact mechanism, but it must be
       something a future contributor can actually re-run, not just
       "verified once during this ticket."
-- [ ] The existing, order-independent parts of the suite are unaffected
+- [x] The existing, order-independent parts of the suite are unaffected
       — this is a test-isolation-only fix; `state_machine/registry.py`'s
       production code is untouched.
 

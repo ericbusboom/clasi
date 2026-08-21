@@ -8,9 +8,16 @@ Covers True and False cases for all 27 unique predicates:
 Uses ``unittest.mock.MagicMock`` or stub readers to keep tests isolated
 from the filesystem, git, and the database.
 
-The ``_clean_registry`` fixture clears the global registry before and after
-every test.  Importing ``clasi.state_machine.predicates`` inside the fixture
-(after clear) re-registers predicates for each test.
+Registry isolation between tests (and between this module and whatever
+runs after it in the same pytest process) is provided by the autouse
+``_clean_registry`` fixture in this package's ``conftest.py`` — see that
+file's docstring for why it's a snapshot/restore fixture rather than a
+plain clear. This module additionally needs the *real* predicates
+registered for its own test bodies to exercise, which ``_clean_registry``
+alone doesn't provide (it only guarantees an empty, private registry);
+the ``_real_predicates`` fixture below layers that on top by reloading
+the real predicate modules after ``_clean_registry`` has cleared the
+registry for this test.
 """
 
 from __future__ import annotations
@@ -19,7 +26,6 @@ import importlib
 import pytest
 from unittest.mock import MagicMock
 
-from clasi.state_machine.registry import clear_registry
 from clasi.state_machine.context import (
     NullStateReader,
     ProjectContext,
@@ -38,21 +44,31 @@ import clasi.state_machine.predicates.ticket
 
 
 @pytest.fixture(autouse=True)
-def _clean_registry():
-    """Clear the registry before each test, then reload predicate modules to re-register.
+def _real_predicates(_clean_registry):
+    """Populate the registry with the real predicate modules for this test.
 
-    ``@predicate`` decorators run at import time.  Since Python caches modules
-    after the first import, we must explicitly reload each module to re-trigger
-    registration after ``clear_registry()``.  Import order matters: ``project``
-    must be reloaded before ``sprint`` because ``sprint`` depends on
-    ``is_on_sprint_branch`` already being registered.
+    ``_clean_registry`` (autouse, from this package's ``conftest.py``) has
+    already snapshotted and cleared the registry for this test's isolation
+    by the time this fixture's setup runs — depending on it by name is
+    what guarantees that ordering. This fixture reloads the real predicate
+    modules on top of that clean slate so this module's tests exercise
+    production predicates.
+
+    ``@predicate`` decorators run at import time.  Since Python caches
+    modules after the first import, we must explicitly reload each module
+    to re-trigger registration after ``_clean_registry`` clears the
+    registry.  Import order matters: ``project`` must be reloaded before
+    ``sprint`` because ``sprint`` depends on ``is_on_sprint_branch``
+    already being registered.
+
+    No teardown needed here: ``_clean_registry``'s teardown (which runs
+    after this fixture's, since it was set up first) clears the registry
+    and restores the pre-test snapshot regardless of what got registered
+    during the test.
     """
-    clear_registry()
     importlib.reload(clasi.state_machine.predicates.project)
     importlib.reload(clasi.state_machine.predicates.sprint)
     importlib.reload(clasi.state_machine.predicates.ticket)
-    yield
-    clear_registry()
 
 
 def _project_ctx(reader=None) -> ProjectContext:
