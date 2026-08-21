@@ -1891,6 +1891,97 @@ class TestRoleGuardClaudePlansDirAllowList:
         assert _run_role_guard(tmp_path, "clasi/project.py", "") == 2
 
 
+_HOOK_PAYLOADS_DIR = Path(__file__).parent.parent / "fixtures" / "hook_payloads"
+
+
+def _load_real_payload_fixture(filename: str, home_rewrite_suffix: str) -> dict:
+    """Load a VERBATIM captured role-guard payload from the
+    tests/fixtures/hook_payloads/ corpus and re-root its file_path under
+    the CURRENT machine's home directory.
+
+    The fixture files backing this (role-guard-allow-plans-dir-tier0.json,
+    role-guard-allow-outside-root-tier0.json) were captured live (ticket
+    031-005), the same tee-against-the-real-CLI way documented at the top
+    of test_hook_payload_replay.py: a throwaway scratch project under this
+    session's own scratchpad dir, agent tier unset (functionally tier 0),
+    piping a real Claude-Code-shaped PreToolUse payload through the
+    unmodified ``clasi hook role-guard`` entrypoint (the project's
+    editable-install binary, not the stale global pipx one — see that
+    ticket's final report), with the exact stdin bytes tee'd to the
+    fixture file. Verified live at capture time: both exited 0, with
+    hooks.log decision tokens ``match=claude-plans-dir`` and
+    ``match=outside-root`` respectively.
+
+    The captured file_path is necessarily under THAT machine's actual home
+    directory (e.g. ``/Users/eric/.claude/plans/...``), which won't be
+    ``Path.home()`` on a different machine/user — unlike the project-root
+    rewriting test_hook_payload_replay.py already does for its own
+    fixtures (path_rewrite_suffix), this fixture's whole point is that the
+    path stays OUTSIDE any project root, so it must never be rewritten
+    under a pytest tmp_path project. Instead only the home-directory
+    portion is re-rooted, under the CURRENT Path.home(), so the replay
+    reproduces the exact same decision (not just "some absolute path")
+    portably. The suffix appended after Path.home() is fixed per fixture
+    (the same relative tail captured live), analogous to
+    path_rewrite_suffix's own design.
+    """
+    raw = (_HOOK_PAYLOADS_DIR / filename).read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    new_value = str(Path.home() / home_rewrite_suffix)
+    tool_input = payload.get("tool_input")
+    assert isinstance(tool_input, dict), filename
+    tool_input["file_path"] = new_value
+    return payload
+
+
+class TestRoleGuardRealPayloadOutsideRootAndPlansDir:
+    """Ticket 031-005 / issue role-guard-blocks-plan-mode-plans-dir.md.
+
+    Real-PAYLOAD regression coverage for the outside-root and plans-dir
+    allow rules, replacing/augmenting the hand-built-dict coverage above
+    (TestRoleGuardClaudePlansDirAllowList) with fixtures captured from a
+    genuine live CLI invocation — per this project's gate-testing
+    discipline (test_hook_payload_replay.py's own stated rationale): a
+    hand-built dict encodes the CODE's own assumptions about payload
+    shape and cannot catch harness-side shape drift; only a payload that
+    round-tripped through the real ``clasi hook`` stdin-parsing path can.
+
+    Both fixtures were captured tier 0 (CLASI_AGENT_TIER unset) — the
+    tier this ticket's acceptance criteria names explicitly. Both exited
+    0 at capture time and reproduce that here.
+    """
+
+    def test_real_payload_tier0_write_to_claude_plans_dir_exits_allow(self, tmp_path):
+        _write_fresh_config(tmp_path)
+        payload = _load_real_payload_fixture(
+            "role-guard-allow-plans-dir-tier0.json",
+            home_rewrite_suffix=".claude/plans/fixture-capture-005.md",
+        )
+        assert _run_role_guard_payload(tmp_path, payload, "") == 0
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        assert "match=claude-plans-dir" in matching[-1], matching[-1]
+
+    def test_real_payload_tier0_write_to_arbitrary_outside_root_exits_allow(
+        self, tmp_path,
+    ):
+        _write_fresh_config(tmp_path)
+        payload = _load_real_payload_fixture(
+            "role-guard-allow-outside-root-tier0.json",
+            home_rewrite_suffix="Desktop/fixture-capture-005-outsideroot.md",
+        )
+        assert _run_role_guard_payload(tmp_path, payload, "") == 0
+
+        hooks_log = tmp_path / ".clasi" / "log" / "hooks.log"
+        lines = hooks_log.read_text(encoding="utf-8").splitlines()
+        matching = [ln for ln in lines if "role-guard" in ln]
+        assert matching, f"no role-guard log line found: {lines}"
+        assert "match=outside-root" in matching[-1], matching[-1]
+
+
 # ---------------------------------------------------------------------------
 # _oop_active() — unified OOP bypass helper (ticket 019-002)
 # ---------------------------------------------------------------------------
