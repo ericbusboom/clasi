@@ -81,6 +81,8 @@ pointer:
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Any, Optional
@@ -442,11 +444,21 @@ def _recovery(recorded: bool, allowed_paths: list[str], instruction: str) -> dic
     return {"recorded": recorded, "allowed_paths": allowed_paths, "instruction": instruction}
 
 
+# True on POSIX (where os.killpg/os.getpgid exist), False on Windows.
+# _run_test_command uses this to decide whether it can kill the whole
+# process group on timeout, or must fall back to killing only the
+# direct child (see _run_test_command's docstring, "Windows" section).
+_HAS_PROCESS_GROUPS = hasattr(os, "killpg") and hasattr(os, "getpgid")
+
+
 def _run_test_command(
     cmd: list[str], timeout: Optional[float]
 ) -> "subprocess.CompletedProcess[str]":
-    """Run the sprint's test command with stdin closed (031/008 follow-up).
+    """Run the sprint's test command with stdin closed (031/008) and,
+    on timeout, the whole process group killed (032/006).
 
+    stdin=DEVNULL (031/008)
+    ------------------------
     A bare ``subprocess.run(cmd, ...)`` with no ``stdin=`` inherits the
     *parent's* stdin. When this runs inside the MCP server, that parent
     stdin is the JSON-RPC pipe from the client -- it will never deliver
@@ -457,23 +469,75 @@ def _run_test_command(
     was still running after 32+ minutes through the MCP server, long
     after the client itself had given up. ``stdin=DEVNULL`` makes such a
     read hit EOF and fail fast -- a diagnosable test failure instead of
-    an unbounded hang.
+    an unbounded hang. Preserved unchanged here.
 
-    Deliberately still ``subprocess.run`` under the hood (not
-    ``Popen``+``communicate``), even though ``run``'s own timeout
-    handling kills only the direct child it spawned, not any grandchild
-    a wrapper like ``uv run`` may fork -- see this ticket's Design
-    Rationale / commit message for why a process-group-kill on timeout
-    was investigated and deliberately deferred to a follow-up rather
-    than folded in here.
+    Process-group kill on timeout (032/006)
+    ----------------------------------------
+    ``subprocess.run(..., timeout=N)``'s timeout handling kills only the
+    *direct* child it spawned. The configured test command is commonly a
+    wrapper (``uv run pytest``, ``npm test``, ``poetry run pytest``) whose
+    real work happens in a grandchild process in the same process group --
+    killing the wrapper on timeout leaves the grandchild running. Observed
+    live at close of sprint 031: an abandoned ``uv run pytest`` was still
+    consuming CPU 32 minutes after its ``close_sprint`` call had been
+    aborted client-side, and had to be killed by hand. This function uses
+    ``Popen`` + ``start_new_session=True`` (making the child the leader of
+    a new process group, POSIX ``setsid()``) so that on
+    ``TimeoutExpired`` it can ``os.killpg()`` the *entire* group -- direct
+    child and any grandchildren -- rather than just the one process
+    ``subprocess.run`` would have reached.
+
+    A first attempt at this fix (031/008) implemented exactly this, then
+    reverted it: switching from ``subprocess.run`` to ``Popen`` silently
+    bypassed a global ``@patch("subprocess.run")`` mock in
+    ``tests/unit/test_close_sprint_worktrees.py``, which let a unit test
+    spawn a *real* ``uv run pytest``. That test file's mocking was
+    reworked (032/006) to patch ``Popen``/``communicate`` instead, with a
+    guard against ever reaching a real subprocess unmocked, before this
+    change landed for real.
+
+    Windows
+    -------
+    ``os.killpg``/``os.getpgid`` do not exist on Windows -- referencing
+    them there raises ``AttributeError``. This module checks for their
+    presence once, at import time (``_HAS_PROCESS_GROUPS``), and only
+    passes ``start_new_session=True`` and calls ``os.killpg`` when they
+    are available. On a platform without them (Windows), a timeout falls
+    back to ``proc.kill()`` -- the same direct-child-only behavior
+    ``subprocess.run`` always had, so a timeout there does not crash but
+    also does not gain this fix's grandchild-cleanup guarantee. CLASI is
+    developed and tested on POSIX (macOS/Linux); this is a documented gap
+    rather than a claim of full Windows support.
     """
-    return subprocess.run(
+    popen_kwargs: dict[str, Any] = {}
+    if _HAS_PROCESS_GROUPS:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         stdin=subprocess.DEVNULL,
+        **popen_kwargs,
     )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if _HAS_PROCESS_GROUPS:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                # Process (and thus its group) already gone -- fine.
+                pass
+        else:
+            proc.kill()
+        # Reap the now-dead process and drain its pipes. No timeout here:
+        # the group is already dead, this just collects what's left.
+        proc.communicate()
+        raise
+
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
 class SprintCloser:

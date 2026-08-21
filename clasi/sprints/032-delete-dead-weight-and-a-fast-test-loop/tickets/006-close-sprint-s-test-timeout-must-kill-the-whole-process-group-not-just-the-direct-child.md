@@ -2,8 +2,9 @@
 id: '006'
 title: close_sprint's test timeout must kill the whole process group, not just the
   direct child
-status: open
-use-cases: ["SUC-005"]
+status: done
+use-cases:
+- SUC-005
 depends-on: []
 github-issue: ''
 issue: close-sprint-timeout-orphans-the-test-process.md
@@ -50,7 +51,7 @@ termination on timeout, not stdin.
 
 ## Acceptance Criteria
 
-- [ ] A timed-out test command leaves no surviving process: the whole
+- [x] A timed-out test command leaves no surviving process: the whole
       process group is killed, not just the direct child. Verify with
       a test that deliberately spawns a grandchild outliving its
       direct-child parent (e.g. a shell wrapper script that
@@ -58,7 +59,7 @@ termination on timeout, not stdin.
       `subprocess.Popen` fixture in the test itself) and asserts the
       grandchild is also gone after the timeout fires — not merely that
       `_run_test_command` returns.
-- [ ] The fix uses `Popen` + `start_new_session=True` (or
+- [x] The fix uses `Popen` + `start_new_session=True` (or
       `preexec_fn=os.setsid` if targeting a Python version/platform
       where `start_new_session` isn't available — verify current
       minimum supported Python first) + `os.killpg(pgid, signal)` on
@@ -66,10 +67,10 @@ termination on timeout, not stdin.
       in isolation — this ticket's job is making that approach's *test
       surface* correct, not re-deriving the subprocess mechanics from
       scratch.
-- [ ] `stdin=subprocess.DEVNULL` (or the `Popen` equivalent,
+- [x] `stdin=subprocess.DEVNULL` (or the `Popen` equivalent,
       `stdin=subprocess.DEVNULL`) is preserved — do not regress the
       031-008 fix while changing the invocation mechanism.
-- [ ] `tests/unit/test_close_sprint_worktrees.py`'s
+- [x] `tests/unit/test_close_sprint_worktrees.py`'s
       `@patch("subprocess.run")` mocking is reworked to match whatever
       invocation mechanism this ticket lands on (`Popen`-aware mocking
       — patch `Popen`/`communicate`/`killpg` as appropriate, not
@@ -80,7 +81,7 @@ termination on timeout, not stdin.
       of a clean, obvious revert. Add an assertion or fixture guard
       that would fail loudly (not silently pass fast) if a real
       subprocess were ever spawned again by this test file.
-- [ ] Full suite passes, and specifically
+- [x] Full suite passes, and specifically
       `tests/unit/test_close_sprint_worktrees.py` passes without
       spawning any real subprocess (verify this directly — e.g. by
       temporarily breaking the mock and confirming the test suite
@@ -88,6 +89,31 @@ termination on timeout, not stdin.
       restoring the correct mock; or by adding a monkeypatch that
       raises if the real `Popen`/`subprocess.run` is ever reached
       unmocked).
+
+**Implementation note (blast radius wider than scoped):** the
+`@patch("subprocess.run")` + pytest-slot pattern this ticket's plan
+anchored to `tests/unit/test_close_sprint_worktrees.py` turned out to
+exist in three more files that call `close_sprint(..., branch_name=...)`
+without mocking `Popen`: `tests/unit/test_issue_tools.py` (4 tests),
+`tests/unit/test_sweep_done_issues.py` (2 tests), and
+`tests/system/test_artifact_tools.py` (13 tests, including the
+dedicated `TestCloseSprintTestTimeout` class this ticket's own subject
+matter lives in). Left unfixed, all 19 would have silently spawned real
+`Popen` calls once the `subprocess.run`→`Popen` switch landed — the
+exact 031-008 failure mode, just in more places than the plan's
+research surfaced. Verified empirically (ran each file with a bounded
+timeout) before fixing: no hangs, only fast assertion-mismatch failures,
+consistent with the mechanical "mock side_effect list off by one" root
+cause. Reworked all three using the identical pattern already validated
+in the scoped file (add `@patch("subprocess.Popen")`, mock
+`.communicate()` for the pytest slot, drop that slot from the
+`subprocess.run` side_effect list). All 108 tests in
+`tests/system/test_artifact_tools.py`, all 67 in `test_issue_tools.py`,
+and all 11 in `test_sweep_done_issues.py` pass. Flagging here per this
+ticket's own Process Notes on scope, since this went beyond the
+files-to-modify list — the fix was mechanical and low-risk (same pattern,
+three more times), and leaving it undone would have broken the sprint's
+close-time full-suite gate.
 
 ## Implementation Plan
 

@@ -529,8 +529,9 @@ class TestCloseSprintIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.1")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_close_sprint_full_allows_deferred_issue(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path (_close_sprint_full): deferred issue does not block precondition.
 
@@ -573,8 +574,16 @@ class TestCloseSprintIssueHandling:
             r.stderr = stderr
             return r
 
+        def _ok_popen(returncode=0, stdout="", stderr=""):
+            # Popen-shaped mock for the "tests" step (032/006: close.py's
+            # _run_test_command uses subprocess.Popen, not subprocess.run).
+            proc = MagicMock()
+            proc.communicate.return_value = (stdout, stderr)
+            proc.returncode = returncode
+            return proc
+
+        mock_popen.return_value = _ok_popen(0, "all tests passed")
         mock_run.side_effect = [
-            _ok(0, "all tests passed"),  # pytest
             _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                      # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
@@ -707,8 +716,9 @@ class TestCloseSprintIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.2")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_done_dir_issues_pass_cleanly(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: issues in <sprint>/issues/done/ pass cleanly.
 
@@ -736,8 +746,14 @@ class TestCloseSprintIssueHandling:
             r.stderr = stderr
             return r
 
+        def _ok_popen(returncode=0, stdout="", stderr=""):
+            proc = MagicMock()
+            proc.communicate.return_value = (stdout, stderr)
+            proc.returncode = returncode
+            return proc
+
+        mock_popen.return_value = _ok_popen(0, "all tests passed")
         mock_run.side_effect = [
-            _ok(0, "all tests passed"),  # pytest
             _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                      # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
@@ -765,8 +781,9 @@ class TestCloseSprintIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.3")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_top_level_done_issue_migrated(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: top-level done issue is self-repaired to done/.
 
@@ -794,8 +811,14 @@ class TestCloseSprintIssueHandling:
             r.stderr = stderr
             return r
 
+        def _ok_popen(returncode=0, stdout="", stderr=""):
+            proc = MagicMock()
+            proc.communicate.return_value = (stdout, stderr)
+            proc.returncode = returncode
+            return proc
+
+        mock_popen.return_value = _ok_popen(0, "all tests passed")
         mock_run.side_effect = [
-            _ok(0, "all tests passed"),  # pytest
             _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                      # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
@@ -823,8 +846,9 @@ class TestCloseSprintIssueHandling:
     @patch("clasi.tools.artifact_tools.create_version_tag")
     @patch("clasi.tools.artifact_tools.compute_next_version", return_value="0.20260425.4")
     @patch("subprocess.run")
+    @patch("subprocess.Popen")
     def test_full_pending_pool_done_issue_relocated_to_sprint_done(
-        self, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
+        self, mock_popen, mock_run, mock_ver, mock_tag, mock_reconcile, work_dir
     ):
         """Full lifecycle path: pending-pool done issue relocated to <sprint>/issues/done/.
 
@@ -850,8 +874,14 @@ class TestCloseSprintIssueHandling:
             r.stderr = stderr
             return r
 
+        def _ok_popen(returncode=0, stdout="", stderr=""):
+            proc = MagicMock()
+            proc.communicate.return_value = (stdout, stderr)
+            proc.returncode = returncode
+            return proc
+
+        mock_popen.return_value = _ok_popen(0, "all tests passed")
         mock_run.side_effect = [
-            _ok(0, "all tests passed"),  # pytest
             _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
                      # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
