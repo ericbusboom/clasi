@@ -12,7 +12,9 @@ Unit tests for the refactored claude.py skills install:
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -645,4 +647,227 @@ class TestClaudeVersionStamp:
         claude_mod.uninstall(tmp_path)
         assert not (tmp_path / ".clasi" / "clasi-version").exists(), (
             ".clasi/clasi-version must be removed by uninstall"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Manifest-based uninstall tracking (sprint 033, ticket 001, fix A)
+# ---------------------------------------------------------------------------
+
+
+def _write_fake_skill(plugin_dir: Path, name: str) -> None:
+    """Write a minimal, valid SKILL.md for *name* under a fake plugin dir."""
+    skill_file = plugin_dir / "skills" / name / "SKILL.md"
+    skill_file.parent.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text(
+        f"---\nname: {name}\ndescription: test skill {name}\n---\n{name} body.\n",
+        encoding="utf-8",
+    )
+
+
+class TestManifestWrittenByInstall:
+    def test_install_writes_manifest_file(self, tmp_path: Path) -> None:
+        """install() writes .claude/.clasi-manifest.json as its last step."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        assert manifest_path.exists()
+
+    def test_manifest_entries_cover_expected_kinds(self, tmp_path: Path) -> None:
+        """The manifest records skill aliases, agent files, rule files,
+        CLAUDE.md/AGENTS.md marker blocks, and the settings.local.json
+        permission entry — every write site install() actually performs."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        assert data["version"] == 1
+        kinds = {e["kind"] for e in data["entries"]}
+        assert kinds == {
+            "skill-alias",
+            "agent-file",
+            "rule-file",
+            "marker-block",
+            "permission",
+        }
+
+        paths = {e["path"] for e in data["entries"]}
+        assert "CLAUDE.md" in paths
+        assert "AGENTS.md" in paths
+        assert ".claude/settings.local.json" in paths
+        name = _first_skill_name()
+        assert f".claude/skills/{name}/SKILL.md" in paths
+
+    def test_manifest_written_last_after_version_stamp(self, tmp_path: Path) -> None:
+        """The manifest file's entries are fully built before it is
+        written — proven indirectly by asserting every recorded path
+        actually exists on disk once install() returns (a manifest
+        written mid-build, before an entry's own file existed, would not
+        have this property)."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for entry in data["entries"]:
+            full = tmp_path / entry["path"]
+            assert full.exists(), f"manifest entry {entry} has no file on disk"
+
+
+class TestManifestReconciliation:
+    def test_renamed_skill_orphan_removed_on_reinstall(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression for F14: re-running install() after an upgrade that
+        renamed a skill must remove the old, now-orphaned alias — not
+        leave it on disk forever because the new install only knows the
+        new name."""
+        fake_plugin = tmp_path / "fake_plugin"
+        _write_fake_skill(fake_plugin, "foo")
+        monkeypatch.setattr(claude_mod, "_PLUGIN_DIR", fake_plugin)
+
+        target = tmp_path / "project"
+        target.mkdir()
+
+        claude_mod.install(target, mcp_config={})
+        foo_alias = target / ".claude" / "skills" / "foo" / "SKILL.md"
+        assert foo_alias.exists()
+
+        # Simulate an upgrade that renamed the skill: foo -> bar. A plain
+        # name-based uninstall/reinstall would never find "foo" again
+        # because the currently-installed package no longer knows that name.
+        shutil.rmtree(fake_plugin / "skills" / "foo")
+        _write_fake_skill(fake_plugin, "bar")
+
+        claude_mod.install(target, mcp_config={})
+        bar_alias = target / ".claude" / "skills" / "bar" / "SKILL.md"
+
+        assert bar_alias.exists(), "renamed skill must be installed under its new name"
+        assert not foo_alias.exists(), (
+            "orphaned old-name skill alias must be removed by install-time "
+            "manifest reconciliation (F14)"
+        )
+
+    def test_reconciliation_does_not_touch_still_current_paths(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A skill present in both the old and new install must survive
+        reconciliation untouched (reconciliation only removes the diff,
+        not the whole previous entry set)."""
+        fake_plugin = tmp_path / "fake_plugin"
+        _write_fake_skill(fake_plugin, "foo")
+        _write_fake_skill(fake_plugin, "keep")
+        monkeypatch.setattr(claude_mod, "_PLUGIN_DIR", fake_plugin)
+
+        target = tmp_path / "project"
+        target.mkdir()
+        claude_mod.install(target, mcp_config={})
+
+        shutil.rmtree(fake_plugin / "skills" / "foo")
+        _write_fake_skill(fake_plugin, "bar")
+        claude_mod.install(target, mcp_config={})
+
+        keep_alias = target / ".claude" / "skills" / "keep" / "SKILL.md"
+        assert keep_alias.exists(), "unrelated still-current skill must survive reconciliation"
+
+
+class TestUninstallManifestReplay:
+    def test_uninstall_replays_manifest_and_deletes_it(self, tmp_path: Path) -> None:
+        """uninstall() replays every manifest-listed path and removes the
+        manifest file itself."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"]
+
+        claude_mod.uninstall(tmp_path)
+
+        assert not manifest_path.exists(), "manifest file itself must be deleted"
+
+        for entry in entries:
+            full = tmp_path / entry["path"]
+            kind = entry["kind"]
+            if kind == "marker-block":
+                if full.exists():
+                    content = full.read_text(encoding="utf-8")
+                    assert "<!-- CLASI:START -->" not in content
+            elif kind == "permission":
+                assert full.exists()
+                data = json.loads(full.read_text(encoding="utf-8"))
+                allow = data.get("permissions", {}).get("allow", [])
+                assert entry.get("value", "mcp__clasi__*") not in allow
+            else:
+                assert not full.exists(), (
+                    f"manifest-listed path {entry['path']} ({kind}) must be "
+                    "removed by uninstall's manifest replay"
+                )
+
+
+class TestUninstallNoManifestFallback:
+    def test_uninstall_succeeds_with_no_manifest(self, tmp_path: Path) -> None:
+        """A project installed by a pre-033 clasi has no manifest file.
+        uninstall() must still succeed via the pre-033 name-based
+        fallback path, unchanged — never raise, never leave the
+        integration stuck."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        assert manifest_path.exists()
+        manifest_path.unlink()  # simulate a pre-033 install: no manifest ever written
+
+        claude_mod.uninstall(tmp_path)  # must not raise
+
+        name = _first_skill_name()
+        assert not (tmp_path / ".claude" / "skills" / name / "SKILL.md").exists()
+        assert not (tmp_path / "CLAUDE.md").exists()
+        settings_local = tmp_path / ".claude" / "settings.local.json"
+        if settings_local.exists():
+            data = json.loads(settings_local.read_text(encoding="utf-8"))
+            allow = data.get("permissions", {}).get("allow", [])
+            assert "mcp__clasi__*" not in allow
+
+    def test_uninstall_falls_back_on_corrupt_manifest(self, tmp_path: Path) -> None:
+        """A manifest that fails to parse as JSON is treated the same as
+        a missing manifest — uninstall falls back rather than raising."""
+        claude_mod.install(tmp_path, mcp_config={})
+        manifest_path = tmp_path / ".claude" / ".clasi-manifest.json"
+        manifest_path.write_text("{not valid json", encoding="utf-8")
+
+        claude_mod.uninstall(tmp_path)  # must not raise
+
+        name = _first_skill_name()
+        assert not (tmp_path / ".claude" / "skills" / name / "SKILL.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Hook-removal symmetry (sprint 033, ticket 001, fix B)
+# ---------------------------------------------------------------------------
+
+
+class TestUninstallHookSymmetry:
+    def test_user_hook_survives_and_all_clasi_hooks_removed(self, tmp_path: Path) -> None:
+        """A user-defined hook coexisting under a CLASI event key survives
+        uninstall, and every `clasi hook`-prefixed entry under that same
+        key is removed — uninstall must use the same per-entry
+        `_is_clasi_hook_entry` predicate install's `_merge_hooks` uses,
+        not an exact-match comparison of the whole entry list."""
+        claude_mod.install(tmp_path, mcp_config={})
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        event_type = next(iter(settings["hooks"]))
+        settings["hooks"][event_type].append({
+            "matcher": "SomeUserMatcher",
+            "hooks": [{"type": "command", "command": "python3 my_custom_hook.py"}],
+        })
+        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+        claude_mod.uninstall(tmp_path)
+
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        remaining = data.get("hooks", {}).get(event_type, [])
+        all_commands = [
+            h.get("command", "") for entry in remaining for h in entry.get("hooks", [])
+        ]
+        assert any("my_custom_hook.py" in cmd for cmd in all_commands), (
+            "user-defined hook must survive uninstall"
+        )
+        assert not any(cmd.startswith("clasi hook") for cmd in all_commands), (
+            "every clasi hook entry must be removed, even with a user hook "
+            "coexisting under the same event key"
         )

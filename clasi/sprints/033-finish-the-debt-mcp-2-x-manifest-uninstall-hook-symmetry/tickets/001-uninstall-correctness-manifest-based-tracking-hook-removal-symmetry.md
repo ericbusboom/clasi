@@ -1,8 +1,10 @@
 ---
 id: '001'
 title: 'Uninstall correctness: manifest-based tracking + hook-removal symmetry'
-status: open
-use-cases: [SUC-002, SUC-003]
+status: done
+use-cases:
+- SUC-002
+- SUC-003
 depends-on: []
 github-issue: ''
 issue:
@@ -65,7 +67,7 @@ mixed in, so CLASI's entries silently survive the uninstall.
 
 ## Acceptance Criteria
 
-- [ ] `src/clasi/platforms/_manifest.py` (new) provides
+- [x] `src/clasi/platforms/_manifest.py` (new) provides
       `manifest_path(platform_dir)`, `write_manifest(platform_dir,
       manifest)`, `read_manifest(platform_dir)`, `delete_manifest(platform_dir)`
       — no `provider` parameter (single-tenant simplification). Writes
@@ -73,20 +75,20 @@ mixed in, so CLASI's entries silently survive the uninstall.
       final path — matching this project's existing frontmatter-write
       convention, sprint 029). The module has zero `clasi` imports,
       matching `clasr.manifest`'s own boundary rule.
-- [ ] `install()` builds an `entries: list[{"path": str, "kind": str}]`
+- [x] `install()` builds an `entries: list[{"path": str, "kind": str}]`
       as it writes each skill alias, agent file, rule file, CLAUDE.md/
       AGENTS.md marker block, and settings.local.json permission entry.
-- [ ] `install()` reads the previous manifest (if present) **before**
+- [x] `install()` reads the previous manifest (if present) **before**
       writing the new one, computes `old_paths - new_paths`, and deletes
       every path in that difference — **only after the full new entries
       list is built**, never diffing against a partially-built list (an
       early-written file must not be wrongly flagged as stale before its
       own entry is appended — see sprint.md's architecture-review gate
       notes for why this ordering is called out explicitly).
-- [ ] `install()` writes the new manifest to
+- [x] `install()` writes the new manifest to
       `.claude/.clasi-manifest.json` as its last step, after every other
       artifact.
-- [ ] `uninstall()` reads the manifest first (before touching any file).
+- [x] `uninstall()` reads the manifest first (before touching any file).
       When present, it removes exactly the manifest's listed paths
       (reversing each `kind` the way `install()` wrote it: alias/copy →
       unlink, marker-block → strip just that block, permission entry →
@@ -94,24 +96,24 @@ mixed in, so CLASI's entries silently survive the uninstall.
       When absent, or on a manifest read failure (corrupt JSON), it falls
       back to the pre-033 name-based enumeration unchanged — never raises
       and never leaves the target project's CLASI integration stuck.
-- [ ] `uninstall()`'s `.claude/settings.json` hooks step calls
+- [x] `uninstall()`'s `.claude/settings.json` hooks step calls
       `_is_clasi_hook_entry` per-entry (the same predicate `_merge_hooks`
       already uses) instead of comparing an event type's whole entry list
       for exact equality.
-- [ ] A regression test installs, then re-installs with a simulated
+- [x] A regression test installs, then re-installs with a simulated
       renamed skill (a different skill set than the first install), and
       asserts the first install's now-orphaned file is gone after the
       second install (reconciliation).
-- [ ] A regression test installs then uninstalls, and asserts every
+- [x] A regression test installs then uninstalls, and asserts every
       manifest-listed path is removed and the manifest file itself is
       deleted.
-- [ ] A regression test uninstalls a project with **no** manifest (a
+- [x] A regression test uninstalls a project with **no** manifest (a
       simulated pre-033 install) and asserts it still succeeds via the
       pre-033 fallback path, unchanged.
-- [ ] A regression test installs, adds a user-defined hook under an event
+- [x] A regression test installs, adds a user-defined hook under an event
       key CLASI also uses, uninstalls, and asserts: the user hook
       survives AND no `clasi hook`-prefixed entry remains under that key.
-- [ ] `install()`/`uninstall()`'s public signatures
+- [x] `install()`/`uninstall()`'s public signatures
       (`install(target, mcp_config, copy=False, migrate=False)` /
       `uninstall(target, copy=False)`) are unchanged — `init_command.py`/
       `uninstall_command.py` require no changes.
