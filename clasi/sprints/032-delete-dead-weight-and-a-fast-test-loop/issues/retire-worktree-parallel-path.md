@@ -1,11 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: task
 tags:
 - reliability-campaign
 - phase-4
 - deletion
 sprint: '032'
+tickets:
+- 032-003
 ---
 
 # Retire the worktree parallel path: delete about 1,700 lines still referenced by live instructions

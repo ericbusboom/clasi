@@ -1,10 +1,12 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - testing
 - state-machine
 sprint: '032'
+tickets:
+- 032-005
 ---
 
 # Test-order pollution: a test clears the predicate registry without repopulating it

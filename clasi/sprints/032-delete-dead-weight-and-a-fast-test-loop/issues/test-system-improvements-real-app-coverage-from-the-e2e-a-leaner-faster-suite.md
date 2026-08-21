@@ -1,6 +1,9 @@
 ---
-status: pending
+status: in-progress
 sprint: '032'
+tickets:
+- 032-007
+- 032-008
 ---
 
 # Test-system improvements: real-app coverage from the e2e + a leaner, faster suite

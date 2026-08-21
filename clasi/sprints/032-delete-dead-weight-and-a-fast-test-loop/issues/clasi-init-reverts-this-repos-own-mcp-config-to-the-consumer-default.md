@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - install
@@ -7,6 +7,8 @@ tags:
 - dogfooding
 - staleness
 sprint: '032'
+tickets:
+- 032-004
 ---
 
 # clasi init reverts this repo's own .mcp.json to the consumer default

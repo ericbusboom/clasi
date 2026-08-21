@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
@@ -7,6 +7,8 @@ tags:
 - install
 - data-loss
 sprint: '032'
+tickets:
+- 032-004
 ---
 
 # Installers overwrite instead of merging — four destructive behaviors, one root cause

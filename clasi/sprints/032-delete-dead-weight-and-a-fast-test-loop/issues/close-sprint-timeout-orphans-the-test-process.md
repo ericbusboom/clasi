@@ -1,10 +1,13 @@
 ---
-status: pending
+status: in-progress
 type: bug
 tags:
 - reliability-campaign
 - close-sprint
 - follow-up
+sprint: '032'
+tickets:
+- 032-006
 ---
 
 # close_sprint's test timeout kills only the direct child, orphaning the real pytest process
