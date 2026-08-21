@@ -16,6 +16,13 @@ When run interactively (TTY attached) with no --claude or --codex flag,
 the command inspects advisory platform signals and prompts the user to
 choose Claude, Codex, or both, with a recommended default.  Non-interactive
 calls with no flag default to Claude-only (backward compatible).
+
+Also writes `protected_paths:` to .clasi/config.yaml (ticket 031-004):
+auto-detects `src/` and `tests/` at the project root, or — when nothing is
+detected and the session is interactive — prompts for directories to
+protect. A non-interactive call (or an interactive decline) that detects
+nothing leaves the key unwritten, preserving role-guard's pre-existing
+block-by-default fallback for tier 0/1 writes.
 """
 
 import json
@@ -79,6 +86,60 @@ def _prompt_platform(recommendation: str) -> str:
         show_choices=False,
     )
     return _choice_map[raw]
+
+
+# Convention-based directory names `clasi init` checks for at the project
+# root when writing `protected_paths:` (ticket 031-004). Deliberately kept
+# to the two names the ticket's own plan cites (src/, tests/) — the
+# cheapest, most common convention across Python/JS/TS/Rust layouts — not
+# an exhaustive per-ecosystem list. A project using other conventions
+# (Go's cmd/pkg, Java/Maven's src/main+src/test, a bare top-level package
+# with no src/ wrapper, ...) will not be auto-detected; see
+# _detect_protected_paths' docstring for what happens then.
+_PROTECTED_DIR_CANDIDATES = ("src", "tests")
+
+
+def _detect_protected_paths(target: Path) -> list[str]:
+    """Return convention-based source/test directory names found under *target*.
+
+    Checks only for ``src/`` and ``tests/`` directly under the project
+    root. Returns the subset that actually exists as a directory (in
+    ``_PROTECTED_DIR_CANDIDATES`` order), so a project with only one of
+    the two (e.g. ``src/`` but no top-level ``tests/``) still gets a
+    partial, non-empty result rather than being treated as undetectable.
+
+    Returns ``[]`` when neither convention matches — the "cannot detect
+    anything" case. This is expected and unremarkable for a project that
+    doesn't follow the src/tests convention (a Go project using cmd/pkg,
+    a Java/Maven layout, a bare top-level package, ...); the caller
+    (:func:`run_init`) must NOT write an empty ``protected_paths:`` in
+    that case; leaving the key absent keeps role-guard's pre-existing
+    block-by-default fallback in effect, which is the safe default for a
+    layout this heuristic doesn't recognize.
+    """
+    return [name for name in _PROTECTED_DIR_CANDIDATES if (target / name).is_dir()]
+
+
+def _prompt_protected_paths() -> list[str]:
+    """Interactively ask which directories to protect from agent writes.
+
+    Only called when running interactively (TTY attached) AND
+    :func:`_detect_protected_paths` found nothing to auto-detect. A blank
+    response means the stakeholder declines — returns ``[]``, and the
+    caller must not write ``protected_paths:`` (matching the
+    non-interactive behavior for the same "nothing detected" case:
+    role-guard's block-by-default fallback stays in effect).
+    """
+    click.echo(
+        "Could not auto-detect source/test directories (looked for src/, tests/)."
+    )
+    raw = click.prompt(
+        "Directories to protect from agent writes (comma-separated, e.g. "
+        "'src,tests'; blank to skip and keep the default block-by-default policy)",
+        default="",
+        show_default=False,
+    )
+    return [p.strip().strip("/") for p in raw.split(",") if p.strip()]
 
 
 def _update_mcp_json(mcp_json_path: Path, target: Path) -> bool:
@@ -236,6 +297,24 @@ def run_init(
     # behavior to unset for the sprint lifecycle); setdefault preserves an
     # existing "enabled"/"disabled" choice on re-init.
     config_data.setdefault("design_docs", "disabled")
+    # Detect (or ask for) the project's source/test directories so
+    # role-guard has a real, project-specific protected_paths list instead
+    # of falling back to block-by-default for tier 0/1 (ticket 031-004).
+    # Only attempted when the key is absent — matches the setdefault
+    # pattern above: an already-configured (or previously declined, see
+    # below) project is never re-detected or re-prompted on a later
+    # `clasi init` re-run.
+    if "protected_paths" not in config_data:
+        detected = _detect_protected_paths(target_path)
+        if not detected and sys.stdin.isatty() and sys.stdout.isatty():
+            detected = _prompt_protected_paths()
+        if detected:
+            config_data["protected_paths"] = detected
+            click.echo(f"  Written: protected_paths: {detected}")
+        # else: nothing detected and either non-interactive or the
+        # stakeholder declined — leave protected_paths unwritten so
+        # role-guard's pre-existing block-by-default fallback stays in
+        # effect (no regression for a layout this heuristic can't read).
     config_path.write_text(yaml.safe_dump(config_data, default_flow_style=False), encoding="utf-8")
     click.echo(f"  Written: .clasi/config.yaml (process: {process})")
 

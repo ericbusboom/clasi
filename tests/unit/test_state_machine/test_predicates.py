@@ -98,7 +98,6 @@ def _mock_reader(**kwargs) -> MagicMock:
     reader.exception_block.return_value = None
     reader.programmer_dispatched.return_value = False
     reader.sprint_flag.return_value = ""
-    reader.branch_merged.return_value = False
     reader.dependencies_done.return_value = False
     reader.acceptance_criteria_met.return_value = False
     reader.tests_passing.return_value = False
@@ -479,26 +478,12 @@ class TestIsAllTicketsDone:
         assert is_all_tickets_done(ctx) is False
 
 
-class TestIsBranchMerged:
-    def test_true_when_branch_merged(self):
-        reader = _mock_reader()
-        reader.branch_merged.return_value = True
-        ctx = _sprint_ctx(reader=reader)
-        from clasi.state_machine.predicates.sprint import is_branch_merged
-        assert is_branch_merged(ctx) is True
-        reader.branch_merged.assert_called_once_with("005")
-
-    def test_false_when_branch_not_merged(self):
-        ctx = _sprint_ctx()  # NullStateReader returns False
-        from clasi.state_machine.predicates.sprint import is_branch_merged
-        assert is_branch_merged(ctx) is False
-
-
 class TestIsSprintArchived:
-    """030/002 regression fix: cheap, git-free directory-location check
-    declared first in the `closed` state's invariants so it short-circuits
-    `is_branch_merged` (which spawns a real git subprocess) for the common
-    case of an active, non-archived sprint."""
+    """031/001: the sole invariant of the `closed` state -- a cheap,
+    git-free directory-location check. A prior merged-branch invariant
+    was removed because `close_sprint` deletes the sprint branch after
+    merging it by default, which made that invariant permanently
+    unsatisfiable for a correctly closed sprint."""
 
     def test_true_when_archived(self):
         reader = _mock_reader()
@@ -859,7 +844,6 @@ class TestPredicateRegistration:
             "is_no_other_sprint_executing",
             "is_execution_lock_held_by_this_sprint",
             "is_all_tickets_done",
-            "is_branch_merged",
             "is_sprint_archived",
         ]
         for name in sprint_predicates:
@@ -897,6 +881,20 @@ class TestPredicateRegistration:
         ):
             assert removed not in names, f"{removed} should have been removed"
 
+    def test_merged_branch_predicate_removed_not_registered(self):
+        """031/001: a distinct category from the 030/002 predicates above --
+
+        this predicate's backing signal *did* have a writer (a real git
+        query), but the toolchain destroyed that signal by design:
+        `close_sprint` deletes the sprint branch after merging it, so the
+        predicate could never be satisfied for a correctly closed sprint.
+        Removed rather than special-cased.
+        """
+        from clasi.state_machine.registry import list_predicates
+
+        names = list_predicates()
+        assert "is_branch_merged" not in names
+
     def test_all_ticket_predicates_registered(self):
         from clasi.state_machine.registry import list_predicates
 
@@ -918,17 +916,18 @@ class TestPredicateRegistration:
             assert name in names, f"Missing ticket predicate: {name}"
 
     def test_total_predicate_count(self):
-        """8 project + 9 sprint (shared is_on_sprint_branch) + 11 ticket = 28."""
+        """8 project + 8 sprint (shared is_on_sprint_branch) + 11 ticket = 27."""
         from clasi.state_machine.registry import list_predicates
 
         # is_on_sprint_branch is shared (registered once in project.py)
-        # Project: 8, Sprint: 9 (is_architecture_present/is_usecases_present,
+        # Project: 8, Sprint: 8 (is_architecture_present/is_usecases_present,
         # is_review_satisfied, is_close_report_present removed;
         # is_on_sprint_branch already counted; is_sprint_archived added by
-        # 030/002's regression fix), Ticket: 11
+        # 030/002's regression fix; the merged-branch predicate removed by
+        # 031/001), Ticket: 11
         # (is_tests_passing, is_reopen_requested removed)
-        # Total unique: 8 + 9 + 11 = 28
+        # Total unique: 8 + 8 + 11 = 27
         names = list_predicates()
-        assert len(names) == 28, (
-            f"Expected 28 predicates, got {len(names)}: {names}"
+        assert len(names) == 27, (
+            f"Expected 27 predicates, got {len(names)}: {names}"
         )

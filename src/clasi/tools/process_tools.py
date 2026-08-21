@@ -44,6 +44,18 @@ def _list_definitions(directory: Path) -> list[dict[str, str]]:
     return results
 
 
+def _rglob_active(directory: Path, filename: str) -> list[Path]:
+    """rglob for *filename*, excluding any match under an ``old/`` directory.
+
+    Every recursive-lookup fallback in this module funnels through this
+    helper so retired content archived under ``agents/old/`` is never
+    silently resolved as if it were live (sprint 031 ticket 006 — a
+    lookup for a nonexistent skill/agent used to resolve into
+    ``agents/old/sprint-executor/execute-ticket.md`` instead of failing).
+    """
+    return sorted(p for p in directory.rglob(filename) if "old" not in p.parts)
+
+
 def _list_agents_recursive(agents_dir: Path) -> list[dict[str, str]]:
     """Walk the agent directory tree and list active agents.
 
@@ -93,6 +105,13 @@ def _list_all_skills(skills_dir: Path, agents_dir: Path) -> list[dict[str, str]]
                 })
     if agents_dir.exists():
         for md_path in sorted(agents_dir.rglob("*.md")):
+            # Skip retired content archived under agents/old/ (sprint 031
+            # ticket 007 -- ticket 006 fixed the *lookup* fallback
+            # (_rglob_active) but not this *listing* path, so
+            # list_skills() kept advertising e.g. "execute-ticket" as
+            # available even though fetching it already correctly failed).
+            if "old" in md_path.parts:
+                continue
             if md_path.name == "agent.md":
                 continue
             if md_path.name.endswith("-legacy.md"):
@@ -143,8 +162,8 @@ def _get_definition(directory: Path, name: str) -> str:
         if agent_dir:
             return (agent_dir / "agent.md").read_text(encoding="utf-8")
 
-    # Search recursively in the directory
-    matches = list(directory.rglob(f"{name}.md"))
+    # Search recursively in the directory (skipping archived agents/old/ content)
+    matches = _rglob_active(directory, f"{name}.md")
     if matches:
         return matches[0].read_text(encoding="utf-8")
 
@@ -284,10 +303,10 @@ def get_skill_definition(name: str) -> str:
     skill_md = skills_dir / name / "SKILL.md"
     if skill_md.exists():
         return resolve_skill_body(skill_md.read_text(encoding="utf-8"))
-    # Search agent directories
+    # Search agent directories (skipping archived agents/old/ content)
     agents_dir = content_path("plugin", "agents")
     if agents_dir.exists():
-        matches = list(agents_dir.rglob(f"{name}.md"))
+        matches = _rglob_active(agents_dir, f"{name}.md")
         if matches:
             return resolve_skill_body(matches[0].read_text(encoding="utf-8"))
     raise ValueError(

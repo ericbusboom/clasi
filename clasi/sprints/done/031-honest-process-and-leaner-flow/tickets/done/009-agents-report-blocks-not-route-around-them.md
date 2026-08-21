@@ -1,7 +1,7 @@
 ---
 id: 009
 title: Agents report blocks, not route around them
-status: open
+status: done
 use-cases:
 - SUC-009
 depends-on:
@@ -31,22 +31,22 @@ edit agent definitions (`programmer/agent.md`, `sprint-planner/agent.md`,
 
 ## Acceptance Criteria
 
-- [ ] The stop/report/wait rule (stop; report what was attempted, the
+- [x] The stop/report/wait rule (stop; report what was attempted, the
       exact violation text, and the agent's own belief about the correct
       resolution; wait for the dispatcher) is stated **once**, in
       whichever of `.claude/rules/` or the agent definitions is the more
       natural canonical home given ticket 007's consolidation —
       referenced, not restated, from the programmer and sprint-planner
       agent definitions.
-- [ ] The specific forbidden bypasses are named explicitly: Bash
+- [x] The specific forbidden bypasses are named explicitly: Bash
       heredoc, `sed -i`, redirection, `git apply`, or any tool that
       dodges the role-guard matcher.
-- [ ] The one legitimate exception (a deliberately invoked, reported
+- [x] The one legitimate exception (a deliberately invoked, reported
       `clasi oop on --reason '...'`) is stated — using it silently is
       still the same failure.
-- [ ] Dispatch prompts/templates state that reporting a block is a
+- [x] Dispatch prompts/templates state that reporting a block is a
       *successful* dispatch outcome, not a failure.
-- [ ] The role-guard/mcp-guard matcher's own coverage gap (Bash heredoc
+- [x] The role-guard/mcp-guard matcher's own coverage gap (Bash heredoc
       bypassing `Edit|Write|MultiEdit`) is **not** touched by this
       ticket — it is a norm fix, not a guard-code fix; note this
       explicitly in whatever doc states the norm so a future reader

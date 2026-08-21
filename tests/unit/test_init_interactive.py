@@ -168,13 +168,22 @@ class TestInteractivePath:
     """Interactive mode (TTY): prompt shown, user selection drives install."""
 
     def _run_interactive(self, target, recommendation, user_choice):
-        """Helper: simulate TTY with a mocked detect and prompt."""
+        """Helper: simulate TTY with a mocked detect and prompt.
+
+        Also mocks _prompt_protected_paths (ticket 031-004): these fixture
+        targets are empty dirs with no src/tests to auto-detect, so
+        without this the unrelated interactive protected_paths prompt
+        would also fire and hit real stdin (unmocked) under pytest's
+        capture. Declining (returning []) keeps this helper scoped to
+        what it's actually testing — platform selection.
+        """
         fake_signals = _make_signals(recommendation)
 
         with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
              patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
              patch("clasi.platforms.detect.detect_platforms", return_value=fake_signals) as mock_detect, \
-             patch("clasi.init_command._prompt_platform", return_value=user_choice) as mock_prompt:
+             patch("clasi.init_command._prompt_platform", return_value=user_choice) as mock_prompt, \
+             patch("clasi.init_command._prompt_protected_paths", return_value=[]):
             run_init(str(target))
 
         return mock_detect, mock_prompt
@@ -229,7 +238,8 @@ class TestInteractivePath:
 
         with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
              patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
-             patch("clasi.init_command._prompt_platform") as mock_prompt:
+             patch("clasi.init_command._prompt_platform") as mock_prompt, \
+             patch("clasi.init_command._prompt_protected_paths", return_value=[]):
             run_init(str(target), claude=True)
 
         mock_prompt.assert_not_called()
@@ -241,7 +251,8 @@ class TestInteractivePath:
 
         with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
              patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
-             patch("clasi.init_command._prompt_platform") as mock_prompt:
+             patch("clasi.init_command._prompt_platform") as mock_prompt, \
+             patch("clasi.init_command._prompt_protected_paths", return_value=[]):
             run_init(str(target), codex=True)
 
         mock_prompt.assert_not_called()

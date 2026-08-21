@@ -62,9 +62,8 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)  # roadmap -> planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
-    advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+    advance_phase(db_path, sprint_id)  # architecture-review -> ticketing (031/002)
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-    advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
 
 
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
@@ -235,9 +234,8 @@ class TestMoveIssueToDone:
         advance_phase(db_path, "001")  # roadmap -> planning-docs
         advance_phase(db_path, "001")  # planning-docs -> architecture-review
         record_gate(db_path, "001", "architecture_review", "passed")
-        advance_phase(db_path, "001")  # architecture-review -> stakeholder-review
+        advance_phase(db_path, "001")  # architecture-review -> ticketing (031/002)
         record_gate(db_path, "001", "stakeholder_approval", "passed")
-        advance_phase(db_path, "001")  # stakeholder-review -> ticketing
 
         # Create the issue and claim it
         (issue_dir / "idea.md").write_text("---\nstatus: pending\n---\n\n# Idea\n")
@@ -577,6 +575,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit (version bump)
@@ -738,6 +738,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
@@ -794,6 +796,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit
@@ -848,6 +852,8 @@ class TestCloseSprintIssueHandling:
 
         mock_run.side_effect = [
             _ok(0, "all tests passed"),  # pytest
+            _ok(0, "# branch.oid deadbeef0000\n# branch.head master\n"),
+                     # git status --porcelain=v2 --branch (031/008 marker write)
             _ok(0),  # git config rebase.autoStash (version bump prep)
             _ok(0),  # git add <archive paths + version file> (version bump)
             _ok(0),  # git commit

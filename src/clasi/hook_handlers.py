@@ -745,7 +745,7 @@ def handle_role_guard(payload: dict) -> None:
     AGENTS.md                        ALLOW    ALLOW    ALLOW    ALLOW
     issues_dir / reflections_dir     ALLOW    ALLOW    ALLOW*   ALLOW
     design_dir / clasi_dir / log_dir ALLOW    ALLOW    ALLOW    ALLOW
-    .clasi/sprints/**                BLOCK    ALLOW    ALLOW    ALLOW
+    .clasi/sprints/**                ALLOW    ALLOW    ALLOW    ALLOW
     Source / tests / config          BLOCK    BLOCK    ALLOW*   ALLOW
     (anything else, in-root)         BLOCK    BLOCK    ALLOW*   ALLOW
     (anything outside project root)  ALLOW    ALLOW    ALLOW    ALLOW
@@ -1169,21 +1169,6 @@ def handle_role_guard(payload: dict) -> None:
     if agent_tier == "2":
         _exit(0, "tier-2")
 
-    if agent_tier in ("", "0"):
-        # Check block list first: sprints_dir is owned by sprint-planner/MCP.
-        for blk in _block_prefixes:
-            if file_path.startswith(blk):
-                # Sprint artifacts are owned by sprint-planner (tier 1) and
-                # managed via MCP tools. Direct edits are blocked to prevent
-                # process violations (e.g. bypassing ticket status transitions).
-                print(
-                    "CLASI ROLE VIOLATION: team-lead cannot directly edit sprint artifacts.\n"
-                    "Use MCP tools (create_sprint, create_ticket, update_ticket_status, etc.).",
-                    file=sys.stderr,
-                )
-                decisions.append(f"match=blk-sprint:{blk}")
-                _exit(2, "blk-sprint")
-
     if agent_tier in ("", "0", "1"):
         # Check allow list: issues, reflections, design, clasi state, log.
         # Tier 1 was added here by ticket 026-001 — see the docstring
@@ -1193,10 +1178,15 @@ def handle_role_guard(payload: dict) -> None:
                 decisions.append(f"match={alw}")
                 _exit(0, "artifact-dir")
 
-    # Sprint-planner (tier 1) can write to sprint directories they own.
+    # Sprint directories: tier 0 (team-lead) and tier 1 (sprint-planner)
+    # may both write here directly (stakeholder decision, 2026-08-19 —
+    # see clasi/issues/report-guard-friction-slowness-relax-tier-0-
+    # restrictions.md). `create_ticket` remains MCP-gated separately
+    # (mcp-guard) since ticket creation stays planner-owned; this is
+    # only the role-guard file-write path.
     # All other paths (source, tests, config) are blocked — dispatch to tier 2.
     _sprints_prefix = _block_prefixes[0]
-    if agent_tier == "1" and file_path.startswith(_sprints_prefix):
+    if agent_tier in ("", "0", "1") and file_path.startswith(_sprints_prefix):
         decisions.append(f"match={_sprints_prefix}")
         _exit(0, "tier-1")
 
@@ -1563,6 +1553,93 @@ def _trim_empty_preflight_sprints(narrowed: dict) -> None:
             sprint_entry.pop("available_transitions", None)
 
 
+# Agent role string (as consumed by _build_status_block / narrow_status)
+# -> CLASI tier. Distinct from _AGENT_TYPE_TIERS below (keyed on the raw
+# SubagentStart `agent_type` payload field instead of the already-resolved
+# role) because the two call sites hand _write_scope_block different
+# strings: handle_subagent_start converts agent_type -> role via
+# _AGENT_TYPE_TO_ROLE before calling _build_status_block, and
+# handle_status_inject reads the role directly from $CLASI_AGENT_NAME.
+_ROLE_TO_TIER = {"team-lead": "0", "sprint-planner": "1", "programmer": "2"}
+
+
+def _write_scope_block(agent: str, project: Project) -> str:
+    """Return a short, tier-scoped write-scope summary (ticket 031-004).
+
+    An agent previously had no way to learn its write scope except by
+    being blocked first by :func:`handle_role_guard` — this surfaces the
+    SAME policy that function enforces (post ticket-003 relaxation: tier
+    0/1 blocked only under configured ``protected_paths`` — or, when
+    unconfigured, the pre-existing artifact-allow-list-then-block
+    fallback; tier 2 unrestricted by directory, gated only by the
+    ticket-state lock) as a 3-4 line human-readable summary. Folded into
+    the same status block string both :func:`handle_status_inject`
+    (tier 0, every prompt) and :func:`handle_subagent_start` (tier 1/2,
+    on dispatch) already print, via :func:`_build_status_block`.
+
+    DISPLAY only: reads ``Project.protected_paths`` (the same config
+    ``handle_role_guard`` reads) purely to describe the policy, and never
+    calls into or otherwise influences that function's actual decision
+    logic — ticket 031-004 explicitly scopes out touching the
+    role-guard/mcp-guard gates themselves.
+
+    Cheap by construction, since this also runs on the status-inject hot
+    path (fires on every UserPromptSubmit, sub-200ms budget, zero
+    subprocess spawns): one ``Project.protected_paths`` property read
+    (a single config.yaml parse, no subprocess, no directory walk).
+    Never raises — returns ``""`` on any failure so a broken summary
+    never takes down the rest of the status block.
+    """
+    try:
+        tier = _ROLE_TO_TIER.get(agent, "0")
+        oop_line = (
+            "- OOP recovery: `clasi oop on --reason '...'` "
+            "(emergency: .clasi/oop)"
+        )
+
+        if tier == "2":
+            lines = [
+                "## CLASI write scope",
+                "",
+                "- tier 2 (programmer) allowed: anywhere in the project — that's the role",
+                "- tier 2 blocked: nothing by directory; gated by an active "
+                "ticket lock while a sprint execution lock is held "
+                "(issues/reflections exempt)",
+                oop_line,
+                "",
+            ]
+            return "\n".join(lines)
+
+        role_label = "sprint-planner (tier 1)" if tier == "1" else "team-lead (tier 0)"
+        protected = project.protected_paths
+        if protected:
+            allowed = "everywhere else in the project (protected_paths is configured)"
+            blocked = ", ".join(p.rstrip("/") for p in protected)
+        else:
+            allowed = (
+                "issues/reflections/design/sprints/.clasi state dirs, "
+                "anything outside the project root"
+            )
+            blocked = (
+                "everything else (protected_paths not configured — run "
+                "`clasi init` to scope this to your project's actual "
+                "source/test dirs)"
+            )
+
+        lines = [
+            "## CLASI write scope",
+            "",
+            f"- {role_label} allowed: {allowed}",
+            f"- {role_label} blocked: {blocked}",
+            oop_line,
+            "",
+        ]
+        return "\n".join(lines)
+    except Exception:
+        logger.warning("write-scope summary: failed to build", exc_info=True)
+        return ""
+
+
 def _build_status_block(agent: str, skip_inconsistencies: bool = False) -> str:
     """Build a ``## CLASI status`` fenced YAML block for *agent*.
 
@@ -1600,6 +1677,15 @@ def _build_status_block(agent: str, skip_inconsistencies: bool = False) -> str:
     ``clasi hook status-inject`` from ``.claude/settings.json``), so this
     is where drift like the one that voided sprint 019's enforcement is
     actually visible to the operator, on every turn.
+
+    Appends a ``## CLASI write scope`` summary (see :func:`_write_scope_block`,
+    ticket 031-004) after the fenced YAML block, tier-scoped from *agent*
+    the same way the status block itself is — this is what makes the
+    write-scope summary appear both in handle_status_inject's tier-0
+    output (every prompt) and handle_subagent_start's tier-1/2 output (on
+    dispatch), from this one call site. Silently omitted (not appended)
+    if it fails to build; the YAML status block above is unaffected
+    either way.
     """
     staleness_block = ""
     try:
@@ -1633,7 +1719,11 @@ def _build_status_block(agent: str, skip_inconsistencies: bool = False) -> str:
         _add_gate_imperative(narrowed, sprint_id, active_tickets)
         _trim_empty_preflight_sprints(narrowed)
         yaml_text = to_yaml(narrowed)
-        return f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
+        block = f"{staleness_block}## CLASI status\n\n```yaml\n{yaml_text}```\n"
+        scope_block = _write_scope_block(agent, project)
+        if scope_block:
+            block += f"\n{scope_block}"
+        return block
     except Exception:
         logger.warning("status-inject: failed to build status block", exc_info=True)
         return staleness_block

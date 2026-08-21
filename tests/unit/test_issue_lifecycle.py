@@ -32,9 +32,8 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)  # roadmap -> planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs -> architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
-    advance_phase(db_path, sprint_id)  # architecture-review -> stakeholder-review
+    advance_phase(db_path, sprint_id)  # architecture-review -> ticketing (031/002)
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-    advance_phase(db_path, sprint_id)  # stakeholder-review -> ticketing
 
 
 def _advance_to_executing(work_dir, sprint_id: str) -> None:
@@ -755,13 +754,22 @@ class TestIssueLinkageInstructionsPresent:
             "steps literally must hit the call without cross-referencing "
             "a different section"
         )
-        # Must appear before sprint-planner is dispatched, not after.
-        create_sprint_idx = exec_section.index("create_sprint(title=")
+        # Must appear after the roadmap sprint is created but before
+        # sprint-planner is dispatched again for Detail Mode (ticket
+        # creation) -- the point at which create_ticket's auto-link
+        # behavior depends on the sprint's issues already being linked.
+        # Post-031-007 the doc has sprint-planner itself (not team-lead)
+        # call create_sprint inline during its Roadmap Mode dispatch, so
+        # the lower-bound anchor is the step's description of that call
+        # rather than a literal team-lead-side `create_sprint(title=...)`
+        # invocation, which the doc no longer contains.
+        create_sprint_idx = exec_section.index("Each dispatch calls `create_sprint`")
         link_idx = exec_section.index("link_sprint_issues")
-        planner_dispatch_idx = exec_section.index("Invoke the sprint-planner agent")
-        assert create_sprint_idx < link_idx < planner_dispatch_idx, (
-            "link_sprint_issues must be called after create_sprint but "
-            "before the sprint-planner dispatch"
+        detail_dispatch_idx = exec_section.index("Detail-plan the first sprint only")
+        assert create_sprint_idx < link_idx < detail_dispatch_idx, (
+            "link_sprint_issues must be called after the roadmap sprint is "
+            "created but before the sprint-planner is dispatched again for "
+            "Detail Mode"
         )
 
 

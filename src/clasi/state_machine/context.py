@@ -87,10 +87,6 @@ class StateReader(Protocol):
         """
         ...
 
-    def branch_merged(self, sprint_id: str) -> bool:
-        """Return True if the sprint branch has been merged into the default branch."""
-        ...
-
     def sprint_is_archived(self, sprint_id: str) -> bool:
         """Return True iff the sprint directory lives under the archive (``sprints/done/``).
 
@@ -217,9 +213,6 @@ class NullStateReader:
 
     def sprint_flag(self, sprint_id: str, flag: str) -> str:
         return ""
-
-    def branch_merged(self, sprint_id: str) -> bool:
-        return False
 
     def sprint_is_archived(self, sprint_id: str) -> bool:
         return False

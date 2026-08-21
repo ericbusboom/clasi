@@ -3,6 +3,7 @@ name: execute-sprint
 description: Executes sprint tickets — dispatches programmer agents in dependency order, in parallel worktrees when the sprint opts in, otherwise serially
 ---
 
+
 # Execute Sprint Skill
 
 This skill executes all tickets in an active sprint. It supports two
@@ -267,20 +268,22 @@ For each ticket in dependency order:
      - **Not opted in**: the relevant Architecture section of the
        sprint's `sprint.md` (as today).
      - **Opted in**: the path(s) to the relevant canonical subsystem
-       doc(s) under `docs/design/` (e.g. `docs/design/clasi-tools.md`)
-       *plus* the path to this sprint's edited overlay copy of that same
-       doc under `clasi/sprints/NNN-slug/design/<name>.md` — both paths,
-       not just one. The canonical doc gives the agent the subsystem's
-       settled, pre-sprint understanding; the overlay copy gives it this
-       sprint's planned changes to that understanding. Identify which
-       doc(s) apply by checking which canonical filenames the sprint's
-       `design/` directory contains (the same doc_names the
-       sprint-planner passed to `seed_sprint_design_overlay`) and
-       matching against the ticket's scope; a ticket touching a subsystem
-       with no corresponding overlay file gets only the canonical doc
-       path (nothing changed there this sprint). If the sprint carries no
-       `design/` directory at all (trivial/compact sprint, or opted-out
-       project), fall back to the not-opted-in behavior above.
+       doc(s), co-located as `<subsystem_path>/DESIGN.md`
+       (e.g. `src/clasi/tools/DESIGN.md`) — or, for the system-level
+       document, `docs/design/design.md` — *plus* the path to this
+       sprint's edited overlay copy of that same doc under
+       `clasi/sprints/NNN-slug/design/<name>.md` — both paths, not just
+       one. The canonical doc gives the agent the subsystem's settled,
+       pre-sprint understanding; the overlay copy gives it this sprint's
+       planned changes to that understanding. Identify which doc(s)
+       apply by checking which docs the sprint's `design/` directory
+       contains (the same doc_names the sprint-planner passed to
+       `seed_sprint_design_overlay`) and matching against the ticket's
+       scope; a ticket touching a subsystem with no corresponding
+       overlay file gets only the canonical doc path (nothing changed
+       there this sprint). If the sprint carries no `design/` directory
+       at all (trivial/compact sprint, or opted-out project), fall back
+       to the not-opted-in behavior above.
 4. Wait for the programmer agent to complete before moving on.
 5. Verify `status: done` is set in the ticket's frontmatter.
 6. Call `move_ticket_to_done(ticket_path)` where `ticket_path` is the
@@ -316,20 +319,21 @@ leave the sprint open — the ticket itself must still be marked done.
 After all tickets are `done`:
 
 1. Verify all tickets have `status: done`.
-2. Run the full test suite on the sprint branch. **This is the sprint's
-   single full-suite run.** Each programmer agent ran only its own
+2. Present sprint summary to stakeholder.
+3. Invoke the `close-sprint` skill. Do **not** run the full test suite
+   here first — `close_sprint`'s own internal test run (via
+   `test_command`, default `uv run pytest`) is the sprint's *only*
+   full-suite run (031/008). Each programmer agent ran only its own
    ticket's scoped tests during execution (see the programmer agent
-   definition) — the full suite is not run once per ticket, only once
-   here, before close. `close_sprint` also runs the full suite itself
-   (via `test_command`, default `uv run pytest`) as one of its
-   preconditions, so this step and the close-sprint gate together are
-   the sprint's only full-suite runs.
-3. Present sprint summary to stakeholder.
-4. Invoke the `close-sprint` skill.
+   definition); running the full suite again here, before handing off
+   to `close_sprint`, would just be a second identical run against an
+   unchanged tree — exactly the redundant-run problem 031/008 removes.
+   See `instructions/software-engineering.md`'s Testing Discipline
+   section for the canonical statement of how many full-suite runs a
+   sprint gets and who owns it.
 
 ## Output
 
 - All tickets implemented and marked done
-- All tests passing on sprint branch (the sprint's one full-suite run,
-  not a per-ticket run)
-- Sprint ready for review and close
+- Sprint ready for review and close; `close_sprint`'s own test run is
+  the pass/fail gate on the suite, not a step performed here

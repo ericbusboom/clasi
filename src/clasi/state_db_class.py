@@ -61,6 +61,56 @@ VALID_GATE_RESULTS = {"passed", "failed", "skipped"}
 # "failed" still blocks.
 _SATISFYING_GATE_RESULTS = {"passed", "skipped"}
 
+
+class StrandedPhaseError(ValueError):
+    """Raised when a sprint's *current* recorded phase value is absent
+    from the computed, schema-derived phases list (031/002).
+
+    This is the "stranded legacy value" case: a sprint's ``sprints.phase``
+    row still holds a phase string (e.g. the ``"stakeholder-review"``
+    phase this ticket deletes from ``schema.yaml``) that no longer
+    appears in ``_compute_phases()``'s output, because the schema changed
+    after the sprint reached that phase. A bare ``list.index()`` call
+    raises an unhelpful ``ValueError: 'x' is not in list`` that names
+    neither the sprint nor what to do about it -- this subclass exists
+    so ``advance_phase()`` and ``advance_to()`` can both raise one named,
+    actionable error instead. It subclasses ``ValueError`` so every
+    existing ``except ValueError`` call site (the MCP tool layer's own
+    error-envelope handling) keeps catching it unchanged -- only the
+    message and the ability to catch it more specifically are new.
+
+    Verified against this repo's live state database during planning:
+    zero current sprint rows reference the deleted phase, so this never
+    fires here -- it exists for a downstream CLASI-installed project that
+    could have a sprint parked at a since-deleted phase value.
+    """
+
+
+def _phase_index(phases: list[str], sprint_id: str, phase: str) -> int:
+    """Return *phase*'s index in *phases*, or raise :class:`StrandedPhaseError`.
+
+    Centralizes the guard against a sprint's recorded phase value having
+    been removed from ``schema.yaml`` since the sprint reached it, shared
+    by :meth:`StateDB.advance_phase` and :meth:`StateDB.advance_to` (both
+    index into the same schema-derived list) so both raise the same
+    actionable error instead of each carrying its own ad hoc handling of
+    a bare ``list.index()`` failure.
+    """
+    try:
+        return phases.index(phase)
+    except ValueError:
+        raise StrandedPhaseError(
+            f"Sprint {sprint_id!r} has phase {phase!r}, which is not in "
+            f"the current schema-derived phases list {phases}. This "
+            "usually means schema.yaml changed (a phase was renamed or "
+            "removed) after the sprint reached this phase. Recovery: "
+            "inspect the sprint's phase_transitions history via "
+            "get_sprint_state and correct sprints.phase directly, or use "
+            "force_close if the sprint should simply be closed; do not "
+            "retry advance_phase/advance_to until the phase value is "
+            "fixed, since both index into the same list this raised from."
+        ) from None
+
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS sprints (
     id TEXT PRIMARY KEY,
@@ -104,6 +154,13 @@ CREATE TABLE IF NOT EXISTS recovery_state (
     recorded_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS test_pass_markers (
+    sprint_id TEXT PRIMARY KEY,
+    head_sha TEXT NOT NULL,
+    test_cmd TEXT NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS active_agents (
     agent_id TEXT PRIMARY KEY,
     agent_type TEXT NOT NULL,
@@ -121,11 +178,16 @@ CREATE TABLE IF NOT EXISTS oop_state (
 """
 
 # Gate requirements for each transition: {from_phase: required_gate_name or None}
+#
+# 031/002: "stakeholder-review" is deleted -- that phase no longer exists
+# (schema.yaml's stakeholder-review artifact entry is gone), so this dict
+# no longer keys off it. stakeholder_approval is not dropped as a gate;
+# it moves to gate acquire_execution_lock instead (checked directly by
+# that tool, not via this dict -- see StateDB.advance_to() below).
 _GATE_REQUIREMENTS: dict[str, Optional[str]] = {
     "roadmap": None,  # No gate to advance from roadmap
     "planning-docs": None,  # No gate to advance from planning-docs
     "architecture-review": "architecture_review",
-    "stakeholder-review": "stakeholder_approval",
     "ticketing": None,  # Checked programmatically (needs tickets + lock)
     "executing": None,  # Checked programmatically (all tickets done)
     "closing": None,  # Checked programmatically (sprint archived)
@@ -342,7 +404,7 @@ class StateDB:
                 raise ValueError(f"Sprint '{sprint_id}' is already done")
 
             phases = _compute_phases()
-            idx = phases.index(current)
+            idx = _phase_index(phases, sprint_id, current)
             next_phase = phases[idx + 1]
 
             # Check gate requirements
@@ -597,6 +659,134 @@ class StateDB:
         finally:
             conn.close()
 
+    def advance_to(
+        self,
+        sprint_id: str,
+        target_phase: str,
+        required_gate: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Idempotently jump *sprint_id*'s phase directly to *target_phase*
+        (031/002).
+
+        Generalizes :meth:`force_close`'s "jump directly to a target
+        phase, check one precondition, transactional, idempotent" shape
+        to a *non-terminal* target that also needs a named gate checked
+        first, rather than ``force_close``'s unconditional terminal jump.
+        Introduced so ``create_ticket`` and ``acquire_execution_lock``
+        (``tools/artifact_tools.py``) can advance a sprint's phase as a
+        side effect of the tool call that earns it, instead of requiring
+        a separate agent-driven ``advance_sprint_phase`` call.
+
+        Order of operations, by direct analogy to ``force_close`` (see
+        that method's own docstring): read the current phase; if it is
+        already at or past *target_phase* in the computed phases list,
+        return immediately -- no gate check, no write, no
+        ``phase_transitions`` row, exactly ``force_close``'s "already
+        done" no-op branch. Only if the phase actually needs to move is
+        *required_gate* (when given) checked: its most recently recorded
+        result must be ``"passed"`` or ``"skipped"``, or this raises
+        ``ValueError`` without writing anything. The phase UPDATE and the
+        ``phase_transitions`` INSERT then happen together, closed by one
+        ``conn.commit()`` -- either both land or, on an exception before
+        that commit, neither does.
+
+        This idempotency is what makes a retried ``acquire_execution_lock``
+        call safe to call this again unconditionally: if a prior call's
+        ``db.acquire_lock()`` already succeeded but this method then
+        raised, the lock is left held (this method never touches
+        ``execution_locks``) and a retry lands here again, sees the phase
+        not yet at target, re-checks the (already-satisfied) gate, and
+        completes the write that failed the first time.
+
+        Raises :class:`StrandedPhaseError` if the sprint's *current*
+        phase value is absent from the computed phases list (the
+        stranded-legacy-value case -- see ``_phase_index``). Raises
+        plain ``ValueError`` if *target_phase* is not a valid phase, the
+        sprint is not registered, or *required_gate* has not recorded a
+        satisfying result.
+
+        Args:
+            sprint_id: The sprint ID (e.g. '031').
+            target_phase: The phase to jump to. Must be one of the
+                computed phases. If the sprint's current phase is
+                already at or past this in phase order, the call is a
+                no-op (not an error) -- callers do not need to check
+                "is this the first call" themselves.
+            required_gate: Optional gate name whose recorded result must
+                satisfy ``_SATISFYING_GATE_RESULTS`` before the jump is
+                allowed. ``None`` (the default) means no gate check.
+
+        Returns:
+            ``{"sprint_id":, "old_phase":, "new_phase":, "changed": bool}``
+            -- ``new_phase`` is the sprint's actual resulting phase in
+            both cases: ``target_phase`` when ``changed`` is ``True``,
+            or the unchanged current phase when ``changed`` is ``False``.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            row = conn.execute(
+                "SELECT phase FROM sprints WHERE id = ?", (sprint_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Sprint '{sprint_id}' is not registered")
+
+            current = row["phase"]
+            phases = _compute_phases()
+
+            if target_phase not in phases:
+                raise ValueError(
+                    f"advance_to(): target phase {target_phase!r} is not "
+                    f"a valid phase; valid phases are {phases}"
+                )
+
+            current_idx = _phase_index(phases, sprint_id, current)
+            target_idx = phases.index(target_phase)
+
+            if current_idx >= target_idx:
+                # Idempotent no-op -- force_close's "already done" shape:
+                # no gate check, no write, no phase_transitions row.
+                return {
+                    "sprint_id": sprint_id,
+                    "old_phase": current,
+                    "new_phase": current,
+                    "changed": False,
+                }
+
+            if required_gate:
+                gate_row = conn.execute(
+                    "SELECT result FROM sprint_gates "
+                    "WHERE sprint_id = ? AND gate_name = ?",
+                    (sprint_id, required_gate),
+                ).fetchone()
+                if gate_row is None or gate_row["result"] not in _SATISFYING_GATE_RESULTS:
+                    raise ValueError(
+                        f"Cannot advance sprint '{sprint_id}' to "
+                        f"{target_phase!r}: gate {required_gate!r} has "
+                        "not passed"
+                    )
+
+            now = _now()
+            conn.execute(
+                "UPDATE sprints SET phase = ?, updated_at = ? WHERE id = ?",
+                (target_phase, now, sprint_id),
+            )
+            conn.execute(
+                "INSERT INTO phase_transitions "
+                "(sprint_id, from_phase, to_phase, at) VALUES (?, ?, ?, ?)",
+                (sprint_id, current, target_phase, now),
+            )
+            conn.commit()
+
+            return {
+                "sprint_id": sprint_id,
+                "old_phase": current,
+                "new_phase": target_phase,
+                "changed": True,
+            }
+        finally:
+            conn.close()
+
     def rename_sprint(
         self,
         old_id: str,
@@ -787,6 +977,109 @@ class StateDB:
         conn = _connect(self._path)
         try:
             cursor = conn.execute("DELETE FROM recovery_state WHERE id = 1")
+            conn.commit()
+            return {"cleared": cursor.rowcount > 0}
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Test-pass marker (031/008)
+    # ------------------------------------------------------------------
+    #
+    # Records "the full suite really passed for sprint X at commit Y with
+    # command Z", written only after a real, successful subprocess test
+    # run (see close.py's SprintCloser) and read only to decide whether a
+    # *subsequent* close_sprint call may skip a genuinely redundant
+    # re-run. This is deliberately unlike the pre-030/002
+    # `.clasi/test-cache` predicate removed from the ticket state
+    # machine: that one was writer-less (nothing in the codebase ever
+    # wrote it, so it was permanently unsatisfiable) — this marker's
+    # writer and reader are introduced together, in the same change, and
+    # the reader additionally re-validates the sha and working-tree
+    # cleanliness at use time rather than trusting the stored row alone.
+
+    def record_test_pass_marker(
+        self, sprint_id: str, head_sha: str, test_cmd: str,
+    ) -> dict[str, Any]:
+        """Record that the full suite passed for *sprint_id* at *head_sha*.
+
+        Upsert semantics keyed on ``sprint_id`` -- a later real pass (a
+        new commit, or the same commit re-verified) replaces the
+        previous marker for this sprint rather than accumulating rows.
+        """
+        self.init()
+        now = _now()
+        conn = _connect(self._path)
+        try:
+            conn.execute(
+                "INSERT INTO test_pass_markers "
+                "(sprint_id, head_sha, test_cmd, recorded_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(sprint_id) DO UPDATE SET "
+                "head_sha = excluded.head_sha, "
+                "test_cmd = excluded.test_cmd, "
+                "recorded_at = excluded.recorded_at",
+                (sprint_id, head_sha, test_cmd, now),
+            )
+            conn.commit()
+            return {
+                "sprint_id": sprint_id,
+                "head_sha": head_sha,
+                "test_cmd": test_cmd,
+                "recorded_at": now,
+            }
+        finally:
+            conn.close()
+
+    def get_test_pass_marker(self, sprint_id: str) -> Optional[dict[str, Any]]:
+        """Read the test-pass marker for *sprint_id*, or None if absent.
+
+        Returns the raw stored row (sprint_id, head_sha, test_cmd,
+        recorded_at) with no validation against the current repository
+        state -- comparing the sha/test_cmd against "now" and checking
+        working-tree cleanliness is the caller's job (it requires a git
+        call against a repo root, which this class does not have).
+
+        If the DB file does not exist, returns None without creating it,
+        mirroring ``get_recovery_state``'s no-file behavior.
+        """
+        if not self._path.exists():
+            return None
+        self.init()
+        conn = _connect(self._path)
+        try:
+            row = conn.execute(
+                "SELECT sprint_id, head_sha, test_cmd, recorded_at "
+                "FROM test_pass_markers WHERE sprint_id = ?",
+                (sprint_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "sprint_id": row["sprint_id"],
+                "head_sha": row["head_sha"],
+                "test_cmd": row["test_cmd"],
+                "recorded_at": row["recorded_at"],
+            }
+        finally:
+            conn.close()
+
+    def clear_test_pass_marker(self, sprint_id: str) -> dict[str, Any]:
+        """Delete the test-pass marker for *sprint_id*, if any.
+
+        Returns {"cleared": True} if a record was removed,
+        {"cleared": False} if no record existed. Called once a sprint
+        finishes closing successfully -- a marker for an archived sprint
+        can never be consulted again (close_sprint won't find the sprint
+        under its active id a second time), so this is bookkeeping
+        hygiene, not a correctness requirement.
+        """
+        self.init()
+        conn = _connect(self._path)
+        try:
+            cursor = conn.execute(
+                "DELETE FROM test_pass_markers WHERE sprint_id = ?", (sprint_id,)
+            )
             conn.commit()
             return {"cleared": cursor.rowcount > 0}
         finally:

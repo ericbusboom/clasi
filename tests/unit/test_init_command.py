@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -1171,3 +1172,169 @@ class TestRulePathReachability:
             "paths: key, so it loads unconditionally regardless of layout"
         )
         assert "You are modifying source code or tests" in content
+
+
+# ---------------------------------------------------------------------------
+# Ticket 031-004: clasi init writes protected_paths
+# ---------------------------------------------------------------------------
+
+
+class TestProtectedPathsDetection:
+    """`clasi init` detects (or is interactively told) the project's
+    source/test directories and writes `protected_paths:` to
+    .clasi/config.yaml, so role-guard has a real, project-specific list
+    to protect instead of falling back to block-by-default for tier 0/1.
+    """
+
+    def _read_config(self, target_dir: Path) -> dict:
+        import yaml
+
+        return yaml.safe_load(
+            (target_dir / ".clasi" / "config.yaml").read_text(encoding="utf-8")
+        )
+
+    def test_detects_src_and_tests_writes_protected_paths(self, target_dir):
+        """A fresh fixture project with src/ and tests/ at its root gets
+        protected_paths: [src, tests] written automatically, with no TTY
+        and no prompt involved."""
+        target_dir.mkdir()
+        (target_dir / "src").mkdir()
+        (target_dir / "tests").mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        data = self._read_config(target_dir)
+        assert data["protected_paths"] == ["src", "tests"]
+
+    def test_detects_partial_match_src_only(self, target_dir):
+        """Only src/ present (no top-level tests/) still yields a
+        non-empty, partial detection rather than being treated as
+        undetectable."""
+        target_dir.mkdir()
+        (target_dir / "src").mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        data = self._read_config(target_dir)
+        assert data["protected_paths"] == ["src"]
+
+    def test_no_protected_paths_when_nothing_detected_non_interactive(self, target_dir):
+        """A project with no recognizable src/tests layout (e.g. a
+        non-Python consumer project using different conventions) gets NO
+        protected_paths written when running non-interactively — role-
+        guard's pre-existing block-by-default fallback stays unchanged,
+        which is the documented behavior for a layout this heuristic
+        cannot read."""
+        target_dir.mkdir()
+        (target_dir / "lib").mkdir()  # not a recognized convention name
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        data = self._read_config(target_dir)
+        assert "protected_paths" not in data
+
+    def test_empty_project_non_interactive_no_protected_paths(self, target_dir):
+        """A completely empty fresh project (most existing tests' fixture
+        shape) writes no protected_paths — must not regress any existing
+        non-interactive test that doesn't expect the key."""
+        target_dir.mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        data = self._read_config(target_dir)
+        assert "protected_paths" not in data
+
+    def test_interactive_prompt_used_when_nothing_detected(self, target_dir):
+        """When nothing is auto-detected and the session is interactive,
+        the stakeholder is prompted, and a non-blank answer is written."""
+        target_dir.mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
+             patch("clasi.init_command.click.prompt", return_value="app, spec"), \
+             patch("clasi.init_command.click.echo"):
+            run_init(str(target_dir), claude=True)
+
+        data = self._read_config(target_dir)
+        assert data["protected_paths"] == ["app", "spec"]
+
+    def test_interactive_decline_keeps_fallback(self, target_dir):
+        """A blank interactive response (decline) writes no
+        protected_paths — the project keeps today's block-by-default
+        fallback unchanged, same as the non-interactive nothing-detected
+        case."""
+        target_dir.mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
+             patch("clasi.init_command.click.prompt", return_value=""), \
+             patch("clasi.init_command.click.echo"):
+            run_init(str(target_dir), claude=True)
+
+        data = self._read_config(target_dir)
+        assert "protected_paths" not in data
+
+    def test_no_prompt_when_auto_detected(self, target_dir):
+        """Auto-detection short-circuits the interactive prompt entirely
+        — src/+tests/ present means no prompt is needed even in an
+        interactive session."""
+        target_dir.mkdir()
+        (target_dir / "src").mkdir()
+        (target_dir / "tests").mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=True), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=True), \
+             patch("clasi.init_command._prompt_protected_paths") as mock_prompt, \
+             patch("clasi.init_command.click.prompt", return_value=""), \
+             patch("clasi.init_command.click.echo"):
+            run_init(str(target_dir), claude=True)
+
+        mock_prompt.assert_not_called()
+
+    def test_protected_paths_not_overwritten_on_rerun(self, target_dir):
+        """Re-running clasi init does not overwrite an existing
+        protected_paths: block (matches the paths:/design_docs: setdefault
+        pattern), and does not re-prompt."""
+        target_dir.mkdir()
+        (target_dir / "src").mkdir()
+        (target_dir / "tests").mkdir()
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        # Simulate the stakeholder customizing the protected list by hand.
+        import yaml
+
+        config_path = target_dir / ".clasi" / "config.yaml"
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        data["protected_paths"] = ["lib"]
+        config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+        with patch("clasi.init_command.sys.stdin.isatty", return_value=False), \
+             patch("clasi.init_command.sys.stdout.isatty", return_value=False):
+            run_init(str(target_dir))
+
+        data_after = self._read_config(target_dir)
+        assert data_after["protected_paths"] == ["lib"]
+
+    def test_detect_protected_paths_pure_function(self, tmp_path):
+        """Unit-level coverage of the detection helper itself, independent
+        of run_init's I/O and prompt wiring."""
+        from clasi.init_command import _detect_protected_paths
+
+        assert _detect_protected_paths(tmp_path) == []
+
+        (tmp_path / "src").mkdir()
+        assert _detect_protected_paths(tmp_path) == ["src"]
+
+        (tmp_path / "tests").mkdir()
+        assert _detect_protected_paths(tmp_path) == ["src", "tests"]

@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Tier-0/tier-1 role-guard and mcp-guard write-policy relaxation
-status: open
+status: done
 use-cases:
 - SUC-003
 depends-on: []
@@ -38,23 +38,23 @@ current code during planning:
 
 ## Acceptance Criteria
 
-- [ ] The tier-0 `blk-sprint` block (`for blk in _block_prefixes` loop
+- [x] The tier-0 `blk-sprint` block (`for blk in _block_prefixes` loop
       scoped to `agent_tier in ("", "0")`) is deleted.
-- [ ] The existing tier-1 `sprints_dir` allow (`agent_tier == "1"`) is
+- [x] The existing tier-1 `sprints_dir` allow (`agent_tier == "1"`) is
       extended to also match `agent_tier in ("", "0")` — tier 0 gets the
       same `ALLOW` for `.clasi/sprints/**` tier 1 already has.
-- [ ] `handle_role_guard`'s docstring allow/block matrix is updated:
+- [x] `handle_role_guard`'s docstring allow/block matrix is updated:
       `.clasi/sprints/**` reads `ALLOW` for tier 0.
-- [ ] The mcp-guard matcher shrinks from
+- [x] The mcp-guard matcher shrinks from
       `mcp__clasi__create_ticket|mcp__clasi__create_sprint` to
       `mcp__clasi__create_ticket` alone, in **both**
       `.claude/settings.json` (this repo's own installed copy) and
       `plugin/hooks/hooks.json` (the source new installs copy from).
-- [ ] `create_ticket` still exits 2 for tier 0 (unchanged — ticket
+- [x] `create_ticket` still exits 2 for tier 0 (unchanged — ticket
       creation remains planner-owned).
-- [ ] The protected-source-path block is unchanged — still `BLOCK` for
+- [x] The protected-source-path block is unchanged — still `BLOCK` for
       tier 0/1.
-- [ ] No change to item 6 (block-message identity) — confirm via a
+- [x] No change to item 6 (block-message identity) — confirm via a
       passing existing test or a quick manual check that it already
       works; do not add a second implementation.
 

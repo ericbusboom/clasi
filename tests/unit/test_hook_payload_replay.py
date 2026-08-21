@@ -37,6 +37,13 @@ methodology):
   the fixture file) — sprint 028's automatic deny-payload dump only
   fires for ``exit_code == 2``, so there is no equivalent built-in
   capture mechanism for the allow path.
+- ``role-guard-allow-tier0-sprints.json`` (ticket 031-003): captured the
+  same live-CLI-against-a-scratch-project way, tier 0 (env var unset), a
+  ``Write`` to a ``clasi/sprints/**`` path. Proves the stakeholder-decided
+  policy change (2026-08-19) that removed the tier-0 blk-sprint block —
+  team-lead may now write sprint artifacts directly; only ``create_ticket``
+  stays MCP-gated (see ``TestMcpGuardMatcherScope`` in
+  ``test_hook_handlers.py`` for that half of the same policy).
 - ``role-guard-deny-no-ticket.json`` / ``role-guard-allow-ticket-done-edit.json``
   (ticket 029-010): captured the same tee-against-a-scratch-project way,
   tier 2, against a scratch project with a real execution lock held for
@@ -60,6 +67,24 @@ methodology):
   see ``_setup_ticket_gate_lock_state`` and the ``pre_setup`` field on
   ``_Fixture`` below.
 
+- ``role-guard-allow-plans-dir-tier0.json`` / ``role-guard-allow-outside-
+  root-tier0.json`` (ticket 031-005, issue role-guard-blocks-plan-mode-
+  plans-dir.md): captured the same tee-against-a-scratch-project way —
+  this session's own scratchpad dir as the throwaway project, tier 0 (env
+  var unset), invoked against the project's editable-install binary
+  (``.venv/bin/clasi``, not the stale global pipx one — see that ticket's
+  final report for why that distinction mattered at capture time). One
+  targets Claude Code's own plan-mode file
+  (``~/.claude/plans/fixture-capture-005.md``), the other an arbitrary
+  outside-root path (``~/Desktop/fixture-capture-005-outsideroot.md``).
+  Both exited 0 at capture time (``match=claude-plans-dir`` /
+  ``match=outside-root`` respectively, per the scratch project's own
+  ``.clasi/log/hooks.log``) — proving the allow rules SUC-005 exists to
+  cover, for a genuinely real (not hand-built) payload. See
+  ``home_rewrite_suffix`` on ``_Fixture`` below for how these two replay
+  portably without being re-rooted under a project (which would defeat
+  the exact property under test).
+
 No temporary code was added to ``hook_handlers.py`` itself to capture
 these — the tee happened entirely at the shell level, piping into the
 real, unmodified ``clasi hook`` entrypoint, so there is nothing to
@@ -76,7 +101,15 @@ at replay time only, to the same relative suffix rooted under the
 test's own ``tmp_path`` — the fixture FILE ON DISK stays exactly as
 captured; only the in-memory payload used for a given replay run is
 re-rooted. Fixtures with no absolute file_path (mcp-guard, subagent
-events, plan-to-issue) need no rewriting at all.
+events, plan-to-issue) need no rewriting at all. The two plans-dir/
+outside-root fixtures are the inverse case: their file_path must STAY
+outside any project root (that is what they prove), so instead of
+``tmp_path`` rewriting they get ``home_rewrite_suffix`` — the captured
+suffix after the ORIGINAL capture machine's home directory is re-rooted
+under the CURRENT machine's ``Path.home()`` at replay time, so the
+decision (specifically ``claude-plans-dir`` vs. the more general
+``outside-root``) reproduces exactly regardless of which machine/user
+runs the test, without ever resolving under tmp_path.
 """
 
 import json
@@ -144,6 +177,14 @@ class _Fixture:
     expected_exit: int
     expected_reason: Optional[str] = None  # None = don't assert the reason
     path_rewrite_suffix: Optional[str] = None  # re-root file_path under tmp_path
+    # Re-root file_path under the CURRENT machine's home directory instead
+    # of tmp_path (ticket 031-005) — for a fixture whose captured decision
+    # depends on being outside any project root AND under the caller's own
+    # home dir (the claude-plans-dir check), rewriting under tmp_path would
+    # defeat the very property being replayed. None (the default) means no
+    # home-directory rewriting is needed. Mutually exclusive with
+    # path_rewrite_suffix in practice (a fixture needs at most one).
+    home_rewrite_suffix: Optional[str] = None
     # hooks.log's event_type column uses a short reason-code-style name
     # for the two subagent events ("sub-start"/"sub-stop") distinct from
     # the CLI dispatch name ("subagent-start"/"subagent-stop") used
@@ -183,6 +224,18 @@ _FIXTURES = [
         "role-guard-allow-tier2.json", "role-guard", "2",
         expected_exit=0, expected_reason="tier-2",
         path_rewrite_suffix="src/app/new_module.py",
+    ),
+    _Fixture(
+        # Ticket 031-003 (stakeholder decision, 2026-08-19): tier 0
+        # (team-lead) may now write directly under sprints_dir — the
+        # tier-0 blk-sprint block was removed (create_ticket stays
+        # gated separately, via mcp-guard). Captured live against a
+        # throwaway scratch project the same tee-against-the-real-CLI
+        # way as the sibling role-guard fixtures above, tier unset
+        # (functionally tier 0).
+        "role-guard-allow-tier0-sprints.json", "role-guard", "0",
+        expected_exit=0, expected_reason="tier-1",
+        path_rewrite_suffix="clasi/sprints/013-x/sprint.md",
     ),
     _Fixture(
         # Ticket 029-010, AC2/AC3: tier 2, execution lock held, zero
@@ -234,6 +287,30 @@ _FIXTURES = [
         "plan-to-issue-no-file.json", "plan-to-issue", None,
         expected_exit=0, expected_reason="no-file",
     ),
+    _Fixture(
+        # Ticket 031-005 (issue role-guard-blocks-plan-mode-plans-dir.md):
+        # tier 0, Claude Code's own plan-mode file under
+        # ~/.claude/plans/**. Captured live the same tee-against-the-real-
+        # CLI way (this session's own scratchpad dir as the throwaway
+        # project, tier unset). home_rewrite_suffix re-roots file_path
+        # under THIS machine's Path.home() at replay time — it must stay
+        # outside any project root, so (unlike every path_rewrite_suffix
+        # fixture above) it is never re-rooted under tmp_path.
+        # expected_reason is the 12-char-truncated form of the real
+        # "claude-plans-dir" exit reason (see hooks.log's fixed-width
+        # column, noted in the module docstring above).
+        "role-guard-allow-plans-dir-tier0.json", "role-guard", "0",
+        expected_exit=0, expected_reason="claude-plans",
+        home_rewrite_suffix=".claude/plans/fixture-capture-005.md",
+    ),
+    _Fixture(
+        # Ticket 031-005: tier 0, an arbitrary outside-root path
+        # (~/Desktop/...) — the general "outside-root" allow, captured
+        # and re-rooted the same way as the plans-dir fixture above.
+        "role-guard-allow-outside-root-tier0.json", "role-guard", "0",
+        expected_exit=0, expected_reason="outside-root",
+        home_rewrite_suffix="Desktop/fixture-capture-005-outsideroot.md",
+    ),
 ]
 
 # AC: "at least two deny-path fixtures" / "covers every hook event type
@@ -284,6 +361,14 @@ def test_replay_fixture_reproduces_decision(fx: _Fixture, tmp_path: Path, monkey
         tool_input = payload.get("tool_input")
         assert isinstance(tool_input, dict), fx.filename
         new_value = str(tmp_path / fx.path_rewrite_suffix)
+        for key in ("file_path", "path", "new_path"):
+            if key in tool_input:
+                tool_input[key] = new_value
+
+    if fx.home_rewrite_suffix:
+        tool_input = payload.get("tool_input")
+        assert isinstance(tool_input, dict), fx.filename
+        new_value = str(Path.home() / fx.home_rewrite_suffix)
         for key in ("file_path", "path", "new_path"):
             if key in tool_input:
                 tool_input[key] = new_value

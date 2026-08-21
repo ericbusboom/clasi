@@ -597,9 +597,8 @@ class TestTerminalSprintsSkipped:
         proj.db.advance_phase(sprint_id)  # roadmap -> planning-docs
         proj.db.advance_phase(sprint_id)  # planning-docs -> architecture-review
         proj.db.record_gate(sprint_id, "architecture_review", "passed")
-        proj.db.advance_phase(sprint_id)  # architecture-review -> stakeholder-review
+        proj.db.advance_phase(sprint_id)  # architecture-review -> ticketing (031/002)
         proj.db.record_gate(sprint_id, "stakeholder_approval", "passed")
-        proj.db.advance_phase(sprint_id)  # stakeholder-review -> ticketing
         # DB phase stops here at "ticketing" — mirrors sprint 012's real
         # stuck-at-"ticketing" DB row.
 
@@ -697,9 +696,8 @@ class TestHealthyActiveSprintZeroDrift:
         sprint.detail_promote()  # roadmap -> planning-docs
         sprint.advance_phase()  # planning-docs -> architecture-review
         sprint.record_gate("architecture_review", "passed")
-        sprint.advance_phase()  # architecture-review -> stakeholder-review
+        sprint.advance_phase()  # architecture-review -> ticketing (031/002)
         sprint.record_gate("stakeholder_approval", "passed")
-        sprint.advance_phase()  # stakeholder-review -> ticketing
 
         assert sprint.status == "ticketing"
         assert proj.db.get_sprint_state(sprint.id)["phase"] == "ticketing"

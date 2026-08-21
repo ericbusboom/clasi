@@ -79,15 +79,20 @@ was committed.
 
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import clasi.state_machine.predicates  # noqa: F401 — side-effect: registers all predicates
+import clasi.state_machine.predicates.project
+import clasi.state_machine.predicates.sprint
+import clasi.state_machine.predicates.ticket
 from clasi.mcp_server import get_project, set_project
-from clasi.state_machine import ProjectContext, SprintContext
-from clasi.state_machine.registry import get_predicate
+from clasi.state_machine import ProjectContext, SprintContext, evaluate_state, load_machine
+from clasi.state_machine.registry import clear_registry, get_predicate
 from clasi.status.inconsistency import detect_inconsistencies
 from clasi.status.reader import ClasiStateReader
 from clasi.status.reporter import StatusReporter
@@ -101,6 +106,28 @@ from clasi.tools.artifact_tools import (
     record_gate_result,
     update_ticket_status,
 )
+
+
+# ---------------------------------------------------------------------------
+# Registry guard: this module evaluates the real, unmocked sprint machine
+# (step 10 below, added by 031/001). If a prior test module's autouse
+# fixture cleared the predicate registry and this module happened to run
+# afterward in the same session (e.g. `pytest test_predicates.py
+# test_sprint_lifecycle_integration.py`), evaluate_state() would raise
+# UnknownPredicateError for a reason that has nothing to do with what this
+# module actually tests. Re-registering before every test — matching the
+# guard already used in test_hook_injection.py / test_reporter.py — makes
+# this file's real-state-machine assertion independent of module run order.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _ensure_predicates_registered():
+    clear_registry()
+    importlib.reload(clasi.state_machine.predicates.project)
+    importlib.reload(clasi.state_machine.predicates.sprint)
+    importlib.reload(clasi.state_machine.predicates.ticket)
+    yield
 
 
 # ---------------------------------------------------------------------------
@@ -299,19 +326,65 @@ class TestSprintLifecycleThreeWayIntegration:
         with pytest.raises(ValueError):
             project.db.record_gate(sprint_id, "sprint_review", "passed")
 
-        # Now satisfy the gate for real and advance via the real writer.
+        # Now satisfy the gate for real.
         record_gate_result(sprint_id, "architecture_review", "passed", "NONE")
         assert is_arch_recorded(_sprint_ctx(sprint_id)) is True
 
-        advance_result = json.loads(advance_sprint_phase(sprint_id))
-        assert advance_result["new_phase"] == "stakeholder-review", advance_result
-
-        _assert_sprint_agreement(sprint_id, "stakeholder-review")
+        # 031/002: recording the gate does NOT itself move the phase --
+        # the phase machine's stakeholder-review phase is deleted, and
+        # 'ticketing' now arrives only as a side effect of create_ticket's
+        # first call (below), never a separate advance_sprint_phase call.
+        # This is the exact gate-order fix this ticket exists to ship:
+        # under the pre-031/002 code, the *documented* flow (record the
+        # gate, then create tickets) was rejected here because
+        # create_ticket hard-required 'ticketing' phase, which only a
+        # since-deleted stakeholder-review step could reach.
+        _assert_sprint_agreement(sprint_id, "architecture-review")
         _assert_zero_drift()
 
         # ------------------------------------------------------------
-        # 5. Gate semantics probe #2: "skipped" satisfies both sides
+        # 5. tickets (create_ticket) -- SUC-002's Main Flow: this call
+        #    both checks the recorded architecture_review gate directly
+        #    (not a phase index) and auto-advances the phase to
+        #    'ticketing' as a side effect, with zero rejected calls.
+        # ------------------------------------------------------------
+        ticket_result = json.loads(create_ticket(sprint_id, "Do the thing"))
+        ticket_id = ticket_result["id"]
+        ticket_path = Path(ticket_result["path"])
+        assert ticket_path.exists(), f"expected ticket file at {ticket_path}"
+        assert ticket_result["status"] == "open", ticket_result
+
+        _assert_sprint_agreement(sprint_id, "ticketing")
+        status = _assert_zero_drift()
+        ticket_entry = _ticket_entry(status, sprint_id, ticket_id)
+        assert ticket_entry["state"] == "open", ticket_entry
+
+        # is_any_sprint_ticketed queries the real DB-phase vocabulary
+        # ("ticketing"), not the computed sprint-machine vocabulary's
+        # "ticketed" state below -- true as soon as the DB phase says so,
+        # independent of whether stakeholder_approval has been recorded
+        # yet (that only affects the *computed* "ticketed" state, step 6
+        # below, under the new architecture_review -> create_ticket ->
+        # stakeholder_approval order this ticket ships). This is the
+        # exact "ticketed" vs. "ticketing" vocabulary collision named in
+        # this ticket's description and fixed by 030/002.
+        is_any_sprint_ticketed = get_predicate("is_any_sprint_ticketed")
+        assert is_any_sprint_ticketed(ProjectContext(reader=ClasiStateReader(project))) is True
+
+        # ------------------------------------------------------------
+        # 6. Gate semantics probe #2: "skipped" satisfies both sides
         #    just as "passed" does (the other half of criterion 2).
+        #    031/002: stakeholder_approval no longer gates a DB-phase
+        #    transition (recording it here does not itself move the DB
+        #    phase) -- it gates acquire_execution_lock instead, step 7
+        #    below. It DOES complete the *computed* sprint-machine's
+        #    'ticketed' state invariants (schemas/state-machines/
+        #    sprint.yaml's 'ticketed' state requires
+        #    is_pre_flight_satisfied among four invariants, unchanged by
+        #    this ticket) -- under the new create-then-approve order, the
+        #    computed state only becomes 'ticketed' here, not at
+        #    ticket-creation time (step 5) as it did under the old
+        #    approve-then-create order this ticket replaces.
         # ------------------------------------------------------------
         record_gate_result(sprint_id, "stakeholder_approval", "skipped", "NONE")
 
@@ -321,40 +394,17 @@ class TestSprintLifecycleThreeWayIntegration:
             "is_pre_flight_satisfied, same as 'passed'"
         )
 
-        advance_result = json.loads(advance_sprint_phase(sprint_id))
-        assert advance_result["new_phase"] == "ticketing", advance_result
-
         _assert_sprint_agreement(sprint_id, "ticketing")
-        _assert_zero_drift()
-
-        # This is the exact "ticketed" vs. "ticketing" vocabulary
-        # collision named in this ticket's description and fixed by
-        # 030/002 -- is_any_sprint_ticketed must query the real DB
-        # phase name ("ticketing"), not a "ticketed" phase no writer
-        # ever produces.
-        is_any_sprint_ticketed = get_predicate("is_any_sprint_ticketed")
-        assert is_any_sprint_ticketed(ProjectContext(reader=ClasiStateReader(project))) is True
-
-        # ------------------------------------------------------------
-        # 6. tickets (create_ticket)
-        # ------------------------------------------------------------
-        ticket_result = json.loads(create_ticket(sprint_id, "Do the thing"))
-        ticket_id = ticket_result["id"]
-        ticket_path = Path(ticket_result["path"])
-        assert ticket_path.exists(), f"expected ticket file at {ticket_path}"
-        assert ticket_result["status"] == "open", ticket_result
-
         status = _assert_zero_drift()
-        ticket_entry = _ticket_entry(status, sprint_id, ticket_id)
-        assert ticket_entry["state"] == "open", ticket_entry
 
         # Acceptance criterion 1's "distinct, non-compared signal":
-        # right now DB phase == "ticketing" (recorded-stage vocabulary)
-        # while the computed sprint-machine state == "ticketed"
-        # (transition vocabulary) -- two different strings, both
-        # correct, precisely because they answer different questions.
-        # This is the historical collision point; assert the computed
-        # value directly rather than comparing it to DB phase.
+        # DB phase == "ticketing" (recorded-stage vocabulary) while the
+        # computed sprint-machine state == "ticketed" (transition
+        # vocabulary, now satisfied: doc present, architecture_review
+        # recorded, pre-flight satisfied, at least one ticket) -- two
+        # different strings, both correct, precisely because they answer
+        # different questions. Assert the computed value directly rather
+        # than comparing it to DB phase.
         sprint_entry = _sprint_entry(status, sprint_id)
         assert sprint_entry["state"] == "ticketed", sprint_entry
         db_phase_now = project.db.get_sprint_state(sprint_id)["phase"]
@@ -367,15 +417,16 @@ class TestSprintLifecycleThreeWayIntegration:
 
         # ------------------------------------------------------------
         # 7. in-progress: acquire the execution lock (creates + checks
-        #    out the sprint branch for real), advance to executing,
-        #    then move the ticket to in-progress.
+        #    out the sprint branch for real). 031/002: this call itself
+        #    checks the recorded stakeholder_approval gate (rejecting,
+        #    granting no lock, if it hadn't passed) and auto-advances the
+        #    phase to 'executing' as a side effect -- no separate
+        #    advance_sprint_phase call. Then move the ticket to
+        #    in-progress.
         # ------------------------------------------------------------
         lock_result = json.loads(acquire_execution_lock(sprint_id))
         assert lock_result["branch"] == branch_name, lock_result
         assert project.db.get_lock_holder()["sprint_id"] == sprint_id
-
-        advance_result = json.loads(advance_sprint_phase(sprint_id))
-        assert advance_result["new_phase"] == "executing", advance_result
 
         _assert_sprint_agreement(sprint_id, "executing")
         _assert_zero_drift()
@@ -408,6 +459,13 @@ class TestSprintLifecycleThreeWayIntegration:
         # ------------------------------------------------------------
         # 9. close (close.SprintCloser / StateDB.force_close, via the
         #    close_sprint tool)
+        #
+        # delete_branch=True (the tool's own default) deliberately, not
+        # False: this is the exact real-world sequence that exposed
+        # 031/001 (branch merged, archived, then deleted) -- a run with
+        # delete_branch=False would never touch that code path and could
+        # not have caught the regression the closed-state assertion
+        # below now guards against.
         # ------------------------------------------------------------
         close_result = json.loads(
             close_sprint(
@@ -415,7 +473,7 @@ class TestSprintLifecycleThreeWayIntegration:
                 branch_name=branch_name,
                 main_branch="master",
                 push_tags=False,
-                delete_branch=False,
+                delete_branch=True,
                 test_command="SKIP",
             )
         )
@@ -445,3 +503,27 @@ class TestSprintLifecycleThreeWayIntegration:
         archived_ticket = archived_sprint.get_ticket(ticket_id)
         assert archived_ticket.status == "done"
         assert archived_ticket.path.parent.name == "done"
+
+        # ------------------------------------------------------------
+        # 10. computed sprint-machine state after a real close (031/001
+        #    regression teeth). This is distinct from final_phase/
+        #    final_status above -- those are the recorded DB phase and
+        #    frontmatter status: ("done"); this is the *computed*
+        #    sprint-machine state ("closed"), evaluated against a fresh
+        #    ClasiStateReader the same way `clasi status` would. Before
+        #    031/001, `closed`'s invariants were
+        #    [is_sprint_archived, is_branch_merged], and is_branch_merged
+        #    read `git branch --merged <default>` -- a query that can
+        #    never see a branch close_sprint has just deleted
+        #    (delete_branch=True above). That made `closed` permanently
+        #    unreachable and evaluate_state fell back to the
+        #    most-advanced state that still matched ("pre-flight"). This
+        #    assertion is the one this sprint's own bug report shows was
+        #    missing.
+        # ------------------------------------------------------------
+        sprint_machine = load_machine("sprint")
+        final_state = evaluate_state(sprint_machine, _sprint_ctx(sprint_id))
+        assert final_state.name == "closed", (
+            f"expected computed sprint-machine state 'closed', got "
+            f"{final_state.name!r}"
+        )

@@ -96,6 +96,18 @@ Read these before planning:
 {% endif %}
 - Do not write code or tests. You produce planning artifacts only.
 - Do NOT create a git branch. Branches are created later at execution time.
+- If a CLASI guard (role-guard, mcp-guard) blocks a write, STOP. Do not
+  route around it -- no Bash heredoc, `sed -i`, shell redirection,
+  `git apply`, or any other tool that reaches the file without going
+  through the blocked call. Report the block to this dispatcher instead:
+  what you attempted, the exact violation/denial text, and what you
+  believe the correct resolution is. Then wait -- do not guess and
+  proceed. The one exception is a deliberately invoked, reported
+  `clasi oop on --reason '...'`; using it silently is the same failure
+  as routing around the block. **Stopping and reporting a block is a
+  successful outcome of this dispatch, not a failure** -- return
+  `"status": "blocked"` (see Required Return Format below), not
+  `"failed"`.
 - Return the completed sprint plan to team-lead when done.
 
 ## Required Return Format
@@ -113,7 +125,10 @@ your work will be rejected.
 }
 ```
 
-- **status**: "success" if the roadmap plan was created, "failed" otherwise.
+- **status**: "success" if the roadmap plan was created, "blocked" if a
+  CLASI guard denied a required write and you stopped to report it (a
+  correct, successful dispatch outcome, not a variant of "failed"),
+  "failed" otherwise.
 - **summary**: Brief description of what was planned.
 - **sprint_file**: Path to the created sprint.md.
 {% elif mode == "detail" %}
@@ -134,7 +149,10 @@ your work will be rejected.
 ```
 
 - **status**: "success" if all planning artifacts produced, "partial" if
-  some remain, "failed" if planning could not proceed.
+  some remain, "blocked" if a CLASI guard denied a required write and
+  you stopped to report it (a correct, successful dispatch outcome, not
+  a variant of "failed"), "failed" if planning could not proceed for any
+  other reason.
 - **summary**: Brief description of the sprint plan.
 - **files_created**: Paths to all created planning artifacts.
 - **ticket_ids**: IDs of created tickets.

@@ -25,20 +25,11 @@ artifacts:
       kind: review
       record: architecture_review
 
-  - id: stakeholder-review
-    generates: docs/clasi/sprints/<id>/stakeholder-review.md
-    instruction: clasi/schemas/se-process/instructions/usecases.md
-    requires:
-      - architecture-review
-    gate:
-      kind: stakeholder-review
-      record: stakeholder_approval
-
   - id: ticketing
     generates: docs/clasi/sprints/<id>/tickets/
     instruction: clasi/schemas/se-process/instructions/tickets.md
     requires:
-      - stakeholder-review
+      - architecture-review
 
   - id: executing
     generates: docs/clasi/sprints/<id>/tickets/<id>.md (updated to done)

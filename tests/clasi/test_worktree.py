@@ -892,3 +892,108 @@ class TestReconcileWorktrees:
         )
         with pytest.raises(json.JSONDecodeError):
             worktree.reconcile_worktrees(repo, sprint_dir)
+
+
+# ---------------------------------------------------------------------------
+# stdin-closed regression (031/008 follow-up)
+# ---------------------------------------------------------------------------
+#
+# close_sprint's prune step calls reconcile_worktrees unconditionally on
+# every close (see clasi.close._prune_sprint_worktrees). Its git
+# subprocess calls -- and cleanup_worktree's, which it calls internally
+# -- must not inherit the calling process's stdin, for the same reason
+# the sibling fixes in clasi.gitutil.run_git and clasi.close's test-runner
+# subprocess exist: through the MCP server, inherited stdin is a
+# JSON-RPC pipe that never delivers input, so a git subcommand that
+# unexpectedly tries to read it would hang the calling tool forever.
+
+
+class TestGitSubprocessCallsCloseStdin:
+    def test_cleanup_worktree_closes_stdin_on_every_git_call(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wt_path = worktree.create_worktree(repo, "999", "030")
+        branch_name = worktree.create_ticket_branch(wt_path, "999", "030", "slug")
+
+        real_run = subprocess.run
+        calls: list[dict] = []
+
+        def _spy(*args, **kwargs):
+            calls.append(kwargs)
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(worktree.subprocess, "run", _spy)
+
+        worktree.cleanup_worktree(repo, wt_path, branch_name, keep_branch=False)
+
+        assert calls, "expected cleanup_worktree to make at least one git call"
+        for kwargs in calls:
+            assert kwargs.get("stdin") is subprocess.DEVNULL
+
+    def test_reconcile_worktrees_closes_stdin_on_every_git_call(
+        self, repo: Path, sprint_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wt_path, branch_name = _make_ticket_worktree(repo, "031", "stdin-slug")
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "031",
+                "state": "worktree_created",
+                "path": str(wt_path),
+                "branch": branch_name,
+            },
+        )
+
+        real_run = subprocess.run
+        calls: list[dict] = []
+
+        def _spy(*args, **kwargs):
+            calls.append(kwargs)
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(worktree.subprocess, "run", _spy)
+
+        worktree.reconcile_worktrees(repo, sprint_dir)
+
+        assert calls, "expected reconcile_worktrees to make at least one git call"
+        for kwargs in calls:
+            assert kwargs.get("stdin") is subprocess.DEVNULL
+
+    def test_reconcile_worktrees_merged_state_closes_stdin_on_merge_base_check(
+        self, repo: Path, sprint_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The "merged" audit-state branch runs a distinct git call
+        (``git merge-base --is-ancestor``, worktree.py line ~559) that the
+        other reconcile_worktrees test above never reaches -- covered
+        separately here."""
+        wt_path, branch_name = _make_ticket_worktree(repo, "032", "merged-slug")
+        (wt_path / "merged.txt").write_text("merged\n", encoding="utf-8")
+        _run(["git", "add", "-A"], cwd=wt_path)
+        _run(["git", "commit", "-m", "merged work"], cwd=wt_path)
+        worktree.merge_ticket_branch(repo, "sprint/999-test-sprint", branch_name)
+        _run(["git", "checkout", "sprint/999-test-sprint"], cwd=repo)
+        worktree.write_audit_record(
+            sprint_dir,
+            {
+                "ticket_id": "032",
+                "state": "merged",
+                "path": str(wt_path),
+                "branch": branch_name,
+            },
+        )
+
+        real_run = subprocess.run
+        calls: list[dict] = []
+
+        def _spy(*args, **kwargs):
+            calls.append(kwargs)
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(worktree.subprocess, "run", _spy)
+
+        result = worktree.reconcile_worktrees(repo, sprint_dir)
+
+        assert any(e["ticket_id"] == "032" for e in result["cleaned"]), result
+        assert calls, "expected reconcile_worktrees to make at least one git call"
+        for kwargs in calls:
+            assert kwargs.get("stdin") is subprocess.DEVNULL

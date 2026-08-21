@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clasi.tools.artifact_tools import (
+    acquire_execution_lock,
     advance_sprint_phase,
     close_sprint,
     create_sprint,
@@ -72,9 +72,8 @@ def _advance_to_ticketing(work_dir, sprint_id: str) -> None:
     advance_phase(db_path, sprint_id)  # roadmap → planning-docs
     advance_phase(db_path, sprint_id)  # planning-docs → architecture-review
     record_gate(db_path, sprint_id, "architecture_review", "passed")
-    advance_phase(db_path, sprint_id)  # architecture-review → stakeholder-review
+    advance_phase(db_path, sprint_id)  # architecture-review → ticketing (031/002)
     record_gate(db_path, sprint_id, "stakeholder_approval", "passed")
-    advance_phase(db_path, sprint_id)  # stakeholder-review → ticketing
 
 
 class TestCreateSprint:
@@ -205,10 +204,13 @@ class TestCreateTicket:
         assert "not found" in result["error"]["message"]
 
     def test_blocked_before_ticketing_phase(self, work_dir):
+        """031/002: create_ticket checks the architecture_review gate result
+        directly, not the sprint's phase -- a sprint that hasn't recorded
+        that gate yet is rejected regardless of which phase it is in."""
         create_sprint("My Sprint")
         result = json.loads(create_ticket("001", "Too Early"))
         assert result["ok"] is False
-        assert re.search("roadmap.*phase", result["error"]["message"])
+        assert "architecture_review" in result["error"]["message"]
 
     def test_auto_links_single_sprint_issue_when_no_issue_param(self, work_dir):
         """create_ticket without issue param auto-links the sole sprint todo.
@@ -295,6 +297,158 @@ class TestCreateTicket:
         ticket_fm = read_frontmatter(result["path"])
         # issue field should be absent or empty (no auto-link occurred)
         assert not ticket_fm.get("issue")
+
+
+class TestGateOrderAndAutoAdvance:
+    """031/002: create_ticket checks architecture_review directly (not a
+    phase index) and auto-advances to 'ticketing'; acquire_execution_lock
+    checks stakeholder_approval before granting the lock and auto-advances
+    to 'executing' -- neither requires a separate advance_sprint_phase
+    call (SUC-002)."""
+
+    def _advance_to_architecture_review(self, sprint_id: str) -> None:
+        """planning-docs -> architecture-review, via the real tools --
+        the part of the flow this ticket does not change."""
+        detail_sprint(sprint_id)
+        advance_sprint_phase(sprint_id)
+
+    def test_create_ticket_reaches_ticketing_with_zero_rejected_calls(self, work_dir):
+        """SUC-002 Main Flow, steps 1-3: record architecture_review, then
+        create_ticket for the sprint's first ticket -- no
+        advance_sprint_phase call to 'ticketing' in between, and the call
+        is not rejected."""
+        create_sprint("My Sprint")
+        self._advance_to_architecture_review("001")
+        record_gate_result("001", "architecture_review", "passed")
+
+        result = json.loads(create_ticket("001", "First Ticket"))
+
+        assert result.get("ok", True) is not False, result
+        assert Path(result["path"]).exists()
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        assert get_sprint_state(db_path, "001")["phase"] == "ticketing"
+
+        sprint_md = work_dir / ".clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+        assert read_frontmatter(sprint_md).get("status") == "ticketing", (
+            "DB phase and frontmatter status: must agree -- create_ticket's "
+            "auto-advance mirrors frontmatter the same way "
+            "Sprint.set_sprint_stage() does for every other phase write"
+        )
+
+    def test_create_ticket_second_call_does_not_move_phase_backward_or_error(self, work_dir):
+        create_sprint("My Sprint")
+        self._advance_to_architecture_review("001")
+        record_gate_result("001", "architecture_review", "passed")
+        create_ticket("001", "First Ticket")
+
+        result = json.loads(create_ticket("001", "Second Ticket"))
+
+        assert result.get("ok", True) is not False, result
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        assert get_sprint_state(db_path, "001")["phase"] == "ticketing"
+
+    def test_acquire_execution_lock_rejects_without_stakeholder_approval(self, work_dir):
+        create_sprint("My Sprint")
+        self._advance_to_architecture_review("001")
+        record_gate_result("001", "architecture_review", "passed")
+        create_ticket("001", "First Ticket")
+        # Deliberately do NOT record stakeholder_approval.
+
+        result = json.loads(acquire_execution_lock("001"))
+
+        assert "error" in result
+        assert "stakeholder_approval" in result["error"]
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        assert get_sprint_state(db_path, "001")["lock"] is None
+        assert get_sprint_state(db_path, "001")["phase"] == "ticketing"
+
+    def test_acquire_execution_lock_grants_lock_and_advances_to_executing(
+        self, work_dir, monkeypatch
+    ):
+        """SUC-002 Main Flow step 4: once stakeholder_approval is
+        recorded, acquire_execution_lock grants the lock and the phase
+        auto-advances to 'executing' with no separate
+        advance_sprint_phase call."""
+        from clasi.sprint import Sprint
+
+        # Isolate this test from real git: create_branch() is exercised
+        # by the git-backed lifecycle tests (test_sprint_lifecycle_
+        # integration.py, test_design_overlay_lifecycle.py); this test's
+        # point is the gate-check/auto-advance behavior, not branch
+        # creation, and this file's work_dir fixture is not a git repo.
+        monkeypatch.setattr(Sprint, "create_branch", lambda self: self.branch)
+
+        create_sprint("My Sprint")
+        self._advance_to_architecture_review("001")
+        record_gate_result("001", "architecture_review", "passed")
+        create_ticket("001", "First Ticket")
+        record_gate_result("001", "stakeholder_approval", "skipped")
+
+        result = json.loads(acquire_execution_lock("001"))
+
+        assert "error" not in result, result
+        assert result["reentrant"] is False
+        assert result["branch"] == "sprint/001-my-sprint"
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        state = get_sprint_state(db_path, "001")
+        assert state["phase"] == "executing"
+        assert state["lock"]["sprint_id"] == "001"
+
+        sprint_md = work_dir / ".clasi" / "sprints" / "001-my-sprint" / "sprint.md"
+        assert read_frontmatter(sprint_md).get("status") == "executing"
+
+    def test_advance_to_failure_after_lock_granted_leaves_lock_held_and_retry_succeeds(
+        self, work_dir, monkeypatch
+    ):
+        """Failure-mode contract: if advance_to() fails after
+        db.acquire_lock() has already succeeded, the lock is NOT rolled
+        back, the failure surfaces to the caller (never swallowed), and a
+        retried acquire_execution_lock call completes the phase-advance
+        -- db.acquire_lock()'s existing re-entrant path plus advance_to's
+        own idempotency make the retry safe without re-checking the gate
+        as a second safety measure or re-acquiring the lock."""
+        import clasi.state_db_class as state_db_class_module
+        from clasi.sprint import Sprint
+
+        monkeypatch.setattr(Sprint, "create_branch", lambda self: self.branch)
+
+        create_sprint("My Sprint")
+        self._advance_to_architecture_review("001")
+        record_gate_result("001", "architecture_review", "passed")
+        create_ticket("001", "First Ticket")
+        record_gate_result("001", "stakeholder_approval", "passed")
+
+        real_advance_to = state_db_class_module.StateDB.advance_to
+        calls = {"n": 0}
+
+        def _flaky_advance_to(self, sprint_id, target_phase, required_gate=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ValueError("simulated advance_to failure")
+            return real_advance_to(self, sprint_id, target_phase, required_gate)
+
+        monkeypatch.setattr(state_db_class_module.StateDB, "advance_to", _flaky_advance_to)
+
+        first = json.loads(acquire_execution_lock("001"))
+        assert "error" in first, first
+        assert "simulated advance_to failure" in first["error"]
+
+        db_path = work_dir / ".clasi" / ".clasi.db"
+        state = get_sprint_state(db_path, "001")
+        assert state["lock"] is not None, "lock must not be rolled back"
+        assert state["lock"]["sprint_id"] == "001"
+        assert state["phase"] == "ticketing", "phase-advance failed, so phase is unchanged"
+
+        second = json.loads(acquire_execution_lock("001"))
+
+        assert "error" not in second, second
+        assert second["reentrant"] is True
+
+        state = get_sprint_state(db_path, "001")
+        assert state["phase"] == "executing"
+        assert calls["n"] == 2
 
 
 class TestListSprints:
@@ -923,6 +1077,9 @@ class TestCloseSprintFull:
         # git rev-parse --verify branch (delete check), git branch -d
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1020,6 +1177,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1087,6 +1247,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths only> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1200,6 +1363,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all tests passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1244,6 +1410,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1455,6 +1624,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0, "all passed"),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1489,6 +1661,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1536,6 +1711,9 @@ class TestCloseSprintFull:
 
         mock_run.side_effect = [
             self._make_subprocess_result(0),  # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),  # git commit (version bump)
@@ -1602,6 +1780,9 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(
+                    0, "# branch.oid deadbeef0000\n# branch.head master\n"
+                ),  # git status --porcelain=v2 --branch (031/008 marker write)
                 self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
                 self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
@@ -1677,6 +1858,9 @@ class TestCloseSprintTestTimeout:
             mock_reconcile.return_value = {"cleaned": [], "escalated": [], "rogue": []}
             mock_run.side_effect = [
                 self._make_subprocess_result(0),  # test_command="true"
+                self._make_subprocess_result(
+                    0, "# branch.oid deadbeef0000\n# branch.head master\n"
+                ),  # git status --porcelain=v2 --branch (031/008 marker write)
                 self._make_subprocess_result(0),  # git config rebase.autoStash (version bump prep)
                 self._make_subprocess_result(0),  # git add <archive paths + version file> (version bump)
                 self._make_subprocess_result(0),  # git commit (version bump)
@@ -1859,11 +2043,12 @@ class TestSystemRoundtrip:
 
         # planning-docs -> architecture-review (no gate required)
         json.loads(advance_sprint_phase("001"))
-        # architecture-review -> stakeholder-review (needs architecture_review gate)
+        # architecture-review -> ticketing (needs architecture_review gate;
+        # 031/002 deleted the stakeholder-review phase this used to step
+        # through, and moved stakeholder_approval to gate
+        # acquire_execution_lock instead — see this test file's
+        # _advance_to_ticketing helper for the equivalent low-level path).
         record_gate_result("001", "architecture_review", "passed")
-        json.loads(advance_sprint_phase("001"))
-        # stakeholder-review -> ticketing (needs stakeholder_approval gate)
-        record_gate_result("001", "stakeholder_approval", "passed")
         result = json.loads(advance_sprint_phase("001"))
         assert result["new_phase"] == "ticketing"
 
@@ -1917,6 +2102,9 @@ class TestCloseSprintLockAndDbGuard:
         # git rev-parse --verify (delete, branch gone)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "sprint/001-sprint\n"),  # git rev-parse --abbrev-ref HEAD
             self._make_subprocess_result(0),            # git add .clasi.db
@@ -1962,6 +2150,9 @@ class TestCloseSprintLockAndDbGuard:
         # git rev-parse --verify (branch gone), git push --tags, git rev-parse --verify (delete)
         mock_run.side_effect = [
             self._make_subprocess_result(0),        # pytest
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0),        # git config rebase.autoStash (version bump prep)
             self._make_subprocess_result(0),        # git add <archive paths + version file> (version bump)
             self._make_subprocess_result(0),        # git commit (version bump)
@@ -2010,6 +2201,9 @@ class TestCloseSprintLockAndDbGuard:
         # (merge raises RuntimeError, finally block runs release_lock)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),    # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, ""),    # git status --porcelain (clean)
             self._make_subprocess_result(0),        # git rev-parse --verify (branch exists)
             self._make_subprocess_result(1),        # git merge-base (not ancestor)
@@ -2045,6 +2239,9 @@ class TestCloseSprintLockAndDbGuard:
         # db is dirty but HEAD is not the sprint branch (e.g. accidentally on master)
         mock_run.side_effect = [
             self._make_subprocess_result(0, ""),        # pytest (pass)
+            self._make_subprocess_result(
+                0, "# branch.oid deadbeef0000\n# branch.head master\n"
+            ),  # git status --porcelain=v2 --branch (031/008 marker write)
             self._make_subprocess_result(0, " M .clasi/.clasi.db\n"),  # git status --porcelain (dirty)
             self._make_subprocess_result(0, "master\n"),  # git rev-parse --abbrev-ref HEAD (wrong branch)
             # Guard skipped — no git add or git commit for .clasi.db

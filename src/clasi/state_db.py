@@ -37,6 +37,9 @@ __all__ = [
     "write_recovery_state",
     "get_recovery_state",
     "clear_recovery_state",
+    "record_test_pass_marker",
+    "get_test_pass_marker",
+    "clear_test_pass_marker",
     "register_active_agent",
     "get_active_agent",
     "remove_active_agent",
@@ -128,6 +131,23 @@ def get_recovery_state(db_path: str | Path) -> Optional[dict[str, Any]]:
 def clear_recovery_state(db_path: str | Path) -> dict[str, Any]:
     """Delete the recovery state record."""
     return StateDB(db_path).clear_recovery_state()
+
+
+def record_test_pass_marker(
+    db_path: str | Path, sprint_id: str, head_sha: str, test_cmd: str,
+) -> dict[str, Any]:
+    """Record that the full suite passed for sprint_id at head_sha."""
+    return StateDB(db_path).record_test_pass_marker(sprint_id, head_sha, test_cmd)
+
+
+def get_test_pass_marker(db_path: str | Path, sprint_id: str) -> Optional[dict[str, Any]]:
+    """Read the test-pass marker for sprint_id, or None if absent."""
+    return StateDB(db_path).get_test_pass_marker(sprint_id)
+
+
+def clear_test_pass_marker(db_path: str | Path, sprint_id: str) -> dict[str, Any]:
+    """Delete the test-pass marker for sprint_id, if any."""
+    return StateDB(db_path).clear_test_pass_marker(sprint_id)
 
 
 def register_active_agent(

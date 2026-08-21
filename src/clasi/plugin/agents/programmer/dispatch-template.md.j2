@@ -38,6 +38,18 @@ Read these for context:
   foreground follow-up is not an acceptable way to end your turn --
   stay alive to see the result, then commit and mark the ticket done in
   the same turn.
+- If a CLASI guard (role-guard, mcp-guard) blocks a write, STOP. Do not
+  route around it -- no Bash heredoc, `sed -i`, shell redirection,
+  `git apply`, or any other tool that reaches the file without going
+  through the blocked call. Report the block to this dispatcher instead:
+  what you attempted, the exact violation/denial text, and what you
+  believe the correct resolution is. Then wait -- do not guess and
+  proceed. The one exception is a deliberately invoked, reported
+  `clasi oop on --reason '...'`; using it silently is the same failure
+  as routing around the block. **Stopping and reporting a block is a
+  successful outcome of this dispatch, not a failure** -- return
+  `"status": "blocked"` (see Required Return Format below), not
+  `"failed"`.
 - Check off all acceptance criteria (`- [x]`) when done.
 - Set ticket frontmatter `status: done`.
 - Commit all changes with a message referencing ticket {{ ticket_id }}.
@@ -69,7 +81,10 @@ your work will be rejected.
 ```
 
 - **status**: "success" if all acceptance criteria met and tests pass,
-  "partial" if some criteria remain, "failed" if tests fail.
+  "partial" if some criteria remain, "failed" if tests fail, "blocked"
+  if a CLASI guard denied a required write and you stopped to report it
+  per the Behavioral Instructions above -- "blocked" is a correct,
+  successful dispatch outcome, not a variant of "failed".
 - **files_changed**: Every file you created or modified.
 - **tests_passed**: Result of your ticket-scoped test run (e.g.
   `uv run pytest <touched-modules> --no-cov`), run in the foreground.

@@ -1,7 +1,7 @@
 ---
 id: '007'
 title: Consolidate process docs to the post-fix 3-agent reality
-status: open
+status: done
 use-cases:
 - SUC-007
 depends-on:
@@ -43,23 +43,23 @@ re-discover and re-fix, duplicating 006's work if run out of order.
 
 ## Acceptance Criteria
 
-- [ ] `software-engineering.md` is rewritten to the real 3-agent process
+- [x] `software-engineering.md` is rewritten to the real 3-agent process
       (team-lead, sprint-planner, programmer) or reduced to a pointer
       page — the retired seven-agent roster and per-ticket
       code-reviewer sections are removed.
-- [ ] `.claude/agents/team-lead/agent.md` and `src/clasi/plugin/agents/
+- [x] `.claude/agents/team-lead/agent.md` and `src/clasi/plugin/agents/
       team-lead/agent.md` are reconciled to agree (whichever is newer
       wins, per the issue's own stated rule — confirm which one that is
       before choosing, do not assume).
-- [ ] `schemas/se-process/instructions/sprint-plan.md` / the
+- [x] `schemas/se-process/instructions/sprint-plan.md` / the
       `plan-sprint` skill describes: tickets created once the
       `architecture_review` gate passes (not after a separate
       stakeholder-review phase — ticket 002); team-lead calling
       `create_sprint`/writing sprint files directly (ticket 003).
-- [ ] The tool-signature introspection test from ticket 006 passes
+- [x] The tool-signature introspection test from ticket 006 passes
       against this ticket's rewritten docs (extend its doc list if this
       ticket's rewrite introduces a new signature reference).
-- [ ] `create-tickets`/`tdd-cycle`/`systematic-debugging`'s agent-local
+- [x] `create-tickets`/`tdd-cycle`/`systematic-debugging`'s agent-local
       copies are explicitly **not** touched by this ticket (out of
       scope — flagged in the architecture's Open Questions as a
       follow-up, not silently pulled in here).

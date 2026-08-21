@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: Tier wiring and role-guard regression coverage
-status: open
+status: done
 use-cases:
 - SUC-005
 depends-on:
@@ -67,21 +67,21 @@ quietly absorbing.
 
 ## Acceptance Criteria
 
-- [ ] A test dispatches a **real** sprint-planner (via the `Agent` tool
+- [x] A test dispatches a **real** sprint-planner (via the `Agent` tool
       or the project's existing real-dispatch test harness — not a
       fixture insert, not a hand-set `CLASI_AGENT_TIER` env var) and
       asserts it writes `clasi/sprints/**` successfully with no OOP flag
       active, and that `hooks.log`/the decision trail shows reason
       `tier-1`.
-- [ ] A test dispatches a real programmer and asserts it still resolves
+- [x] A test dispatches a real programmer and asserts it still resolves
       `tier-2` (regression guard — this must not break).
-- [ ] A test confirms team-lead (unresolved/tier-0) is still blocked
+- [x] A test confirms team-lead (unresolved/tier-0) is still blocked
       from `clasi/sprints/**` and source paths — the fix must not make
       the unresolved case permissive.
-- [ ] Parametrized real-payload tests assert a tier-0 write to
+- [x] Parametrized real-payload tests assert a tier-0 write to
       `~/.claude/plans/<name>.md` and to an arbitrary outside-root path
       (e.g. `~/Desktop/x.md`) both exit 0.
-- [ ] No production code changes as part of this ticket. If your
+- [x] No production code changes as part of this ticket. If your
       investigation finds one is actually needed, stop and report rather
       than making it — that is new information this planning pass did
       not have.

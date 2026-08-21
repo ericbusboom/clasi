@@ -49,6 +49,68 @@ class TestGetDefinition:
             _get_definition(content_path("plugin", "agents"), "nonexistent-agent")
 
 
+class TestOldDirectoryExcludedFromLookup:
+    """Sprint 031 ticket 006: a lookup for a nonexistent skill or agent
+    must fail loudly with a "not found" error, not silently resolve
+    into retired content archived under agents/old/.
+
+    Regression coverage for the specific trap: `execute-ticket` is not
+    a live skill or agent -- the only file anywhere in the plugin tree
+    named `execute-ticket.md` is the retired
+    `agents/old/sprint-executor/execute-ticket.md`. Before the fix, both
+    `_get_definition`'s rglob fallback (used by get_agent_definition/
+    get_instruction) and get_skill_definition's own rglob fallback
+    resolved into that retired file instead of raising.
+    """
+
+    def test_get_definition_agents_rglob_excludes_old(self):
+        """_get_definition's fallback (get_agent_definition's code path)
+        must not resolve 'execute-ticket' into agents/old/."""
+        with pytest.raises(ValueError, match="not found"):
+            _get_definition(content_path("plugin", "agents"), "execute-ticket")
+
+    def test_get_agent_definition_excludes_old(self):
+        """get_agent_definition is wrapped by @clasi_tool, which converts
+        the domain ValueError into an {"ok": false, "error": ...}
+        envelope (030/005) rather than a raw exception -- see
+        test_get_language_instruction_not_found above for the same
+        pattern."""
+        result = json.loads(get_agent_definition("execute-ticket"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
+
+    def test_get_skill_definition_excludes_old(self):
+        """get_skill_definition has its own separate rglob fallback over
+        agents_dir -- this is the actual code path the (now-fixed)
+        source-code.md rule used to send agents down."""
+        result = json.loads(get_skill_definition("execute-ticket"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
+
+    def test_get_skill_definition_still_raises_for_ordinary_nonexistent_name(self):
+        """Sanity check: the exclusion doesn't swallow the ordinary
+        not-found case for a name that was never real to begin with."""
+        result = json.loads(get_skill_definition("totally-fake-skill-that-never-existed"))
+        assert result["ok"] is False
+        assert "not found" in result["error"]["message"]
+
+    def test_list_all_skills_excludes_old(self):
+        """Sprint 031 ticket 007: ticket 006 fixed lookup
+        (_get_definition/get_skill_definition's rglob fallbacks) but not
+        the *listing* path -- _list_all_skills walked agents_dir without
+        excluding old/, so list_skills() kept advertising
+        'execute-ticket' (archived under agents/old/sprint-executor/) as
+        available even though fetching it already correctly raised."""
+        from clasi.tools.process_tools import _list_all_skills
+
+        results = _list_all_skills(
+            content_path("plugin", "skills"), content_path("plugin", "agents")
+        )
+        names = [r["name"] for r in results]
+        assert "execute-ticket" not in names
+        assert any(names)  # sanity: the listing isn't empty
+
+
 class TestMCPTools:
     def test_get_se_overview(self):
         result = get_se_overview()
@@ -64,7 +126,12 @@ class TestMCPTools:
     def test_list_skills(self):
         result = json.loads(list_skills())
         assert isinstance(result, list)
-        assert any(s["name"] == "execute-ticket" for s in result)
+        assert any(s["name"] == "code-review" for s in result)
+        # Sprint 031 ticket 007: "execute-ticket" is retired, archived
+        # under agents/old/sprint-executor/ -- it must not be listed as
+        # available (ticket 006 fixed the lookup/fetch path; this is the
+        # matching fix for the listing path, TestOldDirectoryExcludedFromLookup).
+        assert not any(s["name"] == "execute-ticket" for s in result)
 
     def test_list_instructions(self):
         result = json.loads(list_instructions())
@@ -76,8 +143,12 @@ class TestMCPTools:
         assert "team-lead" in result
 
     def test_get_skill_definition(self):
-        result = get_skill_definition("execute-ticket")
-        assert "Execute Ticket" in result
+        # Not "execute-ticket" -- sprint 031 ticket 006 fixed the lookup
+        # so that name (retired, archived under agents/old/) now
+        # correctly raises instead of silently resolving. See
+        # TestOldDirectoryExcludedFromLookup for that coverage.
+        result = get_skill_definition("code-review")
+        assert "Code Review Skill" in result
 
     def test_get_instruction(self):
         result = get_instruction("software-engineering")
