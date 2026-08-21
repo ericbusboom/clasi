@@ -1,10 +1,13 @@
 ---
 id: '033'
 title: 'Finish the debt: mcp 2.x, manifest uninstall, hook symmetry'
-status: ticketing
+status: executing
 branch: sprint/033-finish-the-debt-mcp-2-x-manifest-uninstall-hook-symmetry
 worktree: false
-use-cases: [SUC-001, SUC-002, SUC-003]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
 issues:
 - migrate-to-mcp-2-x-api.md
 - port-clasr-manifest-uninstall-to-clasi-platforms.md
