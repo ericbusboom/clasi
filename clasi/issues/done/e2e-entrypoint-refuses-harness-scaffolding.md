@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 tags:
 - e2e
@@ -59,11 +59,28 @@ must survive the fix.
 
 ## Acceptance criteria
 
-- [ ] A fresh `./start.sh` succeeds with `.e2e-coverage/` and
+- [x] A fresh `./start.sh` succeeds with `.e2e-coverage/` and
       `.gitignore` present after the wipe.
-- [ ] The guard still refuses when genuine project state is present — a
+- [x] The guard still refuses when genuine project state is present — a
       `/project` containing `.clasi/` or `guessing_game/` on a non-resume
       run must still abort.
-- [ ] The harness-owned entry list lives in one place, so adding a future
+- [x] The harness-owned entry list lives in one place, so adding a future
       harness file does not silently re-break this.
-- [ ] `--resume` behavior is unchanged.
+- [x] `--resume` behavior is unchanged.
+
+## Resolution
+
+Fixed in `tests/e2e/entrypoint.sh` (commit `fix(e2e): stop entrypoint.sh
+guard tripping on the harness's own scaffolding`). Added a
+`HARNESS_OWNED_ENTRIES` allowlist (`.e2e-coverage`, `.e2e-runs`,
+`.gitignore`) declared once near the top of the script; the emptiness
+check builds `find ... ! -name ...` exclusions from that array instead
+of hardcoding names inline. Verified mechanically (not a full E2E run)
+by running the real, edited `entrypoint.sh` inside a container with
+`clasi`/`git`/`tmux` stubbed out, against four `/project` scenarios:
+empty (matches the live repro — entrypoint.sh's own
+`.e2e-coverage/`+`.gitignore` creation no longer trips the guard), the
+full harness-owned set pre-populated, genuine `.clasi/` present
+(refused, exit 1), genuine `guessing_game/` present (refused, exit 1),
+and `--resume` with genuine state plus `E2E_RESUME=1` (skips the check
+entirely, unchanged). `shellcheck tests/e2e/entrypoint.sh` is clean.
