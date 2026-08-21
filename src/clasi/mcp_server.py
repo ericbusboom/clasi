@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from clasi.project import Project
 
@@ -39,7 +39,7 @@ class Clasi:
 
     def __init__(self) -> None:
         self._project: Project | None = None
-        self.server = FastMCP(
+        self.server = MCPServer(
             "clasi",
             instructions=(
                 "CLASI. "
@@ -146,13 +146,13 @@ class Clasi:
             # typically show/inject at session start — a more durable
             # surface than a stderr line that scrolls past.
             try:
-                self.server._mcp_server.instructions = (
+                self.server._lowlevel_server.instructions = (
                     f"{self.server.instructions}\n\n{staleness_report.warning()}"
                 )
             except AttributeError:
                 logger.warning(
                     "staleness: could not append warning to MCP instructions "
-                    "field (FastMCP internals changed)"
+                    "field (MCPServer internals changed)"
                 )
 
         # Preflight: verify all required submodules are importable.
@@ -181,24 +181,40 @@ class Clasi:
         import clasi.tools.artifact_tools  # noqa: F401
         import clasi.tools.design_tools  # noqa: F401
 
-        tool_count = len(self.server._tool_manager._tools)
-        logger.info("  tools registered: %d", tool_count)
+        # `_tool_manager._tools` is a private attribute of the underlying
+        # `mcp` library server object -- structurally unchanged across the
+        # mcp 1.x -> 2.x migration (verified against mcp==2.0.0), but with
+        # no guarantee it stays that way in a future release. Guarded the
+        # same way the staleness-warning instructions-write above is: a
+        # missing/renamed attribute degrades to a logged warning and skips
+        # the diagnostics, rather than crashing server startup.
+        try:
+            _tools_dict = self.server._tool_manager._tools
+        except AttributeError:
+            logger.warning(
+                "diagnostics: could not read registered tools "
+                "(MCPServer internals changed) -- skipping tool-count and "
+                "schema-dump diagnostics"
+            )
+        else:
+            tool_count = len(_tools_dict)
+            logger.info("  tools registered: %d", tool_count)
 
-        # Diagnostic: dump every registered tool's input schema, one tool
-        # per log line. Lets us confirm exactly what schema the server
-        # advertises to clients (and the client passes to the model).
-        # See docs/clasi/todo/vscode-extension-close-sprint-empty-params.md
-        for _tool_name in sorted(self.server._tool_manager._tools):
-            _tool = self.server._tool_manager._tools[_tool_name]
-            _schema = getattr(_tool, "parameters", None)
-            if _schema is None:
-                _fn = getattr(_tool, "fn", None)
-                _schema = getattr(_fn, "__schema__", None) if _fn else None
-            try:
-                _schema_json = json.dumps(_schema, sort_keys=True) if _schema else "<no-schema>"
-            except (TypeError, ValueError):
-                _schema_json = repr(_schema)
-            logger.info("SCHEMA %s %s", _tool_name, _schema_json)
+            # Diagnostic: dump every registered tool's input schema, one tool
+            # per log line. Lets us confirm exactly what schema the server
+            # advertises to clients (and the client passes to the model).
+            # See docs/clasi/todo/vscode-extension-close-sprint-empty-params.md
+            for _tool_name in sorted(_tools_dict):
+                _tool = _tools_dict[_tool_name]
+                _schema = getattr(_tool, "parameters", None)
+                if _schema is None:
+                    _fn = getattr(_tool, "fn", None)
+                    _schema = getattr(_fn, "__schema__", None) if _fn else None
+                try:
+                    _schema_json = json.dumps(_schema, sort_keys=True) if _schema else "<no-schema>"
+                except (TypeError, ValueError):
+                    _schema_json = repr(_schema)
+                logger.info("SCHEMA %s %s", _tool_name, _schema_json)
 
         # Diagnostic: monkey-patch JSONRPCMessage.model_validate_json so
         # we log every raw incoming JSON-RPC envelope BEFORE Pydantic

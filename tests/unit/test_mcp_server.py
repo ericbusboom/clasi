@@ -9,7 +9,7 @@ from mcp_server.py in the same ticket (its NONE-stripping/call-logging
 duties are now @clasi_tool's).
 """
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from clasi.mcp_server import server, content_path
 
@@ -51,8 +51,8 @@ class TestServer:
     def test_server_instance_exists(self):
         assert server is not None
 
-    def test_server_is_fastmcp(self):
-        assert isinstance(server, FastMCP)
+    def test_server_is_mcpserver(self):
+        assert isinstance(server, MCPServer)
 
     def test_server_name(self):
         assert server.name == "clasi"

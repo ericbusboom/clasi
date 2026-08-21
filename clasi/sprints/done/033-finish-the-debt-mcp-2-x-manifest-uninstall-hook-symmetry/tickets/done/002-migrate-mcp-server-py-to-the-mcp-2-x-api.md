@@ -1,8 +1,9 @@
 ---
 id: '002'
 title: Migrate mcp_server.py to the mcp 2.x API
-status: open
-use-cases: [SUC-001]
+status: done
+use-cases:
+- SUC-001
 depends-on: []
 github-issue: ''
 issue: migrate-to-mcp-2-x-api.md
@@ -82,26 +83,46 @@ must follow exactly.
 
 ## Acceptance Criteria
 
-- [ ] `mcp_server.py`'s `from mcp.server.fastmcp import FastMCP` becomes
+- [x] `mcp_server.py`'s `from mcp.server.fastmcp import FastMCP` becomes
       `from mcp.server.mcpserver import MCPServer`; `FastMCP(...)`
       becomes `MCPServer(...)` at the one construction site
       (`mcp_server.py:42`); every other reference to the type name in
       this file and its tests is updated to match.
-- [ ] `self.server._mcp_server.instructions` becomes
+- [x] `self.server._mcp_server.instructions` becomes
       `self.server._lowlevel_server.instructions`
       (`mcp_server.py:149`); the surrounding `try/except AttributeError`
       is unchanged.
-- [ ] `self.server._tool_manager._tools` (`mcp_server.py:184`, `:191-192`)
+- [x] `self.server._tool_manager._tools` (`mcp_server.py:184`, `:191-192`)
       is wrapped so a missing/renamed attribute logs a warning and skips
       the diagnostic dump instead of raising — matching the existing
       guard pattern the instructions-write already uses, not a bespoke
       new pattern.
-- [ ] The `JSONRPCMessage.model_validate_json` tap
+- [x] The `JSONRPCMessage.model_validate_json` tap
       (`mcp_server.py:214-232`) is verified to install without raising
       under `mcp==2.0.0` (its existing `try/except Exception` already
       logs and continues on failure either way) — no code change to this
       block beyond what's needed for it to still be reached.
-- [ ] `tests/unit/test_mcp_server.py` — which imports `FastMCP` directly
+      **Correction to the planner's verified-API-surface claim, found
+      during this ticket's own re-verification**: under the real
+      `mcp==2.0.0`, `mcp.types.JSONRPCMessage` is `typing.Union[
+      JSONRPCRequest, JSONRPCNotification, JSONRPCResponse,
+      JSONRPCError]` (a plain `Union`/`UnionType`, not a pydantic
+      `RootModel`), so `_mt.JSONRPCMessage.model_validate_json` raises
+      `AttributeError` immediately. The tap does **not** "still resolve"
+      as the planner's API-surface note claimed. It does, however,
+      satisfy this criterion exactly as worded: the surrounding
+      `try/except Exception` catches the `AttributeError`, logs
+      `"raw-rpc tap: failed to install (...)"` at WARNING, and execution
+      continues — confirmed live in three separate runs (disposable
+      scratch venv, this project's own synced `.venv`, and the
+      fresh-resolve Docker container), no traceback in any of them. Left
+      untouched per this ticket's explicit instruction not to refactor
+      it; flagging the corrected fact here since "verified unchanged" is
+      a claim someone should be able to check later, and the tap is now
+      silently a no-op rather than an active diagnostic — worth knowing
+      for whoever eventually does the deferred debug-scaffolding
+      cleanup.
+- [x] `tests/unit/test_mcp_server.py` — which imports `FastMCP` directly
       and asserts `isinstance(server, FastMCP)`
       (`tests/unit/test_mcp_server.py:12,54-55`), and pokes
       `server._tool_manager._tools` twice more (`:126-127`, `:160`) — is
@@ -109,7 +130,7 @@ must follow exactly.
       `_tool_manager._tools` pokes may need no change if the guard added
       above is transparent to callers that already expect the attribute
       to exist (confirm, don't assume).
-- [ ] `tests/unit/test_tools_common.py` requires **no code change** and
+- [x] `tests/unit/test_tools_common.py` requires **no code change** and
       **passes unmodified** — this is the existing positive test that
       `@clasi_tool`'s NONE-sentinel stripping still works, exercised
       against synthetic functions with zero FastMCP/MCPServer dependency
@@ -117,19 +138,19 @@ must follow exactly.
       pass, something in this ticket's implementation broke the
       decoupling sprint 030 built — stop and reconsider the change, don't
       edit the test to match.
-- [ ] A local smoke test: with the code changes above complete and
+- [x] A local smoke test: with the code changes above complete and
       `mcp==2.0.0` installed in a **disposable scratch venv** (not the
       live dev environment), `clasi mcp` starts and reaches "CLASI MCP
       server ready" in its log with no traceback. Do this *before* the
       next step.
-- [ ] `pyproject.toml`'s `mcp>=1.0,<2.0` cap is removed — **only after**
+- [x] `pyproject.toml`'s `mcp>=1.0,<2.0` cap is removed — **only after**
       the scratch-venv smoke test above passes, as the last step of this
       ticket, per sprint.md Migration Concerns item 1. Do not remove the
       cap earlier "to test against the real thing" — that risks pulling
       `mcp==2.0.0` into the team-lead's own live MCP session mid-ticket.
       Re-check `pip index versions mcp` before this step in case a newer
       2.x release exists; verify against the latest available.
-- [ ] This ticket's commits are kept small and self-contained (ideally
+- [x] This ticket's commits are kept small and self-contained (ideally
       one commit, or a small tight range) — see Process Notes: a clean
       `git revert` is the rollback mechanism if the end-of-sprint E2E
       surfaces a problem this ticket's own local verification missed.
