@@ -10,6 +10,7 @@ import importlib.resources as _res
 import json as _json
 import logging as _logging
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -173,9 +174,22 @@ CREATE TABLE IF NOT EXISTS oop_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     set_at TEXT NOT NULL,
     reason TEXT NOT NULL,
-    expires_at TEXT NOT NULL
+    expires_at TEXT NOT NULL,
+    head_at_set TEXT,
+    auto_clear_on_commit INTEGER NOT NULL DEFAULT 1
 );
 """
+
+# oop_state.head_at_set / .auto_clear_on_commit (issue
+# oop-flag-not-cleared-after-oop-change) were added to an existing table
+# after it originally shipped with only (id, set_at, reason, expires_at).
+# `CREATE TABLE IF NOT EXISTS` above is a no-op against any database that
+# already has an `oop_state` table from before these columns existed --
+# SQLite has no `ADD COLUMN IF NOT EXISTS`, so `StateDB.init()` runs
+# `_migrate_oop_state_columns()` (below) after the executescript to add
+# them to a pre-existing table. A genuinely fresh database gets both
+# columns from the CREATE TABLE above and the migration is a no-op (the
+# columns already exist).
 
 # Gate requirements for each transition: {from_phase: required_gate_name or None}
 #
@@ -202,6 +216,41 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _current_git_head(cwd: Path) -> Optional[str]:
+    """Return the current git HEAD commit hash for the repo containing *cwd*.
+
+    Runs ``git rev-parse HEAD`` with *cwd* as the working directory --
+    git itself walks upward from there to find the enclosing repository
+    (mirroring the upward-search this project already uses to locate
+    ``.clasi/`` -- see ``hook_handlers._find_project_root``), so this
+    works regardless of exactly where the state DB file lives relative
+    to the repo root.
+
+    Returns None on ANY failure: git not installed, *cwd* not inside a
+    git repository, an unborn HEAD (no commits yet), a timeout, or
+    anything else. This is the sole read/write point for OOP's
+    commit-based auto-clear (see ``StateDB.set_oop``/``get_oop``), and a
+    git problem must never raise out of it or block enabling/reading the
+    OOP bypass -- it just disables that record's commit-based auto-clear,
+    falling back to its TTL, exactly like OOP behaved before this
+    mechanism existed.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        head = result.stdout.strip()
+        return head or None
+    except Exception:
+        return None
+
+
 def _connect(db_path: str | Path, timeout: float = 1.0) -> sqlite3.Connection:
     """Open a connection with WAL mode and foreign keys enabled.
 
@@ -220,6 +269,30 @@ def _connect(db_path: str | Path, timeout: float = 1.0) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _migrate_oop_state_columns(conn: sqlite3.Connection) -> None:
+    """Add ``oop_state`` columns introduced after its original CREATE TABLE.
+
+    ``CREATE TABLE IF NOT EXISTS`` (already run against *conn* by the
+    time this is called) only creates the table on a genuinely fresh
+    database -- it is a no-op against a pre-existing ``oop_state`` table
+    from before ``head_at_set``/``auto_clear_on_commit`` existed. SQLite
+    has no ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS``, so this checks
+    ``PRAGMA table_info`` first and only issues the ``ALTER TABLE`` for a
+    column that is actually missing -- idempotent, and cheap even when
+    (the common case, every call after the first) both columns already
+    exist. Does not commit -- the caller (``StateDB.init()``) commits
+    once alongside the schema script.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(oop_state)")}
+    if "head_at_set" not in existing:
+        conn.execute("ALTER TABLE oop_state ADD COLUMN head_at_set TEXT")
+    if "auto_clear_on_commit" not in existing:
+        conn.execute(
+            "ALTER TABLE oop_state ADD COLUMN auto_clear_on_commit "
+            "INTEGER NOT NULL DEFAULT 1"
+        )
 
 
 class StateDB:
@@ -260,6 +333,8 @@ class StateDB:
         conn = _connect(self._path)
         try:
             conn.executescript(_SCHEMA)
+            _migrate_oop_state_columns(conn)
+            conn.commit()
         finally:
             conn.close()
         self._initialized = True
@@ -1248,30 +1323,68 @@ class StateDB:
     # ------------------------------------------------------------------
 
     def set_oop(
-        self, reason: str, ttl_hours: float = _OOP_DEFAULT_TTL_HOURS
+        self,
+        reason: str,
+        ttl_hours: float = _OOP_DEFAULT_TTL_HOURS,
+        auto_clear_on_commit: bool = True,
     ) -> dict[str, Any]:
         """Write or overwrite the singleton OOP bypass record.
 
         Only one OOP record exists at a time (id=1). Calling this again
         replaces any previous record, resetting the TTL clock.
+
+        *auto_clear_on_commit* (default True -- matches the ``oop``
+        skill's own framing of OOP as being for "small, targeted
+        changes"): when set, this captures the current git HEAD commit
+        hash (``head_at_set``, via ``_current_git_head``) so that
+        ``get_oop()`` can notice, on any later read, that HEAD has
+        advanced past it -- i.e. that the permitted change has been
+        committed -- and clear the record itself rather than leaving an
+        active bypass for someone to remember to turn off. This is the
+        mechanism behind issue oop-flag-not-cleared-after-oop-change.
+
+        Pass False for a deliberately long-running, multi-commit bypass
+        that must survive its own first commit. That record then relies
+        purely on *ttl_hours* (or an explicit ``clear_oop()``/
+        ``clasi oop off``) to end, exactly like OOP behaved before this
+        mechanism existed.
+
+        ``head_at_set`` is best-effort and only ever recorded when
+        *auto_clear_on_commit* is True: if git is unavailable, this
+        isn't a repository, or HEAD is unborn (no commits yet), it is
+        stored as NULL and the commit-based auto-clear silently never
+        fires for this record -- it just falls back to TTL-only, same as
+        *auto_clear_on_commit=False*.
         """
         self.init()
         set_at = datetime.now(timezone.utc)
         expires_at = set_at + timedelta(hours=ttl_hours)
         set_at_str = set_at.isoformat()
         expires_at_str = expires_at.isoformat()
+        head_at_set = (
+            _current_git_head(self._path.parent) if auto_clear_on_commit else None
+        )
         conn = _connect(self._path)
         try:
             conn.execute(
                 "INSERT OR REPLACE INTO oop_state "
-                "(id, set_at, reason, expires_at) VALUES (1, ?, ?, ?)",
-                (set_at_str, reason, expires_at_str),
+                "(id, set_at, reason, expires_at, head_at_set, "
+                "auto_clear_on_commit) VALUES (1, ?, ?, ?, ?, ?)",
+                (
+                    set_at_str,
+                    reason,
+                    expires_at_str,
+                    head_at_set,
+                    int(auto_clear_on_commit),
+                ),
             )
             conn.commit()
             return {
                 "set_at": set_at_str,
                 "reason": reason,
                 "expires_at": expires_at_str,
+                "head_at_set": head_at_set,
+                "auto_clear_on_commit": auto_clear_on_commit,
             }
         finally:
             conn.close()
@@ -1279,12 +1392,42 @@ class StateDB:
     def get_oop(
         self, conn: Optional[sqlite3.Connection] = None,
     ) -> Optional[dict[str, Any]]:
-        """Read the OOP bypass record, auto-clearing it past expiry.
+        """Read the OOP bypass record, auto-clearing it past expiry OR once
+        its permitted change has been committed.
 
-        Returns a dict with set_at, reason, and expires_at -- or None if
-        no record exists. A record whose expires_at is in the past is
-        automatically deleted, with a warning on stderr, and this
-        returns None as if no record existed.
+        Returns a dict with set_at, reason, expires_at, head_at_set, and
+        auto_clear_on_commit -- or None if no record exists (including
+        just-cleared). Two independent, terminal auto-clear checks run
+        on every read, in this order:
+
+        1. **Expiry** (unchanged): a record whose expires_at is in the
+           past is deleted, with a warning on stderr, and this returns
+           None as if no record existed.
+        2. **Commit detected** (new -- issue
+           oop-flag-not-cleared-after-oop-change): when the record has
+           auto_clear_on_commit set AND a head_at_set was captured at
+           set_oop() time, this re-resolves the CURRENT git HEAD via
+           ``_current_git_head``. If it differs from head_at_set, the
+           permitted change has been committed -- the record is deleted,
+           a note is printed to stderr, and this returns None. If HEAD
+           cannot be resolved right now (git hiccup, DB read from
+           somewhere odd), this check is skipped for this read -- it
+           never clears on uncertain evidence, only on an observed HEAD
+           change. A failed commit attempt (e.g. a pre-commit hook
+           rejects it, or nothing was staged) never moves HEAD, so this
+           correctly leaves the record active rather than stranding the
+           work.
+
+           When auto_clear_on_commit is set but head_at_set is NULL --
+           a record from before this column existed (migrated in by
+           ``_migrate_oop_state_columns`` with no way to know
+           retroactively what HEAD was at the original set_oop() call),
+           or one where git was momentarily unresolvable at set-time --
+           this read opportunistically backs one in now (persisted, not
+           just returned) as the new baseline, rather than leaving that
+           record disabled forever. This read itself can never detect a
+           "commit" against a baseline it is establishing this instant;
+           the very next commit after it does.
 
         If the DB file does not exist, returns None without creating it
         (ticket 029/004) -- no OOP record can exist in a database that
@@ -1310,7 +1453,8 @@ class StateDB:
             conn = _connect(self._path)
         try:
             row = conn.execute(
-                "SELECT set_at, reason, expires_at FROM oop_state WHERE id = 1"
+                "SELECT set_at, reason, expires_at, head_at_set, "
+                "auto_clear_on_commit FROM oop_state WHERE id = 1"
             ).fetchone()
             if row is None:
                 return None
@@ -1327,10 +1471,52 @@ class StateDB:
                 )
                 return None
 
+            head_at_set = row["head_at_set"]
+            if row["auto_clear_on_commit"]:
+                if head_at_set:
+                    current_head = _current_git_head(self._path.parent)
+                    if current_head and current_head != head_at_set:
+                        conn.execute("DELETE FROM oop_state WHERE id = 1")
+                        conn.commit()
+                        print(
+                            f"[CLASI] OOP bypass auto-cleared (reason "
+                            f"'{row['reason']}'): HEAD advanced from "
+                            f"{head_at_set[:8]} to {current_head[:8]} -- "
+                            "the permitted change was committed.",
+                            file=sys.stderr,
+                        )
+                        return None
+                else:
+                    # No baseline HEAD recorded yet -- either a record
+                    # from before head_at_set existed (migrated in by
+                    # _migrate_oop_state_columns with head_at_set left
+                    # NULL, since a migration cannot retroactively know
+                    # what HEAD was when set_oop() originally ran), or
+                    # set_oop() itself couldn't resolve git at set-time.
+                    # Opportunistically capture one NOW so a LATER read
+                    # (after the next commit) has something to compare
+                    # against -- this read establishes the baseline, so
+                    # it can never itself detect a "commit" (there is
+                    # nothing yet to have advanced past). Self-healing:
+                    # a git hiccup at set-time, or an upgrade landing on
+                    # top of an already-active legacy bypass, both catch
+                    # up on the very next read instead of being stuck
+                    # TTL-only forever.
+                    current_head = _current_git_head(self._path.parent)
+                    if current_head:
+                        conn.execute(
+                            "UPDATE oop_state SET head_at_set = ? WHERE id = 1",
+                            (current_head,),
+                        )
+                        conn.commit()
+                        head_at_set = current_head
+
             return {
                 "set_at": row["set_at"],
                 "reason": row["reason"],
                 "expires_at": row["expires_at"],
+                "head_at_set": head_at_set,
+                "auto_clear_on_commit": bool(row["auto_clear_on_commit"]),
             }
         finally:
             if _owns_conn:

@@ -526,6 +526,21 @@ class TestOopState:
         conn.close()
         assert count == 1
 
+    def test_set_default_auto_clear_on_commit_is_true(self, db_path):
+        """Module-level wrapper passes auto_clear_on_commit through with
+        its default (issue oop-flag-not-cleared-after-oop-change)."""
+        result = set_oop(db_path, "manual bypass")
+        assert result["auto_clear_on_commit"] is True
+
+    def test_set_auto_clear_on_commit_false_is_honored(self, db_path):
+        """The module-level wrapper's escape valve for a deliberately
+        long-running bypass reaches StateDB.set_oop unchanged."""
+        result = set_oop(db_path, "manual bypass", auto_clear_on_commit=False)
+        assert result["auto_clear_on_commit"] is False
+
+        record = get_oop(db_path)
+        assert record["auto_clear_on_commit"] is False
+
     def test_table_in_schema(self, db_path):
         """oop_state table should be created by init_db."""
         init_db(db_path)

@@ -356,12 +356,23 @@ def _oop_project_root():
 @click.option("--reason", default=None, help="Why OOP is being enabled (required; prompted if omitted).")
 @click.option("--ttl-hours", "ttl_hours", default=8.0, show_default=True, type=float,
               help="Hours until the bypass automatically expires.")
-def oop_on(reason: str | None, ttl_hours: float) -> None:
+@click.option("--keep-open", "keep_open", is_flag=True, default=False,
+              help="Deliberately long-running, multi-commit bypass: skip the "
+                   "commit auto-clear so it survives its own first commit "
+                   "and relies on --ttl-hours (or `clasi oop off`) instead.")
+def oop_on(reason: str | None, ttl_hours: float, keep_open: bool) -> None:
     """Enable the OOP bypass, recorded in the state DB with reason and expiry.
 
     If --reason is omitted, prompts for it interactively rather than
     silently defaulting to an empty reason — an unrecorded bypass reason
     defeats the entire point of the DB-backed audit trail.
+
+    By default (no --keep-open) this is a single-targeted-change bypass:
+    it auto-clears itself the moment this checkout's HEAD advances past
+    the commit that was current right now -- i.e. once the permitted
+    change is committed, nobody has to remember `clasi oop off`. Pass
+    --keep-open for a genuinely multi-step, multi-commit change that
+    must stay open across more than one commit.
     """
     from clasi.project import Project
     from clasi.state_db import set_oop
@@ -371,11 +382,28 @@ def oop_on(reason: str | None, ttl_hours: float) -> None:
 
     root = _oop_project_root()
     project = Project(root)
-    record = set_oop(str(project.db_path), reason, ttl_hours)
+    record = set_oop(str(project.db_path), reason, ttl_hours, not keep_open)
     click.echo(
         f'CLASI: OOP bypass enabled — "{record["reason"]}" — '
         f'expires {record["expires_at"]} ({ttl_hours}h from now).'
     )
+    if keep_open:
+        click.echo(
+            "CLASI: --keep-open set — this bypass will NOT auto-clear on "
+            "commit; it relies on the expiry above or `clasi oop off`."
+        )
+    elif record.get("head_at_set"):
+        click.echo(
+            "CLASI: will auto-clear as soon as this checkout's HEAD "
+            f"advances past {record['head_at_set'][:8]} (i.e. once the "
+            "change is committed)."
+        )
+    else:
+        click.echo(
+            "CLASI: could not resolve a git HEAD to track (not a git repo, "
+            "or no commits yet) — commit auto-clear is inactive for this "
+            "bypass; it relies on the expiry above or `clasi oop off`."
+        )
 
 
 @oop.command("off")
@@ -435,6 +463,22 @@ def oop_status() -> None:
             f'  DB: reason "{db_record["reason"]}" — set {ago} ago — '
             f"expires {expires_in} ({db_record['expires_at']})."
         )
+        if not db_record.get("auto_clear_on_commit"):
+            lines.append(
+                "  Keep-open: will NOT auto-clear on commit — relies on "
+                "the expiry above or `clasi oop off`."
+            )
+        elif db_record.get("head_at_set"):
+            lines.append(
+                "  Auto-clears once HEAD advances past "
+                f"{db_record['head_at_set'][:8]} (i.e. once the change is "
+                "committed)."
+            )
+        else:
+            lines.append(
+                "  Auto-clear on commit is inactive (no HEAD captured at "
+                "set-time) — relies on the expiry above."
+            )
 
     if _oop_file_active(root):
         lines.append(

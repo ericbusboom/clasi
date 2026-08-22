@@ -186,10 +186,19 @@ def clear_stale_agents(db_path: str | Path, ttl_hours: int = 24) -> dict[str, An
 
 
 def set_oop(
-    db_path: str | Path, reason: str, ttl_hours: float = 8.0
+    db_path: str | Path,
+    reason: str,
+    ttl_hours: float = 8.0,
+    auto_clear_on_commit: bool = True,
 ) -> dict[str, Any]:
-    """Write or overwrite the singleton OOP bypass record."""
-    return StateDB(db_path).set_oop(reason, ttl_hours)
+    """Write or overwrite the singleton OOP bypass record.
+
+    See ``StateDB.set_oop`` for ``auto_clear_on_commit``'s semantics --
+    it auto-clears the bypass once its permitted change is committed
+    (HEAD advances past the commit captured at set-time). Pass False for
+    a deliberately long-running, multi-commit bypass.
+    """
+    return StateDB(db_path).set_oop(reason, ttl_hours, auto_clear_on_commit)
 
 
 def clear_oop(db_path: str | Path) -> dict[str, Any]:

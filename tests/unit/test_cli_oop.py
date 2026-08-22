@@ -1,5 +1,6 @@
 """Tests for `clasi oop` CLI group and subcommands."""
 
+import pytest
 from click.testing import CliRunner
 
 from clasi.cli import cli
@@ -101,6 +102,103 @@ class TestOopOn:
             result = runner.invoke(cli, ["oop", "on"], input="prompted reason\n")
             assert result.exit_code == 0
             assert "Reason" in result.output
+
+    def test_on_default_auto_clears_on_commit(self, tmp_path):
+        """No --keep-open: the common "small, targeted change" case
+        records auto_clear_on_commit=True (issue
+        oop-flag-not-cleared-after-oop-change)."""
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            result = runner.invoke(cli, ["oop", "on", "--reason", "quick fix"])
+            assert result.exit_code == 0
+
+            from pathlib import Path
+
+            db_path = Path(cwd) / ".clasi" / ".clasi.db"
+            record = get_oop(str(db_path))
+            assert record["auto_clear_on_commit"] is True
+
+    def test_on_keep_open_disables_auto_clear(self, tmp_path):
+        """--keep-open is the deliberate long-running / multi-commit
+        escape valve: auto_clear_on_commit is recorded False."""
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            result = runner.invoke(
+                cli, ["oop", "on", "--reason", "big refactor", "--keep-open"]
+            )
+            assert result.exit_code == 0
+            assert "keep-open" in result.output.lower()
+            assert "will not auto-clear" in result.output.lower() or \
+                "will not auto-clear" in result.output
+
+            from pathlib import Path
+
+            db_path = Path(cwd) / ".clasi" / ".clasi.db"
+            record = get_oop(str(db_path))
+            assert record["auto_clear_on_commit"] is False
+
+    @pytest.mark.slow  # real-git tier: shells out to git init/add/commit
+    def test_on_keep_open_survives_a_commit(self, tmp_path):
+        """End-to-end: a real commit lands after --keep-open, and the
+        bypass is still active afterward."""
+        import subprocess
+        from pathlib import Path
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            subprocess.run(["git", "init", "-q"], cwd=cwd, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "t@example.com"],
+                cwd=cwd, check=True,
+            )
+            subprocess.run(["git", "config", "user.name", "T"], cwd=cwd, check=True)
+            (Path(cwd) / "a.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "a.txt"], cwd=cwd, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=cwd, check=True)
+
+            runner.invoke(
+                cli, ["oop", "on", "--reason", "big refactor", "--keep-open"]
+            )
+
+            (Path(cwd) / "b.txt").write_text("y\n", encoding="utf-8")
+            subprocess.run(["git", "add", "b.txt"], cwd=cwd, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "step one"], cwd=cwd, check=True
+            )
+
+            db_path = Path(cwd) / ".clasi" / ".clasi.db"
+            assert get_oop(str(db_path)) is not None
+
+    @pytest.mark.slow  # real-git tier: shells out to git init/add/commit
+    def test_on_default_auto_clears_after_a_commit(self, tmp_path):
+        """End-to-end mirror of the --keep-open test above, without the
+        flag: the same commit clears the bypass instead of leaving it."""
+        import subprocess
+        from pathlib import Path
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            subprocess.run(["git", "init", "-q"], cwd=cwd, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "t@example.com"],
+                cwd=cwd, check=True,
+            )
+            subprocess.run(["git", "config", "user.name", "T"], cwd=cwd, check=True)
+            (Path(cwd) / "a.txt").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "add", "a.txt"], cwd=cwd, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=cwd, check=True)
+
+            runner.invoke(cli, ["oop", "on", "--reason", "quick fix"])
+
+            (Path(cwd) / "b.txt").write_text("y\n", encoding="utf-8")
+            subprocess.run(["git", "add", "b.txt"], cwd=cwd, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "the permitted change"],
+                cwd=cwd, check=True,
+            )
+
+            db_path = Path(cwd) / ".clasi" / ".clasi.db"
+            assert get_oop(str(db_path)) is None
 
 
 class TestOopOff:

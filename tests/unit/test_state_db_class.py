@@ -1,9 +1,48 @@
 """Tests for the StateDB class wrapper."""
 
+import subprocess
+
 import pytest
 
 from clasi.state_db_class import PHASES, StateDB, StrandedPhaseError
 from clasi.project import Project
+
+
+def _git_init_with_commit(path):
+    """Init a git repo at *path* with one commit, and return its HEAD hash.
+
+    Used by the OOP commit-based auto-clear tests below, which need a
+    real repo (``_current_git_head`` shells out to ``git``) rather than a
+    plain ``tmp_path`` -- ``TestOopState``'s own ``db`` fixture points at
+    a bare ``tmp_path`` with no ``.git``, matching every OTHER OOP test
+    in this class, which must keep behaving exactly as before (no HEAD
+    resolvable -> the new auto-clear-on-commit check is inert -> pure
+    TTL behavior, unchanged).
+    """
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    (path / "README.md").write_text("initial\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=path, check=True)
+    return _git_head(path)
+
+
+def _git_head(path):
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True,
+        text=True, check=True,
+    )
+    return result.stdout.strip()
+
+
+def _git_commit_new_file(path, name="change.txt", message="a change"):
+    """Add a new file and commit it, advancing HEAD."""
+    (path / name).write_text("content\n", encoding="utf-8")
+    subprocess.run(["git", "add", name], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=path, check=True)
 
 
 class TestPhases:
@@ -313,6 +352,166 @@ class TestOopState:
         count = conn.execute("SELECT COUNT(*) FROM oop_state").fetchone()[0]
         conn.close()
         assert count == 0
+
+    # -- Commit-based auto-clear (issue oop-flag-not-cleared-after-oop-change) --
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_set_oop_captures_head_at_set_in_git_repo(self, db, tmp_path):
+        head = _git_init_with_commit(tmp_path)
+        result = db.set_oop("testing oop")
+        assert result["head_at_set"] == head
+        assert result["auto_clear_on_commit"] is True
+
+    def test_set_oop_head_at_set_none_without_git_repo(self, db):
+        """The `db` fixture's tmp_path has no .git -- this is every OTHER
+        test in this class's baseline, and must stay inert."""
+        result = db.set_oop("testing oop")
+        assert result["head_at_set"] is None
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_get_oop_auto_clears_after_commit(self, db, tmp_path, capsys):
+        """The primary mechanism: enabling OOP, then committing the
+        permitted change, clears the bypass on the very next read --
+        nobody has to run `clasi oop off`."""
+        _git_init_with_commit(tmp_path)
+        db.set_oop("small targeted fix")
+        assert db.get_oop() is not None  # still active before the commit
+
+        _git_commit_new_file(tmp_path)  # the permitted change lands
+
+        assert db.get_oop() is None
+        assert "auto-cleared" in capsys.readouterr().err
+
+        # The row is actually gone, not just masked on this read.
+        import sqlite3
+
+        conn = sqlite3.connect(str(db.path))
+        count = conn.execute("SELECT COUNT(*) FROM oop_state").fetchone()[0]
+        conn.close()
+        assert count == 0
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_get_oop_stays_active_without_a_new_commit(self, db, tmp_path):
+        """No commit yet -- HEAD hasn't moved -- the bypass must stay
+        active; auto-clear only fires on an OBSERVED HEAD change."""
+        _git_init_with_commit(tmp_path)
+        db.set_oop("small targeted fix")
+
+        assert db.get_oop() is not None
+        assert db.get_oop() is not None  # repeated reads don't wear it down
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_get_oop_survives_a_failed_commit_attempt(self, db, tmp_path):
+        """A FAILED commit (nothing staged) never moves HEAD, so it must
+        not silently clear the flag and strand the work -- acceptance
+        criterion from oop-flag-not-cleared-after-oop-change."""
+        _git_init_with_commit(tmp_path)
+        db.set_oop("small targeted fix")
+
+        failed = subprocess.run(
+            ["git", "commit", "-m", "nothing staged"],
+            cwd=tmp_path, capture_output=True, text=True,
+        )
+        assert failed.returncode != 0  # confirm the attempt really failed
+
+        assert db.get_oop() is not None
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_set_oop_keep_open_survives_a_commit(self, db, tmp_path):
+        """The deliberate long-running path (auto_clear_on_commit=False,
+        `clasi oop on --keep-open`): a commit lands but the bypass stays
+        active, relying on its TTL / an explicit clear_oop() instead."""
+        _git_init_with_commit(tmp_path)
+        db.set_oop("multi-step refactor", auto_clear_on_commit=False)
+
+        _git_commit_new_file(tmp_path)
+
+        state = db.get_oop()
+        assert state is not None
+        assert state["auto_clear_on_commit"] is False
+
+    def test_get_oop_ignores_commit_when_head_unresolvable(self, db, tmp_path):
+        """No git repo at all: head_at_set is None at set-time, so the
+        commit-based check has nothing to compare against and never
+        fires -- purely TTL-governed, matching pre-existing behavior."""
+        result = db.set_oop("testing oop")
+        assert result["head_at_set"] is None
+
+        assert db.get_oop() is not None
+
+    def test_init_migrates_a_pre_existing_oop_state_table(self, tmp_path):
+        """A database created before head_at_set/auto_clear_on_commit
+        existed (the original 4-column oop_state: id, set_at, reason,
+        expires_at) must gain both new columns on the next init() --
+        CREATE TABLE IF NOT EXISTS alone is a no-op against an existing
+        table, so this exercises _migrate_oop_state_columns specifically,
+        not just a fresh CREATE TABLE."""
+        import sqlite3
+
+        db_file = tmp_path / ".clasi.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute(
+            "CREATE TABLE oop_state ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1),"
+            "set_at TEXT NOT NULL,"
+            "reason TEXT NOT NULL,"
+            "expires_at TEXT NOT NULL"
+            ")"
+        )
+        conn.execute(
+            "INSERT INTO oop_state (id, set_at, reason, expires_at) "
+            "VALUES (1, '2026-01-01T00:00:00+00:00', 'pre-migration record', "
+            "'2099-01-01T00:00:00+00:00')"
+        )
+        conn.commit()
+        conn.close()
+
+        sdb = StateDB(db_file)
+        record = sdb.get_oop()
+        assert record is not None
+        assert record["reason"] == "pre-migration record"
+        assert record["head_at_set"] is None
+        assert record["auto_clear_on_commit"] is True  # ALTER ... DEFAULT 1
+
+        # And the DB is now fully writable via the new set_oop path too.
+        sdb.set_oop("post-migration record")
+        assert sdb.get_oop()["reason"] == "post-migration record"
+
+    @pytest.mark.slow  # real-git tier: git init/commit via subprocess
+    def test_get_oop_backfills_head_for_a_pre_existing_legacy_record(
+        self, db, tmp_path,
+    ):
+        """A record with no head_at_set (a legacy row from before this
+        column existed) gets one opportunistically backfilled on read,
+        using the CURRENT HEAD as its new baseline -- so a bypass that
+        was already active when this mechanism was deployed still
+        auto-clears on the FIRST commit made after it, rather than being
+        stuck TTL-only forever. This is what makes the upgrade land
+        cleanly on an in-flight bypass instead of only helping bypasses
+        created after the upgrade."""
+        import sqlite3
+
+        head = _git_init_with_commit(tmp_path)
+        db.set_oop("pre-existing bypass")
+        # Simulate a legacy record: strip the head_at_set this set_oop()
+        # call captured, as if it had been written before that column's
+        # value was ever populated.
+        conn = sqlite3.connect(str(db.path))
+        conn.execute("UPDATE oop_state SET head_at_set = NULL WHERE id = 1")
+        conn.commit()
+        conn.close()
+
+        # First read after "upgrade": establishes the baseline, does not
+        # clear (HEAD hasn't moved from its own read's point of view).
+        state = db.get_oop()
+        assert state is not None
+        assert state["head_at_set"] == head
+
+        # A commit lands (e.g. the fix that introduced this mechanism).
+        _git_commit_new_file(tmp_path)
+
+        # Next read: HEAD has now advanced past the backfilled baseline.
+        assert db.get_oop() is None
 
 
 class TestActiveAgents:

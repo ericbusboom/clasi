@@ -473,6 +473,12 @@ def _oop_status_lines() -> list[str]:
     contract (section 4): the DB channel names reason/age/expiry, the file
     channel has no audit record and says so, and when both channels are
     active both lines are emitted — never reconciled into one.
+
+    The DB line also names its commit-based auto-clear state (issue
+    oop-flag-not-cleared-after-oop-change): whether it will auto-clear on
+    the next commit, was deliberately set to stay open across commits
+    (``--keep-open``), or has auto-clear inactive because no HEAD was
+    resolvable at set-time.
     """
     root = _find_project_root(Path.cwd())
     lines: list[str] = []
@@ -480,9 +486,15 @@ def _oop_status_lines() -> list[str]:
     if db_record is not None:
         ago = _format_ago(db_record["set_at"])
         expires_in = _format_in(db_record["expires_at"])
+        if not db_record.get("auto_clear_on_commit"):
+            clear_note = "kept open across commits, no auto-clear"
+        elif db_record.get("head_at_set"):
+            clear_note = "auto-clears on next commit"
+        else:
+            clear_note = "auto-clear inactive (no HEAD at set-time)"
         lines.append(
             f'OOP active (DB): set {ago} ago — "{db_record["reason"]}" — '
-            f"expires {expires_in}."
+            f"expires {expires_in} — {clear_note}."
         )
     if _oop_file_active(root):
         lines.append(
