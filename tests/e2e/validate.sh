@@ -118,6 +118,58 @@ check_host() {
     fi
 }
 
+# --- Multi-glob helpers -----------------------------------------------
+#
+# check_host commands run as `bash -c "$cmd"`, so any brace expansion
+# written into the command string (e.g. "{done/,}001-*") happens when
+# that inner bash parses the command line -- before these functions ever
+# see their arguments. By the time a helper below runs, each argument is
+# already a single glob pattern (braces gone, "*" still live).
+#
+# Never rely on `ls`'s or `grep`'s own exit code with multiple glob
+# operands: both tools treat "some operand didn't resolve to anything"
+# as an error and exit non-zero even when other operands matched fine.
+# In this project tickets legitimately live under tickets/done/ once a
+# sprint closes, so exactly one of a {done/,}NNN-* pair is expected to
+# match and the other is expected to be absent -- that must count as
+# success, not failure. These helpers expand each pattern independently
+# via `compgen -G` and judge success by "did anything match ANY
+# pattern", not "did every pattern resolve".
+# shellcheck disable=SC2329 # invoked indirectly, by name, from inside
+# the `bash -c "$cmd"` strings check_host builds -- not a dead function.
+glob_matches() {
+    local pattern
+    for pattern in "$@"; do
+        compgen -G "$pattern" 2>/dev/null || true
+    done
+}
+
+# True (exit 0) if at least one of the given glob patterns matches an
+# existing path. Drop-in replacement for `ls pattern... >/dev/null`.
+# shellcheck disable=SC2329 # invoked indirectly, see glob_matches above.
+any_exists() {
+    [ -n "$(glob_matches "$@")" ]
+}
+
+# True (exit 0) if `grep -li <pattern>` matches at least one file among
+# the given glob patterns. Never invokes grep with zero file operands
+# (which would block reading stdin) -- returns 1 immediately instead.
+# Builds the file list with a read loop rather than `mapfile`/`readarray`
+# (bash 4+ only) since macOS ships bash 3.2 at /bin/bash, the shebang
+# this script and its check_host/bash -c children actually run under.
+# shellcheck disable=SC2329 # invoked indirectly, see glob_matches above.
+any_grep_match() {
+    local grep_pattern="$1"
+    shift
+    local -a files=()
+    local f
+    while IFS= read -r f; do
+        files+=("$f")
+    done < <(glob_matches "$@")
+    [ "${#files[@]}" -gt 0 ] && grep -qli "$grep_pattern" "${files[@]}"
+}
+export -f glob_matches any_exists any_grep_match
+
 main() {
     echo "=== CLASI E2E Validation ==="
     echo "  Run: $RUN_ID"
@@ -137,29 +189,29 @@ main() {
     check_host "overview.md exists" \
                "test -f '$HOST_PROJECT_DIR/docs/design/overview.md'"
     check_host "Sprint 001 planned" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/sprint.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/sprint.md"
     check_host "Sprint 002 planned" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/sprint.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/sprint.md"
     check_host "Sprint 003 planned" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/sprint.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/sprint.md"
     check_host "Sprint 004 planned" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/sprint.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/sprint.md"
 
     echo ""
     echo "--- Ticket Lifecycle ---"
     check_host "Sprint 001 has tickets" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/done/*.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/done/*.md"
     check_host "Sprint 002 has tickets" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/tickets/done/*.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}002-*/tickets/done/*.md"
     check_host "Sprint 003 has tickets" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/tickets/done/*.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}003-*/tickets/done/*.md"
     check_host "Sprint 004 has tickets" \
-               "ls '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/tickets/done/*.md 2>/dev/null"
+               "any_exists '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}004-*/tickets/done/*.md"
 
     check_host "Sprint 001 tickets completed (status: done in tickets/done/)" \
-               "grep -rli 'status: done' '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/done/*.md 2>/dev/null"
+               "any_grep_match 'status: done' '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}001-*/tickets/done/*.md"
     check_host "Ticket files have acceptance criteria" \
-               "grep -rli 'acceptance criteria\|Acceptance Criteria\|AC:' '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}*/tickets/done/*.md 2>/dev/null"
+               "any_grep_match 'acceptance criteria\|Acceptance Criteria\|AC:' '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}*/tickets/*.md '$HOST_PROJECT_DIR'/clasi/sprints/{done/,}*/tickets/done/*.md"
 
     echo ""
     echo "--- Sprint Closure ---"
@@ -189,8 +241,14 @@ main() {
                "grep -rq 'Correct! You got it!' '$HOST_PROJECT_DIR/guessing_game/'"
     check_host "Wrong-guess message matches spec exactly" \
                "grep -rq 'Nope, try again.' '$HOST_PROJECT_DIR/guessing_game/'"
+    # The secret number is random at runtime, so the historical exact
+    # string ("...was 7.") only ever passed by coincidence -- the game
+    # legitimately prints a different number on every play. Match the
+    # literal prefix of the f-string template instead ("...was {"),
+    # which is stable across runs and still breaks if the message text
+    # itself is changed away from spec.
     check_host "Out-of-guesses message matches spec exactly" \
-               "grep -rq 'Sorry! The answer was 7.' '$HOST_PROJECT_DIR/guessing_game/'"
+               "grep -rqF 'Sorry! The answer was {' '$HOST_PROJECT_DIR/guessing_game/'"
     check_host "Non-numeric-input message matches spec exactly" \
                "grep -rq 'Please enter a number.' '$HOST_PROJECT_DIR/guessing_game/'"
 
@@ -207,8 +265,8 @@ main() {
                "grep -q 'Guess My Favorite Number' '$HOST_PROJECT_DIR/guessing_game/menu.py'"
     check_host "OOP 2: __version__ present in __init__.py" \
                "grep -q '__version__' '$HOST_PROJECT_DIR/guessing_game/__init__.py'"
-    check_host "OOP 3: TODO comment present in number_game.py" \
-               "grep -q 'difficulty levels' '$HOST_PROJECT_DIR/guessing_game/number_game.py'"
+    check_host "OOP 3: TODO comment present in games/number.py" \
+               "grep -q 'difficulty levels' '$HOST_PROJECT_DIR/guessing_game/games/number.py'"
     check_host "OOP 1: 'Guess My Favorite Color' also title case" \
                "grep -q 'Guess My Favorite Color' '$HOST_PROJECT_DIR/guessing_game/menu.py'"
     check_host "OOP 1: 'Guess Where I Live' also title case" \
