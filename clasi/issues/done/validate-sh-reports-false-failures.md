@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 type: bug
 tags:
 - e2e
